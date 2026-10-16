@@ -1,0 +1,84 @@
+# Prepared forecasts only; no API calls, model fits or invented missing inputs.
+# Complete explicit fields and prepared files before using optimize.
+include: italy_nord.example.yaml
+optimization:
+  forecast_inputs:
+    delivery_day: null
+    decision_cutoff: null
+    residual_start: null # Set to delivery start initially; later use exact carried-state boundary.
+    pv_forecast_path: null
+    pv_model_fit_status: unfitted_explicit_assumption
+    price_distribution: gaussian # Or explicit point means with zero innovations.
+    auctions: [DA, IDA1, IDA2, IDA3]
+    branches: 2 # Per unknown auction result: up to 16 price paths per PV member.
+    seed: 41
+    maximum_joint_scenarios: 2048
+    allow_retrospective: false
+    pv_observation_delay_minutes: 0
+    # Known results replace that auction's forecast entry below, never both.
+    known_results_path: null
+    accepted_trades_path: null # Legacy name: already executed, priced quantities.
+    # Between submission and publication provide a residual-grid vector here:
+    # pending_position_mwh: [...] # Guaranteed committed quantities, MCP still unknown.
+    settlement_point_price_eur_per_mwh: null
+    settlement_point_price_available_at: null
+    settlement_point_price_status: study_assumption
+    auction_inputs:
+      DA:
+        native_interval_minutes: 15
+        point_model_path: null
+        features_path: null
+        calibration_path: null
+      IDA1:
+        native_interval_minutes: 15
+        spread_model_path: null
+        features_path: null
+        calibration_path: null
+      IDA2:
+        native_interval_minutes: 15
+        spread_model_path: null
+        features_path: null
+        calibration_path: null
+      IDA3:
+        native_interval_minutes: 15
+        spread_model_path: null
+        features_path: null # Actual eligible noon-to-midnight products only.
+        calibration_path: null
+plant:
+  farm_id: null
+  poi_import_mw: null
+  poi_export_mw: null
+battery:
+  capacity_mwh: null
+  max_charge_mw: null
+  max_discharge_mw: null
+  converter_charge_efficiency: 0.97
+  converter_discharge_efficiency: 0.97
+  cell_charge_efficiency: 1.0
+  cell_discharge_efficiency: 1.0
+  efficiency_convention: converter_and_cell
+state:
+  timestamp: null
+  initial_energy_mwh: null
+  terminal_target_mwh: null
+  origin: known_delivery_start_assumption
+trading:
+  trade_limit_mwh: null
+  position_limit_mwh: null
+  imbalance_penalty_eur_per_mwh: null
+  imbalance_limit_mwh: null
+  grid_import_fee_eur_per_mwh: null
+degradation:
+  model: throughput
+  cost_eur_per_mwh_throughput: null
+  assumptions: user_must_supply_explicit_AC_throughput_or_Xu_assumption
+solver:
+  threads: 1
+  time_limit_seconds: 30.0
+  mip_gap: 0.0001
+  seed: 41
+  output_flag: false
+outputs:
+  root: outputs/forecast_optimization
+  run_id: null
+  plots: true

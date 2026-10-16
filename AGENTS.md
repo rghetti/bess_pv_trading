@@ -66,3 +66,8 @@ blocks. Always try to vectorize operations when libraries and data structures al
 - Generate meaningful plots of relevant quantities and group them by runs/ examined starting date of the experiment. This is true for the cached data as well:
 group it by day or by a recognizable id
 - always give exaustive commit comments!
+- Default solver optimality tolerance is a relative MIP gap of `1e-4` (0.01%). Do not configure an absolute MIP gap.
+- Before launching an experiment, explain its purpose, data, model/features, evaluation split, baselines and saved outputs to the user. This is an overview, not a request for approval unless approval is explicitly required.
+- The perfect-foresight benchmark uses the same actual auction-price curve for all PV/weather members on a delivery day. Forecast price scenarios may differ to represent uncertainty before clearing; do not add price noise to the oracle.
+- API acquisition and dataset readers use `data/api/market.duckdb`. Build new workflows on the DuckDB catalog and retain snapshot IDs/checksums; the file cache is legacy compatibility. Coordinate with an active downloader before opening the database from another process.
+- Auctions use price-taking, guaranteed full execution of every submitted quantity. Do not model bid-price curves, acceptance probabilities or rejection. Submitted quantities become fixed commitments immediately; until price publication they are unpriced commitments. At publication, book the actual quantity times the clearing price once, update future forecasts and reoptimize without changing those commitments. Keep forecast objective values separate from realized cash flow.

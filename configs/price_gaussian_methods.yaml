@@ -1,0 +1,4 @@
+# Select uncertainty settings only from the method comparison's old calibration.
+include: price_gaussian_adaptive.yaml
+price_scenarios:
+  study_manifest: outputs/linear_price_studies/fitting_methods/20261016T135338.628446Z/manifest.json

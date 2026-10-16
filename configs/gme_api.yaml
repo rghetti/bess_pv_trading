@@ -1,0 +1,40 @@
+# GME-issued username/password are distinct from ENTSO-E/Terna credentials.
+# One full day checks native DA + the three intraday auctions for NORD.
+api:
+  start: '2025-10-01'
+  end: '2025-10-02'
+  timezone: Europe/Rome
+  download_order: month_first
+  storage_backend: duckdb
+  database_path: data/api/market.duckdb
+  database_threads: 4
+  cache_directory: data/api
+  output_directory: outputs/api/gme
+  no_data_cache_hours: 24
+  progress_every: 25
+  plots: true
+  # Conservative local refresh bound; a JWT expiry can shorten this interval.
+  gme_token_refresh_seconds: 900
+  credentials:
+    gme_username_env: GME_USERNAME
+    gme_password_env: GME_PASSWORD
+  http:
+    attempts: 5
+    connect_timeout: 10
+    read_timeout: 60
+    minimum_request_interval_seconds: 2.0
+    retry_delay_seconds: 2.0
+    max_retry_delay_seconds: 30.0
+  requests:
+    - provider: gme
+      dataset: day_ahead_prices
+      options: {zone: NORD}
+    - provider: gme
+      dataset: ida1_prices
+      options: {zone: NORD}
+    - provider: gme
+      dataset: ida2_prices
+      options: {zone: NORD}
+    - provider: gme
+      dataset: ida3_prices
+      options: {zone: NORD}

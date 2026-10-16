@@ -1,0 +1,65 @@
+# All equipment, PV and economics below are illustrative software-test inputs.
+synthetic:
+  delivery_day: '2025-10-02'
+  seed: 17
+  branches_per_auction: 2
+  branch_values: [-1.0, 1.0]
+  branch_probabilities: [0.4, 0.6]
+  pv_peak_mw: 0.8
+  sunrise_hour: 7.0
+  sunset_hour: 19.0
+  base_price_eur_per_mwh: 70.0
+  daily_price_amplitude: 15.0
+  residual_scale: {DA: 8.0, IDA1: 5.0, IDA2: 4.0, IDA3: 3.0}
+  stage_spreads: {IDA1: -3.0, IDA2: 2.0, IDA3: 4.0}
+  imbalance_price_eur_per_mwh: 60.0
+  strategies: [deterministic_sequential, deterministic_integrated, stochastic_integrated, oracle]
+plant:
+  farm_id: 1
+  poi_import_mw: 1.0
+  poi_export_mw: 1.0
+  assumption_status: illustrative_synthetic_equipment
+battery:
+  capacity_mwh: 1.0
+  max_charge_mw: 0.5
+  max_discharge_mw: 0.5
+  energy_min_mwh: 0.1
+  energy_max_mwh: 0.9
+  converter_charge_efficiency: 0.97
+  converter_discharge_efficiency: 0.97
+  cell_charge_efficiency: 1.0
+  cell_discharge_efficiency: 1.0
+  efficiency_convention: converter_and_cell
+  inverter_charge_mw: 0.5
+  inverter_discharge_mw: 0.5
+  self_discharge_per_hour: 0.0
+state:
+  initial_energy_mwh: 0.5
+  origin: known_delivery_start_assumption
+  terminal_target_mwh: 0.5
+trading:
+  trade_limit_mwh: 0.25
+  position_limit_mwh: 0.25
+  imbalance_penalty_eur_per_mwh: 100.0
+  grid_import_fee_eur_per_mwh: 0.0
+  settlement_status: synthetic_signed_single_price
+  excluded_charges: [grid_use_fee, taxes, brokerage]
+degradation:
+  model: throughput
+  cost_eur_per_mwh_throughput: 5.0
+  assumptions: illustrative AC charge-plus-discharge throughput cost; no calibrated lifetime model
+market:
+  timezone: Europe/Rome
+  valid_from: '2025-10-01'
+  valid_to: '2026-08-31'
+  decision_buffer_minutes: 5.0
+solver:
+  threads: 1
+  time_limit_seconds: 30.0
+  mip_gap: 0.0001
+  seed: 17
+  output_flag: false
+outputs:
+  root: outputs/trading
+  run_id: null
+  plots: true

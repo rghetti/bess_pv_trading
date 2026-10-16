@@ -1,0 +1,51 @@
+# Market-only example; equipment assumptions are supplied by the plant config.
+market:
+  zone: NORD
+  timezone: Europe/Rome
+  valid_from: '2025-10-01'
+  valid_to: '2026-08-31'
+  rule_versions:
+    - {version: GME-DTF03-rev13, event_valid_from: '2025-09-29', event_valid_to: '2026-01-12'}
+    - {version: GME-DTF03-rev14, event_valid_from: '2026-01-13', event_valid_to: '2026-08-31'}
+  decision_buffer_minutes: 5.0
+  gates: {DA: '12:00', IDA1: '15:00', IDA2: '22:00', IDA3: '10:00'}
+  result_times: {DA: '13:30', IDA1: '15:30', IDA2: '22:30', IDA3: '10:30'}
+  result_provenance:
+    DA: 'study_assumption_13:30; official final results not earlier than 13:05; recorded publication preferred'
+    IDA1: 'GME DTF03 rev13: results by 15:30 local'
+    IDA2: 'GME DTF03 rev13: results by 22:30 local'
+    IDA3: 'GME DTF03 rev13: results by 10:30 local'
+  pre_quarter_hour_regime: excluded_no_native_hourly_DA_mapping
+  settlement_status: unresolved_historical_rules_do_not_run_real_settlement
+market_data:
+  provider: manual_gme_csv
+  input_path: data/market/manual_gme_prices.csv
+  output_path: data/market/canonical_prices.csv
+  cache_directory: data/market/cache
+  # Keys are canonical column names; values are actual source CSV headers.
+  column_mapping: {}
+  # Explicit product and price values must be supplied by the actual source file.
+  constants: {}
+  separator: ','
+  cache_key:
+    provider: manual_gme
+    dataset: gme_zonal_auction_prices
+    zone: NORD
+    product: MGP_MI-A1_MI-A2_MI-A3
+    start: '2025-10-01'
+    end: '2026-09-01'
+    vintage_revision: user_supplied_export_revision
+    schema_version: market-v1
+price_forecasting:
+  input_path: data/market/canonical_prices.csv
+  output_directory: outputs/price_models
+  fit_cutoff: '2026-08-01T09:55:00Z'
+  auctions: [DA, IDA1, IDA2, IDA3]
+  ridge_alpha: 1.0
+  minimum_training_rows: 96
+  residual_method: gaussian
+  covariance_shrinkage: 0.2
+  refit_schedule: expanding_daily_rolling_origin
+  fundamentals_status: unavailable_minimal_calendar_and_price_lags_only
+  local_regional_solar_proxy: disabled
+  seed: 17

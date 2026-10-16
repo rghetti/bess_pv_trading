@@ -1,0 +1,4 @@
+include: synthetic_small.yaml
+synthetic:
+  delivery_day: '2025-10-26'
+  strategies: [stochastic_integrated]

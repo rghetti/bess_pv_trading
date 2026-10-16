@@ -1,0 +1,44 @@
+# A one-day Italy NORD request. End is exclusive in the configured timezone.
+# Change the dates before a historical download; keep tokens out of YAML.
+api:
+  start: '2025-10-01'
+  end: '2025-10-02'
+  timezone: Europe/Rome
+  cache_directory: data/api
+  storage_backend: duckdb
+  database_path: data/api/market.duckdb
+  database_threads: 4
+  output_directory: outputs/api
+  plots: true
+  credentials:
+    entsoe_token_env: ENTSOE_API_TOKEN
+  http:
+    attempts: 3
+    read_timeout: 60
+  requests:
+    - provider: entsoe
+      dataset: day_ahead_prices
+      options:
+        zone: NORD
+        zone_eic: 10Y1001A1001A73I
+    - provider: entsoe
+      dataset: load_forecast
+      options:
+        zone: NORD
+        zone_eic: 10Y1001A1001A73I
+    - provider: entsoe
+      dataset: generation_forecast
+      options:
+        zone: NORD
+        zone_eic: 10Y1001A1001A73I
+    - provider: entsoe
+      dataset: solar_forecast
+      options:
+        zone: NORD
+        zone_eic: 10Y1001A1001A73I
+    - provider: entsoe
+      dataset: wind_onshore_forecast
+      options:
+        zone: NORD
+        zone_eic: 10Y1001A1001A73I
+    # wind_offshore_forecast is also supported, but area coverage is not assumed.

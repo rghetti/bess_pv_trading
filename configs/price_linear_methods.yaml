@@ -1,0 +1,25 @@
+# Compare fitting methods on the identical saved DuckDB-derived old features.
+# Additional September–October labels cannot enter this development comparison.
+include: price_linear_hourly.yaml
+linear_price_study:
+  frozen_feature_manifest: outputs/linear_price_studies/hourly_structure/20261016T132545.918238Z/manifest.json
+  end: '2026-09-01'
+  output_directory: outputs/linear_price_studies/fitting_methods
+  analysis_directory: data/analysis/linear_prices/fitting_methods
+  model_structures: [by_hour]
+  alphas: [100.0]
+  targets: [level]
+  feature_sets:
+    profile: [calendar_extended, autoregressive_extended, daily_summary, daily_profile_lags]
+  additional_estimators:
+    - {name: ols, method: ols}
+    - {name: lasso_a01, method: lasso, alpha: 0.1}
+    - {name: elastic_a01, method: elastic_net, alpha: 0.1, l1_ratio: 0.5}
+    - {name: huber_a1, method: huber, alpha: 1.0, epsilon: 1.35}
+    - {name: weighted_h14, method: weighted_ridge, alpha: 100.0, half_life_days: 14}
+    - {name: weighted_h28, method: weighted_ridge, alpha: 100.0, half_life_days: 28}
+  prior_evaluation_overlap: >-
+    Development comparison using the previously inspected July–August 2026
+    quarter-hour and August–September 2025 hourly periods. Estimator settings
+    are selected by earlier validation MAE only. This comparison does not
+    inspect or select from the September–October 2026 extension.

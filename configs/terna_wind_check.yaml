@@ -1,0 +1,13 @@
+# Isolate the failing wind request using the same date, options and cache key.
+# A two-second minimum interval separates token acquisition from the data GET.
+include: terna_api.yaml
+api:
+  http:
+    attempts: 1
+    minimum_request_interval_seconds: 2.0
+  requests:
+    - provider: terna
+      dataset: wind_forecast
+      options:
+        zone: NORD
+        session_type: MSD1

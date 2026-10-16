@@ -1,0 +1,7 @@
+# Explicit exploratory sensitivity: cap contradictory horizontal direct to GHI,
+# retaining a contradiction flag. This is not a repair of raw source radiation.
+include: farms_nord.yaml
+pv:
+  direct_exceeds_ghi: clip_and_flag
+forecast_run:
+  output_dir: outputs/pv/farm1_20251001_radiation_sensitivity

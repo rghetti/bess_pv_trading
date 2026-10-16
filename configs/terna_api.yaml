@@ -1,0 +1,47 @@
+# Cache-first acquisition of documented Terna fundamentals. No secrets in YAML.
+# The shared API command resolves TERNA_CLIENT_ID / TERNA_CLIENT_SECRET or a
+# hidden interactive prompt only after a cache miss. Dates use Italy's timezone;
+# the top-level end is exclusive (the provider dateTo is inclusive).
+api:
+  start: '2025-07-01'
+  end: '2025-07-02'
+  timezone: Europe/Rome
+  cache_directory: data/api
+  storage_backend: duckdb
+  database_path: data/api/market.duckdb
+  database_threads: 4
+  output_directory: outputs/api/terna
+  plots: true
+  credentials:
+    terna_client_id_env: TERNA_CLIENT_ID
+    terna_client_secret_env: TERNA_CLIENT_SECRET
+  http:
+    attempts: 3
+    read_timeout: 60
+    terna_minimum_request_interval_seconds: 2.0
+  requests:
+    - provider: terna
+      dataset: total_load
+      options:
+        zone: NORD
+        bidding_zones: [North]
+    - provider: terna
+      dataset: total_load_forecast
+      options:
+        zone: NORD
+        bidding_zones: [North]
+    - provider: terna
+      dataset: load_forecast
+      options:
+        session_type: MGP
+        zone: NORD
+    - provider: terna
+      dataset: wind_forecast
+      options:
+        session_type: MSD1
+        zone: NORD
+    - provider: terna
+      dataset: renewable_generation
+      options:
+        zone: IT
+        energy_sources: [Photovoltaic, Wind]

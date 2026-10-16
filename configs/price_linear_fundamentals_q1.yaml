@@ -1,0 +1,5 @@
+# Frozen first-quarter study; the parent configuration expands with new data.
+include: price_linear_fundamentals.yaml
+linear_price_study:
+  start: '2025-01-01'
+  end: '2025-04-01'

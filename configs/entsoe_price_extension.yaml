@@ -1,0 +1,17 @@
+# Additional DA labels for a new validation period beyond the fitted studies.
+# End is exclusive: request 1 September through 16 October 2026, 46 days.
+include: entsoe_api.yaml
+api:
+  start: '2026-09-01'
+  end: '2026-10-17'
+  download_order: month_first
+  output_directory: outputs/api/entsoe_price_extension
+  progress_every: 25
+  http:
+    attempts: 8
+    retry_delay_seconds: 2.0
+    max_retry_delay_seconds: 30.0
+  requests:
+    - provider: entsoe
+      dataset: day_ahead_prices
+      options: {zone: NORD, zone_eic: 10Y1001A1001A73I}

@@ -1,0 +1,26 @@
+report:
+  project_root: .
+  test_junit: docs/generated/tests.xml
+  analysis_manifest: outputs/analysis/farm1_20251001/manifest.json
+  pv_manifest: outputs/pv/farm1_20251001/manifest.json
+  # Optional completed retrieved-revision DA experiment manifest, not a causal backtest.
+  price_experiment_manifest: outputs/price_experiments/20261016T114918.523740Z/manifest.json
+  fundamental_experiment_manifest: outputs/price_fundamentals/20261016T123128.295753Z/manifest.json
+  # Rolling selection and separately calibrated Gaussian uncertainty are retrospective.
+  linear_price_study_manifests:
+    - outputs/linear_price_studies/prices/20261016T125840.185274Z/manifest.json
+    - outputs/linear_price_studies/fundamentals/20261016T125741.475652Z/manifest.json
+    - outputs/linear_price_studies/hourly_structure/20261016T132545.918238Z/manifest.json
+    - outputs/linear_price_studies/fitting_methods/20261016T135338.628446Z/manifest.json
+  # Frozen calibration-only policy selection; later error updates are explicitly online.
+  gaussian_study_manifests:
+    - outputs/price_uncertainty/20261016T132834.531424Z/manifest.json
+    - outputs/price_uncertainty/20261016T135548.789177Z/manifest.json
+  # Both protocols were frozen before inspecting the additional historical period.
+  price_forward_check_manifests:
+    - outputs/price_forward_checks/20261016T135723.746518Z/manifest.json
+    - outputs/price_forward_checks/20261016T135722.926943Z/manifest.json
+  # Optional offline cache status snapshot, read if present.
+  api_cache_status_manifest: docs/generated/api_cache_status.json
+  delivery_days: ['2025-10-02', '2025-10-26', '2026-03-29']
+  compile: true

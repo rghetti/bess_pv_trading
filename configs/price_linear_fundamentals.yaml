@@ -1,0 +1,29 @@
+# Expands automatically to the last complete day shared by these forecasts.
+include: price_linear_study.yaml
+linear_price_study:
+  output_directory: outputs/linear_price_studies/fundamentals
+  analysis_directory: data/analysis/linear_prices/fundamentals
+  auto_common_end: true
+  validation_days: 7
+  calibration_days: 10
+  maturity_gap_days: 1
+  test_days: 7
+  min_training_days: 14
+  refit_every_days: 7
+  training_windows_days: [28, 56]
+  fundamental_features:
+    load_forecast_mw: {provider: entsoe, dataset: load_forecast}
+    solar_forecast_mw: {provider: entsoe, dataset: solar_forecast}
+    wind_forecast_mw: {provider: entsoe, dataset: wind_onshore_forecast}
+  feature_sets:
+    lags: [calendar, autoregressive]
+    expert: [calendar_extended, autoregressive_extended, daily_summary, rolling_history_7d, interactions]
+    fundamentals: [calendar_extended, autoregressive_extended, daily_summary, fundamental_components]
+    residual_load: [calendar_extended, autoregressive_extended, daily_summary, residual_load, renewable_shares]
+  feature_settings:
+    lag_days: [1, 2, 3, 7]
+    daily_summary_lags: [1, 7]
+    rolling_windows: [7]
+    daily_profile_lags: [1, 7]
+price_scenarios:
+  minimum_complete_days: 8

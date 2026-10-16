@@ -1,0 +1,15 @@
+# Existing ENTSO-E DA prices are retained; acquire the missing actual IDA labels.
+include: gme_api.yaml
+api:
+  start: '2025-01-01'
+  end: '2026-09-01'
+  requests:
+    - provider: gme
+      dataset: ida1_prices
+      options: {zone: NORD}
+    - provider: gme
+      dataset: ida2_prices
+      options: {zone: NORD}
+    - provider: gme
+      dataset: ida3_prices
+      options: {zone: NORD}

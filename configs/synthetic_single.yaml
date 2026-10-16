@@ -1,0 +1,6 @@
+include: synthetic_small.yaml
+synthetic:
+  branches_per_auction: 1
+  branch_values: [0.0]
+  branch_probabilities: [1.0]
+  strategies: [deterministic_integrated]

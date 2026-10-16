@@ -219,5 +219,10 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 # Raw farm data and future downloaded price data.
-data/
+/data/
 outputs/
+.gitignore
+
+# Reproducible LaTeX intermediate files; retain the requested source and PDF.
+docs/generated/latex/
+docs/generated/latex_build_output.txt

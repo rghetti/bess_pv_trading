@@ -1,0 +1,12 @@
+# Full farm-record window, including pre-quarter-hour price-training context.
+# Native hourly prices remain hourly; no artificial quarter-hour prices are made.
+include: api_download.yaml
+api:
+  start: '2025-01-01'
+  end: '2026-09-01'
+  # Longer bounded backoff for temporary 429/5xx/network failures in a long run.
+  # Authentication/permission failures still stop without repeated attempts.
+  http:
+    attempts: 8
+    retry_delay_seconds: 2.0
+    max_retry_delay_seconds: 30.0

@@ -1,0 +1,4 @@
+# Alternative chosen using old validation only, frozen before extension scoring.
+include: price_forward_check.yaml
+price_forward_check:
+  protocol: outputs/price_protocols/20261016T135622425923Z/protocol.json

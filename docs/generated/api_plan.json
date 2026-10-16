@@ -1,0 +1,60 @@
+{
+  "status": "planned",
+  "requests": 6080,
+  "start": "2025-01-01",
+  "end_exclusive": "2026-09-01",
+  "cached_chunks": 0,
+  "cached_no_data_chunks": 0,
+  "groups": [
+    {
+      "provider": "entsoe",
+      "dataset": "day_ahead_prices",
+      "chunks": 608
+    },
+    {
+      "provider": "entsoe",
+      "dataset": "load_forecast",
+      "chunks": 608
+    },
+    {
+      "provider": "entsoe",
+      "dataset": "generation_forecast",
+      "chunks": 608
+    },
+    {
+      "provider": "entsoe",
+      "dataset": "solar_forecast",
+      "chunks": 608
+    },
+    {
+      "provider": "entsoe",
+      "dataset": "wind_onshore_forecast",
+      "chunks": 608
+    },
+    {
+      "provider": "terna",
+      "dataset": "total_load",
+      "chunks": 608
+    },
+    {
+      "provider": "terna",
+      "dataset": "total_load_forecast",
+      "chunks": 608
+    },
+    {
+      "provider": "terna",
+      "dataset": "load_forecast",
+      "chunks": 608
+    },
+    {
+      "provider": "terna",
+      "dataset": "wind_forecast",
+      "chunks": 608
+    },
+    {
+      "provider": "terna",
+      "dataset": "renewable_generation",
+      "chunks": 608
+    }
+  ]
+}

@@ -1,0 +1,353 @@
+{
+  "zarr": "data/farms/pv_farms_timeseries_20250101_20260831.zarr",
+  "metadata_parquet": "data/farms/pv_farms_timeseries_20250101_20260831.parquet",
+  "dimensions": {
+    "farm_id": 4,
+    "cycle_time": 2440,
+    "lead_time": 49,
+    "time": 58368
+  },
+  "historical_start_utc": "2025-01-01T00:00:00+00:00",
+  "historical_end_utc": "2026-08-31T23:45:00+00:00",
+  "cycle_start_utc": "2024-12-30T00:00:00+00:00",
+  "cycle_end_utc": "2026-08-31T18:00:00+00:00",
+  "lead_encoding": "timedelta64[ns]",
+  "lead_hours": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0,
+    10.0,
+    11.0,
+    12.0,
+    13.0,
+    14.0,
+    15.0,
+    16.0,
+    17.0,
+    18.0,
+    19.0,
+    20.0,
+    21.0,
+    22.0,
+    23.0,
+    24.0,
+    25.0,
+    26.0,
+    27.0,
+    28.0,
+    29.0,
+    30.0,
+    31.0,
+    32.0,
+    33.0,
+    34.0,
+    35.0,
+    36.0,
+    37.0,
+    38.0,
+    39.0,
+    40.0,
+    41.0,
+    42.0,
+    43.0,
+    44.0,
+    45.0,
+    46.0,
+    47.0,
+    48.0
+  ],
+  "valid_time_verified": true,
+  "farm_ids": [
+    1,
+    345,
+    901,
+    910
+  ],
+  "farms": [
+    {
+      "farm_id": 1,
+      "zone": "NORD",
+      "dc_capacity_kw": 953.280029296875,
+      "tracking_type_id": 0,
+      "surface_tilt_deg": 15.0,
+      "source_azimuth_deg": 0.0,
+      "elevation_m": 25.0,
+      "pv_type_id": 0.0,
+      "assumptions": {}
+    },
+    {
+      "farm_id": 345,
+      "zone": "NORD",
+      "dc_capacity_kw": 1524.5999755859375,
+      "tracking_type_id": 0,
+      "surface_tilt_deg": 19.0,
+      "source_azimuth_deg": 0.0,
+      "elevation_m": 111.0,
+      "pv_type_id": 0.0,
+      "assumptions": {}
+    },
+    {
+      "farm_id": 901,
+      "zone": "NORD",
+      "dc_capacity_kw": 4160.0,
+      "tracking_type_id": 3,
+      "surface_tilt_deg": 60.0,
+      "source_azimuth_deg": 0.0,
+      "elevation_m": 3.0,
+      "pv_type_id": 0.0,
+      "assumptions": {}
+    },
+    {
+      "farm_id": 910,
+      "zone": "NORD",
+      "dc_capacity_kw": 6638.0,
+      "tracking_type_id": 1,
+      "surface_tilt_deg": 30.0,
+      "source_azimuth_deg": 0.0,
+      "elevation_m": 22.0,
+      "pv_type_id": 0.0,
+      "assumptions": {}
+    }
+  ],
+  "variables": {
+    "cloud_cover": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "%",
+        "temporal_semantics": "instantaneous"
+      }
+    },
+    "cloud_cover_high": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "%",
+        "temporal_semantics": "instantaneous"
+      }
+    },
+    "cloud_cover_low": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "%",
+        "temporal_semantics": "instantaneous"
+      }
+    },
+    "cloud_cover_mid": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "%",
+        "temporal_semantics": "instantaneous"
+      }
+    },
+    "dew_point_2m": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "\u00b0C",
+        "temporal_semantics": "instantaneous"
+      }
+    },
+    "direct_radiation": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "W/m^2",
+        "temporal_semantics": "interval_average"
+      }
+    },
+    "fraction_diffuse": {
+      "dimensions": [
+        "farm_id",
+        "time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "1",
+        "interval": "[time, time + 15 minutes)",
+        "aggregation": "mean of endpoint readings"
+      }
+    },
+    "ghi": {
+      "dimensions": [
+        "farm_id",
+        "time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "W/m^2",
+        "interval": "[time, time + 15 minutes)",
+        "aggregation": "mean of endpoint readings"
+      }
+    },
+    "power": {
+      "dimensions": [
+        "time",
+        "farm_id"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "kW",
+        "interval": "[time, time + 15 minutes)",
+        "aggregation": "mean power over interval"
+      }
+    },
+    "precipitation": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "mm",
+        "temporal_semantics": "interval_accumulation"
+      }
+    },
+    "shortwave_radiation": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "W/m^2",
+        "temporal_semantics": "interval_average"
+      }
+    },
+    "snow_water_equivalent": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "m",
+        "temporal_semantics": "instantaneous"
+      }
+    },
+    "temperature_2m": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "\u00b0C",
+        "temporal_semantics": "instantaneous"
+      }
+    },
+    "visibility": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "km",
+        "temporal_semantics": "instantaneous"
+      }
+    },
+    "wind_u_component_100m": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "m/s",
+        "temporal_semantics": "instantaneous"
+      }
+    },
+    "wind_u_component_10m": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "m/s",
+        "temporal_semantics": "instantaneous"
+      }
+    },
+    "wind_v_component_100m": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "m/s",
+        "temporal_semantics": "instantaneous"
+      }
+    },
+    "wind_v_component_10m": {
+      "dimensions": [
+        "farm_id",
+        "cycle_time",
+        "lead_time"
+      ],
+      "dtype": "float32",
+      "attributes": {
+        "units": "m/s",
+        "temporal_semantics": "instantaneous"
+      }
+    }
+  },
+  "attributes": {
+    "timezone": "UTC",
+    "date_range": "2025-01-01/2026-08-31 inclusive",
+    "farm_id_transform": "source farm_id - minimum requested source farm_id + 1",
+    "forecast_valid_time": "cycle_time + lead_time",
+    "forecast_outside_date_range": "NaN"
+  },
+  "ensemble_axis_present": false,
+  "provenance": {
+    "metadata_size_bytes": 5976,
+    "zarr_metadata_size_bytes": 10565,
+    "zarr_metadata_mtime_ns": 1792061790000000000,
+    "inspection": "coordinates_and_consolidated_metadata_only",
+    "measured_power_basis": "AC_user_confirmed",
+    "capacity_basis": "DC_user_confirmed"
+  }
+}
