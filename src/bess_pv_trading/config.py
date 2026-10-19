@@ -76,6 +76,8 @@ def validate_config(config: dict[str, Any]) -> None:
         # Example templates retain explicit missing values. Execution validates
         # their required inputs; loading a template must not invent coefficients.
         numeric_fields={"cost_eur_per_mwh_throughput","stress_coefficient","stress_exponent","segment_count"}
+        if section.get("throughput_lifetime") is not None:
+            numeric_fields.remove("cost_eur_per_mwh_throughput")
         if not any(section.get(key,0) is None for key in numeric_fields):
             try:
                 degradation_settings_from_config(config)
@@ -84,3 +86,14 @@ def validate_config(config: dict[str, Any]) -> None:
     for key, value in config.get("battery", {}).items():
         if key.endswith("_efficiency") and value is not None and (not math.isfinite(float(value)) or not 0 < float(value) <= 1):
             raise ConfigurationError(f"battery.{key} must be in (0, 1]")
+    battery = config.get("battery", {})
+    if {"energy_min_mwh", "energy_max_mwh"} & set(battery):
+        raise ConfigurationError("Use battery.soc_min_percent and soc_max_percent instead of absolute MWh bounds")
+    if {"max_charge_mw", "max_discharge_mw", "inverter_charge_mw", "inverter_discharge_mw"} & set(battery):
+        raise ConfigurationError("Use one symmetric battery.max_power_mw; remove separate charge/discharge and inverter limits")
+    if all(battery.get(key) is not None for key in ("capacity_mwh", "max_power_mw")):
+        from .domain import battery_parameters_from_config
+        try:
+            battery_parameters_from_config(battery)
+        except (TypeError, ValueError) as error:
+            raise ConfigurationError(str(error)) from None

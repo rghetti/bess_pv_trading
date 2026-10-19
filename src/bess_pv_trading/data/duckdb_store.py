@@ -362,8 +362,12 @@ class DuckDBCache:
              metadata: Mapping[str, Any]) -> dict:
         """Publish raw response, typed values and retrieval provenance together."""
         normalized = frame.to_parquet(index=False)
+        manual_source = metadata.get("source_kind") == "manual_gme_xlsx"
+        raw_file = metadata.get("source_file") if manual_source else None
+        if raw_file is None:
+            raw_file = "response.xml" if identity["provider"] == "entsoe" else "response.json"
         manifest = {"schema_version": "api-cache-v1", "request": dict(identity),
-                    "raw_file": "response.xml" if identity["provider"] == "entsoe" else "response.json",
+                    "raw_file": raw_file,
                     "raw_sha256": hashlib.sha256(payload).hexdigest(),
                     "normalized_sha256": hashlib.sha256(normalized).hexdigest(),
                     "records": len(frame), "cached_at": datetime.now(timezone.utc).isoformat(),
@@ -385,7 +389,14 @@ class DuckDBCache:
         import pyarrow.parquet as pq
         digest = _identity_hash(identity)
         source = dict(manifest)
-        expected_raw = "response.xml" if identity["provider"] == "entsoe" else "response.json"
+        manual_source = source.get("metadata", {}).get("source_kind") == "manual_gme_xlsx"
+        expected_raw = source.get("metadata", {}).get("source_file") if manual_source else (
+            "response.xml" if identity["provider"] == "entsoe" else "response.json")
+        if manual_source and (identity.get("provider") != "gme"
+                              or not isinstance(expected_raw, str)
+                              or Path(expected_raw).name != expected_raw
+                              or Path(expected_raw).suffix.lower() != ".xlsx"):
+            raise _error("Manual GME snapshots require a safe XLSX source filename")
         if (source.get("request") != dict(identity) or source.get("schema_version") != "api-cache-v1"
                 or source.get("raw_file") != expected_raw):
             raise _error("Invalid source API snapshot manifest/identity")

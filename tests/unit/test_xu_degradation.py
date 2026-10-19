@@ -12,18 +12,20 @@ from bess_pv_trading.optimization.degradation import (
 )
 from bess_pv_trading.simulation.replay import execute_interval
 from test_optimization_contracts import example_inputs
+from battery_case_config import case_config, configured_battery
 
 
 def settings(**overrides):
     """Quadratic stress permits simple hand calculations in EUR."""
-    return DegradationSettings(mode="xu_segmented", replacement_cost_eur=1000,
-        stress_coefficient=0.01, stress_exponent=2, segment_count=4, **overrides)
+    return replace(degradation_settings_from_config(case_config("xu_reference")), **overrides)
 
 
-def battery(eta_charge=1.0, eta_discharge=1.0):
+def battery(eta_charge=None, eta_discharge=None):
     """Declare internal nameplate energy separately from AC conversion losses."""
-    return BatteryParameters(1, 1, 1, efficiency_convention="combined",
-        combined_charge_efficiency=eta_charge, combined_discharge_efficiency=eta_discharge)
+    parameters = configured_battery("lossless")
+    return replace(parameters,
+        combined_charge_efficiency=parameters.eta_charge if eta_charge is None else eta_charge,
+        combined_discharge_efficiency=parameters.eta_discharge if eta_discharge is None else eta_discharge)
 
 
 def trace(energy, *, count=4, eta_charge=1.0, eta_discharge=1.0, exponent=2):
@@ -172,3 +174,40 @@ def test_config_parser_supports_existing_baseline_and_explicit_xu():
     parsed = degradation_settings_from_config({"degradation": {"model": "xu_segmented", "replacement_cost_eur": 300000}})
     assert parsed.mode == "xu_segmented"
     assert parsed.segment_count == 16
+
+
+def throughput_cost_config():
+    """Published-cost inputs with an intentionally asymmetric AC loss path."""
+    return case_config("replacement_benchmark")
+
+
+def test_replacement_cost_amortizes_once_over_reference_ac_lifetime():
+    config = throughput_cost_config()
+    expected = case_config("replacement_expected")
+    parsed = degradation_settings_from_config(config)
+    assert parsed.replacement_cost_eur == pytest.approx(expected["replacement_cost_eur"])
+    ac_energy_per_cycle = expected["ac_throughput_per_cycle_mwh"]
+    cycles = config["degradation"]["throughput_lifetime"]["cycle_life"]
+    assert parsed.cost_eur_per_mwh_throughput * ac_energy_per_cycle == pytest.approx(expected["cycle_cost_eur"])
+    assert parsed.cost_eur_per_mwh_throughput * ac_energy_per_cycle * cycles == pytest.approx(expected["replacement_cost_eur"])
+    # Changing battery size scales replacement expense and lifetime throughput
+    # equally, leaving the marginal EUR/MWh wear coefficient unchanged.
+    config["battery"]["capacity_mwh"] *= expected["resizing_factor"]
+    larger = degradation_settings_from_config(config)
+    assert larger.replacement_cost_eur == pytest.approx(expected["replacement_cost_eur"] * expected["resizing_factor"])
+    assert larger.cost_eur_per_mwh_throughput == pytest.approx(parsed.cost_eur_per_mwh_throughput)
+
+
+@pytest.mark.parametrize("case", case_config("replacement_invalid"))
+def test_invalid_replacement_lifetime_inputs_rejected(case):
+    config = throughput_cost_config()
+    config["degradation"][case["group"]][case["key"]] = case["value"]
+    with pytest.raises(ValueError):
+        degradation_settings_from_config(config)
+
+
+def test_derived_and_manual_wear_costs_cannot_be_double_counted():
+    config = throughput_cost_config()
+    config["degradation"]["cost_eur_per_mwh_throughput"] = case_config("replacement_expected")["conflicting_direct_cost_eur_per_mwh"]
+    with pytest.raises(ValueError, match="not both"):
+        degradation_settings_from_config(config)

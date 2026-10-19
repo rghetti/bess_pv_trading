@@ -110,9 +110,9 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         raise ValueError("Execution starts outside battery energy bounds")
     duration = (end - start).total_seconds() / 3600
     retained = state.energy_mwh * (1 - battery.self_discharge_per_hour) ** duration
-    charge = max(0.0, min(requested_charge_mw, battery.max_charge_mw,
+    charge = max(0.0, min(requested_charge_mw, battery.max_power_mw,
         max(0.0, battery.maximum_energy - retained) / (duration * battery.eta_charge)))
-    discharge = max(0.0, min(requested_discharge_mw, battery.max_discharge_mw,
+    discharge = max(0.0, min(requested_discharge_mw, battery.max_power_mw,
         max(0.0, retained - battery.energy_min_mwh) * battery.eta_discharge / duration))
     if charge > 1e-8 and discharge > 1e-8:
         raise ValueError("Execution cannot charge and discharge simultaneously")

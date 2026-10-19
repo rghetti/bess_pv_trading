@@ -7,6 +7,8 @@ import pytest
 from bess_pv_trading.domain import AcceptedTrade, BatteryParameters, DegradationSettings, MarketState, SolverSettings
 from bess_pv_trading.optimization import build_model, solve_model, validate_solution
 from test_optimization_contracts import example_inputs
+from battery_case_config import case_config, configured_battery
+from bess_pv_trading.optimization.degradation import degradation_settings_from_config
 
 pytestmark = pytest.mark.solver
 
@@ -29,6 +31,27 @@ def solve(inputs):
     return result
 
 
+def configured_solver_inputs(name):
+    """Use the configured reference battery, prices and independently tabulated answer."""
+    case = case_config("solver_cases")[name]
+    inputs = example_inputs(prices=case["prices"], pv=np.atleast_2d(case["pv_ac_mw"]),
+                            hours=case.get("interval_hours"))
+    inputs = replace(inputs, plant=replace(inputs.plant, battery=configured_battery(case["battery"])),
+        state=replace(inputs.state, energy_mwh=case["initial_energy_mwh"]),
+        terminal_target_mwh=case["terminal_target_mwh"],
+        imbalance_penalty_eur_per_mwh=case["imbalance_penalty_eur_per_mwh"],
+        planned_delivery_balance_resolution_minutes=case.get("planned_delivery_balance_resolution_minutes"),
+        native_interval_minutes_by_auction=case.get("native_interval_minutes_by_auction", {}),
+        degradation=degradation_settings_from_config(case["degradation"]))
+    return inputs, case["expected"]
+
+
+def assert_configured_physics(result, expected):
+    for field in ("charge_mw", "discharge_mw", "energy_mwh"):
+        np.testing.assert_allclose(result.arrays[field][0], expected[field], atol=1e-9)
+    assert result.objective_eur == pytest.approx(expected["objective_eur"])
+
+
 def test_direct_pv_revenue_has_no_bess_converter_loss():
     result = solve(example_inputs())
     assert result.objective_eur == pytest.approx(100)
@@ -36,19 +59,49 @@ def test_direct_pv_revenue_has_no_bess_converter_loss():
 
 
 def test_grid_charge_discharge_applies_efficiency_once_each_direction():
-    inputs = example_inputs(prices=(0, 100), pv=np.zeros((1, 2)), battery=BatteryParameters(1, 1, 1))
+    inputs, expected = configured_solver_inputs("grid_cycle")
     result = solve(inputs)
-    assert result.arrays["charge_mw"][0, 0] == pytest.approx(1)
-    assert result.arrays["energy_mwh"][0, 1] == pytest.approx(0.97)
-    assert result.arrays["discharge_mw"][0, 1] == pytest.approx(0.9409)
-    assert result.objective_eur == pytest.approx(94.09)
+    assert_configured_physics(result, expected)
+
+
+def test_null_terminal_target_omits_constraint_and_allows_initial_energy_sale():
+    inputs, expected = configured_solver_inputs("initial_energy_sale")
+    built = build_model(inputs)
+    try:
+        assert not any(c.ConstrName.startswith("terminal_energy[") for c in built.model.getConstrs())
+    finally:
+        built.model.dispose()
+    result = solve(inputs)
+    assert_configured_physics(result, expected)
+    np.testing.assert_allclose(result.arrays["grid_mw"][0], expected["discharge_mw"])
+
+
+def test_free_imbalances_remove_battery_value_despite_free_terminal_soc():
+    inputs, expected = configured_solver_inputs("free_imbalances")
+    result = solve(inputs)
+    assert_configured_physics(result, expected)
+
+
+def test_planned_delivery_restores_physical_battery_value_without_imbalance_cost():
+    inputs, expected = configured_solver_inputs("backed_delivery")
+    result = solve(inputs)
+    assert_configured_physics(result, expected)
+    np.testing.assert_allclose(result.arrays["grid_mw"][0], result.arrays["net_position_mwh"][0] / inputs.grid.delta_hours)
+
+
+def test_native_hour_balance_preserves_quarter_hour_pv_shape():
+    inputs, expected = configured_solver_inputs("hourly_pv_profile")
+    result = solve(inputs)
+    assert_configured_physics(result, expected)
+    np.testing.assert_allclose(result.arrays["grid_mw"][0], expected["grid_mw"])
+    np.testing.assert_allclose(result.arrays["imbalance_mwh"][0], expected["imbalance_mwh"])
 
 
 def test_negative_price_charge_and_curtailment():
     curtailed = solve(example_inputs(prices=(-100,)))
     assert curtailed.arrays["curtailment_mw"][0, 0] == pytest.approx(1)
     assert curtailed.objective_eur == pytest.approx(0)
-    inputs = example_inputs(prices=(-20,), pv=np.zeros((1, 1)), battery=BatteryParameters(1, 1, 1))
+    inputs = example_inputs(prices=(-20,), pv=np.zeros((1, 1)), battery=configured_battery())
     charged = solve(replace(inputs, terminal_target_mwh=0.97))
     assert charged.objective_eur == pytest.approx(20)
 
@@ -73,17 +126,17 @@ def test_unequal_probabilities_and_identical_leaf_split_invariance():
 
 
 def test_shared_physical_controls_do_not_see_latent_future_price_path():
-    inputs = example_inputs(prices=((0, 100), (100, 0)), probabilities=(0.5, 0.5), pv=np.zeros((2, 2)), battery=BatteryParameters(1, 1, 1))
+    inputs = example_inputs(prices=((0, 100), (100, 0)), probabilities=(0.5, 0.5), pv=np.zeros((2, 2)), battery=configured_battery())
     result = solve(inputs)
     np.testing.assert_allclose(result.arrays["charge_mw"][0], result.arrays["charge_mw"][1])
     np.testing.assert_allclose(result.arrays["discharge_mw"][0], result.arrays["discharge_mw"][1])
     assert result.objective_eur == pytest.approx(0)
-    clairvoyant = solve(example_inputs(prices=(0, 100), pv=np.zeros((1, 2)), battery=BatteryParameters(1, 1, 1)))
+    clairvoyant = solve(example_inputs(prices=(0, 100), pv=np.zeros((1, 2)), battery=configured_battery()))
     assert 0.5 * clairvoyant.objective_eur > result.objective_eur
 
 
 def test_shared_node_variables_are_created_once_including_modes():
-    inputs = example_inputs(prices=((0, 100), (100, 0)), pv=np.zeros((2, 2)), battery=BatteryParameters(1, 1, 1))
+    inputs = example_inputs(prices=((0, 100), (100, 0)), pv=np.zeros((2, 2)), battery=configured_battery())
     built = build_model(inputs)
     assert len(built.variables["charge"]) == 2
     assert len(built.variables["mode"]) == 2
@@ -145,7 +198,7 @@ def test_time_limit_without_incumbent_has_no_arrays():
 
 
 def test_throughput_aging_discourages_uneconomic_battery_cycle():
-    inputs = example_inputs(prices=(0, 10), pv=np.zeros((1, 2)), battery=BatteryParameters(1, 1, 1))
+    inputs = example_inputs(prices=(0, 10), pv=np.zeros((1, 2)), battery=configured_battery())
     result = solve(replace(inputs, degradation=DegradationSettings(20)))
     assert result.objective_eur == pytest.approx(0)
     assert result.components["battery_degradation_cost"][0] == pytest.approx(0)
@@ -156,7 +209,7 @@ def test_export_limit_curtails_pv_and_full_battery_cannot_overcharge():
     restricted = solve(replace(inputs, plant=replace(inputs.plant, poi_export_mw=0.2)))
     assert restricted.arrays["curtailment_mw"][0, 0] == pytest.approx(0.8)
     assert restricted.objective_eur == pytest.approx(20)
-    inputs = example_inputs(prices=(-100,), pv=np.zeros((1, 1)), battery=BatteryParameters(1, 1, 1))
+    inputs = example_inputs(prices=(-100,), pv=np.zeros((1, 1)), battery=configured_battery())
     full = replace(inputs, state=replace(inputs.state, energy_mwh=1), terminal_target_mwh=1)
     result = solve(full)
     assert result.arrays["charge_mw"].sum() == pytest.approx(0)
@@ -164,11 +217,11 @@ def test_export_limit_curtails_pv_and_full_battery_cannot_overcharge():
 
 
 def test_initial_energy_discharge_and_import_fee_use_ac_quantities():
-    inputs = example_inputs(prices=(100,), pv=np.zeros((1, 1)), battery=BatteryParameters(1, 1, 1))
+    inputs = example_inputs(prices=(100,), pv=np.zeros((1, 1)), battery=configured_battery())
     result = solve(replace(inputs, state=replace(inputs.state, energy_mwh=1)))
     assert result.arrays["discharge_mw"][0, 0] == pytest.approx(0.97)
     assert result.objective_eur == pytest.approx(97)
-    inputs = example_inputs(prices=(-20,), pv=np.zeros((1, 1)), battery=BatteryParameters(1, 1, 1))
+    inputs = example_inputs(prices=(-20,), pv=np.zeros((1, 1)), battery=configured_battery())
     charged = solve(replace(inputs, terminal_target_mwh=0.97, grid_import_fee_eur_per_mwh=3))
     assert charged.components["other_costs"][0] == pytest.approx(3)
     assert charged.objective_eur == pytest.approx(17)

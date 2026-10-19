@@ -5,37 +5,66 @@ from datetime import datetime, timedelta, timezone
 import numpy as np
 import pytest
 
-from bess_pv_trading.domain import AcceptedTrade, BatteryParameters, DegradationSettings, DeliveryGrid, InformationNode, InformationTree, MarketState, OptimizationInput, OptimizationResult, PhysicalState, PlantParameters, ScenarioBundle, SolverSettings
+from bess_pv_trading.domain import AcceptedTrade, BatteryParameters, DegradationSettings, DeliveryGrid, InformationNode, InformationTree, MarketState, OptimizationInput, OptimizationResult, PhysicalState, PlantParameters, ScenarioBundle, SolverSettings, battery_parameters_from_config
 from bess_pv_trading.optimization import classify_status, evaluate_components, validate_solution
+from bess_pv_trading.config import load_config
+from pathlib import Path
+from battery_case_config import battery_config, case_config, configured_battery
 
 
-def example_inputs(prices=(100.0,), pv=None, probabilities=None, battery=None, hours=1.0, auctions=None):
+def example_inputs(prices=None, pv=None, probabilities=None, battery=None, hours=None, auctions=None):
     """Hand-built shared root with unresolved outcome leaves, not path revelation."""
-    values = np.atleast_2d(np.array(prices, dtype=float))
+    defaults = case_config("optimizer_defaults")
+    values = np.atleast_2d(np.array(defaults["prices"] if prices is None else prices, dtype=float))
+    hours = defaults["interval_hours"] if hours is None else hours
     if pv is None:
-        pv = np.ones_like(values)
+        pv = np.full_like(values, defaults["pv_ac_mw"])
     count, intervals = values.shape
     probabilities = np.array(probabilities if probabilities is not None else np.full(count, 1 / count))
-    start = datetime(2026, 1, 2, tzinfo=timezone.utc)
+    start = datetime.fromisoformat(defaults["start"])
     starts = tuple(start + timedelta(hours=t * hours) for t in range(intervals))
     ends = tuple(value + timedelta(hours=hours) for value in starts)
     grid = DeliveryGrid(tuple(f"t{t}" for t in range(intervals)), starts, ends)
-    root = InformationNode("root", None, start - timedelta(hours=12))
+    root = InformationNode("root", None, start - timedelta(hours=defaults["root_lead_hours"]))
     leaves = tuple(InformationNode(f"leaf{s}", "root", ends[-1], float(probabilities[s])) for s in range(count))
     auction_prices = auctions or {"DA": values}
     scenarios = ScenarioBundle(tuple(f"s{s}" for s in range(count)), probabilities, np.asarray(pv, dtype=float), auction_prices, np.zeros_like(values))
     tree = InformationTree((root,) + leaves, tuple(node.node_id for node in leaves), {auction: ("root",) * count for auction in auction_prices}, tuple(("root",) * intervals for _ in range(count)))
-    plant = PlantParameters(1, 2, 2, battery or BatteryParameters(0, 0, 0))
-    return OptimizationInput(grid, plant, PhysicalState(start, 0), MarketState(), scenarios, tree, {auction: (True,) * intervals for auction in auction_prices}, 2, 2, 1000, terminal_target_mwh=0)
+    plant = PlantParameters(defaults["farm_id"], defaults["poi_import_mw"], defaults["poi_export_mw"],
+                            battery or configured_battery("no_bess"))
+    return OptimizationInput(grid, plant, PhysicalState(start, defaults["initial_energy_mwh"]), MarketState(),
+        scenarios, tree, {auction: (True,) * intervals for auction in auction_prices},
+        defaults["trade_limit_mwh"], defaults["position_limit_mwh"],
+        defaults["imbalance_penalty_eur_per_mwh"], terminal_target_mwh=defaults["terminal_target_mwh"])
 
 
 def test_ac_converter_efficiency_and_combined_convention():
-    battery = BatteryParameters(1, 1, 1)
-    assert battery.eta_charge * battery.eta_discharge == pytest.approx(0.9409)
-    combined = BatteryParameters(1, 1, 1, efficiency_convention="combined", combined_charge_efficiency=0.9, combined_discharge_efficiency=0.95)
-    assert combined.eta_charge == 0.9
+    battery = configured_battery()
+    values = battery_config("unit")
+    assert battery.eta_charge * battery.eta_discharge == pytest.approx(
+        values["combined_charge_efficiency"] * values["combined_discharge_efficiency"])
+    values = battery_config("asymmetric_efficiencies")
+    combined = battery_parameters_from_config(values)
+    assert combined.eta_charge == values["combined_charge_efficiency"]
+    values["efficiency_convention"] = "converter_and_cell"
     with pytest.raises(ValueError, match="double count"):
-        BatteryParameters(1, 1, 1, combined_charge_efficiency=0.9)
+        battery_parameters_from_config(values)
+
+
+def test_configured_soc_box_scales_when_nominal_capacity_changes():
+    config = load_config(Path(__file__).resolve().parents[2] /
+        "configs/full_experiments/gme_oracle_2025-01-01_farm910_throughput.yaml")["battery"]
+    cases = case_config("resizing")
+    for capacity in cases["capacities_mwh"]:
+        config["capacity_mwh"] = capacity
+        battery = battery_parameters_from_config(config)
+        assert battery.max_power_mw == pytest.approx(config["max_power_mw"])
+        assert battery.energy_min_mwh / capacity == pytest.approx(config["soc_min_percent"] / 100)
+        assert battery.maximum_energy / capacity == pytest.approx(config["soc_max_percent"] / 100)
+    invalid_reference = battery_config("soc_box")
+    for overrides in cases["invalid_overrides"]:
+        with pytest.raises(ValueError):
+            battery_parameters_from_config({**invalid_reference, **overrides})
 
 
 def test_grid_requires_aware_contiguous_boundaries():
@@ -61,7 +90,7 @@ def test_ledger_cashflow_and_additive_position_without_energy_losses():
 
 
 def test_state_timestamp_and_terminal_reachability_are_checked():
-    inputs = example_inputs(battery=BatteryParameters(1, 0.1, 0.1))
+    inputs = example_inputs(battery=configured_battery("slow"))
     with pytest.raises(ValueError, match="timestamp"):
         replace(inputs, state=replace(inputs.state, timestamp=inputs.state.timestamp - timedelta(hours=1)))
     with pytest.raises(ValueError, match="unreachable"):
@@ -132,7 +161,7 @@ def test_numerical_validator_detects_independent_tampering_and_signed_settlement
 
 
 def test_aging_accounting_is_carried_without_reset_or_double_booking():
-    inputs = example_inputs(battery=BatteryParameters(1, 1, 1))
+    inputs = example_inputs(battery=configured_battery())
     inputs = replace(inputs, state=replace(inputs.state, cumulative_throughput_mwh=12, cumulative_degradation_eur=30), degradation=DegradationSettings(2))
     arrays = {"charge_mw": np.array([[0.5]]), "discharge_mw": np.zeros((1, 1)), "grid_mw": np.array([[-0.5]]), "net_position_mwh": np.array([[-0.5]])}
     values = evaluate_components(inputs, arrays, {("DA", "root", "t0"): -0.5})

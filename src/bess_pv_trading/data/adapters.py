@@ -384,6 +384,10 @@ def validate_source_config(config: dict[str, Any]) -> dict[str, Any]:
             value = float(output.get("pv_output_efficiency", np.nan))
             if not np.isfinite(value) or not 0 < value <= 1 or not output.get("assumption_status"):
                 raise ValueError("PV-output efficiency requires a fraction and assumption status")
+        transformer = float(output.get("transformer_efficiency", np.nan))
+        if (not np.isfinite(transformer) or not 0 < transformer <= 1
+                or not output.get("transformer_assumption_status")):
+            raise ValueError("PV transformer efficiency requires 0<eta<=1 and assumption provenance")
     return {"source_configured": True, "policy_version": policy.get("version", "requested-v1"), "source_timezone": "UTC", "measured_power_basis": "AC", "review_mode": config.get("review", {}).get("mode", "exploratory")}
 
 

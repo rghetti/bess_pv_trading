@@ -1,6 +1,6 @@
 # Initial pre-DA point-price integrated planning only. No historical replay.
 # Supply actual prepared forecasts and explicitly configured equipment first.
-include: italy_nord.example.yaml
+include: ../price_experiments/italy_nord.example.yaml
 optimization:
   pv_forecast_path: null
   price_forecast_path: null
@@ -26,15 +26,12 @@ plant:
   assumption_status: user_must_supply_confirmed_or_explicit_study_equipment
 battery:
   capacity_mwh: null
-  max_charge_mw: null
-  max_discharge_mw: null
-  energy_min_mwh: null
-  energy_max_mwh: null
-  converter_charge_efficiency: 0.97
-  converter_discharge_efficiency: 0.97
-  cell_charge_efficiency: 1.0
-  cell_discharge_efficiency: 1.0
-  efficiency_convention: converter_and_cell
+  max_power_mw: null
+  soc_min_percent: null
+  soc_max_percent: null
+  efficiency_convention: combined
+  combined_charge_efficiency: 0.97
+  combined_discharge_efficiency: 0.97
 state:
   initial_energy_mwh: null
   terminal_target_mwh: null

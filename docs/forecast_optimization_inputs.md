@@ -4,7 +4,7 @@
 CSV/Parquet tables and saved JSON artifacts into the existing `OptimizationInput`.
 `build_forecast_inputs(config, pv_forecasts, auction_inputs, known_results=None,
 accepted_trades=None)` accepts the same tables and loaded model objects in memory.
-Use `configs/stochastic_prepared.example.yaml`, fill its explicit equipment,
+Use `configs/full_experiments/stochastic_prepared.example.yaml`, fill its explicit equipment,
 physical-state, trading and data fields, then run:
 
 ```bash
@@ -36,7 +36,19 @@ point-price study assumption. Existing `plant`, `battery`, `state`, `trading`,
 `degradation`, `solver` and `outputs` sections apply. State timestamp must equal
 the exact residual boundary. A later solve carries actual stored energy,
 cumulative aging and Xu segment history when applicable. Market calendar
-validity remains bounded; this adapter introduces no hourly DA dispatch mapping.
+validity remains bounded. For delivery dates before 1 October 2025, the MILP
+ties battery charge/discharge power and DA trade allocation across the represented
+15-minute intervals in each Europe/Rome clock hour. Repeated autumn clock hours
+remain separate via their DST fold. Battery energy still evolves every 15 minutes,
+and PV output, curtailment and net grid injection may vary by quarter-hour. The
+equal DA allocations are quarter-hour energy shares of one hourly product; the
+historical hourly DA trade limit is split across its four shares. DA price
+coefficients for those four intervals must be identical in every scenario.
+
+This is an optimizer constraint, not a price-data conversion: prepared DA price
+inputs still require the quarter-hour optimizer grid. Native hourly GME/ENTSO-E
+price rows must be explicitly mapped into equal quarter-hour price coefficients
+before this adapter can consume them; raw hourly labels are not expanded here.
 
 Each PV member has one row per native delivery interval:
 

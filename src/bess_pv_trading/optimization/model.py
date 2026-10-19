@@ -9,6 +9,7 @@ import numpy as np
 
 from ..domain import BuiltModel, OptimizationInput, OptimizationResult, SolverSettings
 from .degradation import build_xu_degradation
+from .market_regime import configured_auction_product_groups, configured_dispatch_groups, market_product_groups
 
 
 class SolverUnavailableError(RuntimeError):
@@ -25,11 +26,11 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
     for t in range(intervals):
         for node in sorted({owners[s][t] for s in range(scenario_count)}):
             suffix = f"f{inputs.plant.farm_id},n{node},t{inputs.grid.interval_ids[t]}"
-            charge[t, node] = model.addVar(ub=battery.max_charge_mw, name=f"charge[{suffix}]")
-            discharge[t, node] = model.addVar(ub=battery.max_discharge_mw, name=f"discharge[{suffix}]")
+            charge[t, node] = model.addVar(ub=battery.max_power_mw, name=f"charge[{suffix}]")
+            discharge[t, node] = model.addVar(ub=battery.max_power_mw, name=f"discharge[{suffix}]")
             mode[t, node] = model.addVar(vtype=gp.GRB.BINARY, name=f"charge_mode[{suffix}]")
-            model.addConstr(charge[t, node] <= battery.max_charge_mw * mode[t, node], name=f"charge_mode_limit[{suffix}]")
-            model.addConstr(discharge[t, node] <= battery.max_discharge_mw * (1 - mode[t, node]), name=f"discharge_mode_limit[{suffix}]")
+            model.addConstr(charge[t, node] <= battery.max_power_mw * mode[t, node], name=f"charge_mode_limit[{suffix}]")
+            model.addConstr(discharge[t, node] <= battery.max_power_mw * (1 - mode[t, node]), name=f"discharge_mode_limit[{suffix}]")
         for node in sorted({curtailment_owners[s][t] for s in range(scenario_count)}):
             available = min(inputs.scenarios.pv_ac_mw[s, t] for s in range(scenario_count) if curtailment_owners[s][t] == node)
             curtailment[t, node] = model.addVar(ub=float(available), name=f"curtailment[n{node},t{inputs.grid.interval_ids[t]}]")
@@ -56,10 +57,18 @@ def _trading(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
     trades, positions, auction_revenue = {}, {}, {}
     auction_order = sorted(inputs.auction_eligibility, key=lambda a: ({"DA": 0, "IDA1": 1, "IDA2": 2, "IDA3": 3}.get(a, 4), a))
     for auction in auction_order:
+        groups = configured_auction_product_groups(inputs.grid, auction,
+            inputs.native_interval_minutes_by_auction.get(auction), inputs.market_timezone)
+        product_size = {t: len(group) for group in groups for t in group}
         for node in sorted(set(inputs.tree.bid_nodes[auction])):
             for t, eligible in enumerate(inputs.auction_eligibility[auction]):
                 if eligible:
-                    trades[auction, node, t] = model.addVar(lb=-inputs.trade_limit_mwh, ub=inputs.trade_limit_mwh, name=f"trade[{auction},n{node},t{inputs.grid.interval_ids[t]}]")
+                    limit = inputs.trade_limit_mwh
+                    if t in product_size and product_size[t] > 1:
+                        # Equal subinterval allocations represent one native
+                        # market product and retain its configured energy cap.
+                        limit /= product_size[t]
+                    trades[auction, node, t] = model.addVar(lb=-limit, ub=limit, name=f"trade[{auction},n{node},t{inputs.grid.interval_ids[t]}]")
     accepted = inputs.market.positions(inputs.grid)
     if inputs.pending_position_mwh is not None:
         accepted = accepted + np.asarray(inputs.pending_position_mwh)
@@ -77,6 +86,52 @@ def _trading(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
             positions[s, t] = model.addVar(lb=-inputs.position_limit_mwh, ub=inputs.position_limit_mwh, name=f"net_position[s{s},t{t}]")
             model.addConstr(positions[s, t] == expression, name=f"position_sum[s{s},t{t}]")
     return {"trades": trades, "positions": positions, "auction_revenue": auction_revenue}
+
+
+def _historical_hourly_equalities(model: Any, inputs: OptimizationInput,
+                                  variables: dict[str, Any]) -> dict[str, int]:
+    """Tie dispatch and hourly-market quantities at configured product resolution."""
+    groups = configured_dispatch_groups(inputs.grid, inputs.decision_resolution_minutes,
+                                        inputs.market_timezone)
+    count = len(inputs.scenarios.scenario_ids)
+    controls = inputs.tree.control_nodes
+    trades = variables.get("trades", {})
+    control_equalities = 0
+    trade_equalities: dict[str, int] = {}
+    for group_index, group in enumerate(groups):
+        for left, right in zip(group, group[1:]):
+            control_pairs = {(controls[s][left], controls[s][right]) for s in range(count)}
+            for left_node, right_node in sorted(control_pairs):
+                if left_node == right_node:
+                    continue
+                for name, label in (("charge", "charge"), ("discharge", "discharge"), ("mode", "mode")):
+                    model.addConstr(variables[name][left, left_node] == variables[name][right, right_node],
+                                    name=f"historical_hourly_{label}_g{group_index}_t{left}_{right}_n{left_node}_{right_node}")
+                    control_equalities += 1
+
+    for auction in inputs.auction_eligibility:
+        eligibility = inputs.auction_eligibility[auction]
+        bid_nodes = inputs.tree.bid_nodes[auction]
+        prices = inputs.scenarios.auction_prices_eur_per_mwh[auction]
+        for product_index, product_group in enumerate(
+                configured_auction_product_groups(inputs.grid, auction,
+                    inputs.native_interval_minutes_by_auction.get(auction), inputs.market_timezone)):
+            if len(product_group) <= 1 or not all(eligibility[index] for index in product_group):
+                continue
+            if any(not np.allclose(prices[:, product_group[0]], prices[:, index],
+                                   rtol=0, atol=1e-9) for index in product_group[1:]):
+                raise ValueError(f"Native {auction} prices must be equal across represented subintervals")
+            for left, right in zip(product_group, product_group[1:]):
+                for owner in sorted(set(bid_nodes)):
+                    left_key, right_key = (auction, owner, left), (auction, owner, right)
+                    if left_key not in trades or right_key not in trades:
+                        continue
+                    model.addConstr(trades[left_key] == trades[right_key],
+                                    name=f"native_product_{auction}_trade_g{product_index}_t{left}_{right}_n{owner}")
+                    trade_equalities[auction] = trade_equalities.get(auction, 0) + 1
+    return {"hour_groups": len(groups), "dispatch_equalities": control_equalities,
+            "da_trade_equalities": trade_equalities.get("DA", 0),
+            "auction_trade_equalities": trade_equalities}
 
 
 def _settlement(model: Any, inputs: OptimizationInput, variables: dict[str, Any], gp: Any) -> dict[str, Any]:
@@ -134,6 +189,17 @@ def build_model(inputs: OptimizationInput) -> BuiltModel:
     variables = _physical(model, inputs, gp)
     commercial = _trading(model, inputs, gp)
     variables.update({key: commercial[key] for key in ("trades", "positions")})
+    variables["historical_hourly_market_constraints"] = _historical_hourly_equalities(model, inputs, variables)
+    # Contracts must be backed by planned net AC energy when this policy is
+    # enabled. Native-hour balancing preserves natural quarter-hour PV variation.
+    resolution = inputs.planned_delivery_balance_resolution_minutes
+    if resolution is not None:
+        groups = market_product_groups(inputs.grid, resolution, inputs.market_timezone)
+        for s in range(len(inputs.scenarios.scenario_ids)):
+            for group_index, group in enumerate(groups):
+                model.addConstr(gp.quicksum(variables["grid"][s, t] * inputs.grid.delta_hours[t]
+                    - variables["positions"][s, t] for t in group) == 0,
+                    name=f"planned_delivery_balance[s{s},g{group_index}]")
     settlement = _settlement(model, inputs, variables, gp)
     variables.update({key: settlement[key] for key in ("imbalance_positive", "imbalance_negative", "imbalance_sign")})
     components = {"auction_revenue": commercial["auction_revenue"], "imbalance_cashflow": settlement["imbalance_cashflow"], "imbalance_penalty": settlement["imbalance_penalty"], "battery_degradation_cost": _degradation(model, inputs, variables, gp), "other_costs": settlement["other_costs"]}
@@ -181,6 +247,9 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     diagnostics["relative_mip_gap_tolerance"] = settings.mip_gap
     diagnostics["absolute_mip_gap_configured"] = False
     diagnostics["degradation_mode"] = inputs.degradation.mode
+    diagnostics["historical_hourly_market_constraints"] = built.variables.get(
+        "historical_hourly_market_constraints", {"hour_groups": 0, "dispatch_equalities": 0,
+            "da_trade_equalities": 0, "auction_trade_equalities": {}})
     for attribute, key in (("ObjBound", "objective_bound_eur"), ("MIPGap", "mip_gap"), ("MaxVio", "max_violation")):
         try:
             value = float(getattr(model, attribute))

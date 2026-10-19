@@ -9,7 +9,7 @@ schema correction below; the agent did not access the user's credentials.
 Inspect the five planned requests without credentials or network access:
 
 ```bash
-python -m bess_pv_trading download-data --config configs/terna_api.yaml --dry-run
+python -m bess_pv_trading download-data --config configs/api_experiments/terna_api.yaml --dry-run
 ```
 
 Run the same command without `--dry-run` after setting the credential environment
@@ -81,7 +81,7 @@ leave an authorization-format ambiguity: the general request guide shows
 `Authorization: <token>`. Compare those documented formats explicitly:
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading diagnose-terna --config configs/terna_api.yaml --interactive
+PYTHONPATH=src python -m bess_pv_trading diagnose-terna --config configs/api_experiments/terna_api.yaml --interactive
 ```
 
 This performs one token exchange and one GET per format on the first configured
@@ -113,7 +113,7 @@ credentials or downloading it again; `--refresh-cache` explicitly fetches a new
 response. Earlier successful daily caches remain intact. This allows correction
 against the observed provider schema when it differs from the public examples.
 
-`configs/terna_wind_check.yaml` isolates the configured wind request with two-second
+`configs/api_experiments/terna_wind_check.yaml` isolates the configured wind request with two-second
 minimum pacing and one attempt. It uses the same daily cache identity as the
 provider smoke configuration. On HTTP failures, `provider_hint` is a fixed,
 heuristic category derived in memory from the provider error (rate/quota,

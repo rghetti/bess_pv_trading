@@ -35,7 +35,7 @@ Use a `src/` package and commands runnable without installation, for example:
 ```bash
 cd /home/rghetti/bess_pv_trading
 # Use the already active bess environment, or activate it normally.
-PYTHONPATH=src python -m bess_pv_trading run-synthetic --config configs/synthetic_small.yaml
+PYTHONPATH=src python -m bess_pv_trading run-synthetic --config configs/full_experiments/synthetic_small.yaml
 ```
 
 Use type hints, clear names, concise docstrings, and comments above important mathematical blocks. Keep assumptions and numerical parameters in validated YAML. Prefer vectorization and lazy reads; do not overengineer a large framework of empty classes.

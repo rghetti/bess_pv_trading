@@ -54,6 +54,14 @@ def _require(settings: Mapping[str, Any], names: tuple[str, ...], label: str) ->
         raise PreparedInputError(f"Missing explicitly configured {label}: {', '.join(missing)}")
 
 
+def _terminal_target(settings: Mapping[str, Any]) -> float | None:
+    """Require an explicit target, with YAML null selecting unconstrained SOC."""
+    if "terminal_target_mwh" not in settings:
+        raise PreparedInputError("Missing explicitly configured state.terminal_target_mwh (use null to disable)")
+    target = settings["terminal_target_mwh"]
+    return None if target is None else float(target)
+
+
 def _boolean(series: pd.Series, label: str) -> np.ndarray:
     values = series.astype(str).str.lower().str.strip()
     if not values.isin(["true", "false", "1", "0"]).all():
@@ -81,9 +89,10 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
         raise PreparedInputError("Prepared planning supports only an initial cutoff no later than the DA submission; historical replay is separate")
     plant_config, battery_config = config.get("plant", {}), config.get("battery", {})
     _require(plant_config, ("farm_id", "poi_import_mw", "poi_export_mw"), "plant equipment")
-    _require(battery_config, ("capacity_mwh", "max_charge_mw", "max_discharge_mw"), "battery equipment")
+    _require(battery_config, ("capacity_mwh", "max_power_mw"), "battery equipment")
     try:
-        battery = BatteryParameters(**battery_config)
+        from ..domain import battery_parameters_from_config
+        battery = battery_parameters_from_config(battery_config)
         plant = PlantParameters(int(plant_config["farm_id"]), float(plant_config["poi_import_mw"]),
                                 float(plant_config["poi_export_mw"]), battery)
     except (TypeError, ValueError) as error:
@@ -207,7 +216,7 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
         "ida3_ineligible_coefficients": "copied predecessor placeholders; no morning IDA3 products are tradable"}
     scenarios = replace(scenarios, origin="supplied point-price / deterministic-PV", provenance=provenance)
     state_config, trading, degradation = config.get("state", {}), config.get("trading", {}), config.get("degradation", {})
-    _require(state_config, ("initial_energy_mwh", "origin", "terminal_target_mwh"), "delivery-boundary state")
+    _require(state_config, ("initial_energy_mwh", "origin"), "delivery-boundary state")
     if state_config["origin"] != "known_delivery_start_assumption":
         raise PreparedInputError("Initial pre-delivery planning requires an explicit known_delivery_start_assumption")
     if state_config.get("timestamp") and _utc(state_config["timestamp"], "state.timestamp") != pd.Timestamp(grid.starts[0]):
@@ -219,6 +228,7 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
         PhysicalState(grid.starts[0], float(state_config["initial_energy_mwh"]), origin=state_config["origin"],
                       cycle_segment_energy_mwh=state_config.get("cycle_segment_energy_mwh")),
         MarketState(), scenarios, tree, masks, float(trading["trade_limit_mwh"]), float(trading["position_limit_mwh"]),
-        float(trading["imbalance_penalty_eur_per_mwh"]), float(state_config["terminal_target_mwh"]),
+        float(trading["imbalance_penalty_eur_per_mwh"]), _terminal_target(state_config),
         degradation_settings_from_config(config),
-        float(trading["grid_import_fee_eur_per_mwh"]), imbalance_limit_mwh=trading.get("imbalance_limit_mwh"))
+        float(trading["grid_import_fee_eur_per_mwh"]), imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
+        planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"))

@@ -1,5 +1,6 @@
 """Realized-price benchmark information, PV members and physical optimization."""
 from dataclasses import replace
+from battery_case_config import configured_battery
 
 import numpy as np
 import pandas as pd
@@ -123,7 +124,7 @@ def test_ida3_requires_actual_afternoon_products_only_with_audited_untradable_pl
     assert bundle.provenance["auction_eligible_product_indices"]["IDA3"] == list(range(48, 96))
     assert bundle.provenance["untradable_price_placeholders"]["IDA3"]["product_indices"] == list(range(48))
     assert "no observed labels" in bundle.provenance["untradable_price_placeholders"]["IDA3"]["policy"]
-    inputs = OptimizationInput(grid, PlantParameters(1, 0., 1., BatteryParameters(0., 0., 0.)),
+    inputs = OptimizationInput(grid, PlantParameters(1, 0., 1., configured_battery("no_bess")),
         PhysicalState(grid.starts[0], 0.), MarketState(), bundle, tree,
         {"IDA3": tuple(index in event.eligible_intervals for index in range(96))}, .25, .25, 1000., 0.)
     assert not any(inputs.auction_eligibility["IDA3"][:48])
@@ -179,7 +180,7 @@ def test_oracle_upper_bound_uses_same_constraints_and_actual_price_evaluation(pv
     except gurobi.GurobiError as error:
         pytest.skip(f"Gurobi license unavailable: {error}")
     grid, _, bundle, tree = oracle_fixture(pv)
-    plant = PlantParameters(1, 0., 1., BatteryParameters(0., 0., 0.))
+    plant = PlantParameters(1, 0., 1., configured_battery("no_bess"))
     inputs = OptimizationInput(grid, plant, PhysicalState(grid.starts[0], 0.), MarketState(),
         bundle, tree, {"DA": (True, True)}, .25, .25, 1000., 0.)
     settings = SolverSettings()

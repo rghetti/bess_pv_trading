@@ -26,7 +26,7 @@ Inspect the data structure if needed; sometimes the data is flattened on a singl
   to zero and then recovers (most likely due to faults)
 - The total power field is the total installed capacity (in kW)
 - Tracking type id corresponds to: 0=still; 1=tracking monoaxial; 3=tracking monoaxial bifacial, and needs to be taken into account when using the forecasts
-- Power and total power are at the DC side of the current, we suppose there is an inverter with eff. 97%
+- Power and total power are at the AC side of the plant
 - Some metadata isn't available like the grid interconnection limits etc so we need to think of reasonable values
 related to the size of the farm in question.
 - We need to fetch the data from entso e and Terna for the prices of the auctions and imbalances

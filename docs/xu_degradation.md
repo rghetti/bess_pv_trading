@@ -103,7 +103,7 @@ and final-state JSON expose the carried segment vector for inspection.
 
 ## Configuration and commands
 
-An illustrative configuration is supplied at `configs/synthetic_xu.yaml`:
+An illustrative configuration is supplied at `configs/full_experiments/synthetic_xu.yaml`:
 
 ```yaml
 degradation:
@@ -127,8 +127,8 @@ by the implemented paper equations.
 From the repository using the existing `bess` environment:
 
 ```bash
-python -m bess_pv_trading optimize --config configs/synthetic_xu.yaml
-python -m bess_pv_trading run-synthetic --config configs/synthetic_xu.yaml
+python -m bess_pv_trading optimize --config configs/full_experiments/synthetic_xu.yaml
+python -m bess_pv_trading run-synthetic --config configs/full_experiments/synthetic_xu.yaml
 python -m pytest tests/unit/test_xu_degradation.py tests/unit/test_xu_solver.py -q
 ```
 

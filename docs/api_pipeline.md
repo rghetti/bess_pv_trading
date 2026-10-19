@@ -13,8 +13,8 @@ the user's permission.
 Import downloaded data without credentials or network access:
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading migrate-api-cache --config configs/api_history.yaml
-PYTHONPATH=src python -m bess_pv_trading api-cache-status --config configs/api_history.yaml
+PYTHONPATH=src python -m bess_pv_trading migrate-api-cache --config configs/api_experiments/api_history.yaml
+PYTHONPATH=src python -m bess_pv_trading api-cache-status --config configs/api_experiments/api_history.yaml
 ```
 
 Migration verifies complete current and archived snapshots against both original
@@ -57,14 +57,14 @@ Start with the one-day configuration to check your account's subscriptions and a
 cd /home/rghetti/bess_pv_trading
 conda activate bess
 PYTHONPATH=src python -m bess_pv_trading download-data \
-  --config configs/api_download.yaml --interactive
+  --config configs/api_experiments/api_download.yaml --interactive
 ```
 
 Then download the full farm-record window, **1 January 2025 through 31 August 2026**:
 
 ```bash
 PYTHONPATH=src python -m bess_pv_trading download-data \
-  --config configs/api_history.yaml --interactive
+  --config configs/api_experiments/api_history.yaml --interactive
 ```
 
 `api.end` is exclusive and date-only bounds use `Europe/Rome`. The historical configuration ends at `2026-09-01`. It plans 6,080 logical dataset/day chunks across ten datasets; actual HTTP calls can be fewer because Terna's observed and forecast total load share one response. Availability and provider access are checked from responses, not assumed from the requested window. An interrupted run resumes from verified daily caches when the command is rerun.
@@ -93,7 +93,7 @@ Inspect monthly completeness offline after stopping the downloader:
 
 ```bash
 PYTHONPATH=src python -m bess_pv_trading api-cache-status \
-  --config configs/api_history.yaml
+  --config configs/api_experiments/api_history.yaml
 ```
 
 This command is offline. It compares the configured daily requests against completed snapshot metadata and distinguishes cached data, explicit no-data receipts and missing chunks; invalid cache entries raise an error. A no-data receipt is a known gap, not a usable observation. Status checks read database metadata (and file presence for legacy caches); experiment ingestion additionally verifies raw and Parquet checksums.
@@ -102,12 +102,12 @@ Inspect the plan without network access or credentials:
 
 ```bash
 PYTHONPATH=src python -m bess_pv_trading download-data \
-  --config configs/api_history.yaml --dry-run
+  --config configs/api_experiments/api_history.yaml --dry-run
 ```
 
 For unattended use, set `ENTSOE_API_TOKEN`, `TERNA_CLIENT_ID` and `TERNA_CLIENT_SECRET` securely in the process environment and omit `--interactive`. Environment-variable names can be changed under `api.credentials`. An uncached unattended request fails immediately when credentials are absent. Cached requests do not access credentials. Terna access tokens are renewed using the expiry returned by the provider; credentials are not repeatedly prompted during a long run.
 
-Provider-only examples are `configs/entsoe_api.yaml` and `configs/terna_api.yaml`. The combined configurations use one common cache root.
+Provider-only examples are `configs/api_experiments/entsoe_api.yaml` and `configs/api_experiments/terna_api.yaml`. The combined configurations use one common cache root.
 
 ## What is downloaded
 
@@ -130,8 +130,8 @@ Terna's total-load query uses the documented provider zone name `North`; normali
 
 The ENTSO-E/Terna requests do not provide IDA1/2/3 clearing prices. The separate
 GME adapter now supports their documented API, using GME-issued credentials and
-the same DuckDB storage. Start with `configs/gme_api.yaml`, then
-`configs/gme_history.yaml`; see [GME commands, access and schema limits](gme_api.md).
+the same DuckDB storage. Start with `configs/api_experiments/gme_api.yaml`, then
+`configs/api_experiments/gme_history.yaml`; see [GME commands, access and schema limits](gme_api.md).
 Its actual authenticated response coverage remains to be checked by the user.
 Terna imbalance-price downloads remain blocked because the official fee documentation gives conflicting routes; the code does not guess between them. An imported price or an API download does not establish the applicable historical settlement formula. See [ENTSO-E details](entsoe_api.md), [Terna details](terna_api.md) and [sources](sources.md).
 
@@ -210,7 +210,7 @@ The price-only experiment reads completed DA caches and needs no credentials or 
 
 ```bash
 PYTHONPATH=src python -m bess_pv_trading experiment-api-prices \
-  --config configs/price_experiment.yaml
+  --config configs/price_experiments/price_experiment.yaml
 ```
 
 It compares a ridge regression using calendar cycles and same-local-clock price lags of one and seven days against previous-day and previous-week baselines. The final configured delivery days are held out chronologically; feature scaling and coefficient fitting use the training period only. Hourly and quarter-hour delivery regimes are fitted and evaluated separately. Missing lag clocks, including unmatched DST folds, are excluded without filling prices.
@@ -223,7 +223,7 @@ The regional-forecast prototype runs on the complete January ENTSO-E caches:
 
 ```bash
 PYTHONPATH=src python -m bess_pv_trading experiment-price-fundamentals \
-  --config configs/price_fundamentals_january.yaml
+  --config configs/price_experiments/price_fundamentals_january.yaml
 ```
 
 It compares calendar/price lags, added regional load, and added load/solar/wind

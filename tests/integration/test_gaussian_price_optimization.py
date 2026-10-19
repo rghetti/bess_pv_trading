@@ -41,7 +41,7 @@ def test_gaussian_day_ahead_paths_optimize_with_shared_bids_and_native_energy_un
     except gurobi.GurobiError as error:
         pytest.skip(f"Gurobi license unavailable: {error}")
 
-    config = load_config(Path(__file__).resolve().parents[2] / "configs/synthetic_single.yaml")
+    config = load_config(Path(__file__).resolve().parents[2] / "configs/full_experiments/synthetic_single.yaml")
     config["synthetic"]["delivery_day"] = "2025-11-01"
     fixture = synthetic_inputs(config)
     rows = _synthetic_oos_rows(fixture["calendar"])

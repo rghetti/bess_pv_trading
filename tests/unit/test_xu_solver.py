@@ -124,7 +124,7 @@ def test_auction_replay_preserves_xu_state_through_committed_boundary_projection
     from bess_pv_trading.simulation.synthetic import synthetic_inputs, _replay_strategy
     import pandas as pd
 
-    config = load_config(Path(__file__).resolve().parents[2] / "configs/synthetic_xu.yaml")
+    config = load_config(Path(__file__).resolve().parents[2] / "configs/full_experiments/synthetic_xu.yaml")
     config["degradation"].update(replacement_cost_eur=1000, stress_coefficient=.01,
                                    stress_exponent=2, segment_count=4)
     config["synthetic"]["daily_price_amplitude"] = 100

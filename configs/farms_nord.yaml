@@ -56,5 +56,7 @@ pv:
     method: explicit_efficiency
     pv_output_efficiency: 0.96
     assumption_status: illustrative_unfitted_pv_output_model
+    transformer_efficiency: 1.0
+    transformer_assumption_status: no_measured_transformer_loss_assumed
     ac_limit_mw: null
 # This file does not authorize a real-market optimization with unspecified BESS/POI.

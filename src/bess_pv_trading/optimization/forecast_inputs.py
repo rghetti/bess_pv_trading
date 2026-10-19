@@ -15,7 +15,7 @@ import pandas as pd
 
 from ..domain import (AcceptedTrade, BatteryParameters, DeliveryGrid, InformationNode,
                       InformationTree, MarketState, OptimizationInput, PhysicalState,
-                      PlantParameters, ScenarioBundle)
+                      PlantParameters, ScenarioBundle, battery_parameters_from_config)
 from ..forecasting.gaussian_prices import GaussianPriceCalibration, gaussian_price_tree
 from ..forecasting.intraday_price_features import ConditionalSpreadPriceForecast
 from ..forecasting.linear_price_study import LinearPriceForecast
@@ -23,7 +23,7 @@ from ..forecasting.price_oracle import _actual_vector
 from ..markets import AuctionCalendar
 from ..scenarios import conditional_price_tree
 from .degradation import degradation_settings_from_config
-from .prepared import PreparedInputError, _boolean, _require, _timestamps, _utc
+from .prepared import PreparedInputError, _boolean, _require, _terminal_target, _timestamps, _utc
 
 
 AUCTIONS = ("DA", "IDA1", "IDA2", "IDA3")
@@ -360,8 +360,8 @@ def build_forecast_inputs(config: Mapping[str, Any], pv_forecasts: pd.DataFrame,
     grid, schedule, cutoff, full = _grid_schedule(config, settings, known_results)
     plant_cfg, battery_cfg = config.get("plant", {}), config.get("battery", {})
     _require(plant_cfg, ("farm_id", "poi_import_mw", "poi_export_mw"), "plant equipment")
-    _require(battery_cfg, ("capacity_mwh", "max_charge_mw", "max_discharge_mw"), "battery equipment")
-    plant = PlantParameters(int(plant_cfg["farm_id"]), float(plant_cfg["poi_import_mw"]), float(plant_cfg["poi_export_mw"]), BatteryParameters(**battery_cfg))
+    _require(battery_cfg, ("capacity_mwh", "max_power_mw"), "battery equipment")
+    plant = PlantParameters(int(plant_cfg["farm_id"]), float(plant_cfg["poi_import_mw"]), float(plant_cfg["poi_export_mw"]), battery_parameters_from_config(battery_cfg))
     pv, members, weights, vintages = _pv_members(pv_forecasts, grid, cutoff, settings, plant.farm_id)
     known, means, callbacks, calibrations, available, fits, audit = _prices(grid, schedule, cutoff, auction_inputs, known_results, settings)
     if (any(event.submission_at < cutoff < event.results_at and event.auction not in known for event in schedule)
@@ -408,7 +408,7 @@ def build_forecast_inputs(config: Mapping[str, Any], pv_forecasts: pd.DataFrame,
         "operational_eligible": False, "historical_deployment_status": "prepared study boundary; source vintage claims require independent verification",
         "settlement_policy": "explicit signed single-price study assumption; historical settlement semantics unverified"})
     state_cfg, trading, degradation = config.get("state", {}), config.get("trading", {}), config.get("degradation", {})
-    _require(state_cfg, ("timestamp", "initial_energy_mwh", "terminal_target_mwh", "origin"), "explicit residual physical state")
+    _require(state_cfg, ("timestamp", "initial_energy_mwh", "origin"), "explicit residual physical state")
     if _utc(state_cfg["timestamp"], "state.timestamp") != pd.Timestamp(grid.starts[0]):
         raise PreparedInputError("Physical state timestamp must equal the residual grid start")
     if grid.starts[0] == full.starts[0] and state_cfg["origin"] != "known_delivery_start_assumption":
@@ -448,7 +448,8 @@ def build_forecast_inputs(config: Mapping[str, Any], pv_forecasts: pd.DataFrame,
              for event in schedule if event.auction in tree.bid_nodes}
     return OptimizationInput(grid, plant, state, market, scenarios, tree, masks,
         float(trading["trade_limit_mwh"]), float(trading["position_limit_mwh"]), float(trading["imbalance_penalty_eur_per_mwh"]),
-        float(state_cfg["terminal_target_mwh"]), degradation_settings_from_config(config), float(trading["grid_import_fee_eur_per_mwh"]),
+        _terminal_target(state_cfg), degradation_settings_from_config(config), float(trading["grid_import_fee_eur_per_mwh"]),
+        planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
         imbalance_limit_mwh=trading.get("imbalance_limit_mwh"), pending_position_mwh=settings.get("pending_position_mwh"))
 
 

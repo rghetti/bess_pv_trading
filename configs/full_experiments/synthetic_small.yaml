@@ -21,17 +21,12 @@ plant:
   assumption_status: illustrative_synthetic_equipment
 battery:
   capacity_mwh: 1.0
-  max_charge_mw: 0.5
-  max_discharge_mw: 0.5
-  energy_min_mwh: 0.1
-  energy_max_mwh: 0.9
-  converter_charge_efficiency: 0.97
-  converter_discharge_efficiency: 0.97
-  cell_charge_efficiency: 1.0
-  cell_discharge_efficiency: 1.0
-  efficiency_convention: converter_and_cell
-  inverter_charge_mw: 0.5
-  inverter_discharge_mw: 0.5
+  max_power_mw: 0.5
+  soc_min_percent: 10.0
+  soc_max_percent: 90.0
+  efficiency_convention: combined
+  combined_charge_efficiency: 0.97
+  combined_discharge_efficiency: 0.97
   self_discharge_per_hour: 0.0
 state:
   initial_energy_mwh: 0.5

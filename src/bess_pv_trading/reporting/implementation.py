@@ -1071,23 +1071,23 @@ PYTHONPATH=src python -m bess_pv_trading prepare-analysis-data \
 PYTHONPATH=src python -m bess_pv_trading forecast-pv \
   --config configs/farms_nord.yaml
 PYTHONPATH=src python -m bess_pv_trading run-synthetic \
-  --config configs/synthetic_small.yaml
+  --config configs/full_experiments/synthetic_small.yaml
 PYTHONPATH=src python -m bess_pv_trading import-market-data \
-  --config configs/synthetic_prices.yaml
+  --config configs/price_experiments/synthetic_prices.yaml
 PYTHONPATH=src python -m bess_pv_trading train-price-models \
-  --config configs/synthetic_prices.yaml
+  --config configs/price_experiments/synthetic_prices.yaml
 PYTHONPATH=src python -m bess_pv_trading api-cache-status \
-  --config configs/api_history.yaml
+  --config configs/api_experiments/api_history.yaml
 PYTHONPATH=src python -m bess_pv_trading experiment-api-prices \
-  --config configs/price_experiment.yaml
+  --config configs/price_experiments/price_experiment.yaml
 PYTHONPATH=src python -m bess_pv_trading study-linear-prices \
-  --config configs/price_linear_study.yaml
+  --config configs/price_experiments/price_linear_study.yaml
 PYTHONPATH=src python -m bess_pv_trading study-linear-prices \
-  --config configs/price_linear_methods.yaml
+  --config configs/price_experiments/price_linear_methods.yaml
 PYTHONPATH=src python -m bess_pv_trading calibrate-price-scenarios \
-  --config configs/price_gaussian_adaptive.yaml
+  --config configs/price_experiments/price_gaussian_adaptive.yaml
 PYTHONPATH=src python -m bess_pv_trading optimize \
-  --config configs/stochastic_prepared.example.yaml
+  --config configs/full_experiments/stochastic_prepared.example.yaml
 PYTHONPATH=src python -m pytest -q --junitxml=docs/generated/tests.xml
 PYTHONPATH=src python -m bess_pv_trading report-implementation \
   --config configs/report.yaml

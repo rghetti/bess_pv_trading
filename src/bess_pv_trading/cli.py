@@ -34,7 +34,8 @@ def _optimization_inputs(config: dict):
         config["state"]["terminal_target_mwh"],
         degradation_settings_from_config(config),
         trading["grid_import_fee_eur_per_mwh"],
-        imbalance_limit_mwh=trading.get("imbalance_limit_mwh"))
+        imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
+        planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"))
     return inputs
 
 
@@ -92,6 +93,12 @@ def dispatch(command: str, config: dict) -> dict:
     if command == "import-market-data":
         from .data.market_prices import import_market_from_config
         return import_market_from_config(config)
+    if command == "import-gme-workbooks":
+        from .data.gme_workbooks import import_gme_workbooks
+        return import_gme_workbooks(config)
+    if command == "experiment-gme-oracle":
+        from .simulation.gme_oracle import run_gme_oracle_experiment
+        return run_gme_oracle_experiment(config)
     if command == "train-price-models":
         from .forecasting.prices import train_price_from_config
         return train_price_from_config(config)
@@ -122,7 +129,7 @@ def dispatch(command: str, config: dict) -> dict:
             progress=lambda message: print(message, file=sys.stderr, flush=True))
     if command in {"run-synthetic","backtest"}:
         if "synthetic" not in config:
-            raise ValueError("Historical market replay is blocked: import auction and settlement targets, confirm BESS/POI, and provide a historically validated settlement adapter. The synthetic event replay is available via configs/synthetic_small.yaml.")
+            raise ValueError("Historical market replay is blocked: import auction and settlement targets, confirm BESS/POI, and provide a historically validated settlement adapter. The synthetic event replay is available via configs/full_experiments/synthetic_small.yaml.")
         from .simulation.synthetic import run_synthetic
         return run_synthetic(config)
     if command == "optimize":
@@ -143,7 +150,8 @@ def main(argv: list[str] | None = None) -> int:
         "run-synthetic","forecast-pv","import-market-data","train-price-models","optimize",
         "backtest","report-implementation","download-data","experiment-api-prices","experiment-price-fundamentals",
         "study-linear-prices","calibrate-price-scenarios","check-frozen-prices",
-        "api-cache-status","migrate-api-cache","diagnose-terna"))
+        "api-cache-status","migrate-api-cache","diagnose-terna",
+        "import-gme-workbooks","experiment-gme-oracle"))
     parser.add_argument("--config",required=True,type=Path)
     parser.add_argument("--interactive",action="store_true",help="Prompt invisibly for missing API credentials in a terminal")
     parser.add_argument("--dry-run",action="store_true",help="Plan API requests and inspect cache without authenticating")
@@ -192,6 +200,10 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "migrate-api-cache":
             result = {key: result[key] for key in
                       ("status", "database", "counts", "report", "coverage_plot")}
+        elif args.command == "experiment-gme-oracle":
+            result = {key: result[key] for key in
+                      ("status", "study_id", "run_id", "study_date", "output_dir",
+                       "active_auctions", "skipped_auctions", "optimizer_solves")}
         elif args.command == "check-frozen-prices":
             fields = ("status", "manifest", "database", "new_test_start", "new_test_end_exclusive",
                       "fresh_days", "fresh_rows", "missing_days", "reason", "overlap_verification",

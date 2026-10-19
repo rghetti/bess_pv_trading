@@ -66,7 +66,9 @@ class AuctionCalendar:
     valid_to: str = "2026-08-31"
     decision_buffer_minutes: float = 5.0
     gates: Mapping[str, str] = field(default_factory=lambda: {"DA": "12:00", "IDA1": "15:00", "IDA2": "22:00", "IDA3": "10:00"})
+    gate_day_offsets: Mapping[str, int] = field(default_factory=lambda: {"DA": -1, "IDA1": -1, "IDA2": -1, "IDA3": 0})
     result_times: Mapping[str, str] = field(default_factory=lambda: {"DA": "13:30", "IDA1": "15:30", "IDA2": "22:30", "IDA3": "10:30"})
+    delivery_start_times: Mapping[str, str | None] = field(default_factory=lambda: {"DA": None, "IDA1": None, "IDA2": None, "IDA3": "12:00"})
     result_provenance: Mapping[str, str] = field(default_factory=lambda: {
         "DA": "study_assumption_13:30; GME final results not earlier than 13:05; recorded timestamps preferred",
         "IDA1": "GME DTF03 rev13: results by 15:30 local",
@@ -80,15 +82,23 @@ class AuctionCalendar:
         if self.decision_buffer_minutes < 0 or self.decision_buffer_minutes >= 60:
             raise ValueError("Decision buffer must lie in [0, 60) minutes")
         for auction in ("DA", "IDA1", "IDA2", "IDA3"):
-            if auction not in self.gates or auction not in self.result_times or auction not in self.result_provenance:
+            if (auction not in self.gates or auction not in self.gate_day_offsets
+                    or auction not in self.result_times or auction not in self.result_provenance
+                    or auction not in self.delivery_start_times):
                 raise ValueError(f"Missing explicit market rule/provenance for {auction}")
             time.fromisoformat(self.gates[auction])
             time.fromisoformat(self.result_times[auction])
+            delivery_start = self.delivery_start_times[auction]
+            if delivery_start is not None:
+                time.fromisoformat(delivery_start)
+            if isinstance(self.gate_day_offsets[auction], bool) or not isinstance(self.gate_day_offsets[auction], int):
+                raise ValueError(f"{auction} gate_day_offsets must be an integer number of local days")
 
     @classmethod
     def from_config(cls, config: Mapping[str, Any]) -> "AuctionCalendar":
         settings = dict(config.get("market", config))
-        allowed = ("timezone", "valid_from", "valid_to", "decision_buffer_minutes", "gates", "result_times", "result_provenance")
+        allowed = ("timezone", "valid_from", "valid_to", "decision_buffer_minutes", "gates",
+                   "gate_day_offsets", "result_times", "delivery_start_times", "result_provenance")
         return cls(**{key: settings[key] for key in allowed if key in settings})
 
     def _date(self, delivery_day: str | date) -> date:
@@ -116,7 +126,7 @@ class AuctionCalendar:
         grid = self.delivery_grid(day)
         events = []
         for auction in ("DA", "IDA1", "IDA2", "IDA3"):
-            event_day = day if auction == "IDA3" else day - timedelta(days=1)
+            event_day = day + timedelta(days=self.gate_day_offsets[auction])
             gate = self._local(event_day, self.gates[auction])
             result = self._local(event_day, self.result_times[auction])
             version = "GME-DTF03-rev14" if event_day >= date(2026, 1, 13) else "GME-DTF03-rev13"
@@ -135,8 +145,10 @@ class AuctionCalendar:
             if result is not None and result <= gate:
                 raise ValueError(f"{auction} results cannot be known before its gate")
             eligible = tuple(range(len(grid)))
-            if auction == "IDA3":
-                eligible = tuple(np.flatnonzero(grid.starts >= self._local(day, "12:00")).tolist())
+            delivery_start = self.delivery_start_times[auction]
+            if delivery_start is not None:
+                eligible = tuple(np.flatnonzero(
+                    grid.starts >= self._local(day, delivery_start)).tolist())
             events.append(AuctionEvent(auction, gate,
                 gate - pd.Timedelta(minutes=self.decision_buffer_minutes), result, eligible,
                 provenance, result is not None, version))

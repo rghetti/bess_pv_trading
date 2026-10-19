@@ -14,8 +14,8 @@ separately.
 
 ```bash
 conda activate bess
-PYTHONPATH=src python -m bess_pv_trading download-data --config configs/api_download.yaml --interactive
-PYTHONPATH=src python -m bess_pv_trading download-data --config configs/api_history.yaml --interactive
+PYTHONPATH=src python -m bess_pv_trading download-data --config configs/api_experiments/api_download.yaml --interactive
+PYTHONPATH=src python -m bess_pv_trading download-data --config configs/api_experiments/api_history.yaml --interactive
 ```
 
 The first command checks one day; the second covers the farm-record window, 1 January 2025–31 August 2026. The provider configurations now store raw responses, exact typed snapshots, revision history and queryable records together in `data/api/market.duckdb`. Requests still complete month by month and resume at daily request boundaries after an outage. Acquisition plots are grouped by dataset/month under `outputs/api/<run>/`; CSV exports are no longer duplicated for each request. `--dry-run` needs no credentials or network, while `--refresh-cache` retains previous database snapshots. See [API commands and storage contract](docs/api_pipeline.md). IDA prices, verified imbalance settlement and unrecorded historical publication remain separate gaps.
@@ -23,7 +23,7 @@ The first command checks one day; the second covers the farm-record window, 1 Ja
 Import the existing verified file cache once, entirely offline, before resuming acquisition or running experiments:
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading migrate-api-cache --config configs/api_history.yaml
+PYTHONPATH=src python -m bess_pv_trading migrate-api-cache --config configs/api_experiments/api_history.yaml
 ```
 
 Migration is resumable and idempotent. It verifies raw and normalized checksums, compares imported values and dtypes, and writes its report under `outputs/api/migrations/`. Original files remain a backup. The Python dependency is supplied by conda's `python-duckdb` package in the existing `bess` environment. Farm Zarr data is independent of this migration.
@@ -32,8 +32,8 @@ Migration is resumable and idempotent. It verifies raw and normalized checksums,
 run the one-day check and then the missing IDA history:
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading download-data --config configs/gme_api.yaml --interactive
-PYTHONPATH=src python -m bess_pv_trading download-data --config configs/gme_history.yaml --interactive
+PYTHONPATH=src python -m bess_pv_trading download-data --config configs/api_experiments/gme_api.yaml --interactive
+PYTHONPATH=src python -m bess_pv_trading download-data --config configs/api_experiments/gme_history.yaml --interactive
 ```
 
 Both use `data/api/market.duckdb`. The second command requests actual MI-A1,
@@ -41,11 +41,27 @@ MI-A2 and MI-A3 NORD prices, month by month, without repeating the ENTSO-E DA
 download. Run one writer at a time. [GME access and storage details](docs/gme_api.md)
 distinguish documented/offline-tested parsing from pending authenticated checks.
 
+For the already downloaded January–August 2025 GME XLSX files, import them
+offline and run the configured one-day oracle benchmark:
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading import-gme-workbooks --config configs/api_experiments/gme_workbook_import.yaml
+PYTHONPATH=src python -m bess_pv_trading experiment-gme-oracle --config configs/full_experiments/gme_oracle_2025-01-01.yaml
+```
+
+The run keeps historical hourly products and dispatch hourly-equal before
+October 2025, skips fully absent/cancelled auctions, and fails on partial price
+curves. Its result folder contains separate auction price plots, four expected
+dispatch plans, SOC, KPI and solver/model diagnostics. The perfect-price result
+is an oracle benchmark; the assumed imbalance price is zero until a verified
+settlement series is available. BESS and POI values in the example are clearly
+marked as illustrative and are all editable in the full-experiment YAML.
+
 Completed database snapshots can be used immediately, even when the configured download window is incomplete:
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading api-cache-status --config configs/api_history.yaml
-PYTHONPATH=src python -m bess_pv_trading experiment-api-prices --config configs/price_experiment.yaml
+PYTHONPATH=src python -m bess_pv_trading api-cache-status --config configs/api_experiments/api_history.yaml
+PYTHONPATH=src python -m bess_pv_trading experiment-api-prices --config configs/price_experiments/price_experiment.yaml
 ```
 
 Experiments are offline and read only completed snapshots. Stop the downloader before opening the same database for analysis; embedded DuckDB uses a process-level write lock. Several offline experiments can share the database read-only. All connections are short-lived so provider backoff does not hold a database lock.
@@ -56,7 +72,7 @@ The first regional-forecast comparison uses the complete January 2025 ENTSO-E
 price/load/solar/wind caches and holds out 25–31 January:
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading experiment-price-fundamentals --config configs/price_fundamentals_january.yaml
+PYTHONPATH=src python -m bess_pv_trading experiment-price-fundamentals --config configs/price_experiments/price_fundamentals_january.yaml
 ```
 
 It compares calendar/price lags, added load, and added load/solar/wind against
@@ -73,10 +89,10 @@ including a model for the change from yesterday's price, against yesterday,
 last week and their fixed average:
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading study-linear-prices --config configs/price_linear_study.yaml
-PYTHONPATH=src python -m bess_pv_trading study-linear-prices --config configs/price_linear_fundamentals.yaml
-PYTHONPATH=src python -m bess_pv_trading study-linear-prices --config configs/price_linear_hourly.yaml
-PYTHONPATH=src python -m bess_pv_trading study-linear-prices --config configs/price_linear_methods.yaml
+PYTHONPATH=src python -m bess_pv_trading study-linear-prices --config configs/price_experiments/price_linear_study.yaml
+PYTHONPATH=src python -m bess_pv_trading study-linear-prices --config configs/price_experiments/price_linear_fundamentals.yaml
+PYTHONPATH=src python -m bess_pv_trading study-linear-prices --config configs/price_experiments/price_linear_hourly.yaml
+PYTHONPATH=src python -m bess_pv_trading study-linear-prices --config configs/price_experiments/price_linear_methods.yaml
 ```
 
 Model settings are selected on an earlier validation period. A separate period
@@ -101,7 +117,7 @@ settings using the calibration period alone, then updates uncertainty from
 completed earlier forecast errors:
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading calibrate-price-scenarios --config configs/price_gaussian_adaptive.yaml
+PYTHONPATH=src python -m bess_pv_trading calibrate-price-scenarios --config configs/price_experiments/price_gaussian_adaptive.yaml
 ```
 
 On the existing July–August quarter-hour holdout, the selected point model's
@@ -114,7 +130,7 @@ after the downloader finishes:
 
 ```bash
 PYTHONPATH=src python -m bess_pv_trading download-data --config configs/entsoe_price_extension.yaml --interactive
-PYTHONPATH=src python -m bess_pv_trading check-frozen-prices --config configs/price_forward_check.yaml
+PYTHONPATH=src python -m bess_pv_trading check-frozen-prices --config configs/price_experiments/price_forward_check.yaml
 ```
 
 The check reads DuckDB snapshots and saves a new run under
@@ -153,7 +169,7 @@ outputs explicitly identify a non-executable benchmark. Forecast and oracle
 comparisons must use the same assets, settlement assumptions and PV observation
 convention.
 
-**Depth-dependent aging:** `configs/synthetic_xu.yaml` enables the implemented Xu segmented cycle-depth equations, with discharge-only costs, carried segment memory and explicitly illustrative lifetime/cost parameters. It can be used with either `optimize` or `run-synthetic`. The throughput baseline remains available. See [Xu equations, assumptions and executed tests](docs/xu_degradation.md).
+**Depth-dependent aging:** `configs/full_experiments/synthetic_xu.yaml` enables the implemented Xu segmented cycle-depth equations, with discharge-only costs, carried segment memory and explicitly illustrative lifetime/cost parameters. It can be used with either `optimize` or `run-synthetic`. The throughput baseline remains available. See [Xu equations, assumptions and executed tests](docs/xu_degradation.md).
 
 Use the existing `bess` environment without installing anything:
 
@@ -163,20 +179,20 @@ PYTHONPATH=src python -m bess_pv_trading validate-config --config configs/farms_
 PYTHONPATH=src python -m bess_pv_trading inspect-data --config configs/farms_nord.yaml
 PYTHONPATH=src python -m bess_pv_trading prepare-analysis-data --config configs/farms_nord.yaml
 PYTHONPATH=src python -m bess_pv_trading forecast-pv --config configs/farms_nord.yaml
-PYTHONPATH=src python -m bess_pv_trading optimize --config configs/synthetic_small.yaml
-PYTHONPATH=src python -m bess_pv_trading run-synthetic --config configs/synthetic_small.yaml
-PYTHONPATH=src python -m bess_pv_trading run-synthetic --config configs/synthetic_dst_fall.yaml
-PYTHONPATH=src python -m bess_pv_trading run-synthetic --config configs/synthetic_dst_spring.yaml
-PYTHONPATH=src python -m bess_pv_trading import-market-data --config configs/synthetic_prices.yaml
-PYTHONPATH=src python -m bess_pv_trading train-price-models --config configs/synthetic_prices.yaml
+PYTHONPATH=src python -m bess_pv_trading optimize --config configs/full_experiments/synthetic_small.yaml
+PYTHONPATH=src python -m bess_pv_trading run-synthetic --config configs/full_experiments/synthetic_small.yaml
+PYTHONPATH=src python -m bess_pv_trading run-synthetic --config configs/full_experiments/synthetic_dst_fall.yaml
+PYTHONPATH=src python -m bess_pv_trading run-synthetic --config configs/full_experiments/synthetic_dst_spring.yaml
+PYTHONPATH=src python -m bess_pv_trading import-market-data --config configs/price_experiments/synthetic_prices.yaml
+PYTHONPATH=src python -m bess_pv_trading train-price-models --config configs/price_experiments/synthetic_prices.yaml
 PYTHONPATH=src python -m pytest -q --junitxml=docs/generated/tests.xml
 PYTHONPATH=src python -m bess_pv_trading report-implementation --config configs/report.yaml
 ```
 
-`backtest` accepts the synthetic configuration and runs its complete event replay. Historical market replay rejects missing real auction prices, unresolved settlement and unspecified hardware. `configs/italy_nord.example.yaml` describes the canonical market import/training boundary; it requires actual files. `configs/synthetic_prices.yaml` uses a small, explicitly synthetic sparse fixture, preserves gaps and demonstrates the import/cache/regression commands. It does not supply historical market labels. `optimize` also accepts prepared complete PV/point-price CSV forecasts and explicit equipment through `configs/prepared_optimization.example.yaml`; its null inputs must be supplied first. That route validates provenance and supports initial pre-DA planning.
+`backtest` accepts the synthetic configuration and runs its complete event replay. Historical market replay rejects missing real auction prices, unresolved settlement and unspecified hardware. `configs/price_experiments/italy_nord.example.yaml` describes the canonical market import/training boundary; it requires actual files. `configs/price_experiments/synthetic_prices.yaml` uses a small, explicitly synthetic sparse fixture, preserves gaps and demonstrates the import/cache/regression commands. It does not supply historical market labels. `optimize` also accepts prepared complete PV/point-price CSV forecasts and explicit equipment through `configs/full_experiments/prepared_optimization.example.yaml`; its null inputs must be supplied first. That route validates provenance and supports initial pre-DA planning.
 
 The broader prepared-input route in
-`configs/stochastic_prepared.example.yaml` accepts probabilistic PV members,
+`configs/full_experiments/stochastic_prepared.example.yaml` accepts probabilistic PV members,
 saved point/conditional-spread models and Gaussian calibrations, known auction
 prices and committed positions. It supports both initial and residual solves
 through the same `optimize` command. See the

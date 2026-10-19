@@ -5,6 +5,7 @@ import numpy as np
 
 from ..domain import OptimizationInput, OptimizationResult, ValidationReport
 from .degradation import evaluate_xu_dispatch, initial_segment_energy, xu_segment_parameters
+from .market_regime import configured_auction_product_groups, configured_dispatch_groups, market_product_groups
 
 
 def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray], trades: dict[tuple[str, str, str], float]) -> dict[str, np.ndarray]:
@@ -75,16 +76,24 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     upper("energy_lower_mwh", battery.energy_min_mwh - energy)
     upper("charge_lower_mw", -charge)
     upper("discharge_lower_mw", -discharge)
-    upper("charge_power_mw", charge - battery.max_charge_mw)
-    upper("discharge_power_mw", discharge - battery.max_discharge_mw)
+    upper("charge_power_mw", charge - battery.max_power_mw)
+    upper("discharge_power_mw", discharge - battery.max_power_mw)
     equality("mode_integrality", arrays["mode_charge"] - np.round(arrays["mode_charge"]))
     upper("mode_lower", -arrays["mode_charge"])
     upper("mode_upper", arrays["mode_charge"] - 1)
-    upper("charge_mode_mw", charge - battery.max_charge_mw * arrays["mode_charge"])
-    upper("discharge_mode_mw", discharge - battery.max_discharge_mw * (1 - arrays["mode_charge"]))
+    upper("charge_mode_mw", charge - battery.max_power_mw * arrays["mode_charge"])
+    upper("discharge_mode_mw", discharge - battery.max_power_mw * (1 - arrays["mode_charge"]))
     upper("simultaneous_battery_mw", np.minimum(charge, discharge))
     upper("curtailment_lower_mw", -curtailment)
     upper("curtailment_upper_mw", curtailment - inputs.scenarios.pv_ac_mw)
+    dispatch_groups = configured_dispatch_groups(inputs.grid, inputs.decision_resolution_minutes,
+                                                  inputs.market_timezone)
+    for group_index, group in enumerate(dispatch_groups):
+        first = group[0]
+        for index in group[1:]:
+            equality(f"historical_hourly_charge_mw_g{group_index}_t{index}", charge[:, index] - charge[:, first])
+            equality(f"historical_hourly_discharge_mw_g{group_index}_t{index}", discharge[:, index] - discharge[:, first])
+            equality(f"historical_hourly_mode_g{group_index}_t{index}", arrays["mode_charge"][:, index] - arrays["mode_charge"][:, first])
     upper("poi_export_mw", grid - inputs.plant.poi_export_mw)
     upper("poi_import_mw", -grid - inputs.plant.poi_import_mw)
     if inputs.degradation.mode == "xu_segmented":
@@ -115,7 +124,29 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     expected_keys = {(auction, owner, product) for auction, eligible in inputs.auction_eligibility.items() for owner in inputs.tree.bid_nodes[auction] for t, product in enumerate(inputs.grid.interval_ids) if eligible[t]}
     if set(result.trades) != expected_keys or any(not np.isfinite(value) for value in result.trades.values()):
         return ValidationReport(False, errors, None, ("Trade keys differ from actionable node/products or contain nonfinite values",))
-    upper("trade_limit_mwh", np.array([abs(value) - inputs.trade_limit_mwh for value in result.trades.values()]))
+    product_size = {}
+    for auction, eligibility in inputs.auction_eligibility.items():
+        bid_nodes = inputs.tree.bid_nodes[auction]
+        groups = configured_auction_product_groups(inputs.grid, auction,
+            inputs.native_interval_minutes_by_auction.get(auction), inputs.market_timezone)
+        for group_index, group in enumerate(groups):
+            for index in group:
+                product_size[auction, index] = len(group)
+            if len(group) <= 1 or not all(eligibility[index] for index in group):
+                continue
+            for left, right in zip(group, group[1:]):
+                for scenario in range(count):
+                    left_key = (auction, bid_nodes[scenario], inputs.grid.interval_ids[left])
+                    right_key = (auction, bid_nodes[scenario], inputs.grid.interval_ids[right])
+                    if left_key in result.trades and right_key in result.trades:
+                        equality(f"native_product_{auction}_trade_g{group_index}_s{scenario}_t{left}_{right}",
+                                 result.trades[left_key] - result.trades[right_key])
+    trade_excess = []
+    for (auction, _owner, index), value in result.trades.items():
+        group_size = product_size.get((auction, index), 1)
+        limit = inputs.trade_limit_mwh / group_size if group_size > 1 else inputs.trade_limit_mwh
+        trade_excess.append(abs(value) - limit)
+    upper("trade_limit_mwh", np.asarray(trade_excess, dtype=float))
     positions = np.repeat(inputs.market.positions(inputs.grid)[None, :], count, axis=0)
     if inputs.pending_position_mwh is not None:
         positions += np.asarray(inputs.pending_position_mwh)[None, :]
@@ -129,6 +160,10 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     equality("contractual_position_mwh", positions - arrays["net_position_mwh"])
     upper("final_position_limit_mwh", np.abs(positions) - inputs.position_limit_mwh)
     imbalance = grid * delta - positions
+    if inputs.planned_delivery_balance_resolution_minutes is not None:
+        for group_index, group in enumerate(market_product_groups(inputs.grid,
+                inputs.planned_delivery_balance_resolution_minutes, inputs.market_timezone)):
+            equality(f"planned_delivery_balance_mwh_g{group_index}", imbalance[:, list(group)].sum(axis=1))
     equality("signed_imbalance_mwh", imbalance - arrays["imbalance_mwh"])
     equality("positive_imbalance_mwh", arrays["imbalance_positive_mwh"] - np.maximum(imbalance, 0))
     equality("negative_imbalance_mwh", arrays["imbalance_negative_mwh"] - np.maximum(-imbalance, 0))

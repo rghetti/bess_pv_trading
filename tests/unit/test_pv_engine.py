@@ -45,6 +45,12 @@ def test_pv_dc_scaling_ac_conversion_wind_and_raw_preservation():
     assert first.values.pv_ac_mw.tolist() == pytest.approx(first.values.modeled_dc_mw * 0.96)
     assert not first.provenance["bess_converter_efficiency_applied"]
     assert first.provenance["unknown_pv_type_id"] == "retained_without_inferred_electrical_parameters"
+    transformer_loss = settings()
+    transformer_loss["output"]["transformer_efficiency"] = 0.9
+    transformer_loss["output"]["transformer_assumption_status"] = "test_configured_loss"
+    transformed = forecast_pv(source, farm(), transformer_loss, {"enabled": False})
+    assert transformed.values.pv_ac_mw.tolist() == pytest.approx(
+        transformed.values.modeled_dc_mw * 0.96 * 0.9)
 
 
 def test_horizontal_direct_is_converted_to_dni_and_low_sun_bounded():
@@ -110,7 +116,8 @@ def test_measured_power_ac_and_fit_cutoff_are_not_bess_conversion():
     assert fit.ac_per_dc == pytest.approx(0.9) and fit.training_samples == 4
     assert bundle.frame.treated_value.iloc[0] == 900
     config = settings()
-    config["output"] = {"method": "calibrated_scale"}
+    config["output"] = {"method": "calibrated_scale", "transformer_efficiency": 1.0,
+                         "transformer_assumption_status": "unit_test_no_loss"}
     with pytest.raises(ValueError, match="fit available"):
         forecast_pv(weather(), farm(), config, {"enabled": False}, fit)
 

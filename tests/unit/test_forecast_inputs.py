@@ -12,6 +12,7 @@ from bess_pv_trading.forecasting.prices import RidgePriceModel
 from bess_pv_trading.markets import AuctionCalendar
 from bess_pv_trading.optimization.forecast_inputs import build_forecast_inputs, load_forecast_inputs
 from bess_pv_trading.optimization.prepared import PreparedInputError
+from battery_case_config import battery_config
 
 
 def prepared_case(auctions=None):
@@ -28,7 +29,7 @@ def prepared_case(auctions=None):
         "settlement_point_price_eur_per_mwh": 30., "settlement_point_price_available_at": source.isoformat(),
         "settlement_point_price_status": "study_assumption", "branches": 2, "seed": 13}},
         "plant": {"farm_id": 1, "poi_import_mw": 1., "poi_export_mw": 1.},
-        "battery": {"capacity_mwh": 1., "max_charge_mw": .5, "max_discharge_mw": .5},
+        "battery": battery_config("half_power"),
         "state": {"timestamp": grid.starts[0].isoformat(), "initial_energy_mwh": .5,
                   "terminal_target_mwh": .5, "origin": "known_delivery_start_assumption"},
         "trading": {"trade_limit_mwh": .25, "position_limit_mwh": .25,
@@ -104,6 +105,12 @@ def gaussian_fixture(auction, cutoff):
             "prediction_provenance": "chronological_out_of_sample", "native_interval_minutes": 15}))
     return calibrate_gaussian_prices(pd.concat(frames), calibration_cutoff=cutoff - pd.Timedelta(days=1),
         auction=auction, minimum_complete_days=2)
+
+
+def test_forecast_inputs_allow_explicit_null_terminal_soc():
+    config, pv, specs = prepared_case()
+    config["state"]["terminal_target_mwh"] = None
+    assert build_forecast_inputs(config, pv, specs).terminal_target_mwh is None
 
 
 def test_joint_members_keep_weights_and_battery_shared_until_completed_pv_observation():

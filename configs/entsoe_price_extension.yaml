@@ -1,6 +1,6 @@
 # Additional DA labels for a new validation period beyond the fitted studies.
 # End is exclusive: request 1 September through 16 October 2026, 46 days.
-include: entsoe_api.yaml
+include: api_experiments/entsoe_api.yaml
 api:
   start: '2026-09-01'
   end: '2026-10-17'

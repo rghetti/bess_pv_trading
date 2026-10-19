@@ -175,17 +175,28 @@ def forecast_pv(bundle: ForecastBundle, farm: FarmMetadata, settings: dict[str, 
     dc = np.where(valid, dc, np.nan)
     output = settings.get("output", {})
     method = output.get("method")
+    transformer_efficiency = float(output["transformer_efficiency"])
+    if (not 0 < transformer_efficiency <= 1
+            or not output.get("transformer_assumption_status")):
+        raise ValueError("PV transformer efficiency requires 0<eta<=1 and assumption provenance")
     if method == "explicit_efficiency":
         efficiency = float(output["pv_output_efficiency"])
         if not 0 < efficiency <= 1 or not output.get("assumption_status"):
             raise ValueError("PV-output efficiency requires 0<eta<=1 and assumption provenance")
-        scale = efficiency
-        conversion_status = output["assumption_status"]
+        scale = efficiency * transformer_efficiency
+        conversion_status = {"dc_to_ac_efficiency": efficiency,
+                             "transformer_efficiency": transformer_efficiency,
+                             "overall_dc_to_poi_efficiency": scale,
+                             "dc_to_ac_assumption": output["assumption_status"],
+                             "transformer_assumption": output["transformer_assumption_status"]}
     elif method == "calibrated_scale":
         if calibration is None or calibration.fit_cutoff > utc_timestamp(bundle.provenance.get("decision_cutoff_utc", bundle.available_at)):
             raise ValueError("Calibrated PV output requires a fit available by decision cutoff")
-        scale = calibration.ac_per_dc
-        conversion_status = "causal_fitted_DC_to_AC_scale"
+        scale = calibration.ac_per_dc * transformer_efficiency
+        conversion_status = {"calibrated_dc_to_ac_scale": calibration.ac_per_dc,
+                             "transformer_efficiency": transformer_efficiency,
+                             "overall_dc_to_poi_efficiency": scale,
+                             "transformer_assumption": output["transformer_assumption_status"]}
     else:
         raise ValueError("PV output requires explicit_efficiency or calibrated_scale")
     ac_unmasked = dc * scale
@@ -198,7 +209,7 @@ def forecast_pv(bundle: ForecastBundle, farm: FarmMetadata, settings: dict[str, 
     ac[night] = 0.0
     for name, values in {"solar_zenith_deg": zenith, "surface_tilt_deg": surface_tilt, "surface_azimuth_deg": surface_azimuth, "ghi_w_m2": ghi, "bhi_w_m2": bhi, "dhi_w_m2": dhi, "dni_w_m2": dni, "wind_speed_m_s": wind, "cell_temperature_c": cell, "poa_w_m2": poa_global, "modeled_dc_mw": dc, "pv_ac_before_night_mask_mw": np.minimum(ac_unmasked, float(ac_limit)) if ac_limit is not None else ac_unmasked, "pv_ac_mw": ac, "bhi_exceeds_ghi": contradiction, "low_sun_direct_limited": low_sun, "dni_limited": dni_limited, "ghi_decomposition_used": decomposition_used, "ac_limit_clipped": clipped, "nighttime_zero": night, "pv_input_valid": valid}.items():
         frame[name] = values
-    provenance = {**bundle.provenance, "pvlib_version": pvlib.__version__, "pv_target": "farm_AC_MW", "modeled_dc_unit": "MW", "pv_output_model": conversion_status, "pv_output_scale": scale, "ac_limit_mw": ac_limit, "geometry_location": location, "orientation": orientation, "rear_side_gain": "omitted_front_side_only" if farm.tracking_type_id == 3 else "not_bifacial", "unknown_pv_type_id": "retained_without_inferred_electrical_parameters", "bhi_to_dni": "pvlib.irradiance.dni;uniform_hourly_means_at_quarter_hour_midpoint;low_sun_and_cap_flagged", "temperature_model": "pvlib.temperature.faiman", "wind_height_proxy_m": height, "settings": settings, "night_policy": night_policy, "bess_converter_efficiency_applied": False}
+    provenance = {**bundle.provenance, "pvlib_version": pvlib.__version__, "pv_target": "farm_AC_at_POI_MW", "modeled_dc_unit": "MW", "pv_output_model": conversion_status, "pv_output_scale": scale, "ac_limit_mw": ac_limit, "geometry_location": location, "orientation": orientation, "rear_side_gain": "omitted_front_side_only" if farm.tracking_type_id == 3 else "not_bifacial", "unknown_pv_type_id": "retained_without_inferred_electrical_parameters", "bhi_to_dni": "pvlib.irradiance.dni;uniform_hourly_means_at_quarter_hour_midpoint;low_sun_and_cap_flagged", "temperature_model": "pvlib.temperature.faiman", "wind_height_proxy_m": height, "settings": settings, "night_policy": night_policy, "bess_converter_efficiency_applied": False}
     return ForecastBundle(bundle.farm_id, bundle.forecast_vintage, bundle.available_at, frame, {**bundle.units, "pv_ac_mw": "MW_AC", "modeled_dc_mw": "MW_DC"}, bundle.members, bundle.member_origin, provenance)
 
 

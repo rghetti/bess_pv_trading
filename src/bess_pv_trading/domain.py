@@ -1,7 +1,7 @@
 """Validated in-memory contracts; optimizer quantities use MW, MWh and EUR."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from typing import Any, Mapping
 
@@ -93,8 +93,7 @@ class ObservationBundle:
 class BatteryParameters:
     """AC-side powers and internal stored energy; choose one efficiency convention."""
     capacity_mwh: float
-    max_charge_mw: float
-    max_discharge_mw: float
+    max_power_mw: float
     energy_min_mwh: float = 0.0
     energy_max_mwh: float | None = None
     converter_charge_efficiency: float = 0.97
@@ -104,18 +103,16 @@ class BatteryParameters:
     efficiency_convention: str = "converter_and_cell"
     combined_charge_efficiency: float | None = None
     combined_discharge_efficiency: float | None = None
-    inverter_charge_mw: float | None = None
-    inverter_discharge_mw: float | None = None
     self_discharge_per_hour: float = 0.0
 
     def __post_init__(self) -> None:
-        for key in ("capacity_mwh", "max_charge_mw", "max_discharge_mw", "energy_min_mwh", "self_discharge_per_hour"):
+        for key in ("capacity_mwh", "max_power_mw", "energy_min_mwh", "self_discharge_per_hour"):
             finite_nonnegative(getattr(self, key), key)
         if not self.energy_min_mwh <= self.maximum_energy <= self.capacity_mwh:
             raise ValueError("Battery energy bounds must lie within capacity")
         if self.self_discharge_per_hour >= 1:
             raise ValueError("Hourly self discharge must be below one")
-        if self.capacity_mwh == 0 and (self.max_charge_mw or self.max_discharge_mw):
+        if self.capacity_mwh == 0 and self.max_power_mw:
             raise ValueError("A no-BESS plant must have zero battery power")
         if self.efficiency_convention == "converter_and_cell":
             if self.combined_charge_efficiency is not None or self.combined_discharge_efficiency is not None:
@@ -131,11 +128,6 @@ class BatteryParameters:
             raise ValueError("Unknown battery efficiency convention")
         if any(not np.isfinite(value) or not 0 < value <= 1 for value in efficiency_values):
             raise ValueError("Efficiencies must be finite and in (0,1]")
-        for limit, power in ((self.inverter_charge_mw, self.max_charge_mw), (self.inverter_discharge_mw, self.max_discharge_mw)):
-            if limit is not None:
-                finite_nonnegative(limit, "inverter limit")
-                if power > limit:
-                    raise ValueError("Battery AC power limit exceeds inverter AC rating")
 
     @property
     def maximum_energy(self) -> float:
@@ -148,6 +140,29 @@ class BatteryParameters:
     @property
     def eta_discharge(self) -> float:
         return float(self.combined_discharge_efficiency) if self.efficiency_convention == "combined" else self.converter_discharge_efficiency * self.cell_discharge_efficiency
+
+
+def battery_parameters_from_config(settings: Mapping[str, Any]) -> BatteryParameters:
+    """Accept SOC percentages at the YAML boundary; keep solver energy in MWh."""
+    if {"energy_min_mwh", "energy_max_mwh"} & set(settings):
+        raise ValueError("Use battery.soc_min_percent and soc_max_percent; absolute MWh bounds are not accepted in configs")
+    if {"max_charge_mw", "max_discharge_mw", "inverter_charge_mw", "inverter_discharge_mw"} & set(settings):
+        raise ValueError("Use one symmetric battery.max_power_mw; separate charge/discharge and inverter limits are not accepted")
+    percentages = ("soc_min_percent", "soc_max_percent")
+    if any(settings.get(key) is None for key in percentages):
+        raise ValueError("Explicit battery.soc_min_percent and soc_max_percent are required")
+    lower, upper = (float(settings[key]) for key in percentages)
+    if not np.isfinite(lower) or not np.isfinite(upper) or not 0 <= lower <= upper <= 100:
+        raise ValueError("Battery SOC bounds must satisfy 0 <= soc_min_percent <= soc_max_percent <= 100")
+    names = {item.name for item in fields(BatteryParameters)}
+    unknown = set(settings) - names - set(percentages) - {"assumption_status"}
+    if unknown:
+        raise ValueError(f"Unknown battery configuration fields: {sorted(unknown)}")
+    values = {name: settings[name] for name in names if name in settings}
+    capacity = float(settings["capacity_mwh"])
+    values.update(capacity_mwh=capacity, energy_min_mwh=capacity * lower / 100,
+                  energy_max_mwh=capacity * upper / 100)
+    return BatteryParameters(**values)
 
 
 @dataclass(frozen=True)
@@ -393,12 +408,27 @@ class OptimizationInput:
     grid_import_fee_eur_per_mwh: float = 0.0
     imbalance_limit_mwh: float | None = None
     pending_position_mwh: tuple[float, ...] | np.ndarray | None = None
+    decision_resolution_minutes: int | None = None
+    market_timezone: str = "Europe/Rome"
+    native_interval_minutes_by_auction: Mapping[str, int] = field(default_factory=dict)
+    planned_delivery_balance_resolution_minutes: int | None = None
 
     def __post_init__(self) -> None:
         for key in ("trade_limit_mwh", "position_limit_mwh", "imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"):
             finite_nonnegative(getattr(self, key), key)
         if self.imbalance_limit_mwh is not None:
             finite_nonnegative(self.imbalance_limit_mwh, "imbalance limit")
+        if (self.decision_resolution_minutes is not None
+                and self.decision_resolution_minutes not in (15, 30, 60)):
+            raise ValueError("Decision resolution must be 15, 30, 60 minutes, or unspecified")
+        if (self.planned_delivery_balance_resolution_minutes is not None
+                and self.planned_delivery_balance_resolution_minutes not in (15, 30, 60)):
+            raise ValueError("Planned delivery balance resolution must be 15, 30, 60 minutes, or null")
+        if not set(self.native_interval_minutes_by_auction).issubset(self.auction_eligibility):
+            raise ValueError("Native product resolutions may only describe active auctions")
+        if any(value not in (15, 30, 60)
+               for value in self.native_interval_minutes_by_auction.values()):
+            raise ValueError("Native auction resolutions must be 15, 30, or 60 minutes")
         if self.state.timestamp != self.grid.starts[0]:
             raise ValueError("Physical state timestamp must equal residual delivery start")
         battery = self.plant.battery
@@ -503,8 +533,8 @@ class OptimizationInput:
             lower = upper = self.state.energy_mwh
             for duration in self.grid.delta_hours:
                 retention = (1 - battery.self_discharge_per_hour) ** duration
-                lower = max(battery.energy_min_mwh, lower * retention - battery.max_discharge_mw * duration / battery.eta_discharge)
-                upper = min(battery.maximum_energy, upper * retention + battery.max_charge_mw * duration * battery.eta_charge)
+                lower = max(battery.energy_min_mwh, lower * retention - battery.max_power_mw * duration / battery.eta_discharge)
+                upper = min(battery.maximum_energy, upper * retention + battery.max_power_mw * duration * battery.eta_charge)
             if not lower - 1e-9 <= target <= upper + 1e-9:
                 raise ValueError("Terminal target is unreachable within battery power/energy limits")
 

@@ -1,6 +1,6 @@
 # ENTSO-E input pipeline
 
-The ENTSO-E adapter implements these documented data items. `configs/entsoe_api.yaml`
+The ENTSO-E adapter implements these documented data items. `configs/api_experiments/entsoe_api.yaml`
 requests one local delivery day for NORD; `end` is exclusive. The shared downloader
 splits requests by local day, checks each cache first, preserves raw responses,
 and writes canonical records and coverage metadata. No packages are installed.

@@ -1,6 +1,6 @@
 # Prepared forecasts only; no API calls, model fits or invented missing inputs.
 # Complete explicit fields and prepared files before using optimize.
-include: italy_nord.example.yaml
+include: ../price_experiments/italy_nord.example.yaml
 optimization:
   forecast_inputs:
     delivery_day: null
@@ -50,13 +50,12 @@ plant:
   poi_export_mw: null
 battery:
   capacity_mwh: null
-  max_charge_mw: null
-  max_discharge_mw: null
-  converter_charge_efficiency: 0.97
-  converter_discharge_efficiency: 0.97
-  cell_charge_efficiency: 1.0
-  cell_discharge_efficiency: 1.0
-  efficiency_convention: converter_and_cell
+  max_power_mw: null
+  soc_min_percent: null
+  soc_max_percent: null
+  efficiency_convention: combined
+  combined_charge_efficiency: 0.97
+  combined_discharge_efficiency: 0.97
 state:
   timestamp: null
   initial_energy_mwh: null

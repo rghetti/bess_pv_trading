@@ -15,7 +15,7 @@ import pandas as pd
 
 from ..domain import (AcceptedTrade, BatteryParameters,
     DeliveryGrid, MarketState, OptimizationInput, PhysicalState, PlantParameters,
-    SolverSettings)
+    SolverSettings, battery_parameters_from_config)
 from ..markets import AuctionCalendar
 from ..optimization import build_model, solve_model, validate_solution
 from ..optimization.degradation import advance_degradation_state, degradation_settings_from_config
@@ -53,7 +53,7 @@ def synthetic_inputs(config: dict[str, Any]) -> dict[str, Any]:
     phase = (hour - study["sunrise_hour"]) / (study["sunset_hour"] - study["sunrise_hour"])
     pv = study["pv_peak_mw"] * np.maximum(0, np.sin(np.pi * np.clip(phase, 0, 1)))
     base = study["base_price_eur_per_mwh"] + study["daily_price_amplitude"] * np.cos(2*np.pi*(hour-19)/24)
-    battery = BatteryParameters(**config["battery"])
+    battery = battery_parameters_from_config(config["battery"])
     plant = PlantParameters(config["plant"]["farm_id"], config["plant"]["poi_import_mw"],
                             config["plant"]["poi_export_mw"], battery)
     kwargs = dict(base_prices=base, stage_spreads=study["stage_spreads"],
@@ -78,6 +78,9 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
         raise ValueError(f"Unsupported strategy {strategy}")
     started = perf_counter()
     full_grid, plant = fixture["grid"], fixture["plant"]
+    if destination.exists():
+        raise FileExistsError(f"Replay output exists; choose a fresh destination: {destination}")
+    destination.mkdir(parents=True, exist_ok=False)
     schedule, actual_prices = fixture["schedule"], fixture["actual_prices"]
     state = PhysicalState(full_grid.starts[0], config["state"]["initial_energy_mwh"], origin=config["state"]["origin"],
         cycle_segment_energy_mwh=config["state"].get("cycle_segment_energy_mwh"))
@@ -87,6 +90,9 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
     pending: dict[int, tuple[float, float, float]] = {}
     records: dict[int, dict[str, Any]] = {}
     solves: list[dict[str, Any]] = []
+    publications: list[dict[str, Any]] = []
+    plan_snapshots: dict[str, list[dict[str, Any]]] = {}
+    control_plan: dict[int, tuple[float, float, float]] = {}
     current_forecast: np.ndarray | None = None
     aging = degradation_settings_from_config(config)
     settings = SolverSettings(**config["solver"])
@@ -122,16 +128,20 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             known_prices={key: value[first:] for key, value in known.items()}, decision_cutoff=cutoff)
         selected_schedule = schedule
         if strategy != "stochastic_integrated":
-            mean_innovation = float(np.dot(config["synthetic"]["branch_values"],
-                                           config["synthetic"]["branch_probabilities"]))
+            scenario_settings = config.get("synthetic", {})
+            values = scenario_settings.get("branch_values", (0.0,))
+            probabilities = scenario_settings.get("branch_probabilities", (1.0,))
+            mean_innovation = float(np.dot(values, probabilities))
             kwargs.update(branch_values=(mean_innovation,), branch_probabilities=(1.0,))
         if strategy == "deterministic_sequential":
             selected_schedule = tuple(event for event in schedule if event.auction == current_auction)
         if strategy == "oracle":
             kwargs["branch_values"] = (0.0,)
-            kwargs["base_prices"] = actual_prices["DA"][first:]
-            kwargs["stage_spreads"] = {b: (actual_prices[b]-actual_prices[a])[first:]
-                       for a,b in zip(("DA","IDA1","IDA2"),("IDA1","IDA2","IDA3"))}
+            auction_order = [event.auction for event in schedule]
+            first_auction = auction_order[0]
+            kwargs["base_prices"] = actual_prices[first_auction][first:]
+            kwargs["stage_spreads"] = {current: (actual_prices[current]-actual_prices[previous])[first:]
+                       for previous,current in zip(auction_order,auction_order[1:])}
         bundle, tree = synthetic_price_tree(residual, current_forecast[first:], selected_schedule, **kwargs)
         masks = {a: tuple((t+first) in next(e.eligible_intervals for e in schedule if e.auction==a)
                          for t in range(len(residual.interval_ids))) for a in tree.bid_nodes}
@@ -146,10 +156,23 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             trading["imbalance_penalty_eur_per_mwh"], config["state"]["terminal_target_mwh"],
             aging, trading["grid_import_fee_eur_per_mwh"],
             imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
-            pending_position_mwh=pending_positions)
+            planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
+            pending_position_mwh=pending_positions,
+            decision_resolution_minutes=config.get("decision_resolution_minutes"),
+            market_timezone=config.get("market", {}).get("timezone", fixture["calendar"].timezone),
+            native_interval_minutes_by_auction={auction: minutes for auction, minutes
+                in config.get("native_interval_minutes_by_auction", {}).items()
+                if auction in masks})
         built = build_model(inputs)
         try:
-            result = solve_model(built, settings)
+            model_settings = config["solver"]
+            model_file = None
+            if config.get("outputs", {}).get("save_model_files", False):
+                model_directory = destination / "models"
+                model_directory.mkdir(parents=True, exist_ok=True)
+                model_file = model_directory / f"model_{len(solves) + 1:03d}_{cutoff.strftime('%Y%m%dT%H%M%SZ')}_{trigger}.lp"
+                model_settings = {**model_settings, "export_path": str(model_file)}
+            result = solve_model(built, SolverSettings(**model_settings))
         finally:
             built.model.dispose()
         if not result.has_incumbent:
@@ -159,6 +182,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             raise RuntimeError(f"Independent solution validation failed: {validation.violations}")
         solves.append({"cutoff":cutoff.isoformat(), "current_auction":current_auction,
             "solve_trigger":trigger, "published_auction":published_auction,
+            "model_file":str(model_file) if model_file is not None else None,
             "known_auctions":list(known),
             "known_prices_fixed":{auction:bool(np.all(bundle.auction_prices_eur_per_mwh[auction] == curve[first:]))
                                   for auction,curve in known.items()},
@@ -180,6 +204,27 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             raise RuntimeError("Actionable bid is not shared at the current information cutoff")
         submitted[auction] = {product:quantity for (a,node,product),quantity in result.trades.items()
                               if a==auction and node==owner}
+        snapshot = []
+        for local_t, product in enumerate(inputs.grid.interval_ids):
+            t = full_grid.interval_ids.index(product)
+            owner = inputs.tree.bid_nodes[auction][0]
+            trade_mwh = float(result.trades.get((auction, owner, product), 0.0))
+            row = {"auction": auction, "interval_id": product,
+                "interval_start_utc": str(full_grid.starts[t]),
+                "charge_mw": float(result.arrays["charge_mw"][0, local_t]),
+                "discharge_mw": float(result.arrays["discharge_mw"][0, local_t]),
+                "net_battery_dispatch_mw": float(result.arrays["discharge_mw"][0, local_t]
+                    - result.arrays["charge_mw"][0, local_t]),
+                "pv_ac_forecast_mw": float(inputs.scenarios.pv_ac_mw[0, local_t]),
+                "expected_grid_mw": float(result.arrays["grid_mw"][0, local_t]),
+                "auction_trade_mwh": trade_mwh,
+                "curtailment_mw": float(result.arrays["curtailment_mw"][0, local_t]),
+                "soc_start_mwh": float(result.arrays["energy_mwh"][0, local_t]),
+                "soc_end_mwh": float(result.arrays["energy_mwh"][0, local_t + 1]),
+                "optimizer_cutoff_utc": event.at.isoformat()}
+            snapshot.append(row)
+            control_plan[t] = (row["charge_mw"], row["discharge_mw"], row["curtailment_mw"])
+        plan_snapshots[auction] = snapshot
 
     def publish_results(event: Event) -> None:
         nonlocal market
@@ -195,26 +240,33 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             market = market.accept(AcceptedTrade(auction, event.payload.submission_at.to_pydatetime(),
                 event.at.to_pydatetime(), product, quantity, float(actual_prices[auction][t]),
                 f"{auction}:{product}"))
-        # Refresh conditional prices and the residual objective immediately. This
-        # diagnostic solve neither submits its proposals nor replaces commands
-        # already committed for the current physical interval.
-        plan(event.at, trigger="auction_results", published_auction=auction)
-        solves[-1].update(publication_booked_trades=len(submitted[auction]),
+        # Publication settles fixed offers and updates information. The next
+        # actionable auction/control decision uses it without a diagnostic solve.
+        publications.append(dict(auction=auction, published_at=event.at.isoformat(),
+            known_auctions=sorted(known),
+            accepted_contractual_cashflow_eur=market.cashflow_eur,
+            publication_booked_trades=len(submitted[auction]),
             publication_quantity_mwh=sum(submitted[auction].values()),
-            publication_booked_cashflow_eur=market.cashflow_eur-previous_cash)
+            publication_booked_cashflow_eur=market.cashflow_eur-previous_cash))
 
     def control(event: Event) -> None:
         t = event.payload
-        _, result = plan(event.at)
-        pending[t] = tuple(float(result.arrays[name][0,0])
-                        for name in ("charge_mw","discharge_mw","curtailment_mw"))
+        if config.get("execution", {}).get("reoptimize_physical_controls", True):
+            _, result = plan(event.at)
+            pending[t] = tuple(float(result.arrays[name][0,0])
+                            for name in ("charge_mw","discharge_mw","curtailment_mw"))
+        elif t in control_plan:
+            pending[t] = control_plan[t]
+        else:
+            raise ValueError(f"No auction optimization plan covers delivery interval {full_grid.interval_ids[t]}")
 
     def observation(event: Event) -> None:
         nonlocal state
         t = event.payload
         charge, discharge, curtailment = pending[t]
+        realized_pv = fixture.get("realized_pv", fixture["pv"])
         state, record = execute_interval(state=state, start=full_grid.starts[t], end=full_grid.ends[t],
-            pv_ac_mw=float(fixture["pv"][t]), requested_charge_mw=charge,
+            pv_ac_mw=float(realized_pv[t]), requested_charge_mw=charge,
             requested_discharge_mw=discharge, requested_curtailment_mw=curtailment,
             plant=plant, degradation_settings=aging)
         records[t] = {"interval_id": full_grid.interval_ids[t],"start":str(full_grid.starts[t]),
@@ -226,11 +278,13 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
         position = float(market.positions(full_grid)[t])
         imbalance = record["grid_mw"]*full_grid.delta_hours[t]-position
         record.update(net_position_mwh=position,imbalance_mwh=imbalance,
-            imbalance_cashflow_eur=imbalance*config["synthetic"]["imbalance_price_eur_per_mwh"],
+            imbalance_cashflow_eur=imbalance*trading.get("imbalance_price_eur_per_mwh",
+                config.get("synthetic", {}).get("imbalance_price_eur_per_mwh", 0.0)),
             imbalance_penalty_eur=abs(imbalance)*trading["imbalance_penalty_eur_per_mwh"],
             import_fee_eur=max(0,-record["grid_mw"])*full_grid.delta_hours[t]*trading["grid_import_fee_eur_per_mwh"])
 
-    events = [Event(schedule[0].submission_at-pd.Timedelta(hours=1), EventKind.FORECAST_PUBLICATION)]
+    forecast_at = fixture.get("forecast_available_at", schedule[0].submission_at-pd.Timedelta(hours=1))
+    events = [Event(pd.Timestamp(forecast_at), EventKind.FORECAST_PUBLICATION)]
     for event in schedule:
         events.extend([Event(event.submission_at,EventKind.AUCTION_SUBMISSION,payload=event),
                        Event(event.results_at,EventKind.AUCTION_RESULTS,payload=event)])
@@ -242,12 +296,16 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
     engine.run({EventKind.FORECAST_PUBLICATION:publish_forecast,EventKind.AUCTION_SUBMISSION:submit,
         EventKind.AUCTION_RESULTS:publish_results,EventKind.PHYSICAL_CONTROL:control,
         EventKind.OBSERVATION_AVAILABLE:observation,EventKind.SETTLEMENT:settle})
-    destination.mkdir(parents=True,exist_ok=False)
     frame = pd.DataFrame([records[t] for t in sorted(records)])
     frame.to_csv(destination/"dispatch.csv",index=False)
+    plan_rows = [row for auction in [event.auction for event in schedule]
+                 for row in plan_snapshots.get(auction, [])]
+    if plan_rows:
+        pd.DataFrame(plan_rows).to_csv(destination/"expected_dispatch_plans.csv", index=False)
     pd.DataFrame([{**asdict(trade),"cashflow_eur":trade.cashflow_eur} for trade in market.accepted_trades]).to_csv(destination/"ledger.csv",index=False)
     write_json(destination/"event_trace.json",engine.trace)
     write_json(destination/"solves.json",solves)
+    write_json(destination/"price_publications.json",publications)
     auction_cash = {a:sum(trade.cashflow_eur for trade in market.accepted_trades if trade.auction==a)
                     for a in actual_prices}
     components = {"auction_revenue_eur":market.cashflow_eur,
@@ -257,13 +315,18 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
     summary = {"strategy":strategy,"executable":strategy!="oracle","components":components,
         "auction_cashflows_eur":auction_cash,"realized_operating_profit_eur":profit,
         "initial_expected_profit_eur":solves[0]["objective_eur"],"final_state":asdict(state),
-        "terminal_error_mwh":abs(state.energy_mwh-config["state"]["terminal_target_mwh"]),
+        "terminal_constraint_enabled":config["state"]["terminal_target_mwh"] is not None,
+        "terminal_error_mwh":(None if config["state"]["terminal_target_mwh"] is None
+            else abs(state.energy_mwh-config["state"]["terminal_target_mwh"])),
         "max_safety_adjustment_mw":float(frame.safety_adjustment_mw.max()),
         "solves":len(solves),"runtime_seconds":perf_counter()-started,
+        "auction_decision_solves":sum(item["solve_trigger"] == "auction_submission" for item in solves),
+        "physical_control_solves":sum(item["solve_trigger"] == "physical_control" for item in solves),
+        "price_publication_events":len(publications),
         "max_validation_error":max(max(item["validation"]["max_errors"].values()) for item in solves),
         "first_solve":solves[0],"artifacts":str(destination),
         "execution_assumptions":["pre-interval commands; final AC averages revealed at interval end",
-            "idealized interval-average safety response", "frozen perfect deterministic synthetic PV forecast",
+            "idealized interval-average safety response", fixture.get("execution_pv_assumption", "optimization PV forecast reused as execution"),
             "committed commands project battery state to next boundary for intrainterval auction cutoffs",
             "independent delivery-day study with known delivery-start energy"]}
     write_json(destination/"summary.json",summary)

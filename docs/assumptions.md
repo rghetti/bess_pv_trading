@@ -84,7 +84,7 @@ affect any subsequent calibration/evaluation.
 
 ## Synthetic equipment and economics
 
-All values below are software-test inputs in `configs/synthetic_small.yaml`;
+All values below are software-test inputs in `configs/full_experiments/synthetic_small.yaml`;
 they do not describe farm 1's actual battery, POI or operating contract.
 
 | Quantity | Configured synthetic value |
@@ -171,7 +171,7 @@ available segment first. Initialization uses Eq. (39) once at the assumed study
 start, and the resulting cycle-memory segment vector is carried through
 execution and reoptimization. It is not reconstructed from aggregate SoC.
 
-`configs/synthetic_xu.yaml` separately assumes a total EUR 300,000 pack
+`configs/full_experiments/synthetic_xu.yaml` separately assumes a total EUR 300,000 pack
 replacement cost, eight depth segments and the paper's illustrative Eq. (24)
 stress parameters 0.000524 and 2.03. These are configurable study assumptions,
 not farm battery calibration or a converted historical pack-price quotation.

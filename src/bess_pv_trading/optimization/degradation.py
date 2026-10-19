@@ -11,7 +11,8 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from ..domain import BatteryParameters, DegradationSettings, OptimizationInput, PhysicalState
+from ..domain import (BatteryParameters, DegradationSettings, OptimizationInput,
+                      PhysicalState, battery_parameters_from_config)
 
 
 def degradation_settings_from_config(config: Mapping[str, Any]) -> DegradationSettings:
@@ -22,6 +23,45 @@ def degradation_settings_from_config(config: Mapping[str, Any]) -> DegradationSe
             "xu_segmented": "xu_segmented"}.get(model)
     if mode is None:
         raise ValueError(f"Unknown degradation model {model!r}")
+    # Published pack prices and reference cycle life can determine the linear
+    # wear rate. Keep their source metadata in YAML rather than solver settings.
+    economics = section.pop("replacement_economics", None)
+    lifetime = section.pop("throughput_lifetime", None)
+    if economics is not None or lifetime is not None:
+        if "battery" not in config:
+            raise ValueError("Replacement/lifetime degradation requires the full battery configuration")
+        battery = battery_parameters_from_config(config["battery"])
+        if battery.capacity_mwh <= 0:
+            raise ValueError("Replacement/lifetime degradation requires positive battery capacity")
+    if economics is not None:
+        if section.get("replacement_cost_eur") is not None:
+            raise ValueError("Specify replacement_economics or replacement_cost_eur, not both")
+        price = float(economics["pack_price_usd_per_kwh"])
+        fx = float(economics["usd_per_eur"])
+        additional = float(economics["additional_replacement_eur_per_kwh"])
+        salvage = float(economics["salvage_fraction"])
+        if (not all(np.isfinite(value) for value in (price, fx, additional, salvage))
+                or price <= 0 or fx <= 0 or additional < 0 or not 0 <= salvage < 1):
+            raise ValueError("Invalid replacement pack price, FX, additional cost or salvage fraction")
+        section["replacement_cost_eur"] = (
+            (price / fx + additional) * battery.capacity_mwh * 1000 * (1 - salvage))
+    if lifetime is not None:
+        if mode != "constant_throughput":
+            raise ValueError("throughput_lifetime is only supported by throughput degradation")
+        if section.get("cost_eur_per_mwh_throughput") is not None:
+            raise ValueError("Specify throughput_lifetime or a direct throughput cost, not both")
+        cycles = float(lifetime["cycle_life"])
+        depth = float(lifetime["reference_depth_of_discharge"])
+        replacement = section.get("replacement_cost_eur")
+        if (not np.isfinite(cycles) or cycles <= 0 or not np.isfinite(depth)
+                or not 0 < depth <= 1 or replacement is None
+                or not np.isfinite(replacement) or replacement <= 0):
+            raise ValueError("Throughput lifetime requires positive cycles/replacement cost and 0<DoD<=1")
+        # A reference internal-energy cycle consumes E*DoD/eta_charge AC MWh
+        # and delivers E*DoD*eta_discharge AC MWh; charge both throughputs once.
+        lifetime_ac_mwh = (cycles * depth * battery.capacity_mwh
+                           * (1 / battery.eta_charge + battery.eta_discharge))
+        section["cost_eur_per_mwh_throughput"] = float(replacement) / lifetime_ac_mwh
     return DegradationSettings(mode=mode, **section)
 
 
@@ -174,8 +214,8 @@ def build_xu_degradation(model: Any, inputs: OptimizationInput,
         for owner in sorted({row[t] for row in inputs.tree.control_nodes}):
             for j in range(settings.segment_count):
                 suffix = f"n{owner},t{t},j{j}"
-                charge[t, owner, j] = model.addVar(ub=battery.max_charge_mw, name=f"xu_charge[{suffix}]")
-                discharge[t, owner, j] = model.addVar(ub=battery.max_discharge_mw, name=f"xu_discharge[{suffix}]")
+                charge[t, owner, j] = model.addVar(ub=battery.max_power_mw, name=f"xu_charge[{suffix}]")
+                discharge[t, owner, j] = model.addVar(ub=battery.max_power_mw, name=f"xu_discharge[{suffix}]")
             model.addConstr(gp.quicksum(charge[t, owner, j] for j in range(settings.segment_count)) == variables["charge"][t, owner], name=f"xu_charge_sum[n{owner},t{t}]")
             model.addConstr(gp.quicksum(discharge[t, owner, j] for j in range(settings.segment_count)) == variables["discharge"][t, owner], name=f"xu_discharge_sum[n{owner},t{t}]")
             for j in range(settings.segment_count - 1):
@@ -184,8 +224,8 @@ def build_xu_degradation(model: Any, inputs: OptimizationInput,
                 discharge_priority[t, owner, j] = model.addVar(vtype=gp.GRB.BINARY, name=f"xu_discharge_deeper[{suffix}]")
                 # If any deeper segment is used, this segment must finish full
                 # when charging, or empty when discharging. Tails prevent skips.
-                model.addConstr(gp.quicksum(charge[t, owner, k] for k in range(j + 1, settings.segment_count)) <= battery.max_charge_mw * charge_priority[t, owner, j], name=f"xu_charge_priority[{suffix}]")
-                model.addConstr(gp.quicksum(discharge[t, owner, k] for k in range(j + 1, settings.segment_count)) <= battery.max_discharge_mw * discharge_priority[t, owner, j], name=f"xu_discharge_priority[{suffix}]")
+                model.addConstr(gp.quicksum(charge[t, owner, k] for k in range(j + 1, settings.segment_count)) <= battery.max_power_mw * charge_priority[t, owner, j], name=f"xu_charge_priority[{suffix}]")
+                model.addConstr(gp.quicksum(discharge[t, owner, k] for k in range(j + 1, settings.segment_count)) <= battery.max_power_mw * discharge_priority[t, owner, j], name=f"xu_discharge_priority[{suffix}]")
     for s in range(count):
         for t in range(intervals + 1):
             for j in range(settings.segment_count):

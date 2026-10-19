@@ -8,6 +8,7 @@ import pytest
 from bess_pv_trading.config import load_config
 from bess_pv_trading.markets import AuctionCalendar
 from bess_pv_trading.optimization.prepared import PreparedInputError, load_prepared_inputs
+from battery_case_config import battery_config
 
 
 def prepared_config(tmp_path):
@@ -36,7 +37,7 @@ def prepared_config(tmp_path):
         "settlement_point_price_eur_per_mwh": 20., "settlement_point_price_available_at": source.isoformat(),
         "settlement_point_price_status": "study_assumption"},
         "plant": {"farm_id": 1, "poi_import_mw": 1., "poi_export_mw": 1.},
-        "battery": {"capacity_mwh": 1., "max_charge_mw": .5, "max_discharge_mw": .5},
+        "battery": battery_config("half_power"),
         "state": {"initial_energy_mwh": .5, "terminal_target_mwh": .5, "origin": "known_delivery_start_assumption"},
         "trading": {"trade_limit_mwh": .25, "position_limit_mwh": .25, "imbalance_penalty_eur_per_mwh": 100., "grid_import_fee_eur_per_mwh": 0.},
         "degradation": {"model": "throughput", "cost_eur_per_mwh_throughput": 5., "assumptions": "synthetic fixture throughput coefficient"}}
@@ -53,6 +54,15 @@ def test_complete_prepared_inputs_preserve_ac_negative_prices_and_masks(tmp_path
     assert inputs.scenarios.provenance["planning_scope"].startswith("initial pre-DA")
     assert len(inputs.tree.leaf_nodes) == 1
     assert not inputs.market.accepted_trades
+
+
+def test_prepared_inputs_allow_explicit_null_terminal_soc(tmp_path):
+    config = prepared_config(tmp_path)
+    config["state"]["terminal_target_mwh"] = None
+    assert load_prepared_inputs(config).terminal_target_mwh is None
+    del config["state"]["terminal_target_mwh"]
+    with pytest.raises(PreparedInputError, match="terminal_target_mwh"):
+        load_prepared_inputs(config)
 
 
 @pytest.mark.parametrize("field", ["available_at", "source_time", "fit_cutoff"])
@@ -94,7 +104,7 @@ def test_incomplete_or_oracle_prices_rejected(tmp_path):
 
 
 def test_missing_template_has_actionable_error_and_null_equipment_rejected(tmp_path):
-    config = load_config("configs/prepared_optimization.example.yaml")
+    config = load_config("configs/full_experiments/prepared_optimization.example.yaml")
     with pytest.raises(PreparedInputError, match="Missing explicitly configured optimization"):
         load_prepared_inputs(config)
     config = prepared_config(tmp_path)

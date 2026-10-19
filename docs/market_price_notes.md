@@ -108,7 +108,7 @@ GME history and verified historical availability.
 
 ## Frozen September–October check
 
-`configs/price_forward_check.yaml` references a saved protocol that fixes the
+`configs/price_experiments/price_forward_check.yaml` references a saved protocol that fixes the
 selected by-hour linear specification, seven-day coefficient refit schedule and
 42-day Gaussian window with 0.3 shrinkage before examining the additional prices.
 The additional period is 1 September through 16 October 2026; the download end
@@ -117,7 +117,7 @@ before opening its DuckDB database for the check:
 
 ```bash
 PYTHONPATH=src python -m bess_pv_trading download-data --config configs/entsoe_price_extension.yaml --interactive
-PYTHONPATH=src python -m bess_pv_trading check-frozen-prices --config configs/price_forward_check.yaml
+PYTHONPATH=src python -m bess_pv_trading check-frozen-prices --config configs/price_experiments/price_forward_check.yaml
 ```
 
 The check reads completed, checksum-verified `data/api/market.duckdb` snapshots
@@ -171,19 +171,19 @@ does not establish stable superiority or a calibrated scenario model.
 Runnable examples (existing `bess` environment, no installation):
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading import-market-data --config configs/italy_nord.example.yaml
-PYTHONPATH=src python -m bess_pv_trading train-price-models --config configs/italy_nord.example.yaml
+PYTHONPATH=src python -m bess_pv_trading import-market-data --config configs/price_experiments/italy_nord.example.yaml
+PYTHONPATH=src python -m bess_pv_trading train-price-models --config configs/price_experiments/italy_nord.example.yaml
 PYTHONPATH=src python -m pytest -q tests/unit/test_markets.py tests/unit/test_prices.py
 ```
 
 The first two commands intentionally give actionable missing-input errors until actual manual price files exist. See [sources.md](sources.md) for consulted official references and exact supported claims.
 
 
-A runnable import/training demonstration is provided in `configs/synthetic_prices.yaml` and `tests/fixtures/synthetic_market_prices.csv`. It contains 288 explicitly synthetic records: 18 days, four auctions, four selected products per auction. It is deliberately sparse and the full requested-day coverage report identifies 5,760 missing products. These gaps are reported, never filled, and this fixture is not a full-day market backtest. Regenerate with `PYTHONPATH=src python tests/fixtures/generate_market_fixture.py` (seed 29).
+A runnable import/training demonstration is provided in `configs/price_experiments/synthetic_prices.yaml` and `tests/fixtures/synthetic_market_prices.csv`. It contains 288 explicitly synthetic records: 18 days, four auctions, four selected products per auction. It is deliberately sparse and the full requested-day coverage report identifies 5,760 missing products. These gaps are reported, never filled, and this fixture is not a full-day market backtest. Regenerate with `PYTHONPATH=src python tests/fixtures/generate_market_fixture.py` (seed 29).
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading import-market-data --config configs/synthetic_prices.yaml
-PYTHONPATH=src python -m bess_pv_trading train-price-models --config configs/synthetic_prices.yaml
+PYTHONPATH=src python -m bess_pv_trading import-market-data --config configs/price_experiments/synthetic_prices.yaml
+PYTHONPATH=src python -m bess_pv_trading train-price-models --config configs/price_experiments/synthetic_prices.yaml
 ```
 
 Both commands were executed successfully in the existing bess environment. Artifacts are grouped under `outputs/market_price_fixture/`: canonical CSV and coverage JSON, cache request/retrieval manifests, four model JSON files, four out-of-sample residual CSVs, and `models/training_manifest.json`. Each demonstrated auction model uses 44 lag-complete training rows, omits 28 initial rows without week lags, and produces 28 rolling-origin OOS residual rows. Input provenance explicitly records `synthetic_fixture` and its synthetic dataset ID. This demonstrates execution and causal mechanics, not historical forecasting performance.
@@ -193,7 +193,7 @@ Equal observed sibling price vectors are combined into one outcome with summed p
 
 ## Prepared-input initial optimization
 
-`optimization/prepared.py:load_prepared_inputs` connects the exported PV CSV and a separately supplied point-price CSV to the shared optimizer. This route supports one farm/member, a complete ordinary/DST delivery grid, and an initial cutoff no later than the DA submission. Future planned DA/IDA decisions are not accepted trades. No historical replay is implied. The template `configs/prepared_optimization.example.yaml` leaves absent input paths and equipment values null; it fails with an actionable missing-input error until populated.
+`optimization/prepared.py:load_prepared_inputs` connects the exported PV CSV and a separately supplied point-price CSV to the shared optimizer. This route supports one farm/member, a complete ordinary/DST delivery grid, and an initial cutoff no later than the DA submission. Future planned DA/IDA decisions are not accepted trades. No historical replay is implied. The template `configs/full_experiments/prepared_optimization.example.yaml` leaves absent input paths and equipment values null; it fails with an actionable missing-input error until populated.
 
 The PV CSV contract matches the actual forecast export: `farm_id,member_id,member_origin,member_probability,forecast_cycle_time,forecast_available_at,interval_start_utc,interval_end_utc,pv_ac_mw,input_eligibility,review_status`. Exactly one source vintage and member with probability one must cover the complete local delivery day. AC MW is preserved. Missing/negative PV, model-invalid intervals and review exclusions fail validation; source/availability clocks must precede the cutoff. An optional PV model fit cutoff is checked, or the configuration must explicitly acknowledge an unfitted PV-output assumption. Ex-post AC observation columns are not used as forecasts.
 

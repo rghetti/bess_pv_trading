@@ -9,14 +9,14 @@ After registration, first check one complete ordinary delivery day:
 
 ```bash
 conda activate bess
-PYTHONPATH=src python -m bess_pv_trading download-data --config configs/gme_api.yaml --interactive
+PYTHONPATH=src python -m bess_pv_trading download-data --config configs/api_experiments/gme_api.yaml --interactive
 ```
 
 This requests NORD MGP, MI-A1, MI-A2 and MI-A3 for 1 October 2025. Then acquire
 the missing intraday history for 1 January 2025 through 31 August 2026:
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading download-data --config configs/gme_history.yaml --interactive
+PYTHONPATH=src python -m bess_pv_trading download-data --config configs/api_experiments/gme_history.yaml --interactive
 ```
 
 The history configuration requests three auctions across 608 delivery days,
@@ -73,6 +73,63 @@ documented-format responses. The alternative is a user-exported XML archive
 from [GME's public MI-A1 price download page](https://www.mercatoelettrico.org/it-it/Home/Esiti/Elettricita/MI/MI-A1/Download/Download?valore=Prezzi),
 with corresponding MI-A2/MI-A3 pages. Its wide XML format requires its own
 explicit normalization, rather than the JSON API decoder.
+
+## Manual GME XLSX import and one-day experiment
+
+The four user-downloaded NORD workbooks for 1 January–31 August 2025 can be
+imported offline into the same DuckDB catalog. Paths, date bounds, column names,
+decimal conventions, and native resolution are declared in
+`configs/api_experiments/gme_workbook_import.yaml`:
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading import-gme-workbooks \
+  --config configs/api_experiments/gme_workbook_import.yaml
+```
+
+The importer retains each original XLSX as a checksummed DuckDB snapshot and
+normalizes observed native products. Explicit cancellation notes become gaps;
+they are not converted to zero prices. A missing complete auction is skipped
+by the study, while a partial or misaligned curve stops the run.
+
+The configured 1 January 2025 benchmark is in
+`configs/full_experiments/gme_oracle_2025-01-01.yaml` and runs with:
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading experiment-gme-oracle \
+  --config configs/full_experiments/gme_oracle_2025-01-01.yaml
+```
+
+It uses one causally available PV weather vintage, measured AC output for
+execution after each interval closes (with only explicitly configured missing
+interval fallback), and actual GME clearing curves as an oracle. The oracle is a
+perfect-price upper-bound comparison, not an executable strategy. Auction
+timing assumptions, the 50% initial SOC, illustrative plant and BESS ratings,
+all efficiencies, imbalance assumptions, and Gurobi settings are in YAML.
+Artifacts include separate MGP/MI-A1/MI-A2 and MI-A3 price plots, each auction's
+expected dispatch plan with its PV forecast, forecast-versus-realized PV,
+percentage SOC, dispatch and ledger tables, per-solve
+model sizes and exported LP files, and a KPI manifest under
+`outputs/full_experiments/gme_oracle/`.
+
+The larger-farm throughput study is configured separately:
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading experiment-gme-oracle \
+  --config configs/full_experiments/gme_oracle_2025-01-01_farm910_throughput.yaml
+```
+
+Choose a fresh `experiment_outputs.run_id` when rerunning an existing named
+study. The runner protects completed outputs. Each active auction triggers one
+optimization before submission. Price publication updates the fixed-trade
+ledger and information only; its journal is `oracle/price_publications.json`.
+This study enforces planned delivery per native hour with zero imbalance cost,
+while recording realized forecast errors separately. See
+[battery and delivery-balance equations](battery_physical_model.md).
+
+For PV conversion, pvlib supplies DC power. The existing configurable DC-to-AC
+output factor is preserved and multiplied by the separately configured
+`pv.output.transformer_efficiency`; the current value `1.0` means no measured
+transformer loss is assumed, not that the transformer is known lossless.
 
 Sources: [GME API technical guide, pages 5–7 and 49–50](https://gme.mercatoelettrico.org/Portals/0/Documents/en-US/20251015Manuale_tecnico_API_En.pdf),
 [GME January 2025 product rule](https://www.mercatoelettrico.org/Portals/0/Documents/it-IT/20250101DTF25MPE.pdf).
