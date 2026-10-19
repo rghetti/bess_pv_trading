@@ -4,6 +4,17 @@ The executable data layer is `src/bess_pv_trading/data/`; the actual pvlib engin
 
 ## PV assumptions actually used
 
+The production forecast is a deterministic physical conversion of the supplied
+weather forecast. It uses the farm Zarr's `shortwave_radiation` (GHI),
+`direct_radiation` (working assumption: horizontal direct BHI),
+`temperature_2m` (air temperature in Celsius), and the two 10 m wind components.
+The wind speed is $v=\sqrt{u_{10}^2+v_{10}^2}$. Geometry and nameplate power come
+from the metadata and explicit YAML assumptions. Cloud cover, dew point,
+precipitation, snow and visibility remain available in the aligned data but do
+not enter this PV model as additional power corrections. Historical satellite
+GHI and measured `power` are observation/evaluation data, not future forecast
+inputs.
+
 `configs/farms_nord.yaml` acknowledges Milan proxy coordinates (45.4642, 9.1900); supplied farm elevation remains separate. These proxy coordinates are never used as an audit fault classifier. The implementation prompt's specific section 8.2 gives source south=0, west=-90, so the example explicitly chooses positive-east azimuth: pvlib bearing `(180 - source_azimuth) % 360`. Positive-west conversion `(180 + source_azimuth) % 360` is also tested. Earlier schema text did not establish the sign; this remains explicit config rather than an inference from south-zero alone.
 
 Fixed systems use supplied surface tilt/azimuth. Trackers use independently configured axis tilt zero, axis azimuth zero, maximum angle 60 degrees, backtracking enabled and GCR 0.35. Source module tilt is never reused as axis tilt. For farm 901 the example explicitly enables a front-side-only tracker approximation and records rear-side gain as omitted. No bifacial multiplier, module database or electrical specifications are inferred from PV type IDs.
@@ -12,9 +23,61 @@ Forecast shortwave GHI and working-interpretation horizontal direct means are re
 
 `pvlib.irradiance.get_total_irradiance` uses the isotropic model and albedo 0.2. Wind is the vector magnitude of the explicitly selected 10 m components; use as a module-level proxy is acknowledged. `pvlib.temperature.faiman` uses separately configured `u0=25`, `u1=6.84`. Temperature is already Celsius. `pvlib.pvsystem.pvwatts_dc` uses DC nameplate converted kW→W, a gamma coefficient of -0.004/°C and reference temperature 25°C; returned W are converted to MW. DC nameplate is not an undocumented output cap.
 
-Predicted farm AC is modeled DC times the independent illustrative PV-output efficiency 0.96, with no assumed AC inverter clipping limit. This is explicitly unfitted and does not describe measured hardware. The BESS converter's 0.97 is never used for measured PV, forecast PV conversion or direct grid export. An optional tested through-origin DC-to-AC calibration helper uses only completed eligible AC targets available by the fit cutoff; it excludes interpolated targets by default and reports adjusted samples and training RMSE. No real-data calibration, held-out calibration validation or fitted PV hardware identification has been executed. The caller must additionally certify causal historical prediction inputs for calibration.
+The Faiman model estimates module temperature, used here as the cell-temperature
+proxy passed to PVWatts:
+
+$$
+T_{cell}\approx T_{air}+\frac{G_{POA}}{u_0+u_1v},\qquad
+P_{DC}=P_{DC,nom}\frac{G_{POA}}{1000}
+       \left[1+\gamma(T_{cell}-T_{ref})\right].
+$$
+
+Here $G_{POA}$ is irradiance on the oriented module surface (W/m²), obtained
+from direct, diffuse and ground-reflected components using the isotropic
+transposition model. $T_{ref}=25$ °C and $\gamma=-0.004$/°C in the example YAML.
+Higher irradiation raises production and also heats the module; wind increases
+cooling. At unchanged irradiance, raising the modeled cell temperature from
+25 to 50 °C reduces the PVWatts power by 10% with this configured coefficient.
+These are model assumptions, not fitted hardware parameters. See the official
+[Faiman](https://pvlib-python.readthedocs.io/en/v0.16.1/reference/generated/pvlib.temperature.faiman.html),
+[PVWatts DC](https://pvlib-python.readthedocs.io/en/v0.16.1/reference/generated/pvlib.pvsystem.pvwatts_dc.html)
+and [transposition](https://pvlib-python.readthedocs.io/en/v0.16.1/reference/generated/pvlib.irradiance.get_total_irradiance.html)
+documentation.
+
+Predicted farm AC is modeled DC times the independent illustrative PV-output efficiency 0.96 and configured transformer efficiency (currently 1.0), with no assumed AC inverter clipping limit. This is explicitly unfitted and does not describe measured hardware. The BESS converter's 0.97 is never used for measured PV, forecast PV conversion or direct grid export. An optional tested through-origin DC-to-AC calibration helper uses only completed eligible AC targets available by the fit cutoff; it excludes interpolated targets by default and reports adjusted samples and training RMSE. No real-data calibration, held-out calibration validation or fitted PV hardware identification has been executed. The caller must additionally certify causal historical prediction inputs for calibration.
 
 The final PV AC production clock mask is applied separately from irradiance redistribution. Long exports contain the farm, cycle/availability, source lead, UTC interval boundaries, deterministic member and origin/probability one, modeled DC diagnostic, predicted AC, input eligibility, reviewed observation status, treatment flags, policy version and assumptions ID.
+
+## Latest available forecasts at auction decisions
+
+The real-data GME configuration now selects
+`forecast.reoptimization_pv_policy: latest_available_forecast_at_each_reoptimization`.
+At each solve it selects the latest cycle whose cycle time and publication time
+are no later than the auction's buffered decision cutoff. Publication defaults
+to the explicitly configured cycle-plus-four-hour assumption; explicit source
+publication metadata overrides it. The entire PV calculation is repeated with
+the selected cycle's weather. This remains one deterministic member per solve;
+successive forecast cycles are not ensemble members or known future revisions.
+
+Only intervals not yet executed are updated. An unfinished quarter-hour also
+receives the new forecast for projecting the next SOC boundary, without its
+final measured PV. IDA3 then optimizes the remaining physical horizon; trades
+remain restricted to its eligible products, with earlier commitments fixed.
+This adds no extra market solves. The legacy
+`freeze_initial_forecast_for_unobserved_delivery_intervals` policy remains
+selectable for a fixed-forecast comparison.
+
+For the 2025-01-01 study the eligible UTC cycles are 2024-12-31 06:00 for both
+DA/IDA1, 2024-12-31 12:00 for IDA2, and 2025-01-01 00:00 for IDA3. Solves and
+auction-plan rows record their vintage and availability clocks. Outputs include
+`json/pv_forecast_updates.json` and `csv/pv_forecasts_by_auction.csv`. Every PV
+comparison plot shows all distinct cycles, grouping auctions sharing a cycle.
+Newer curves cover only the intervals actually predicted at their decisions.
+The active-plan forecast and its source clocks are retained per executed
+interval; PV error KPIs use that forecast. The detailed PV diagnostic CSV also
+keeps the initial forecast as an explicitly named reference. The configured
+missing-measurement fallback remains the initial forecast, independently of
+these planning updates.
 
 ## Executed real-data example and interpretation
 

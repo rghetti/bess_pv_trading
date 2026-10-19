@@ -24,6 +24,8 @@ def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray]
         negative_prices = inputs.scenarios.imbalance_prices_eur_per_mwh
     settlement = np.sum(np.maximum(imbalance, 0) * inputs.scenarios.imbalance_prices_eur_per_mwh + np.minimum(imbalance, 0) * negative_prices, axis=1)
     penalty = np.abs(imbalance).sum(axis=1) * inputs.imbalance_penalty_eur_per_mwh
+    if not inputs.optimize_imbalances:
+        settlement, penalty = np.zeros(count), np.zeros(count)
     throughput = np.sum((arrays["charge_mw"] + arrays["discharge_mw"]) * inputs.grid.delta_hours, axis=1)
     aging = throughput * inputs.degradation.cost_eur_per_mwh_throughput
     if inputs.degradation.mode == "xu_segmented":
@@ -160,6 +162,8 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     equality("contractual_position_mwh", positions - arrays["net_position_mwh"])
     upper("final_position_limit_mwh", np.abs(positions) - inputs.position_limit_mwh)
     imbalance = grid * delta - positions
+    if not inputs.optimize_imbalances:
+        equality("contracted_delivery_mwh", imbalance)
     if inputs.planned_delivery_balance_resolution_minutes is not None:
         for group_index, group in enumerate(market_product_groups(inputs.grid,
                 inputs.planned_delivery_balance_resolution_minutes, inputs.market_timezone)):

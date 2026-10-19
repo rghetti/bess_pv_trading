@@ -1,0 +1,11 @@
+# Compare rolling PV updates with the retained fixed-forecast grid-feedback run.
+include: gme_oracle_2025-01-01_farm910_throughput.yaml
+
+gme_oracle_experiment:
+  study_id: gme_nord_oracle_2025-01-01_farm910_grid_feedback_rolling_pv
+
+forecast:
+  reoptimization_pv_policy: latest_available_forecast_at_each_reoptimization
+
+experiment_outputs:
+  run_id: gme_nord_oracle_2025-01-01_farm910_5mwh_grid_feedback_rolling_pv

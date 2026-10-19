@@ -35,6 +35,7 @@ def _optimization_inputs(config: dict):
         degradation_settings_from_config(config),
         trading["grid_import_fee_eur_per_mwh"],
         imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
+        optimize_imbalances=trading.get("optimize_imbalances", True),
         planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"))
     return inputs
 
@@ -67,6 +68,8 @@ def _solve_optimization(inputs, config: dict) -> dict:
     np.savez_compressed(output/"solution.npz",**result.arrays)
     write_json(output/"result.json",report)
     report["output_dir"] = str(output)
+    from .reporting.artifacts import organize_run_outputs
+    organize_run_outputs(output)
     if not validation.valid:
         raise RuntimeError(f"Independent validation failed: {validation.violations}")
     return report
@@ -96,6 +99,9 @@ def dispatch(command: str, config: dict) -> dict:
     if command == "import-gme-workbooks":
         from .data.gme_workbooks import import_gme_workbooks
         return import_gme_workbooks(config)
+    if command == "import-terna-workbooks":
+        from .data.terna_workbooks import import_terna_workbooks
+        return import_terna_workbooks(config)
     if command == "experiment-gme-oracle":
         from .simulation.gme_oracle import run_gme_oracle_experiment
         return run_gme_oracle_experiment(config)
@@ -151,7 +157,7 @@ def main(argv: list[str] | None = None) -> int:
         "backtest","report-implementation","download-data","experiment-api-prices","experiment-price-fundamentals",
         "study-linear-prices","calibrate-price-scenarios","check-frozen-prices",
         "api-cache-status","migrate-api-cache","diagnose-terna",
-        "import-gme-workbooks","experiment-gme-oracle"))
+        "import-gme-workbooks","import-terna-workbooks","experiment-gme-oracle"))
     parser.add_argument("--config",required=True,type=Path)
     parser.add_argument("--interactive",action="store_true",help="Prompt invisibly for missing API credentials in a terminal")
     parser.add_argument("--dry-run",action="store_true",help="Plan API requests and inspect cache without authenticating")

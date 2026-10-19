@@ -58,6 +58,18 @@ def prepared_case(auctions=None):
     return config, pd.concat(frames, ignore_index=True), specs
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_forecast_input_adapter_preserves_imbalance_policy(enabled):
+    config, pv, specs = prepared_case()
+    config["trading"]["optimize_imbalances"] = enabled
+    if not enabled:
+        settings = config["optimization"]["forecast_inputs"]
+        for key in list(settings):
+            if key.startswith("settlement_point_price"):
+                del settings[key]
+    assert build_forecast_inputs(config, pv, specs).optimize_imbalances is enabled
+
+
 def write_prepared_case(directory, *, gaussian=False):
     """Export explicitly synthetic canonical files for an offline CLI smoke test.
 
@@ -362,8 +374,8 @@ def test_cli_optimize_reads_canonical_files_and_publishes_result(tmp_path, capsy
     assert result["status"] == "optimal" and result["valid"]
     from pathlib import Path
     destination = Path(result["output_dir"])
-    report = json.loads((destination / "result.json").read_text())
-    assert (destination / "solution.npz").is_file()
+    report = json.loads((destination / "json/result.json").read_text())
+    assert (destination / "arrays/solution.npz").is_file()
     assert report["scenario_provenance"]["pv_members"] == 2
     assert "prepared_file_sha256" in report["scenario_provenance"]
     assert set(report["scenario_provenance"]["auction_eligible_product_indices"]) == {"DA", "IDA1", "IDA2", "IDA3"}

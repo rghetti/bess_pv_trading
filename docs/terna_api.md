@@ -154,7 +154,7 @@ availability of a returned revision. Unknown availability excludes the series
 from causal historical feature selection until independently supported evidence
 is supplied.
 
-Imbalance price acquisition remains explicitly blocked. Terna's
+Automatic imbalance price API acquisition remains explicitly blocked. Terna's
 [Daily Prices](https://developer.terna.it/docs/read/apis_catalog/fees/Daily_Prices)
 and [Preliminary Prices](https://developer.terna.it/docs/read/apis_catalog/fees/Preliminary_Prices)
 pages each disagree internally: their principal route uses `/fees/v1.0/...`,
@@ -165,3 +165,40 @@ specific reason instead of trying multiple undocumented alternatives. Manual
 imports with explicit product, revision, and publication provenance remain
 available in `data/market_prices.py`. Terna's separate market-output UP/DOWN
 prices are balancing-market aggregates; they are not IDA clearing prices.
+
+## Manual quarter-hour settlement workbooks
+
+Import the provided monthly `Riepilogo_Mensile_Quarto_Orario_YYYYMM.xlsx`
+exports with:
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading import-terna-workbooks --config configs/api_experiments/terna_workbook_import.yaml
+```
+
+The YAML selects `NORD` by its field value, not worksheet row order. Row 2
+contains column headers; row 1 is a title. The normalized dataset is
+`provider=terna, dataset=imbalance_prices, zone=NORD` in `data/api/market.duckdb`.
+It retains the final price, base price, incentive, aggregate sign/volume,
+exchange quantities, original row and file, and source checksum. The original
+XLSX bytes and normalized table are immutable monthly snapshots. Publication
+time is unknown, so these exports are not eligible historical forecast features.
+
+The explicit label convention is local interval start in `Europe/Rome`, converted
+to UTC. Every expected native quarter-hour must occur exactly once. The March
+2025 file contains 2,972 NORD rows, including 92 on the spring DST-transition day.
+Autumn labels without offsets are rejected rather than guessed. No prices are
+interpolated or resampled, and zero prices remain valid. Base plus incentive is
+checked against the final price under the YAML rounding tolerance; settlement
+uses the final column directly.
+
+The importer writes a report with monthly row counts and snapshot identifiers to
+`outputs/data_import/terna_imbalance_prices/NORD/2025-01_2025-08/manifest.json`.
+Repeated imports verify existing snapshots and reuse them when source bytes and
+normalization settings match.
+
+The full experiment's `settlement` YAML section enables exact interval matching
+against the executed trajectory. The price table is loaded after physical replay,
+never supplied to the optimizer. Executed surplus/shortfall is priced separately
+in every quarter-hour with signed cash flow `price * imbalance_mwh`. The run saves
+the aligned source table, interval cash flows, receipts/payments and corrected
+profit, plus settlement and profit-breakdown plots.

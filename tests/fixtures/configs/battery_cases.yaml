@@ -1,0 +1,334 @@
+# Independent analytical reference cases. These are separate from tunable studies.
+batteries:
+  unit: &unit
+    capacity_mwh: 1.0
+    max_power_mw: 1.0
+    soc_min_percent: 0.0
+    soc_max_percent: 100.0
+    efficiency_convention: combined
+    combined_charge_efficiency: 0.97
+    combined_discharge_efficiency: 0.97
+  no_bess: {<<: *unit, capacity_mwh: 0.0, max_power_mw: 0.0}
+  half_power: &half_power {<<: *unit, max_power_mw: 0.5}
+  soc_box: {<<: *half_power, soc_min_percent: 10.0, soc_max_percent: 90.0}
+  slow: {<<: *unit, max_power_mw: 0.1}
+  replay: {<<: *unit, capacity_mwh: 2.0}
+  idle_loss: {<<: *unit, soc_min_percent: 10.0, self_discharge_per_hour: 0.1}
+  two_mwh_soc_box: {<<: *unit, capacity_mwh: 2.0, soc_min_percent: 10.0, soc_max_percent: 90.0}
+  lossless: {<<: *unit, combined_charge_efficiency: 1.0, combined_discharge_efficiency: 1.0}
+  asymmetric_efficiencies: {<<: *unit, combined_charge_efficiency: 0.9, combined_discharge_efficiency: 0.95}
+
+optimizer_defaults:
+  prices: [100.0]
+  pv_ac_mw: 1.0
+  interval_hours: 1.0
+  start: '2026-01-02T00:00:00Z'
+  root_lead_hours: 12
+  farm_id: 1
+  poi_import_mw: 2.0
+  poi_export_mw: 2.0
+  trade_limit_mwh: 2.0
+  position_limit_mwh: 2.0
+  imbalance_penalty_eur_per_mwh: 1000.0
+  initial_energy_mwh: 0.0
+  terminal_target_mwh: 0.0
+
+resizing:
+  capacities_mwh: [1.0, 2.0, 7.0]
+  invalid_overrides:
+    - {energy_min_mwh: 0.1}
+    - {max_charge_mw: 0.5}
+    - {inverter_charge_mw: 0.1}
+    - {soc_min_percent: -1.0}
+    - {soc_min_percent: 95.0}
+    - {soc_max_percent: 101.0}
+    - {soc_max_percent: .nan}
+    - {soc_min_percent: null}
+
+soc_targets:
+  valid:
+    - {initial_soc_percent: 50.0, terminal_soc_percent: null, initial_energy_mwh: 1.0, terminal_energy_mwh: null}
+    - {initial_soc_percent: 50.0, terminal_soc_percent: 80.0, initial_energy_mwh: 1.0, terminal_energy_mwh: 1.6}
+  invalid:
+    - {initial_soc_percent: 5.0, terminal_soc_percent: null}
+    - {initial_soc_percent: 50.0, terminal_soc_percent: 95.0}
+    - {initial_soc_percent: .nan, terminal_soc_percent: null}
+    - {initial_soc_percent: 50.0, terminal_soc_percent: .nan}
+
+solver_cases:
+  grid_cycle:
+    battery: unit
+    prices: [0.0, 100.0]
+    pv_ac_mw: [0.0, 0.0]
+    initial_energy_mwh: 0.0
+    terminal_target_mwh: 0.0
+    imbalance_penalty_eur_per_mwh: 1000.0
+    degradation: {model: throughput, cost_eur_per_mwh_throughput: 0.0}
+    expected:
+      charge_mw: [1.0, 0.0]
+      discharge_mw: [0.0, 0.9409]
+      energy_mwh: [0.0, 0.97, 0.0]
+      objective_eur: 94.09
+  initial_energy_sale:
+    battery: soc_box
+    prices: [100.0]
+    pv_ac_mw: [0.0]
+    initial_energy_mwh: 0.5
+    terminal_target_mwh: null
+    imbalance_penalty_eur_per_mwh: 1000.0
+    degradation: {model: throughput, cost_eur_per_mwh_throughput: 20.0}
+    expected:
+      charge_mw: [0.0]
+      discharge_mw: [0.388]
+      energy_mwh: [0.5, 0.1]
+      objective_eur: 31.04
+  free_imbalances:
+    battery: half_power
+    prices: [100.0]
+    pv_ac_mw: [0.0]
+    initial_energy_mwh: 0.5
+    terminal_target_mwh: null
+    imbalance_penalty_eur_per_mwh: 0.0
+    degradation: {model: throughput, cost_eur_per_mwh_throughput: 20.0}
+    expected:
+      charge_mw: [0.0]
+      discharge_mw: [0.0]
+      energy_mwh: [0.5, 0.5]
+      objective_eur: 200.0
+  backed_delivery:
+    battery: soc_box
+    prices: [100.0]
+    pv_ac_mw: [0.0]
+    initial_energy_mwh: 0.5
+    terminal_target_mwh: null
+    imbalance_penalty_eur_per_mwh: 0.0
+    planned_delivery_balance_resolution_minutes: 60
+    degradation: {model: throughput, cost_eur_per_mwh_throughput: 20.0}
+    expected:
+      charge_mw: [0.0]
+      discharge_mw: [0.388]
+      energy_mwh: [0.5, 0.1]
+      objective_eur: 31.04
+  hourly_pv_profile:
+    battery: no_bess
+    prices: [100.0, 100.0, 100.0, 100.0]
+    pv_ac_mw: [0.0, 1.0, 0.0, 1.0]
+    interval_hours: 0.25
+    initial_energy_mwh: 0.0
+    terminal_target_mwh: null
+    imbalance_penalty_eur_per_mwh: 0.0
+    planned_delivery_balance_resolution_minutes: 60
+    native_interval_minutes_by_auction: {DA: 60}
+    degradation: {model: throughput, cost_eur_per_mwh_throughput: 0.0}
+    expected:
+      charge_mw: [0.0, 0.0, 0.0, 0.0]
+      discharge_mw: [0.0, 0.0, 0.0, 0.0]
+      energy_mwh: [0.0, 0.0, 0.0, 0.0, 0.0]
+      grid_mw: [0.0, 1.0, 0.0, 1.0]
+      imbalance_mwh: [-0.125, 0.125, -0.125, 0.125]
+      objective_eur: 50.0
+
+imbalance_policy:
+  reference_solver_case: backed_delivery
+  reference_hourly_case: hourly_pv_profile
+  settlement_price_cases: [10000.0, -10000.0]
+  imbalance_variables_per_interval: 3
+  unbacked_commitment_mwh: 1.0
+  invalid_boolean_values: ['false', 0, null]
+  strict_hourly_expected:
+    grid_mw: [0.0, 0.0, 0.0, 0.0]
+    curtailment_mw: [0.0, 1.0, 0.0, 1.0]
+    objective_eur: 0.0
+
+realized_settlement:
+  start: '2025-01-01T00:00:00Z'
+  interval_minutes: 15
+  grid_mw: [2.0, 0.0, 1.0, 1.0]
+  net_position_mwh: [0.25, 0.25, 0.25, 0.25]
+  degradation_eur: [1.0, 2.0, 0.0, 0.0]
+  import_fee_eur: [0.0, 1.0, 0.0, 0.0]
+  auction_revenue_eur: 100.0
+  initial_expected_profit_eur: 120.0
+  initial_expected_auction_revenue_eur: 110.0
+  positive_prices: [100.0, 100.0, 100.0, 100.0]
+  negative_prices: [200.0, 200.0, 200.0, 200.0]
+  single_prices: [100.0, -100.0, 0.0, 0.0]
+  expected:
+    imbalance_mwh: [0.25, -0.25, 0.0, 0.0]
+    profit_before_imbalance_settlement_eur: 96.0
+    net_imbalance_mwh: 0.0
+    absolute_imbalance_mwh: 0.5
+    surplus_imbalance_mwh: 0.25
+    shortfall_imbalance_mwh: 0.25
+    dual_cashflow_eur: -25.0
+    dual_profit_eur: 71.0
+    single_cashflow_eur: 50.0
+    single_profit_eur: 146.0
+    single_profit_mismatch_eur: 26.0
+    single_profit_mismatch_percent: 21.666666666666668
+    auction_revenue_mismatch_eur: -10.0
+    auction_revenue_mismatch_percent: -9.090909090909092
+
+expected_realized_comparison:
+  zero_expectation:
+    inputs: {initial_expected_profit_eur: 0.0, initial_expected_auction_revenue_eur: 0.0, realized_profit_after_imbalance_eur: 50.0, auction_revenue_eur: 75.0}
+    expected: {realized_minus_expected_profit_eur: 50.0, realized_minus_expected_profit_percent: null, realized_minus_expected_auction_revenue_eur: 75.0, realized_minus_expected_auction_revenue_percent: null}
+  expected_loss:
+    inputs: {initial_expected_profit_eur: -100.0, initial_expected_auction_revenue_eur: -50.0, realized_profit_after_imbalance_eur: -80.0, auction_revenue_eur: -60.0}
+    expected: {realized_minus_expected_profit_eur: 20.0, realized_minus_expected_profit_percent: 20.0, realized_minus_expected_auction_revenue_eur: -10.0, realized_minus_expected_auction_revenue_percent: -20.0}
+  missing_settlement:
+    inputs: {initial_expected_profit_eur: 100.0, initial_expected_auction_revenue_eur: 100.0, realized_profit_after_imbalance_eur: null, auction_revenue_eur: 90.0}
+    expected: {realized_minus_expected_profit_eur: null, realized_minus_expected_profit_percent: null, realized_minus_expected_auction_revenue_eur: -10.0, realized_minus_expected_auction_revenue_percent: -10.0}
+
+replacement_benchmark:
+  battery:
+    capacity_mwh: 2.0
+    max_power_mw: 1.0
+    soc_min_percent: 10.0
+    soc_max_percent: 90.0
+    efficiency_convention: combined
+    combined_charge_efficiency: 0.9
+    combined_discharge_efficiency: 0.8
+  degradation:
+    model: throughput
+    cost_eur_per_mwh_throughput: null
+    replacement_cost_eur: null
+    replacement_economics:
+      pack_price_usd_per_kwh: 120.0
+      usd_per_eur: 1.2
+      additional_replacement_eur_per_kwh: 10.0
+      salvage_fraction: 0.1
+      price_source: synthetic_analytical_reference
+    throughput_lifetime: {cycle_life: 2000, reference_depth_of_discharge: 0.8}
+replacement_expected:
+  replacement_cost_eur: 198000.0
+  ac_throughput_per_cycle_mwh: 3.057777777777778
+  cycle_cost_eur: 99.0
+  resizing_factor: 2.0
+  conflicting_direct_cost_eur_per_mwh: 5.0
+replacement_invalid:
+  - {group: replacement_economics, key: usd_per_eur, value: 0.0}
+  - {group: replacement_economics, key: salvage_fraction, value: 1.0}
+  - {group: replacement_economics, key: additional_replacement_eur_per_kwh, value: -1.0}
+  - {group: throughput_lifetime, key: cycle_life, value: 0.0}
+  - {group: throughput_lifetime, key: reference_depth_of_discharge, value: 1.1}
+
+xu_reference:
+  model: xu_segmented
+  replacement_cost_eur: 1000.0
+  stress_coefficient: 0.01
+  stress_exponent: 2.0
+  segment_count: 4
+
+replay_cases:
+  cycle:
+    battery: replay
+    plant: {farm_id: 1, poi_import_mw: 2.0, poi_export_mw: 2.0}
+    start: '2025-10-02T10:00:00Z'
+    initial_energy_mwh: 0.0
+    degradation_eur_per_mwh: 2.0
+    steps:
+      - {duration_hours: 1.0, pv_ac_mw: 0.0, requested_charge_mw: 1.0, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.0}
+      - {duration_hours: 1.0, pv_ac_mw: 0.0, requested_charge_mw: 0.0, requested_discharge_mw: 0.9409, requested_curtailment_mw: 0.0}
+    expected: {first_energy_end_mwh: 0.97, second_grid_mw: 0.9409, final_energy_mwh: 0.0, throughput_mwh: 1.9409, degradation_eur: 3.8818}
+  pv_safety:
+    battery: no_bess
+    plant: {farm_id: 1, poi_import_mw: 0.0, poi_export_mw: 0.75}
+    start: '2025-10-02T10:00:00Z'
+    initial_energy_mwh: 0.0
+    degradation_eur_per_mwh: 0.0
+    steps:
+      - {duration_hours: 0.25, pv_ac_mw: 1.0, requested_charge_mw: 0.0, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.0}
+    expected: {grid_mw: 0.75, curtailment_mw: 0.25, safety_adjustment_mw: 0.25}
+  idle_loss:
+    battery: idle_loss
+    plant: {farm_id: 1, poi_import_mw: 1.0, poi_export_mw: 1.0}
+    start: '2025-10-02T10:00:00Z'
+    initial_energy_mwh: 0.1
+    degradation_eur_per_mwh: 0.0
+    steps:
+      - {duration_hours: 1.0, pv_ac_mw: 0.0, requested_charge_mw: 0.0, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.0}
+    invalid_requested_charge_mw: .nan
+
+feedback_defaults:
+  battery: unit
+  plant: {farm_id: 1, poi_import_mw: 2.0, poi_export_mw: 2.0}
+  start: '2025-01-01T10:00:00Z'
+  initial_energy_mwh: 0.5
+  duration_hours: 0.25
+  degradation_eur_per_mwh: 2.0
+feedback_cases:
+  reduced_charge:
+    steps:
+      - {pv_ac_mw: 0.8, requested_charge_mw: 0.8, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.0, grid_target_mw: 0.5}
+    expected: {charge_mw: 0.3, discharge_mw: 0.0, curtailment_mw: 0.0, grid_mw: 0.5, energy_end_mwh: 0.57275}
+  release_curtailment_first:
+    steps:
+      - {pv_ac_mw: 0.8, requested_charge_mw: 0.3, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.4, grid_target_mw: 0.5}
+    expected: {charge_mw: 0.3, discharge_mw: 0.0, curtailment_mw: 0.0, grid_mw: 0.5, energy_end_mwh: 0.57275}
+  charge_becomes_discharge:
+    steps:
+      - {pv_ac_mw: 0.2, requested_charge_mw: 0.8, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.0, grid_target_mw: 0.5}
+    expected: {charge_mw: 0.0, discharge_mw: 0.3, curtailment_mw: 0.0, grid_mw: 0.5, energy_end_mwh: 0.422680412371134}
+  empty_battery_leaves_shortfall:
+    initial_energy_mwh: 0.0
+    steps:
+      - {pv_ac_mw: 0.2, requested_charge_mw: 0.8, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.0, grid_target_mw: 0.5}
+    expected: {charge_mw: 0.0, discharge_mw: 0.0, curtailment_mw: 0.0, grid_mw: 0.2, energy_end_mwh: 0.0}
+  full_battery_curtails_surplus:
+    initial_energy_mwh: 0.8
+    steps:
+      - {pv_ac_mw: 2.0, requested_charge_mw: 0.2, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.0, grid_target_mw: 0.5}
+    expected: {charge_mw: 0.8247422680412371, discharge_mw: 0.0, curtailment_mw: 0.6752577319587629, grid_mw: 0.5, energy_end_mwh: 1.0}
+  explicit_grid_import_can_charge:
+    steps:
+      - {pv_ac_mw: 0.0, requested_charge_mw: 0.5, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.0, grid_target_mw: -0.5}
+    expected: {charge_mw: 0.5, discharge_mw: 0.0, curtailment_mw: 0.0, grid_mw: -0.5, energy_end_mwh: 0.62125}
+  matching_pv_preserves_plan:
+    steps:
+      - {pv_ac_mw: 1.0, requested_charge_mw: 0.3, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.2, grid_target_mw: 0.5}
+    expected: {charge_mw: 0.3, discharge_mw: 0.0, curtailment_mw: 0.2, grid_mw: 0.5, energy_end_mwh: 0.57275}
+  missing_charge_cannot_fund_future_discharge:
+    initial_energy_mwh: 0.0
+    duration_hours: 1.0
+    steps:
+      - {pv_ac_mw: 0.0, requested_charge_mw: 1.0, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.0, grid_target_mw: 0.0}
+      - {pv_ac_mw: 0.0, requested_charge_mw: 0.0, requested_discharge_mw: 0.9409, requested_curtailment_mw: 0.0, grid_target_mw: 0.9409}
+    expected: {charge_mw: 0.0, discharge_mw: 0.0, curtailment_mw: 0.0, grid_mw: 0.0, energy_end_mwh: 0.0}
+
+full_replay:
+  first_interval: 35
+  stop_interval: 50
+  delayed_publication_auction: IDA3
+  publication_delay_minutes: 7
+  actual_imbalance_price_eur_per_mwh: 100.0
+  rolling_pv:
+    availability_lag_hours: 4
+    factors_by_auction: {DA: 1.0, IDA1: 1.05, IDA2: 1.1, IDA3: 1.15}
+  policies:
+    - {name: four_auctions_terminal, physical_refresh: false, terminal: configured, actual_settlement: true}
+    - {name: four_auctions_free_terminal, physical_refresh: false, terminal: free}
+    - {name: physical_refresh_terminal, physical_refresh: true, terminal: configured}
+    - {name: four_auctions_no_planned_imbalances, physical_refresh: false, terminal: free, optimize_imbalances: false}
+    - {name: four_auctions_grid_feedback, physical_refresh: false, terminal: free, optimize_imbalances: false, dispatch_policy: track_committed_grid, realized_pv_scale: 1.5}
+    - {name: depleted_feedback_exposes_infeasible_commitments, physical_refresh: false, terminal: free, optimize_imbalances: false, dispatch_policy: track_committed_grid, realized_pv_scale: 0.5, expected_infeasible: true}
+    - {name: rolling_forecasts_four_auctions, physical_refresh: false, terminal: free, rolling_forecast: true}
+
+rolling_pv_forecast:
+  farm_id: 910
+  availability_lag_hours: 4
+  lead_count: 49
+  interval_minutes: 15
+  interval_count: 4
+  remaining_start: '2025-01-01T12:00:00Z'
+  irradiance_to_mw_divisor: 1000.0
+  future_publication_delay_minutes: 1
+  cycles: ['2024-12-31T06:00:00Z', '2024-12-31T12:00:00Z', '2024-12-31T18:00:00Z', '2025-01-01T00:00:00Z', '2025-01-01T06:00:00Z']
+  irradiance_by_cycle: [200.0, 400.0, 600.0, 800.0, 1000.0]
+  temperature_by_cycle: [5.0, 6.0, 7.0, 8.0, 9.0]
+  decisions:
+    - {auction: DA, cutoff: '2024-12-31T10:55:00Z', expected_cycle_index: 0}
+    - {auction: IDA1, cutoff: '2024-12-31T13:55:00Z', expected_cycle_index: 0}
+    - {auction: IDA2, cutoff: '2024-12-31T20:55:00Z', expected_cycle_index: 1}
+    - {auction: IDA3, cutoff: '2025-01-01T08:55:00Z', expected_cycle_index: 3}
+    - {auction: publication_boundary, cutoff: '2025-01-01T10:00:00Z', expected_cycle_index: 4}

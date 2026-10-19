@@ -362,7 +362,7 @@ class DuckDBCache:
              metadata: Mapping[str, Any]) -> dict:
         """Publish raw response, typed values and retrieval provenance together."""
         normalized = frame.to_parquet(index=False)
-        manual_source = metadata.get("source_kind") == "manual_gme_xlsx"
+        manual_source = metadata.get("source_kind") in {"manual_gme_xlsx", "manual_terna_xlsx"}
         raw_file = metadata.get("source_file") if manual_source else None
         if raw_file is None:
             raw_file = "response.xml" if identity["provider"] == "entsoe" else "response.json"
@@ -389,14 +389,15 @@ class DuckDBCache:
         import pyarrow.parquet as pq
         digest = _identity_hash(identity)
         source = dict(manifest)
-        manual_source = source.get("metadata", {}).get("source_kind") == "manual_gme_xlsx"
+        source_kind = source.get("metadata", {}).get("source_kind")
+        manual_source = source_kind in {"manual_gme_xlsx", "manual_terna_xlsx"}
         expected_raw = source.get("metadata", {}).get("source_file") if manual_source else (
             "response.xml" if identity["provider"] == "entsoe" else "response.json")
-        if manual_source and (identity.get("provider") != "gme"
+        if manual_source and (identity.get("provider") != {"manual_gme_xlsx": "gme", "manual_terna_xlsx": "terna"}[source_kind]
                               or not isinstance(expected_raw, str)
                               or Path(expected_raw).name != expected_raw
                               or Path(expected_raw).suffix.lower() != ".xlsx"):
-            raise _error("Manual GME snapshots require a safe XLSX source filename")
+            raise _error("Manual workbook snapshots require a matching provider and safe XLSX source filename")
         if (source.get("request") != dict(identity) or source.get("schema_version") != "api-cache-v1"
                 or source.get("raw_file") != expected_raw):
             raise _error("Invalid source API snapshot manifest/identity")

@@ -23,7 +23,7 @@ from ..forecasting.price_oracle import _actual_vector
 from ..markets import AuctionCalendar
 from ..scenarios import conditional_price_tree
 from .degradation import degradation_settings_from_config
-from .prepared import PreparedInputError, _boolean, _require, _terminal_target, _timestamps, _utc
+from .prepared import PreparedInputError, _boolean, _planning_settlement_price, _require, _terminal_target, _timestamps, _utc
 
 
 AUCTIONS = ("DA", "IDA1", "IDA2", "IDA3")
@@ -371,14 +371,8 @@ def build_forecast_inputs(config: Mapping[str, Any], pv_forecasts: pd.DataFrame,
     estimated = len(members) * (settings["branches"] ** unknown_count if settings["price_distribution"] == "gaussian" else 1)
     if estimated > settings["maximum_joint_scenarios"]:
         raise PreparedInputError(f"Joint tree could contain {estimated} leaves; reduce branches/members or explicitly raise maximum_joint_scenarios")
-    _require(settings, ("settlement_point_price_eur_per_mwh", "settlement_point_price_available_at", "settlement_point_price_status"), "settlement assumption")
-    if settings["settlement_point_price_status"] != "study_assumption":
-        raise PreparedInputError("Settlement point price must explicitly have status study_assumption")
-    if _utc(settings["settlement_point_price_available_at"], "settlement availability") > cutoff:
-        raise PreparedInputError("Settlement assumption is unavailable at the decision cutoff")
-    settlement = float(settings["settlement_point_price_eur_per_mwh"])
-    if not np.isfinite(settlement):
-        raise PreparedInputError("Settlement point-price assumption must be finite")
+    settlement = _planning_settlement_price(settings, cutoff,
+        config.get("trading", {}).get("optimize_imbalances", True))
     if settings["price_distribution"] == "gaussian":
         prices, _ = gaussian_price_tree(grid, pv[0], schedule, mean_prices=means, conditional_means=callbacks,
             calibrations=calibrations, feature_available_at=available, model_fit_cutoffs=fits,
@@ -406,7 +400,9 @@ def build_forecast_inputs(config: Mapping[str, Any], pv_forecasts: pd.DataFrame,
         "committed_unpriced_positions": "pending_position_mwh are fixed executed quantities awaiting price publication; record actual cash exactly once in the external ledger",
         "objective_scope": "Incremental new trading and dispatch profit; already committed cash belongs to the external realized ledger",
         "operational_eligible": False, "historical_deployment_status": "prepared study boundary; source vintage claims require independent verification",
-        "settlement_policy": "explicit signed single-price study assumption; historical settlement semantics unverified"})
+        "settlement_policy": ("explicit signed single-price study assumption; historical settlement semantics unverified"
+            if config.get("trading", {}).get("optimize_imbalances", True)
+            else "excluded from optimization; actual settlement is ex post")})
     state_cfg, trading, degradation = config.get("state", {}), config.get("trading", {}), config.get("degradation", {})
     _require(state_cfg, ("timestamp", "initial_energy_mwh", "origin"), "explicit residual physical state")
     if _utc(state_cfg["timestamp"], "state.timestamp") != pd.Timestamp(grid.starts[0]):
@@ -450,6 +446,7 @@ def build_forecast_inputs(config: Mapping[str, Any], pv_forecasts: pd.DataFrame,
         float(trading["trade_limit_mwh"]), float(trading["position_limit_mwh"]), float(trading["imbalance_penalty_eur_per_mwh"]),
         _terminal_target(state_cfg), degradation_settings_from_config(config), float(trading["grid_import_fee_eur_per_mwh"]),
         planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
+        optimize_imbalances=trading.get("optimize_imbalances", True),
         imbalance_limit_mwh=trading.get("imbalance_limit_mwh"), pending_position_mwh=settings.get("pending_position_mwh"))
 
 

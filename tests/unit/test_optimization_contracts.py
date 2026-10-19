@@ -189,3 +189,20 @@ def test_pending_submitted_positions_have_shape_and_commercial_limits():
         replace(inputs, pending_position_mwh=(1, 2))
     with pytest.raises(ValueError, match="commercial limit"):
         replace(inputs, pending_position_mwh=(3,))
+
+
+def test_imbalance_policy_requires_boolean_in_domain_and_yaml():
+    from bess_pv_trading.config import ConfigurationError, validate_config
+    for value in case_config("imbalance_policy")["invalid_boolean_values"]:
+        with pytest.raises(ValueError, match="boolean"):
+            replace(example_inputs(), optimize_imbalances=value)
+        with pytest.raises(ConfigurationError, match="boolean"):
+            validate_config({"trading": {"optimize_imbalances": value}})
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_synthetic_cli_adapter_preserves_imbalance_policy(enabled):
+    from bess_pv_trading.cli import _optimization_inputs
+    config = load_config(Path(__file__).resolve().parents[2] / "configs/full_experiments/synthetic_small.yaml")
+    config["trading"]["optimize_imbalances"] = enabled
+    assert _optimization_inputs(config).optimize_imbalances is enabled

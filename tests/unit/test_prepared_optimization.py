@@ -65,6 +65,17 @@ def test_prepared_inputs_allow_explicit_null_terminal_soc(tmp_path):
         load_prepared_inputs(config)
 
 
+@pytest.mark.parametrize("enabled", [False, True])
+def test_prepared_input_adapter_preserves_imbalance_policy(tmp_path, enabled):
+    config = prepared_config(tmp_path)
+    config["trading"]["optimize_imbalances"] = enabled
+    if not enabled:
+        for key in list(config["optimization"]):
+            if key.startswith("settlement_point_price"):
+                del config["optimization"][key]
+    assert load_prepared_inputs(config).optimize_imbalances is enabled
+
+
 @pytest.mark.parametrize("field", ["available_at", "source_time", "fit_cutoff"])
 def test_future_price_information_is_rejected(tmp_path, field):
     config = prepared_config(tmp_path)

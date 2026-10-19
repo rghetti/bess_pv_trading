@@ -544,7 +544,17 @@ price is booked once in the priced ledger. The internal pending and accepted fie
 names distinguish unpriced and priced commitments, respectively. Opposite financial trades incur no battery
 efficiency loss.
 
-The exact signed settlement uses $b=b^+-b^-$ and a bounded binary direction split,
+The current real-data GME study sets
+\texttt{trading.optimize\_imbalances=false}. In this mode the optimizer omits
+imbalance variables, direction binaries, settlement revenue and imbalance
+penalties, and enforces $x_{ts}h_t=q_{ts}$ in every interval and scenario.
+Execution deviations are recomputed afterward from realized physical powers
+and committed positions. Actual-price settlement and corrected-profit KPIs
+remain null until settlement prices are available. Hard delivery can expose
+infeasibility after forecast updates; no imbalance slack is silently added.
+The switch defaults to true for compatibility with older study configurations.
+
+When optimized imbalances are explicitly enabled, the exact signed settlement uses $b=b^+-b^-$ and a bounded binary direction split,
 so simultaneous positive and negative components cannot create fictitious profit:
 \begin{align}
 R_s^{imb}&=\sum_t(\pi^+_{ts}b^+_{ts}-\pi^-_{ts}b^-_{ts}),\\

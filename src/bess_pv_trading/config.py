@@ -53,6 +53,17 @@ def validate_config(config: dict[str, Any]) -> None:
             for child in value:
                 check_credentials(child)
     check_credentials(config)
+    forecast_policy = config.get("forecast", {}).get("reoptimization_pv_policy")
+    if forecast_policy is not None and forecast_policy not in {
+            "freeze_initial_forecast_for_unobserved_delivery_intervals",
+            "latest_available_forecast_at_each_reoptimization"}:
+        raise ConfigurationError("Unknown forecast.reoptimization_pv_policy")
+    trading = config.get("trading", {})
+    if "optimize_imbalances" in trading and not isinstance(trading["optimize_imbalances"], bool):
+        raise ConfigurationError("trading.optimize_imbalances must be a YAML boolean")
+    if config.get("execution", {}).get("dispatch_policy", "follow_battery_plan") not in {
+            "follow_battery_plan", "track_committed_grid"}:
+        raise ConfigurationError("execution.dispatch_policy must be follow_battery_plan or track_committed_grid")
     solver = config.get("solver", {})
     for key in ("threads", "time_limit_seconds", "time_limit"):
         if key in solver and (not math.isfinite(float(solver[key])) or float(solver[key]) <= 0):

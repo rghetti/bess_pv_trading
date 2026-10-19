@@ -1,0 +1,17 @@
+spring_day:
+  date_start: '2025-03-30'
+  date_end_exclusive: '2025-03-31'
+  expected_records: 92
+  first_utc: '2025-03-29T23:00:00Z'
+  end_utc_exclusive: '2025-03-30T22:00:00Z'
+  nord_prices: [0.0, 170.0]
+  nonzero_incentive_eur_mwh: 21.853
+  sud_price_eur_mwh: 999.0
+  aggregate_imbalance_mwh: 12.0
+  exchanges_mwh: -20.0
+  foreign_mwh: 30.0
+  unparseable_price: NaN
+  shifted_minutes: 1
+autumn_day:
+  date_start: '2025-10-26'
+  date_end_exclusive: '2025-10-27'

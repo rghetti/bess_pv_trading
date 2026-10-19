@@ -1,0 +1,35 @@
+# Import the four manually downloaded GME XLSX exports into the shared DuckDB catalog.
+gme_workbook_import:
+  database_path: data/api/market.duckdb
+  duckdb_threads: 4
+  timezone: Europe/Rome
+  date_start: '2025-01-01'
+  date_end_exclusive: '2025-09-01'
+  date_format: '%d/%m/%Y'
+  sheet_xml: xl/worksheets/sheet1.xml
+  columns:
+    delivery_day: Data
+    period: Ora
+    price: '€/MWh'
+    notes: Note
+  decimal_separator: ','
+  thousands_separator: ''
+  missing_price_tokens: ['', '-', '—']
+  workbooks:
+    - dataset: day_ahead_prices
+      zone: NORD
+      path: data/20250101_20250831_MGP_PrezziZonali_Nord.xlsx
+      native_interval_minutes: 60
+    - dataset: ida1_prices
+      zone: NORD
+      path: data/20250101_20250831_MI-A1_PrezziZonali_Nord.xlsx
+      native_interval_minutes: 60
+    - dataset: ida2_prices
+      zone: NORD
+      path: data/20250101_20250831_MI-A2_PrezziZonali_Nord.xlsx
+      native_interval_minutes: 60
+    - dataset: ida3_prices
+      zone: NORD
+      path: data/20250101_20250831_MI-A3_PrezziZonali_Nord.xlsx
+      native_interval_minutes: 60
+      eligible_start_clock: '12:00'

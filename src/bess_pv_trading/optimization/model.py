@@ -135,7 +135,7 @@ def _historical_hourly_equalities(model: Any, inputs: OptimizationInput,
 
 
 def _settlement(model: Any, inputs: OptimizationInput, variables: dict[str, Any], gp: Any) -> dict[str, Any]:
-    """Exact signed settlement and an absolute-imbalance deterrence penalty."""
+    """Optionally optimize deviations; otherwise require interval delivery exactly."""
     count, intervals = np.shape(inputs.scenarios.pv_ac_mw)
     positive, negative, sign, imported = {}, {}, {}, {}
     cashflow, penalty, other_costs = {}, {}, {}
@@ -145,20 +145,13 @@ def _settlement(model: Any, inputs: OptimizationInput, variables: dict[str, Any]
     for s in range(count):
         cashflow[s], penalty[s], other_costs[s] = gp.LinExpr(), gp.LinExpr(), gp.LinExpr()
         for t, duration in enumerate(inputs.grid.delta_hours):
-            positive_bound = inputs.plant.poi_export_mw * duration + inputs.position_limit_mwh
-            negative_bound = inputs.plant.poi_import_mw * duration + inputs.position_limit_mwh
-            if inputs.imbalance_limit_mwh is not None:
-                positive_bound = min(positive_bound, inputs.imbalance_limit_mwh)
-                negative_bound = min(negative_bound, inputs.imbalance_limit_mwh)
-            positive[s, t] = model.addVar(ub=positive_bound, name=f"imbalance_positive[s{s},t{t}]")
-            negative[s, t] = model.addVar(ub=negative_bound, name=f"imbalance_negative[s{s},t{t}]")
-            sign[s, t] = model.addVar(vtype=gp.GRB.BINARY, name=f"imbalance_sign[s{s},t{t}]")
-            model.addConstr(positive[s, t] <= positive_bound * sign[s, t], name=f"imbalance_positive_only[s{s},t{t}]")
-            model.addConstr(negative[s, t] <= negative_bound * (1 - sign[s, t]), name=f"imbalance_negative_only[s{s},t{t}]")
-            model.addConstr(positive[s, t] - negative[s, t] == variables["grid"][s, t] * duration - variables["positions"][s, t], name=f"settlement_balance[s{s},t{t}]")
-            cashflow[s] += float(inputs.scenarios.imbalance_prices_eur_per_mwh[s, t]) * positive[s, t] - float(negative_prices[s, t]) * negative[s, t]
-            penalty[s] += inputs.imbalance_penalty_eur_per_mwh * (positive[s, t] + negative[s, t])
-            # Nonnegative import fees use an exact directional split, including zero-mass leaves.
+            if not inputs.optimize_imbalances:
+                model.addConstr(variables["grid"][s, t] * duration == variables["positions"][s, t],
+                                name=f"contracted_delivery[s{s},t{t}]")
+            else:
+                _imbalance_interval(model, inputs, variables, gp, s, t, duration,
+                    positive, negative, sign, cashflow, penalty, negative_prices)
+            # Import fees remain physical operating costs in either mode.
             if inputs.grid_import_fee_eur_per_mwh:
                 imported[s, t] = model.addVar(ub=inputs.plant.poi_import_mw, name=f"grid_import[s{s},t{t}]")
                 direction = model.addVar(vtype=gp.GRB.BINARY, name=f"grid_import_direction[s{s},t{t}]")
@@ -167,6 +160,24 @@ def _settlement(model: Any, inputs: OptimizationInput, variables: dict[str, Any]
                 model.addConstr(imported[s, t] <= -variables["grid"][s, t] + inputs.plant.poi_export_mw * (1 - direction))
                 other_costs[s] += inputs.grid_import_fee_eur_per_mwh * imported[s, t] * duration
     return {"imbalance_positive": positive, "imbalance_negative": negative, "imbalance_sign": sign, "imbalance_cashflow": cashflow, "imbalance_penalty": penalty, "other_costs": other_costs}
+
+
+def _imbalance_interval(model, inputs, variables, gp, s, t, duration,
+                        positive, negative, sign, cashflow, penalty, negative_prices):
+    """Build the optional signed deviation split for one scenario and interval."""
+    positive_bound = inputs.plant.poi_export_mw * duration + inputs.position_limit_mwh
+    negative_bound = inputs.plant.poi_import_mw * duration + inputs.position_limit_mwh
+    if inputs.imbalance_limit_mwh is not None:
+        positive_bound = min(positive_bound, inputs.imbalance_limit_mwh)
+        negative_bound = min(negative_bound, inputs.imbalance_limit_mwh)
+    positive[s, t] = model.addVar(ub=positive_bound, name=f"imbalance_positive[s{s},t{t}]")
+    negative[s, t] = model.addVar(ub=negative_bound, name=f"imbalance_negative[s{s},t{t}]")
+    sign[s, t] = model.addVar(vtype=gp.GRB.BINARY, name=f"imbalance_sign[s{s},t{t}]")
+    model.addConstr(positive[s, t] <= positive_bound * sign[s, t], name=f"imbalance_positive_only[s{s},t{t}]")
+    model.addConstr(negative[s, t] <= negative_bound * (1 - sign[s, t]), name=f"imbalance_negative_only[s{s},t{t}]")
+    model.addConstr(positive[s, t] - negative[s, t] == variables["grid"][s, t] * duration - variables["positions"][s, t], name=f"settlement_balance[s{s},t{t}]")
+    cashflow[s] += float(inputs.scenarios.imbalance_prices_eur_per_mwh[s, t]) * positive[s, t] - float(negative_prices[s, t]) * negative[s, t]
+    penalty[s] += inputs.imbalance_penalty_eur_per_mwh * (positive[s, t] + negative[s, t])
 
 
 def _degradation(model: Any, inputs: OptimizationInput, variables: dict[str, Any], gp: Any) -> dict[int, Any]:
@@ -247,6 +258,7 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     diagnostics["relative_mip_gap_tolerance"] = settings.mip_gap
     diagnostics["absolute_mip_gap_configured"] = False
     diagnostics["degradation_mode"] = inputs.degradation.mode
+    diagnostics["optimization_imbalances_enabled"] = inputs.optimize_imbalances
     diagnostics["historical_hourly_market_constraints"] = built.variables.get(
         "historical_hourly_market_constraints", {"hour_groups": 0, "dispatch_equalities": 0,
             "da_trade_equalities": 0, "auction_trade_equalities": {}})
@@ -271,7 +283,7 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     for source, destination in (("charge", "charge_mw"), ("discharge", "discharge_mw"), ("mode", "mode_charge")):
         result.arrays[destination] = np.array([[variable[source][t, inputs.tree.control_nodes[s][t]].X for t in range(intervals)] for s in range(count)])
     result.arrays["curtailment_mw"] = np.array([[variable["curtailment"][t, curtailment_owners[s][t]].X for t in range(intervals)] for s in range(count)])
-    for source, destination in (("energy", "energy_mwh"), ("grid", "grid_mw"), ("positions", "net_position_mwh"), ("imbalance_positive", "imbalance_positive_mwh"), ("imbalance_negative", "imbalance_negative_mwh")):
+    for source, destination in (("energy", "energy_mwh"), ("grid", "grid_mw"), ("positions", "net_position_mwh")):
         length = intervals + 1 if source == "energy" else intervals
         result.arrays[destination] = np.array([[variable[source][s, t].X for t in range(length)] for s in range(count)])
     if inputs.degradation.mode == "xu_segmented":
@@ -280,6 +292,9 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
         for source, destination in (("xu_segment_charge", "xu_segment_charge_mw"), ("xu_segment_discharge", "xu_segment_discharge_mw")):
             result.arrays[destination] = np.array([[[variable[source][t, inputs.tree.control_nodes[s][t], j].X for j in range(segments)] for t in range(intervals)] for s in range(count)])
     result.arrays["imbalance_mwh"] = result.arrays["grid_mw"] * inputs.grid.delta_hours - result.arrays["net_position_mwh"]
+    for source, destination, direction in (("imbalance_positive", "imbalance_positive_mwh", 1), ("imbalance_negative", "imbalance_negative_mwh", -1)):
+        result.arrays[destination] = (np.array([[variable[source][s, t].X for t in range(intervals)] for s in range(count)])
+            if inputs.optimize_imbalances else np.maximum(direction * result.arrays["imbalance_mwh"], 0))
     result.trades = {(auction, node, inputs.grid.interval_ids[t]): item.X for (auction, node, t), item in variable["trades"].items()}
     result.components = {name: np.array([expression[s].getValue() for s in range(count)]) for name, expression in built.components.items()}
     result.objective_eur = float(model.ObjVal)

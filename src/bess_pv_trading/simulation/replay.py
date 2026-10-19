@@ -85,10 +85,12 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
                      requested_curtailment_mw: float, plant,
                      degradation_eur_per_mwh: float = 0.0,
                      degradation_settings: DegradationSettings | None = None,
+                     dispatch_policy: str = "follow_battery_plan",
+                     grid_target_mw: float | None = None,
                      ) -> tuple[PhysicalState, dict[str, Any]]:
     """Execute pre-interval commands with declared interval-average protection.
 
-    The final average PV is used only by the physical safety response and ex-post
+    The final average PV is used only by physical feedback/protection and ex-post
     settlement. It is never given to the planner as a pre-interval observation.
     This is an idealized interval simulator, not a hardware telemetry model.
     """
@@ -96,6 +98,12 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         raise ValueError("Execution state timestamp differs from interval start")
     if end <= start:
         raise ValueError("Execution interval must have positive duration")
+    if dispatch_policy not in {"follow_battery_plan", "track_committed_grid"}:
+        raise ValueError("Unknown execution dispatch_policy")
+    if grid_target_mw is not None and not np.isfinite(grid_target_mw):
+        raise ValueError("Execution grid target must be finite")
+    if dispatch_policy == "track_committed_grid" and grid_target_mw is None:
+        raise ValueError("Grid tracking requires a committed grid_target_mw")
     magnitudes = (requested_charge_mw, requested_discharge_mw,
                   requested_curtailment_mw, degradation_eur_per_mwh)
     if any(not np.isfinite(value) or value < 0 for value in magnitudes):
@@ -117,6 +125,25 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
     if charge > 1e-8 and discharge > 1e-8:
         raise ValueError("Execution cannot charge and discharge simultaneously")
     curtailment = min(pv_ac_mw, max(0.0, requested_curtailment_mw))
+    safety_adjustment = (abs(charge-requested_charge_mw) + abs(discharge-requested_discharge_mw)
+                         + abs(curtailment-requested_curtailment_mw))
+    bounded = (charge, discharge, curtailment)
+    if dispatch_policy == "track_committed_grid":
+        # Release scheduled curtailment before spending additional stored energy.
+        available_grid = pv_ac_mw - curtailment + discharge - charge
+        curtailment -= min(curtailment, max(0.0, grid_target_mw-available_grid))
+        required_battery = grid_target_mw - pv_ac_mw + curtailment
+        charge_limit = min(battery.max_power_mw,
+            max(0.0, battery.maximum_energy-retained) / (duration*battery.eta_charge))
+        discharge_limit = min(battery.max_power_mw,
+            max(0.0, retained-battery.energy_min_mwh)*battery.eta_discharge / duration)
+        actual_battery = float(np.clip(required_battery, -charge_limit, discharge_limit))
+        charge, discharge = max(0.0, -actual_battery), max(0.0, actual_battery)
+        # Surplus PV first changes battery power, then spills if charging is limited.
+        excess = pv_ac_mw-curtailment+actual_battery-grid_target_mw
+        curtailment += min(pv_ac_mw-curtailment, max(0.0, excess))
+    feedback_adjustment = sum(abs(a-b) for a,b in zip((charge,discharge,curtailment),bounded))
+    before_poi = (charge, discharge, curtailment)
     grid = pv_ac_mw - curtailment + discharge - charge
     # Reduce a command before curtailing/exporting beyond the connection.
     if grid < -plant.poi_import_mw:
@@ -129,6 +156,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         grid -= reduction
         curtailment += max(0.0, grid - plant.poi_export_mw)
         grid = min(grid, plant.poi_export_mw)
+    safety_adjustment += sum(abs(a-b) for a,b in zip((charge,discharge,curtailment),before_poi))
     energy = retained + battery.eta_charge * charge * duration - discharge * duration / battery.eta_discharge
     if energy < battery.energy_min_mwh-1e-8 or energy > battery.maximum_energy+1e-8:
         raise ValueError("Execution would violate battery energy bounds")
@@ -142,9 +170,13 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         "grid_mw": grid, "energy_start_mwh": state.energy_mwh,
         "energy_end_mwh": energy, "throughput_mwh": throughput,
         "degradation_eur": aging,
-        "safety_adjustment_mw": abs(charge-requested_charge_mw)
-            + abs(discharge-requested_discharge_mw)
-            + abs(curtailment-requested_curtailment_mw)}
+        "requested_charge_mw": requested_charge_mw,
+        "requested_discharge_mw": requested_discharge_mw,
+        "requested_curtailment_mw": requested_curtailment_mw,
+        "dispatch_policy": dispatch_policy, "grid_target_mw": grid_target_mw,
+        "grid_tracking_error_mw": None if grid_target_mw is None else grid-grid_target_mw,
+        "feedback_adjustment_mw": feedback_adjustment,
+        "safety_adjustment_mw": safety_adjustment}
     if next_state.cycle_segment_energy_mwh is not None:
         record["cycle_segment_energy_end_mwh"] = next_state.cycle_segment_energy_mwh
     return next_state, record

@@ -412,8 +412,11 @@ class OptimizationInput:
     market_timezone: str = "Europe/Rome"
     native_interval_minutes_by_auction: Mapping[str, int] = field(default_factory=dict)
     planned_delivery_balance_resolution_minutes: int | None = None
+    optimize_imbalances: bool = True
 
     def __post_init__(self) -> None:
+        if not isinstance(self.optimize_imbalances, bool):
+            raise ValueError("optimize_imbalances must be a boolean")
         for key in ("trade_limit_mwh", "position_limit_mwh", "imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"):
             finite_nonnegative(getattr(self, key), key)
         if self.imbalance_limit_mwh is not None:

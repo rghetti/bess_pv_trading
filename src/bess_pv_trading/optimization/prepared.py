@@ -54,6 +54,22 @@ def _require(settings: Mapping[str, Any], names: tuple[str, ...], label: str) ->
         raise PreparedInputError(f"Missing explicitly configured {label}: {', '.join(missing)}")
 
 
+def _planning_settlement_price(settings: Mapping[str, Any], cutoff, enabled: bool) -> float:
+    """Require a causal settlement assumption only when the optimizer uses it."""
+    if not enabled:
+        return 0.0  # Unused scenario-array placeholder, not a real settlement price.
+    _require(settings, ("settlement_point_price_eur_per_mwh", "settlement_point_price_available_at",
+                        "settlement_point_price_status"), "settlement assumption")
+    if settings["settlement_point_price_status"] != "study_assumption":
+        raise PreparedInputError("Settlement point price must explicitly have status study_assumption")
+    if _utc(settings["settlement_point_price_available_at"], "settlement availability") > cutoff:
+        raise PreparedInputError("Settlement assumption is unavailable at the decision cutoff")
+    price = float(settings["settlement_point_price_eur_per_mwh"])
+    if not np.isfinite(price):
+        raise PreparedInputError("Settlement point-price assumption must be finite")
+    return price
+
+
 def _terminal_target(settings: Mapping[str, Any]) -> float | None:
     """Require an explicit target, with YAML null selecting unconstrained SOC."""
     if "terminal_target_mwh" not in settings:
@@ -194,14 +210,8 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
         paths[event.auction][list(event.eligible_intervals)] = selected.loc[expected, "price_eur_mwh"].to_numpy(float)
         masks[event.auction] = tuple(t in event.eligible_intervals for t in range(len(market_grid)))
 
-    _require(settings, ("settlement_point_price_eur_per_mwh", "settlement_point_price_available_at"), "optimization settlement assumption")
-    if settings.get("settlement_point_price_status") != "study_assumption":
-        raise PreparedInputError("Prepared settlement point price must be explicitly labeled settlement_point_price_status=study_assumption")
-    if _utc(settings["settlement_point_price_available_at"], "settlement_point_price_available_at") > cutoff:
-        raise PreparedInputError("Settlement point-price assumption is unavailable at the decision cutoff")
-    settlement = float(settings["settlement_point_price_eur_per_mwh"])
-    if not np.isfinite(settlement):
-        raise PreparedInputError("Settlement point price must be finite")
+    settlement = _planning_settlement_price(settings, cutoff,
+        config.get("trading", {}).get("optimize_imbalances", True))
     scenarios, tree = synthetic_price_tree(grid, pv_values, schedule, base_prices=paths["DA"],
         stage_spreads={later: paths[later] - paths[earlier] for earlier, later in zip(("DA", "IDA1", "IDA2"), ("IDA1", "IDA2", "IDA3"))},
         residual_scale=0, branch_values=(0,), branch_probabilities=(1,), imbalance_price=settlement, decision_cutoff=cutoff)
@@ -209,7 +219,9 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
         "decision_cutoff": cutoff.isoformat(), "pv_source_cycle": source[0].isoformat(), "pv_available_at": availability[0].isoformat(),
         "pv_member_origin": str(pv.member_origin.iloc[0]), "price_origins": sorted(prices.origin.unique().tolist()),
         "price_policy": "supplied point forecasts frozen at initial cutoff; no residual uncertainty",
-        "settlement_policy": "explicit signed single-price point estimate study assumption; not verified historical Italian settlement",
+        "settlement_policy": ("explicit signed single-price point estimate study assumption; not verified historical Italian settlement"
+            if config.get("trading", {}).get("optimize_imbalances", True)
+            else "excluded from optimization; actual settlement is ex post"),
         "weather_policy": "one frozen deterministic member", "pv_members": 1,
         "planning_scope": "initial pre-DA integrated planning only; future bids are planned, not accepted",
         "source_basis": "exported AC MW; no extra converter loss applied to PV",
@@ -231,4 +243,5 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
         float(trading["imbalance_penalty_eur_per_mwh"]), _terminal_target(state_config),
         degradation_settings_from_config(config),
         float(trading["grid_import_fee_eur_per_mwh"]), imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
-        planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"))
+        planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
+        optimize_imbalances=trading.get("optimize_imbalances", True))

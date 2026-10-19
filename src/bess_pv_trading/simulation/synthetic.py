@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -19,9 +19,11 @@ from ..domain import (AcceptedTrade, BatteryParameters,
 from ..markets import AuctionCalendar
 from ..optimization import build_model, solve_model, validate_solution
 from ..optimization.degradation import advance_degradation_state, degradation_settings_from_config
+from ..reporting.artifacts import organize_run_outputs
 from ..scenarios import synthetic_price_tree
 from .events import Event, EventEngine, EventKind
 from .replay import execute_interval
+from .settlement import expected_realized_kpis, settle_realized_dispatch
 
 
 def json_default(value: Any) -> Any:
@@ -93,35 +95,85 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
     publications: list[dict[str, Any]] = []
     plan_snapshots: dict[str, list[dict[str, Any]]] = {}
     control_plan: dict[int, tuple[float, float, float]] = {}
+    control_plan_details: dict[int, dict] = {}
+    execution_details: dict[int, dict] = {}
+    grid_targets: dict[int, float] = {}
     current_forecast: np.ndarray | None = None
+    pv_forecast_metadata = {
+        "pv_forecast_policy": fixture.get("pv_forecast_policy", "fixed_fixture_forecast"),
+        "pv_forecast_vintage_utc": (pd.Timestamp(fixture["pv_forecast_vintage"]).isoformat()
+            if fixture.get("pv_forecast_vintage") is not None else None),
+        "pv_forecast_available_at_utc": (pd.Timestamp(fixture["forecast_available_at"]).isoformat()
+            if fixture.get("forecast_available_at") is not None else None),
+    }
     aging = degradation_settings_from_config(config)
     settings = SolverSettings(**config["solver"])
     trading = config["trading"]
+    dispatch_policy = config.get("execution", {}).get("dispatch_policy", "follow_battery_plan")
 
     def plan(cutoff: pd.Timestamp, current_auction: str | None = None, *,
              trigger: str = "physical_control", published_auction: str | None = None):
         """Use published information and a known boundary for committed commands."""
+        nonlocal current_forecast, pv_forecast_metadata
         if current_forecast is None:
             raise ValueError("No published PV forecast at the decision cutoff")
+        provider = fixture.get("pv_forecast_provider")
+        if provider is not None:
+            # Refresh only unobserved intervals, including an unfinished interval
+            # needed to project the next boundary. Executed history stays fixed.
+            update_first = int(pd.DatetimeIndex(full_grid.starts).searchsorted(state.timestamp))
+            update_starts = pd.DatetimeIndex(full_grid.starts[update_first:])
+            update = provider(cutoff, update_starts)
+            if update.available_at > cutoff or update.forecast_vintage > cutoff:
+                raise ValueError("PV forecast update is unavailable at the optimization cutoff")
+            if update.farm_id != plant.farm_id or len(update.members) != 1:
+                raise ValueError("PV forecast update must contain this farm and one explicit member")
+            if not pd.DatetimeIndex(update.values.index).equals(update_starts):
+                raise ValueError("PV forecast update does not match the remaining execution grid")
+            values = pd.to_numeric(update.values["pv_ac_mw"], errors="coerce").to_numpy(float)
+            if not np.isfinite(values).all() or np.any(values < 0):
+                raise ValueError("PV forecast update must be finite and nonnegative")
+            updated = current_forecast.copy()
+            updated[update_first:] = values
+            current_forecast = updated
+            pv_forecast_metadata = {**pv_forecast_metadata,
+                "pv_forecast_vintage_utc": update.forecast_vintage.isoformat(),
+                "pv_forecast_available_at_utc": update.available_at.isoformat(),
+                "pv_forecast_refresh_cutoff_utc": cutoff.isoformat(),
+                "pv_forecast_updated_from_utc": update_starts[0].isoformat(),
+                "pv_forecast_updated_intervals": len(update_starts),
+                "pv_forecast_missing_filled_night_zero_intervals": update.provenance.get(
+                    "forecast_missing_filled_night_zero_intervals", 0)}
         first = int(pd.DatetimeIndex(full_grid.starts).searchsorted(cutoff))
         if cutoff < pd.Timestamp(full_grid.starts[0]):
             first = 0
         if first >= len(full_grid.interval_ids):
             raise ValueError("No remaining delivery intervals")
         boundary = state
-        # Between grid points the current command is already committed. Its battery
-        # trajectory provides the next boundary without reading final PV telemetry.
+        # Between grid points project the next boundary without final PV telemetry.
+        # Feedback uses forecast PV, while fixed commands have a known trajectory.
         if state.timestamp != full_grid.starts[first]:
             prior = first - 1
             charge, discharge, _ = pending[prior]
             duration = full_grid.delta_hours[prior]
             battery = plant.battery
-            energy = state.energy_mwh * (1-battery.self_discharge_per_hour)**duration
-            energy += duration*(battery.eta_charge*charge-discharge/battery.eta_discharge)
-            boundary, _ = advance_degradation_state(state=state, battery=battery,
-                settings=aging, end=full_grid.starts[first], energy_mwh=energy,
-                charge_mw=charge, discharge_mw=discharge,
-                origin="projected_boundary_of_committed_command")
+            if dispatch_policy == "track_committed_grid":
+                # Forecast the unfinished interval through the same controller;
+                # its final measured PV is not available at this auction cutoff.
+                boundary, _ = execute_interval(state=state, start=state.timestamp,
+                    end=full_grid.starts[first], pv_ac_mw=float(current_forecast[prior]),
+                    requested_charge_mw=charge, requested_discharge_mw=discharge,
+                    requested_curtailment_mw=pending[prior][2], plant=plant,
+                    degradation_settings=aging, dispatch_policy=dispatch_policy,
+                    grid_target_mw=grid_targets[prior])
+                boundary = replace(boundary, origin="forecast_projected_boundary_under_feedback")
+            else:
+                energy = state.energy_mwh * (1-battery.self_discharge_per_hour)**duration
+                energy += duration*(battery.eta_charge*charge-discharge/battery.eta_discharge)
+                boundary, _ = advance_degradation_state(state=state, battery=battery,
+                    settings=aging, end=full_grid.starts[first], energy_mwh=energy,
+                    charge_mw=charge, discharge_mw=discharge,
+                    origin="projected_boundary_of_committed_command")
         residual = DeliveryGrid(full_grid.interval_ids[first:], full_grid.starts[first:], full_grid.ends[first:])
         kwargs = dict(fixture["kwargs"])
         kwargs.update(base_prices=fixture["base"][first:],
@@ -157,6 +209,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             aging, trading["grid_import_fee_eur_per_mwh"],
             imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
             planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
+            optimize_imbalances=trading.get("optimize_imbalances", True),
             pending_position_mwh=pending_positions,
             decision_resolution_minutes=config.get("decision_resolution_minutes"),
             market_timezone=config.get("market", {}).get("timezone", fixture["calendar"].timezone),
@@ -181,6 +234,9 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
         if not validation.valid:
             raise RuntimeError(f"Independent solution validation failed: {validation.violations}")
         solves.append({"cutoff":cutoff.isoformat(), "current_auction":current_auction,
+            **pv_forecast_metadata,
+            "planning_start_utc": pd.Timestamp(residual.starts[0]).isoformat(),
+            "planning_end_utc": pd.Timestamp(residual.ends[-1]).isoformat(),
             "solve_trigger":trigger, "published_auction":published_auction,
             "model_file":str(model_file) if model_file is not None else None,
             "known_auctions":list(known),
@@ -189,6 +245,8 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             "state_origin":boundary.origin,"state_timestamp":str(boundary.timestamp),
             "pending_position_abs_mwh":sum(abs(value) for value in pending_positions),
             "status":result.status,"objective_eur":result.objective_eur,
+            "expected_auction_revenue_eur": float(np.dot(
+                inputs.scenarios.probabilities, result.components["auction_revenue"])),
             "validation":asdict(validation),**result.diagnostics})
         return inputs, result
 
@@ -210,6 +268,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             owner = inputs.tree.bid_nodes[auction][0]
             trade_mwh = float(result.trades.get((auction, owner, product), 0.0))
             row = {"auction": auction, "interval_id": product,
+                **pv_forecast_metadata,
                 "interval_start_utc": str(full_grid.starts[t]),
                 "charge_mw": float(result.arrays["charge_mw"][0, local_t]),
                 "discharge_mw": float(result.arrays["discharge_mw"][0, local_t]),
@@ -224,6 +283,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
                 "optimizer_cutoff_utc": event.at.isoformat()}
             snapshot.append(row)
             control_plan[t] = (row["charge_mw"], row["discharge_mw"], row["curtailment_mw"])
+            control_plan_details[t] = row
         plan_snapshots[auction] = snapshot
 
     def publish_results(event: Event) -> None:
@@ -259,6 +319,10 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             pending[t] = control_plan[t]
         else:
             raise ValueError(f"No auction optimization plan covers delivery interval {full_grid.interval_ids[t]}")
+        # Submitted offers are fixed commitments even while their prices are unknown.
+        position = sum(offer.get(full_grid.interval_ids[t], 0.0) for offer in submitted.values())
+        grid_targets[t] = position / full_grid.delta_hours[t]
+        execution_details[t] = dict(control_plan_details.get(t, {}))
 
     def observation(event: Event) -> None:
         nonlocal state
@@ -268,9 +332,17 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
         state, record = execute_interval(state=state, start=full_grid.starts[t], end=full_grid.ends[t],
             pv_ac_mw=float(realized_pv[t]), requested_charge_mw=charge,
             requested_discharge_mw=discharge, requested_curtailment_mw=curtailment,
-            plant=plant, degradation_settings=aging)
+            plant=plant, degradation_settings=aging, dispatch_policy=dispatch_policy,
+            grid_target_mw=grid_targets[t])
+        detail = execution_details[t]
         records[t] = {"interval_id": full_grid.interval_ids[t],"start":str(full_grid.starts[t]),
-            "end":str(full_grid.ends[t]),"observation_available_at":event.at.isoformat(),**record}
+            "end":str(full_grid.ends[t]),"observation_available_at":event.at.isoformat(),**record,
+            "active_plan_auction": detail.get("auction"),
+            "plan_cutoff_utc": detail.get("optimizer_cutoff_utc"),
+            "planned_energy_end_mwh": detail.get("soc_end_mwh"),
+            "pv_ac_forecast_mw": detail.get("pv_ac_forecast_mw"),
+            "pv_forecast_vintage_utc": detail.get("pv_forecast_vintage_utc"),
+            "pv_forecast_available_at_utc": detail.get("pv_forecast_available_at_utc")}
 
     def settle(event: Event) -> None:
         t = event.payload
@@ -280,7 +352,8 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
         record.update(net_position_mwh=position,imbalance_mwh=imbalance,
             imbalance_cashflow_eur=imbalance*trading.get("imbalance_price_eur_per_mwh",
                 config.get("synthetic", {}).get("imbalance_price_eur_per_mwh", 0.0)),
-            imbalance_penalty_eur=abs(imbalance)*trading["imbalance_penalty_eur_per_mwh"],
+            imbalance_penalty_eur=(abs(imbalance)*trading["imbalance_penalty_eur_per_mwh"]
+                if trading.get("optimize_imbalances", True) else 0.0),
             import_fee_eur=max(0,-record["grid_mw"])*full_grid.delta_hours[t]*trading["grid_import_fee_eur_per_mwh"])
 
     forecast_at = fixture.get("forecast_available_at", schedule[0].submission_at-pd.Timedelta(hours=1))
@@ -297,6 +370,9 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
         EventKind.AUCTION_RESULTS:publish_results,EventKind.PHYSICAL_CONTROL:control,
         EventKind.OBSERVATION_AVAILABLE:observation,EventKind.SETTLEMENT:settle})
     frame = pd.DataFrame([records[t] for t in sorted(records)])
+    frame, realized_settlement = settle_realized_dispatch(frame, auction_revenue_eur=market.cashflow_eur,
+        imbalance_prices=fixture.get("realized_imbalance_prices_eur_per_mwh"),
+        imbalance_negative_prices=fixture.get("realized_imbalance_negative_prices_eur_per_mwh"))
     frame.to_csv(destination/"dispatch.csv",index=False)
     plan_rows = [row for auction in [event.auction for event in schedule]
                  for row in plan_snapshots.get(auction, [])]
@@ -313,6 +389,12 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             ("imbalance_cashflow_eur","imbalance_penalty_eur","degradation_eur","import_fee_eur")}}
     profit = components["auction_revenue_eur"]+components["imbalance_cashflow_eur"]-components["imbalance_penalty_eur"]-components["degradation_eur"]-components["import_fee_eur"]
     summary = {"strategy":strategy,"executable":strategy!="oracle","components":components,
+        **realized_settlement,
+        "optimization_imbalances_enabled": trading.get("optimize_imbalances", True),
+        "execution_dispatch_policy": dispatch_policy,
+        "pv_forecast_policy": fixture.get("pv_forecast_policy", "fixed_fixture_forecast"),
+        "max_feedback_adjustment_mw": float(frame.feedback_adjustment_mw.max()),
+        "realized_operating_profit_status": "legacy_assumed_settlement_and_model_penalty_not_final_cash_profit",
         "auction_cashflows_eur":auction_cash,"realized_operating_profit_eur":profit,
         "initial_expected_profit_eur":solves[0]["objective_eur"],"final_state":asdict(state),
         "terminal_constraint_enabled":config["state"]["terminal_target_mwh"] is not None,
@@ -329,6 +411,11 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             "idealized interval-average safety response", fixture.get("execution_pv_assumption", "optimization PV forecast reused as execution"),
             "committed commands project battery state to next boundary for intrainterval auction cutoffs",
             "independent delivery-day study with known delivery-start energy"]}
+    summary.update(expected_realized_kpis(
+        initial_expected_profit_eur=solves[0]["objective_eur"],
+        initial_expected_auction_revenue_eur=solves[0]["expected_auction_revenue_eur"],
+        realized_profit_after_imbalance_eur=summary["realized_profit_after_imbalance_eur"],
+        auction_revenue_eur=market.cashflow_eur))
     write_json(destination/"summary.json",summary)
     if config["outputs"].get("plots",True):
         from ..reporting.plots import plot_dispatch
@@ -356,4 +443,4 @@ def run_synthetic(config: dict[str, Any]) -> dict[str, Any]:
         "actual_leaf":fixture["realized"],"boundary_state_assumption":config["state"],
         "raw_dataset_used":False,"strategies":summaries,"output_dir":str(destination)}
     write_json(destination/"manifest.json",manifest)
-    return manifest
+    return organize_run_outputs(destination)

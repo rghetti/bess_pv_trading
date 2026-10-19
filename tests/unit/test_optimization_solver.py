@@ -97,6 +97,48 @@ def test_native_hour_balance_preserves_quarter_hour_pv_shape():
     np.testing.assert_allclose(result.arrays["imbalance_mwh"][0], expected["imbalance_mwh"])
 
 
+def test_disabled_imbalances_remove_variables_and_ignore_settlement_prices():
+    case = case_config("imbalance_policy")
+    inputs, expected = configured_solver_inputs(case["reference_solver_case"])
+    inputs = replace(inputs, optimize_imbalances=False,
+                     planned_delivery_balance_resolution_minutes=None)
+    built = build_model(inputs)
+    legacy = build_model(replace(inputs, optimize_imbalances=True))
+    try:
+        assert not any(v.VarName.startswith("imbalance_") for v in built.model.getVars())
+        assert legacy.model.NumVars - built.model.NumVars == (
+            case["imbalance_variables_per_interval"] * inputs.scenarios.pv_ac_mw.size)
+    finally:
+        built.model.dispose()
+        legacy.model.dispose()
+    for price in case["settlement_price_cases"]:
+        scenarios = replace(inputs.scenarios,
+            imbalance_prices_eur_per_mwh=np.full_like(inputs.scenarios.pv_ac_mw, price))
+        result = solve(replace(inputs, scenarios=scenarios))
+        assert_configured_physics(result, expected)
+        np.testing.assert_allclose(result.arrays["imbalance_mwh"], 0, atol=1e-9)
+        np.testing.assert_allclose(result.components["imbalance_cashflow"], 0)
+        np.testing.assert_allclose(result.components["imbalance_penalty"], 0)
+
+
+def test_disabled_imbalances_do_not_net_quarter_hour_errors_within_hour():
+    case = case_config("imbalance_policy")
+    inputs, _ = configured_solver_inputs(case["reference_hourly_case"])
+    result = solve(replace(inputs, optimize_imbalances=False))
+    for field in ("grid_mw", "curtailment_mw"):
+        np.testing.assert_allclose(result.arrays[field][0], case["strict_hourly_expected"][field])
+    assert result.objective_eur == pytest.approx(case["strict_hourly_expected"]["objective_eur"])
+
+
+def test_disabled_imbalances_reject_unbacked_pending_commitments():
+    case = case_config("imbalance_policy")
+    inputs, _ = configured_solver_inputs(case["reference_solver_case"])
+    result = solve_model(build_model(replace(inputs, optimize_imbalances=False,
+        trade_limit_mwh=0, pending_position_mwh=(case["unbacked_commitment_mwh"],))))
+    assert result.status == "infeasible"
+    assert not result.has_incumbent
+
+
 def test_negative_price_charge_and_curtailment():
     curtailed = solve(example_inputs(prices=(-100,)))
     assert curtailed.arrays["curtailment_mw"][0, 0] == pytest.approx(1)

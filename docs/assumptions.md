@@ -159,8 +159,10 @@ deterrent, rather than proving compliance with unverified settlement law.
 
 Ridge and conditional residual/tree components have executable fixtures; real
 price fitting and a historical trading backtest need genuine eligible price
-targets and publication clocks. Initial planning freezes the currently available
-weather vintage because probabilistic weather-revision data are absent.
+targets and publication clocks. Initial planning uses the latest currently
+available weather cycle. The GME replay refreshes it at each reoptimization
+using only cycles published by that decision cutoff; it does not anticipate
+future weather revisions or treat successive cycles as an ensemble.
 
 Both the constant AC charge-plus-discharge `throughput` baseline and Xu et al.'s
 discharge-only `xu_segmented` model are implemented and tested. Xu's Eq. (5)

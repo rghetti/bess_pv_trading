@@ -99,7 +99,8 @@ PYTHONPATH=src python -m bess_pv_trading experiment-gme-oracle \
   --config configs/full_experiments/gme_oracle_2025-01-01.yaml
 ```
 
-It uses one causally available PV weather vintage, measured AC output for
+It selects the latest causally available PV weather vintage at every auction
+reoptimization, measured AC output for
 execution after each interval closes (with only explicitly configured missing
 interval fallback), and actual GME clearing curves as an oracle. The oracle is a
 perfect-price upper-bound comparison, not an executable strategy. Auction
@@ -121,7 +122,7 @@ PYTHONPATH=src python -m bess_pv_trading experiment-gme-oracle \
 Choose a fresh `experiment_outputs.run_id` when rerunning an existing named
 study. The runner protects completed outputs. Each active auction triggers one
 optimization before submission. Price publication updates the fixed-trade
-ledger and information only; its journal is `oracle/price_publications.json`.
+ledger and information only; its journal is `json/oracle/price_publications.json`.
 This study enforces planned delivery per native hour with zero imbalance cost,
 while recording realized forecast errors separately. See
 [battery and delivery-balance equations](battery_physical_model.md).
