@@ -1,12 +1,12 @@
-# January 1 farm 910 oracle replay with cumulative trade positions bounded only
-# by the configured POI import/export ratings.
+# January 1 farm 910 oracle replay with individual trades and cumulative
+# positions bounded by the configured POI import/export ratings.
 include: gme_oracle_2025-01-01_farm910_throughput.yaml
 
 gme_oracle_experiment:
-  study_id: gme_nord_oracle_2025-01-01_farm910_poi_only
+  study_id: gme_nord_oracle_2025-01-01_farm910_poi_bounded_trades
 
 forecast:
   reoptimization_pv_policy: latest_available_forecast_at_each_reoptimization
 
 experiment_outputs:
-  run_id: gme_nord_oracle_2025-01-01_farm910_5mwh_poi_only
+  run_id: gme_nord_oracle_2025-01-01_farm910_5mwh_poi_bounded_trades

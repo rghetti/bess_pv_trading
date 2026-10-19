@@ -536,11 +536,11 @@ q_{ts}=q^{priced}_t+q^{unpriced}_t+\sum_a v_{a,m(a,s),t},\qquad
 b_{ts}=x_{ts}h_t-q_{ts}.
 \end{equation}
 Only eligible open auctions receive variables. There are no separate commercial
-trade or position caps. Cumulative positions after every auction, including
-accepted and pending commitments, obey
-$-P^{POI,import}h_t\le q^{(a)}_{ts}\le P^{POI,export}h_t$; the same POI ratings
-bound physical grid power. Individual auction adjustments may close and reverse
-an earlier position. Submitted quantities execute in full and remain
+trade or position caps. Individual trades obey
+$-P^{POI,import}h_t\le v_{a,t,s}\le P^{POI,export}h_t$ and cumulative positions
+after every auction, including accepted and pending commitments, obey the same
+directional bounds. The same ratings bound physical grid power. Auction
+adjustments may close and reverse an earlier position within these bounds. Submitted quantities execute in full and remain
 fixed while awaiting price publication. There is no acceptance uncertainty.
 Their unknown cash flow is a scenario constant excluded from residual optimization
 and identified in diagnostics. On publication, quantity times the actual clearing

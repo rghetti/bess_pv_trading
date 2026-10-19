@@ -361,11 +361,11 @@ historical imbalance settlement model.
 The earlier saved studies used separate trading-volume caps: 0.25 MWh per native
 hourly product per auction and 0.25 MWh cumulative position per quarter hour
 (1 MW). These caps have been removed from the model and YAML configurations.
-Future runs bound cumulative contracted positions after each auction by
-`[-plant.poi_import_mw * interval_hours, plant.poi_export_mw * interval_hours]`.
-The farm-910 configuration therefore permits contracted import/export power
-up to 6.638 MW, matching its configured physical POI. Individual adjustments
-have no separate cap and may close and reverse an earlier position. Existing
+Future runs bound each signed auction trade and each cumulative contracted
+position after every auction by the directional POI ratings times the actual
+interval duration. The farm-910 configuration therefore permits contracted
+import/export power up to 6.638 MW, matching its configured physical POI. A
+reversal trade is subject to the relevant import/export rating. Existing
 saved results still reflect their recorded earlier settings and require a new
 run for an economic comparison under the corrected limits.
 

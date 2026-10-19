@@ -80,6 +80,17 @@ def test_every_delivery_panel_reaches_midnight_and_preserves_final_soc(tmp_path,
         "components": {"auction_revenue_eur": 0, "degradation_eur": 0, "import_fee_eur": 0}}
     _plot_settlement(tmp_path, dispatch, summary, case["timezone"])
     plot_dispatch(dispatch, prices, summary, tmp_path / "dispatch.png", timezone=case["timezone"])
+    for auction in prices:
+        name = f"reoptimization_{auction}.png"
+        assert name in figures
+        figure = figures[name]
+        assert len(figure.axes) == 2
+        assert figure.axes[0].get_shared_x_axes().joined(figure.axes[0], figure.axes[1])
+        labels = [[line.get_label() for line in axis.lines] for axis in figure.axes]
+        assert any(f"forecast used at {auction}" in label for label in labels[0])
+        assert "Realized PV" in labels[0]
+        assert any(f"scheduled at {auction}" in label for label in labels[1])
+        assert "Realized battery dispatch" in labels[1]
     final = pd.Timestamp(grid.ends[-1]).tz_convert(case["timezone"])
     assert final == final.normalize()  # This endpoint is next-day local midnight.
     for name, figure in figures.items():

@@ -47,10 +47,11 @@ coefficients for those four intervals must be identical in every scenario.
 There are no separate commercial trade or position caps. For interval `t` of
 duration `dt[t]` hours, the cumulative contracted position after every auction
 must lie in `[-plant.poi_import_mw * dt[t], plant.poi_export_mw * dt[t]]` MWh.
-The same POI ratings bound physical grid power. An individual auction adjustment
-may exceed one interval's POI energy when closing and reversing an earlier
-position; only the resulting cumulative position is bounded. Native product
-equalities preserve this power rating across the product's quarter-hour shares.
+Each individual auction trade obeys the same directional bounds, and the same
+POI ratings bound physical grid power. A later auction can revise an earlier
+position only within its own import/export rating; both that adjustment and the
+resulting cumulative position remain bounded. Native product equalities preserve
+these power ratings across the product's quarter-hour shares.
 Legacy `trading.trade_limit_mwh`, `position_limit_mwh` and their GME-specific
 variants are rejected when loading YAML; remove them and configure the POI.
 

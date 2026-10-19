@@ -33,8 +33,8 @@ The run includes an independent execution/accounting audit and JSON/CSV
 comparisons against the retained fixed-forecast grid-feedback result.
 
 `gme_oracle_2025-01-01_farm910_poi_only.yaml` reruns the January study with
-the corrected POI-derived cumulative position limits and a fresh output ID.
-Earlier fixed and rolling PV runs retain their original commercial cap settings.
+individual trade and cumulative position limits derived from the POI, under a
+fresh output ID. Earlier PV runs retain their original commercial cap settings.
 
 Future runs automatically save expected-versus-realized mismatches for gross
 auction revenue and final net profit in the replay summary and GME KPI JSON/CSV.
@@ -67,10 +67,10 @@ and SOC limits. Separate battery inverter limits and absolute MWh bounds are
 rejected. Efficiencies remain configurable independently of power ratings.
 
 Trading has no independent commercial volume cap. Configure `plant.poi_import_mw`
-and `plant.poi_export_mw`: cumulative contracted positions after each auction
-are bounded by these ratings times the delivery interval duration. Physical grid
-power uses the same POI ratings. An auction adjustment may close and reverse
-a previous position; it has no separate cap. Earlier retained results used the
+and `plant.poi_export_mw`: each signed auction trade and the cumulative contracted
+position after each auction are bounded by these ratings times the delivery
+interval duration. Physical grid power uses the same POI ratings. A reversal
+trade remains within the directional POI limit. Earlier retained results used the
 removed 1 MW commercial ceiling and are historical results under those settings.
 
 Delivery-time plots include both interval boundaries, through next-day local

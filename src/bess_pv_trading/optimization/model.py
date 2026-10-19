@@ -52,7 +52,7 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
 
 
 def _trading(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
-    """Bound cumulative positions by POI energy; leave auction adjustments uncapped."""
+    """Apply POI-derived limits to each auction trade and each cumulative position."""
     count, intervals = np.shape(inputs.scenarios.pv_ac_mw)
     trades, positions, auction_revenue = {}, {}, {}
     auction_order = sorted(inputs.auction_eligibility, key=lambda a: ({"DA": 0, "IDA1": 1, "IDA2": 2, "IDA3": 3}.get(a, 4), a))
@@ -60,7 +60,11 @@ def _trading(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
         for node in sorted(set(inputs.tree.bid_nodes[auction])):
             for t, eligible in enumerate(inputs.auction_eligibility[auction]):
                 if eligible:
-                    trades[auction, node, t] = model.addVar(lb=-gp.GRB.INFINITY, name=f"trade[{auction},n{node},t{inputs.grid.interval_ids[t]}]")
+                    duration = inputs.grid.delta_hours[t]
+                    lower = -inputs.plant.poi_import_mw * duration
+                    upper = inputs.plant.poi_export_mw * duration
+                    trades[auction, node, t] = model.addVar(lb=lower, ub=upper,
+                        name=f"trade[{auction},n{node},t{inputs.grid.interval_ids[t]}]")
     accepted = inputs.market.positions(inputs.grid)
     if inputs.pending_position_mwh is not None:
         accepted = accepted + np.asarray(inputs.pending_position_mwh)

@@ -51,15 +51,15 @@ $$
 
 The implementation models the import-cost term exactly when its coefficient is nonzero; the current coefficient is zero. Prices are EUR/MWh and trade variables are MWh, so auction revenue has no second duration multiplier. There is no explicit curtailment penalty. Planned curtailment has the opportunity cost implied by prices and the balance equations. A separate optional formulation supports signed optimized imbalances, but it is inactive in this study because deliberate imbalance trading was excluded by design.
 
-**POI bounds and the removed commercial caps.** The earlier examples imposed 0.25 MWh per native product per auction and 0.25 MWh cumulative position per quarter-hour. The latter was an artificial 1 MW ceiling, separate from the farm's POI. Both configuration parameters and their model fields have now been removed. Under the latest agreed rule, cumulative positions after every modeled auction obey
+**POI bounds and the removed commercial caps.** The earlier examples imposed 0.25 MWh per native product per auction and 0.25 MWh cumulative position per quarter-hour. The latter was an artificial 1 MW ceiling, separate from the farm's POI. Both artificial configuration parameters and their model fields have been removed. Each individual trade and the cumulative position after every modeled auction now use POI-derived import/export bounds:
+
+$$-P_{\mathrm{imp}}^{\mathrm{POI}}h_t\le v_{a,t,s}\le P_{\mathrm{exp}}^{\mathrm{POI}}h_t,\qquad\forall a,$$
 
 $$
--P_{\mathrm{imp}}^{\mathrm{POI}}h_t
-\le q_{\mathrm{fixed},t}+\sum_{b\le a}v_{b,t,s}
-\le P_{\mathrm{exp}}^{\mathrm{POI}}h_t.
+-P_{\mathrm{imp}}^{\mathrm{POI}}h_t\le q_{\mathrm{fixed},t}+\sum_{b\le a}v_{b,t,s}\le P_{\mathrm{exp}}^{\mathrm{POI}}h_t,\qquad\forall a.
 $$
 
-Physical grid power also obeys `-P_POI,imp <= g <= P_POI,exp`. Thus the only trading-exposure ratings are the configured POI powers, converted using the actual interval duration. Individual adjustments have no separate volume cap: buying to close and reverse an existing sale can exceed one interval's POI energy while the resulting cumulative position remains admissible. For the farm-910 YAML, import and export are each 6.638 MW. This cumulative bound is necessary to keep unrestricted price-oracle financial round trips finite: without a financial bound, arbitrarily large offsetting trades can earn arbitrarily large revenue while leaving physical delivery unchanged.
+Physical grid power also obeys `-P_POI,imp <= g <= P_POI,exp`. Thus each signed trade is limited by the import or export rating in its direction, and the accumulated position remains within the POI after each auction. For the farm-910 YAML, import and export are each 6.638 MW. These bounds prevent a single purchase or sale and the remaining physical obligation from exceeding the configured POI.
 
 **Battery physics and endpoints.** The active battery has nominal energy 5 MWh and one symmetric AC charge/discharge rating of 2.5 MW. SOC limits are 10% and 90% of nominal capacity, so resizing capacity automatically resizes stored-energy bounds. Initial SOC is 50%. The terminal SOC setting accepts `null`, which omits the terminal equality; the current study uses that setting. No separate battery inverter power cap remains.
 

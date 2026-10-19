@@ -89,7 +89,7 @@ state:
 
 trading:
   # Contracted net energy uses the plant POI ratings times interval duration.
-  # Individual auction adjustments have no separate volume cap.
+  # Each auction trade and cumulative position use POI-derived bounds.
   optimize_imbalances: false  # Exact forecast delivery per optimization interval; settle execution errors ex post.
   imbalance_penalty_eur_per_mwh: 100.0
   grid_import_fee_eur_per_mwh: 0.0

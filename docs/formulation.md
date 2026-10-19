@@ -93,10 +93,12 @@ Only eligible open auction/node/products receive trade variables. No separate
 commercial trade or position cap is imposed. Cumulative positions after each
 modeled auction, including accepted and pending commitments, obey
 \(-P^{POI,import}h_t\le q^{(a)}_{ts}\le P^{POI,export}h_t\).
+Each individual auction trade also obeys
+\(-P^{POI,import}h_t\le v_{a,t,s}\le P^{POI,export}h_t\).
 These POI-derived energy bounds also apply to final net positions; physical grid
 power obeys the same import/export ratings. An auction adjustment may close and
-reverse an earlier position, so its magnitude can exceed a single interval's
-POI energy while the cumulative position remains within its physical bound.
+reverse an earlier position, subject to its own direction-specific POI rating
+and the cumulative position bound.
 Hourly product allocations are equal across their quarter-hour energy shares.
 
 Settlement uses the exact positive and negative parts `b+`, `b-` of imbalance.

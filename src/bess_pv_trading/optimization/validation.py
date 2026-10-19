@@ -58,7 +58,8 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
         errors[name] = float(np.max(np.abs(value), initial=0)) if np.all(np.isfinite(value)) else float("inf")
 
     def upper(name: str, value: np.ndarray | float) -> None:
-        errors[name] = float(np.max(value, initial=0)) if np.all(np.isfinite(value)) else float("inf")
+        residual = float(np.max(value, initial=0)) if np.all(np.isfinite(value)) else float("inf")
+        errors[name] = max(errors.get(name, 0.0), residual)
 
     # Check AC bus power and the battery-internal energy transition independently.
     charge, discharge = arrays["charge_mw"], arrays["discharge_mw"]
@@ -126,6 +127,11 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     expected_keys = {(auction, owner, product) for auction, eligible in inputs.auction_eligibility.items() for owner in inputs.tree.bid_nodes[auction] for t, product in enumerate(inputs.grid.interval_ids) if eligible[t]}
     if set(result.trades) != expected_keys or any(not np.isfinite(value) for value in result.trades.values()):
         return ValidationReport(False, errors, None, ("Trade keys differ from actionable node/products or contain nonfinite values",))
+    product_indices = {product: index for index, product in enumerate(inputs.grid.interval_ids)}
+    for (auction, _owner, product), value in result.trades.items():
+        duration = inputs.grid.delta_hours[product_indices[product]]
+        upper(f"trade_poi_export_{auction}_mwh", value - inputs.plant.poi_export_mw * duration)
+        upper(f"trade_poi_import_{auction}_mwh", -value - inputs.plant.poi_import_mw * duration)
     for auction, eligibility in inputs.auction_eligibility.items():
         bid_nodes = inputs.tree.bid_nodes[auction]
         groups = configured_auction_product_groups(inputs.grid, auction,

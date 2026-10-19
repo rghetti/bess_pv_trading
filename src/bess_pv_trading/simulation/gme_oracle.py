@@ -366,6 +366,49 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
     fig.savefig(destination / "expected_dispatch_by_auction.png", dpi=140)
     plt.close(fig)
 
+    # Keep each reoptimization's information set and schedule together. The
+    # executed trajectory is common to all panels, so deviations from each
+    # auction's plan are directly visible on the same delivery-time axis.
+    realized_pv_times = pd.to_datetime(dispatch.start, utc=True).dt.tz_convert(timezone)
+    realized_battery = dispatch.discharge_mw - dispatch.charge_mw
+    auction_plot_names = {
+        "DA": "reoptimization_DA.png",
+        "IDA1": "reoptimization_IDA1.png",
+        "IDA2": "reoptimization_IDA2.png",
+        "IDA3": "reoptimization_IDA3.png",
+    }
+    for auction, filename in auction_plot_names.items():
+        selected = plans.loc[plans.auction == auction]
+        if selected.empty:
+            continue  # Canceled or unavailable auctions have no decision to plot.
+        plan_times = pd.to_datetime(selected.interval_start_utc, utc=True).dt.tz_convert(timezone)
+        plan_ends = pd.to_datetime(selected.interval_end_utc, utc=True).dt.tz_convert(timezone)
+        fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True,
+                                 gridspec_kw={"height_ratios": [1, 1]},
+                                 layout="constrained")
+        plot_interval_series(axes[0], plan_times, plan_ends,
+            selected.pv_ac_forecast_mw, linestyle="--", label=f"PV forecast used at {auction}")
+        plot_interval_series(axes[0], realized_pv_times,
+            pd.to_datetime(dispatch.end, utc=True).dt.tz_convert(timezone),
+            dispatch.pv_ac_mw, color="black", linewidth=2, label="Realized PV")
+        axes[0].set_ylabel("PV power (MW AC)")
+        axes[0].set_title(f"{auction} reoptimization: PV information and battery schedule")
+        plot_interval_series(axes[1], plan_times, plan_ends,
+            selected.net_battery_dispatch_mw, linestyle="--",
+            label=f"Battery dispatch scheduled at {auction}")
+        plot_interval_series(axes[1], realized_pv_times,
+            pd.to_datetime(dispatch.end, utc=True).dt.tz_convert(timezone),
+            realized_battery, color="black", linewidth=2, label="Realized battery dispatch")
+        axes[1].axhline(0, color="grey", linewidth=0.7)
+        axes[1].set_ylabel("Battery power (MW AC)\npositive = discharge")
+        axes[1].set_xlabel(f"Delivery time ({timezone})")
+        for axis in axes:
+            axis.grid(alpha=0.2)
+            axis.legend()
+            axis.set_xlim(local[0], local_ends[-1])
+        fig.savefig(destination / filename, dpi=140)
+        plt.close(fig)
+
     if forecast_curves:
         fig, axis = plt.subplots(figsize=(12, 5), layout="constrained")
         plot_pv_forecasts(axis)
@@ -707,6 +750,9 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
             "oracle/summary.json",
             "oracle/dispatch.csv", "oracle/expected_dispatch_plans.csv", "oracle/ledger.csv",
             "oracle/solves.json", "oracle/price_publications.json"]}
+    manifest["artifacts"].extend(
+        f"reoptimization_{auction}.png" for auction in actual_prices
+        if (day_output / f"reoptimization_{auction}.png").exists())
     if summary["imbalance_settlement_status"] == "priced":
         manifest["artifacts"].extend(["imbalance_prices.csv", "imbalance_settlement.png",
                                       "realized_profit_breakdown.png"])

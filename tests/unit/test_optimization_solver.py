@@ -189,8 +189,8 @@ def test_native_hourly_trade_can_use_full_poi_in_each_quarter():
     assert result.objective_eur == pytest.approx(case["poi_export_mw"] * hours * count * case["sale_price_eur_per_mwh"])
 
 
-def test_auction_adjustment_can_reverse_full_poi_position_and_validator_checks_each_stage():
-    """Bound positions after each auction, allowing larger closing/reversing trades."""
+def test_auction_trades_and_reversals_respect_poi_at_each_stage():
+    """Bound each auction order and its cumulative position using POI ratings."""
     case = case_config("poi_trading")
     prices = {auction: np.array([[price]]) for auction, price in case["reversal_prices_eur_per_mwh"].items()}
     hours = case["delivery_hours"][0]
@@ -200,12 +200,14 @@ def test_auction_adjustment_can_reverse_full_poi_position_and_validator_checks_e
     result = solve(inputs)
     exported, imported = case["poi_export_mw"] * hours, case["poi_import_mw"] * hours
     assert result.trades["DA", "root", "t0"] == pytest.approx(exported)
-    assert result.trades["IDA1", "root", "t0"] == pytest.approx(-exported - imported)
-    assert result.trades["IDA2", "root", "t0"] == pytest.approx(imported)
+    assert abs(result.trades["DA", "root", "t0"]) <= exported
+    assert -imported <= result.trades["IDA1", "root", "t0"] <= exported
+    assert -imported <= result.trades["IDA2", "root", "t0"] <= exported
+    assert result.trades["IDA1", "root", "t0"] == pytest.approx(-imported)
     expected = sum(result.trades[auction, "root", "t0"] * price
                    for auction, price in case["reversal_prices_eur_per_mwh"].items())
     assert result.objective_eur == pytest.approx(expected)
-    # Preserve final position and physical dispatch, but violate an earlier POI bound.
+    # Preserve the final position and physical dispatch while violating an earlier POI bound.
     tampered = dict(result.trades)
     excess = exported * (case["beyond_poi_factor"] - 1)
     tampered["DA", "root", "t0"] += excess
@@ -213,6 +215,27 @@ def test_auction_adjustment_can_reverse_full_poi_position_and_validator_checks_e
     report = validate_solution(inputs, replace(result, trades=tampered))
     assert not report.valid
     assert report.max_errors["cumulative_poi_export_after_DA_mwh"] == pytest.approx(excess)
+    assert report.max_errors["trade_poi_export_DA_mwh"] == pytest.approx(excess)
+
+
+def test_validator_retains_first_interval_trade_limit_violation():
+    """Aggregate per-auction diagnostics across every interval and product."""
+    case = case_config("poi_trading")
+    duration = case["delivery_hours"][0]
+    inputs = example_inputs(prices=np.full(2, case["sale_price_eur_per_mwh"]),
+        pv=np.zeros((1, 2)), hours=duration)
+    inputs = replace(inputs, plant=replace(inputs.plant,
+        poi_import_mw=case["poi_import_mw"], poi_export_mw=case["poi_export_mw"]),
+        optimize_imbalances=False)
+    result = solve(inputs)
+    excessive_trade = case["poi_export_mw"] * duration * case["beyond_poi_factor"]
+    product = inputs.grid.interval_ids[0]
+    tampered = dict(result.trades)
+    tampered["DA", "root", product] = excessive_trade
+    report = validate_solution(inputs, replace(result, trades=tampered))
+    assert not report.valid
+    assert report.max_errors["trade_poi_export_DA_mwh"] == pytest.approx(
+        case["poi_export_mw"] * duration * (case["beyond_poi_factor"] - 1))
 
 
 def test_optional_imbalance_bounds_cover_both_asymmetric_poi_extremes():
