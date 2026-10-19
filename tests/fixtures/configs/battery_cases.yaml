@@ -35,6 +35,9 @@ poi_trading:
   poi_import_mw: 3.0
   poi_export_mw: 6.0
   pv_ac_mw: 8.0
+  import_power_mw: 1.0
+  import_interval_hours: 0.25
+  realized_pv_fraction: 0.5
   delivery_hours: [0.25, 0.5, 1.0]
   native_product_minutes: 60
   quarter_hours_per_product: 4

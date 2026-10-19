@@ -34,7 +34,7 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
         for node in sorted({curtailment_owners[s][t] for s in range(scenario_count)}):
             available = min(inputs.scenarios.pv_ac_mw[s, t] for s in range(scenario_count) if curtailment_owners[s][t] == node)
             curtailment[t, node] = model.addVar(ub=float(available), name=f"curtailment[n{node},t{inputs.grid.interval_ids[t]}]")
-    energy, grid = {}, {}
+    energy, grid, pv_injection = {}, {}, {}
     for s, scenario in enumerate(inputs.scenarios.scenario_ids):
         for t in range(intervals + 1):
             energy[s, t] = model.addVar(lb=battery.energy_min_mwh, ub=battery.maximum_energy, name=f"energy[s{scenario},boundary{t}]")
@@ -47,8 +47,15 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
             retention = (1 - battery.self_discharge_per_hour) ** duration
             model.addConstr(energy[s, t + 1] == retention * energy[s, t] + battery.eta_charge * charge[t, owner] * duration - discharge[t, owner] * duration / battery.eta_discharge, name=f"battery_balance[{suffix}]")
             grid[s, t] = model.addVar(lb=-inputs.plant.poi_import_mw, ub=inputs.plant.poi_export_mw, name=f"grid[{suffix}]")
-            model.addConstr(grid[s, t] == float(inputs.scenarios.pv_ac_mw[s, t]) - curtailment[t, curtailment_owners[s][t]] + discharge[t, owner] - charge[t, owner], name=f"ac_balance[{suffix}]")
-    return {"charge": charge, "discharge": discharge, "mode": mode, "curtailment": curtailment, "energy": energy, "grid": grid}
+            pv_injection[s, t] = model.addVar(lb=0.0,
+                ub=float(inputs.scenarios.pv_ac_mw[s, t]), name=f"pv_injection[{suffix}]")
+            model.addConstr(pv_injection[s, t] + curtailment[t, curtailment_owners[s][t]]
+                == float(inputs.scenarios.pv_ac_mw[s, t]), name=f"pv_plant_balance[{suffix}]")
+            model.addConstr(grid[s, t] == pv_injection[s, t] + discharge[t, owner]
+                - charge[t, owner], name=f"poi_balance[{suffix}]")
+    return {"charge": charge, "discharge": discharge, "mode": mode,
+        "curtailment": curtailment, "pv_injection": pv_injection,
+        "energy": energy, "grid": grid}
 
 
 def _trading(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
@@ -281,6 +288,8 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     for source, destination in (("charge", "charge_mw"), ("discharge", "discharge_mw"), ("mode", "mode_charge")):
         result.arrays[destination] = np.array([[variable[source][t, inputs.tree.control_nodes[s][t]].X for t in range(intervals)] for s in range(count)])
     result.arrays["curtailment_mw"] = np.array([[variable["curtailment"][t, curtailment_owners[s][t]].X for t in range(intervals)] for s in range(count)])
+    result.arrays["pv_injection_mw"] = np.array([[variable["pv_injection"][s, t].X
+        for t in range(intervals)] for s in range(count)])
     for source, destination in (("energy", "energy_mwh"), ("grid", "grid_mw"), ("positions", "net_position_mwh")):
         length = intervals + 1 if source == "energy" else intervals
         result.arrays[destination] = np.array([[variable[source][s, t].X for t in range(length)] for s in range(count)])

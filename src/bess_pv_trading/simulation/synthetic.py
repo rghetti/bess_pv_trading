@@ -275,6 +275,8 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
                 "net_battery_dispatch_mw": float(result.arrays["discharge_mw"][0, local_t]
                     - result.arrays["charge_mw"][0, local_t]),
                 "pv_ac_forecast_mw": float(inputs.scenarios.pv_ac_mw[0, local_t]),
+                "pv_injection_forecast_mw": float(inputs.scenarios.pv_ac_mw[0, local_t]
+                    - result.arrays["curtailment_mw"][0, local_t]),
                 "expected_grid_mw": float(result.arrays["grid_mw"][0, local_t]),
                 "auction_trade_mwh": trade_mwh,
                 "curtailment_mw": float(result.arrays["curtailment_mw"][0, local_t]),

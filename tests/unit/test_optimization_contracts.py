@@ -154,7 +154,7 @@ def test_solver_status_classification(code, count, expected):
 
 def test_numerical_validator_detects_independent_tampering_and_signed_settlement():
     inputs = example_inputs()
-    arrays = {"charge_mw": np.zeros((1, 1)), "discharge_mw": np.zeros((1, 1)), "mode_charge": np.zeros((1, 1)), "curtailment_mw": np.zeros((1, 1)), "grid_mw": np.ones((1, 1)), "energy_mwh": np.zeros((1, 2)), "net_position_mwh": np.ones((1, 1)), "imbalance_mwh": np.zeros((1, 1)), "imbalance_positive_mwh": np.zeros((1, 1)), "imbalance_negative_mwh": np.zeros((1, 1))}
+    arrays = {"charge_mw": np.zeros((1, 1)), "discharge_mw": np.zeros((1, 1)), "mode_charge": np.zeros((1, 1)), "curtailment_mw": np.zeros((1, 1)), "pv_injection_mw": np.ones((1, 1)), "grid_mw": np.ones((1, 1)), "energy_mwh": np.zeros((1, 2)), "net_position_mwh": np.ones((1, 1)), "imbalance_mwh": np.zeros((1, 1)), "imbalance_positive_mwh": np.zeros((1, 1)), "imbalance_negative_mwh": np.zeros((1, 1))}
     result = OptimizationResult("optimal", True, 100, arrays, {("DA", "root", "t0"): 1})
     assert validate_solution(inputs, result).valid
     result.arrays["grid_mw"] = np.array([[0.5]])

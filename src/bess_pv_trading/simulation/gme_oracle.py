@@ -13,7 +13,8 @@ import pandas as pd
 from ..data import (align_forecast, config_path, load_metadata, load_observations,
                     open_store, select_forecast_vintage)
 from ..data.api_catalog import load_api_cache_records
-from ..domain import BatteryParameters, PlantParameters, battery_parameters_from_config
+from ..domain import (BatteryParameters, DegradationSettings, PhysicalState, PlantParameters,
+                      battery_parameters_from_config)
 from ..forecasting.pv import forecast_pv
 from ..markets import AuctionCalendar
 from ..optimization.degradation import degradation_settings_from_config
@@ -21,6 +22,7 @@ from ..reporting.artifacts import organize_run_outputs
 from ..reporting.plots import plot_boundary_series, plot_interval_series
 from ..scenarios import synthetic_price_tree
 from .synthetic import _replay_strategy, write_json
+from .replay import execute_interval
 from .settlement import expected_realized_kpis, load_realized_imbalance_prices, settle_realized_dispatch
 
 
@@ -48,6 +50,103 @@ def _apply_actual_settlement(config, grid, dispatch, summary, destination):
         auction_revenue_eur=components["auction_revenue_eur"]))
     prices.to_csv(destination / "imbalance_prices.csv", index=False)
     return settled, summary, provenance
+
+
+def _counterfactual_reoptimization_settlement(plans, dispatch, realized_pv,
+        grid, plant, auctions):
+    """Price each auction snapshot as an open-loop plan against measured PV.
+
+    Battery commands and the snapshot's contracted grid target stay fixed;
+    only realized PV replaces forecast PV. The execution helper clips planned
+    commands to SOC, power, PV-curtailment, and POI limits. All steps are settled
+    with the same ex-post single imbalance-price curve as actual dispatch.
+    """
+    required = {"expected_grid_mw", "charge_mw", "discharge_mw", "curtailment_mw",
+                "soc_start_mwh", "interval_start_utc", "interval_end_utc", "interval_id"}
+    if plans.empty or not required.issubset(plans.columns):
+        return pd.DataFrame(), pd.DataFrame()
+    if not {"realized_imbalance_cashflow_eur", "net_position_mwh"}.issubset(dispatch.columns):
+        return pd.DataFrame(), pd.DataFrame()
+    indexed = dispatch.set_index("interval_id")
+    interval_index = {product: i for i, product in enumerate(grid.interval_ids)}
+    groups = {auction: plans.loc[plans.auction == auction].sort_values("interval_start_utc")
+              for auction in auctions}
+    groups = {auction: frame for auction, frame in groups.items() if not frame.empty}
+    if not groups:
+        return pd.DataFrame(), pd.DataFrame()
+    common_ids = set.intersection(*(set(frame.interval_id) for frame in groups.values()))
+    detailed = []
+    aging = DegradationSettings(0.0)
+    for auction, frame in groups.items():
+        first = frame.iloc[0]
+        start = pd.Timestamp(first.interval_start_utc).to_pydatetime()
+        state = PhysicalState(start, float(first.soc_start_mwh),
+                              origin="counterfactual_snapshot_soc")
+        for row in frame.itertuples(index=False):
+            index = interval_index[row.interval_id]
+            pv = float(realized_pv[index])
+            end = pd.Timestamp(row.interval_end_utc).to_pydatetime()
+            state, executed = execute_interval(state=state, start=state.timestamp,
+                end=end, pv_ac_mw=pv, requested_charge_mw=float(row.charge_mw),
+                requested_discharge_mw=float(row.discharge_mw),
+                requested_curtailment_mw=float(row.curtailment_mw), plant=plant,
+                degradation_settings=aging, dispatch_policy="follow_battery_plan")
+            duration = grid.delta_hours[index]
+            target = float(row.expected_grid_mw)
+            imbalance = (executed["grid_mw"] - target) * duration
+            price = float(indexed.loc[row.interval_id, "imbalance_price_eur_mwh"])
+            settlement = imbalance * price
+            final_position = float(indexed.loc[row.interval_id, "net_position_mwh"])
+            final_position_imbalance = executed["grid_mw"] * duration - final_position
+            detailed.append({"auction": auction, "interval_id": row.interval_id,
+                "interval_start_utc": pd.Timestamp(row.interval_start_utc).isoformat(),
+                "interval_end_utc": pd.Timestamp(row.interval_end_utc).isoformat(),
+                "optimizer_cutoff_utc": row.optimizer_cutoff_utc,
+                "common_comparison_horizon": row.interval_id in common_ids,
+                "pv_forecast_mw": float(row.pv_ac_forecast_mw), "pv_realized_mw": pv,
+                "planned_charge_mw": float(row.charge_mw),
+                "planned_discharge_mw": float(row.discharge_mw),
+                "counterfactual_charge_mw": executed["charge_mw"],
+                "counterfactual_discharge_mw": executed["discharge_mw"],
+                "counterfactual_pv_curtailment_mw": executed["curtailment_mw"],
+                "planned_grid_mw": target, "counterfactual_grid_mw": executed["grid_mw"],
+                "imbalance_mwh": imbalance, "imbalance_price_eur_mwh": price,
+                "imbalance_cashflow_eur": settlement,
+                "final_contract_position_mwh": final_position,
+                "final_contract_imbalance_mwh": final_position_imbalance,
+                "final_contract_imbalance_cashflow_eur": final_position_imbalance * price})
+    details = pd.DataFrame(detailed)
+    summaries = []
+    for auction, frame in details.groupby("auction", sort=False):
+        comparable = frame.loc[frame.common_comparison_horizon]
+        summaries.append({"auction": auction,
+            "optimizer_cutoff_utc": frame.optimizer_cutoff_utc.iloc[0],
+            "delivery_window_start_utc": frame.interval_start_utc.min(),
+            "delivery_window_end_utc": frame.interval_end_utc.max(),
+            "intervals": len(frame),
+            "absolute_imbalance_mwh": float(frame.imbalance_mwh.abs().sum()),
+            "net_imbalance_mwh": float(frame.imbalance_mwh.sum()),
+            "imbalance_cashflow_eur": float(frame.imbalance_cashflow_eur.sum()),
+            "final_contract_absolute_imbalance_mwh": float(
+                frame.final_contract_imbalance_mwh.abs().sum()),
+            "final_contract_net_imbalance_mwh": float(
+                frame.final_contract_imbalance_mwh.sum()),
+            "final_contract_imbalance_cashflow_eur": float(
+                frame.final_contract_imbalance_cashflow_eur.sum()),
+            "pv_forecast_mae_mw": float((frame.pv_realized_mw-frame.pv_forecast_mw).abs().mean()),
+            "common_horizon_start_utc": comparable.interval_start_utc.min() if len(comparable) else None,
+            "common_horizon_end_utc": comparable.interval_end_utc.max() if len(comparable) else None,
+            "common_horizon_intervals": len(comparable),
+            "common_horizon_absolute_imbalance_mwh": float(comparable.imbalance_mwh.abs().sum()),
+            "common_horizon_net_imbalance_mwh": float(comparable.imbalance_mwh.sum()),
+            "common_horizon_imbalance_cashflow_eur": float(comparable.imbalance_cashflow_eur.sum()),
+            "common_horizon_final_contract_absolute_imbalance_mwh": float(
+                comparable.final_contract_imbalance_mwh.abs().sum()),
+            "common_horizon_final_contract_net_imbalance_mwh": float(
+                comparable.final_contract_imbalance_mwh.sum()),
+            "common_horizon_final_contract_cashflow_eur": float(
+                comparable.final_contract_imbalance_cashflow_eur.sum())})
+    return pd.DataFrame(summaries), details
 
 
 def _plot_settlement(destination, dispatch, summary, timezone):
@@ -295,7 +394,8 @@ def _pv_forecast_curves(plans: pd.DataFrame, timezone: str):
 def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
                      plans: pd.DataFrame, dispatch: pd.DataFrame, timezone: str,
                      eligibility: Mapping[str, np.ndarray], *,
-                     battery_capacity_mwh: float, soc_bounds_percent: tuple[float, float]) -> None:
+                     battery_capacity_mwh: float, soc_bounds_percent: tuple[float, float],
+                     auction_events=()) -> None:
     """Save the auction-price panels, four decision trajectories, and realized SOC."""
     import matplotlib
     matplotlib.use("Agg")
@@ -377,6 +477,7 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
         "IDA2": "reoptimization_IDA2.png",
         "IDA3": "reoptimization_IDA3.png",
     }
+    event_by_auction = {event.auction: event for event in auction_events}
     for auction, filename in auction_plot_names.items():
         selected = plans.loc[plans.auction == auction]
         if selected.empty:
@@ -392,7 +493,26 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
             pd.to_datetime(dispatch.end, utc=True).dt.tz_convert(timezone),
             dispatch.pv_ac_mw, color="black", linewidth=2, label="Realized PV")
         axes[0].set_ylabel("PV power (MW AC)")
-        axes[0].set_title(f"{auction} reoptimization: PV information and battery schedule")
+        event = event_by_auction.get(auction)
+        if event is not None:
+            gate_local = event.gate_at.tz_convert(timezone)
+            if local[0] <= gate_local <= local_ends[-1]:
+                axes[0].axvline(gate_local, color="tab:red", linestyle=":",
+                    linewidth=1.2, label=f"{auction} gate closes {gate_local:%H:%M}")
+            eligible = np.flatnonzero(eligibility.get(auction, np.zeros(len(local), dtype=bool)))
+            if len(eligible):
+                delivery_start = local[eligible[0]]
+                if local[0] < delivery_start <= local_ends[-1]:
+                    axes[0].axvline(delivery_start, color="tab:purple", linestyle="-.",
+                        linewidth=1.2, label=f"{auction} products start {delivery_start:%H:%M}")
+                    plan_start = plan_times.min()
+                    if plan_start < delivery_start:
+                        axes[0].axvspan(plan_start, delivery_start, color="tab:orange",
+                            alpha=0.08, label="Physical plan before this auction's products")
+            cutoff = pd.Timestamp(selected.optimizer_cutoff_utc.iloc[0]).tz_convert(timezone)
+            axes[0].set_title(f"{auction} plan: cutoff {cutoff:%H:%M}, gate {gate_local:%H:%M}")
+        else:
+            axes[0].set_title(f"{auction} reoptimization: PV information and battery schedule")
         plot_interval_series(axes[1], plan_times, plan_ends,
             selected.net_battery_dispatch_mw, linestyle="--",
             label=f"Battery dispatch scheduled at {auction}")
@@ -574,6 +694,14 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
             from ..reporting.plots import plot_dispatch
             plot_dispatch(dispatch, actual_prices, summary, oracle_dir / "dispatch.png", timezone=study["timezone"])
     plans = pd.read_csv(oracle_dir / "expected_dispatch_plans.csv")
+    reoptimization_settlements, reoptimization_settlement_intervals = (
+        _counterfactual_reoptimization_settlement(plans, dispatch, realized_pv,
+            grid, plant, tuple(actual_prices)))
+    if not reoptimization_settlements.empty:
+        reoptimization_settlements.to_csv(
+            day_output / "reoptimization_imbalance_settlements.csv", index=False)
+        reoptimization_settlement_intervals.to_csv(
+            day_output / "reoptimization_imbalance_intervals.csv", index=False)
     eligibility = {}
     for event in schedule:
         mask = np.zeros(len(grid.interval_ids), dtype=bool)
@@ -598,7 +726,8 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     _plot_experiment(day_output, grid, actual_prices, plans, dispatch, study["timezone"], eligibility,
         battery_capacity_mwh=battery.capacity_mwh,
         soc_bounds_percent=(float(config["battery"]["soc_min_percent"]),
-                            float(config["battery"]["soc_max_percent"])))
+                            float(config["battery"]["soc_max_percent"])),
+        auction_events=schedule)
 
     delta = grid.delta_hours
     capacity = battery.capacity_mwh
@@ -728,6 +857,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
             and trade.get("planned_delivery_balance_resolution_minutes") is None),
         "price_provenance": price_provenance,
         "settlement_price_provenance": settlement_provenance,
+        "reoptimization_imbalance_settlements": reoptimization_settlements.to_dict("records"),
         "pv_provenance": pv_provenance,
         "objective_status": "clearing-price oracle benchmark; not an executable forecast-based strategy"}
     write_json(day_output / "kpis.json", kpis)
@@ -753,6 +883,9 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     manifest["artifacts"].extend(
         f"reoptimization_{auction}.png" for auction in actual_prices
         if (day_output / f"reoptimization_{auction}.png").exists())
+    if not reoptimization_settlements.empty:
+        manifest["artifacts"].extend(["reoptimization_imbalance_settlements.csv",
+                                      "reoptimization_imbalance_intervals.csv"])
     if summary["imbalance_settlement_status"] == "priced":
         manifest["artifacts"].extend(["imbalance_prices.csv", "imbalance_settlement.png",
                                       "realized_profit_breakdown.png"])

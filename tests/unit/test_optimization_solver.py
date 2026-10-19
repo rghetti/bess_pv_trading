@@ -148,6 +148,33 @@ def test_negative_price_charge_and_curtailment():
     assert charged.objective_eur == pytest.approx(20)
 
 
+def test_import_commitment_is_absorbed_by_bess_and_curtailment_reduces_pv_only():
+    case = case_config("poi_trading")
+    battery = configured_battery("unit")
+    hours = case["import_interval_hours"]
+    import_mw = case["import_power_mw"]
+    inputs = example_inputs(prices=(0,), pv=np.array([[case["pv_ac_mw"]]]),
+        hours=hours, battery=battery)
+    cutoff = inputs.tree.nodes[0].cutoff
+    accepted_import = AcceptedTrade("DA", cutoff, cutoff, "t0", -import_mw * hours, 0.0)
+    inputs = replace(without_new_trades(inputs),
+        plant=replace(inputs.plant, poi_import_mw=case["poi_import_mw"],
+            poi_export_mw=case["poi_export_mw"]),
+        market=MarketState((accepted_import,)), optimize_imbalances=False,
+        terminal_target_mwh=None)
+    result = solve(inputs)
+    pv_to_poi = result.arrays["pv_injection_mw"][0, 0]
+    curtailed_pv = result.arrays["curtailment_mw"][0, 0]
+    charge = result.arrays["charge_mw"][0, 0]
+    assert result.arrays["grid_mw"][0, 0] == pytest.approx(-import_mw)
+    assert charge >= import_mw - 1e-8
+    assert pv_to_poi + curtailed_pv == pytest.approx(case["pv_ac_mw"])
+    assert result.arrays["grid_mw"][0, 0] == pytest.approx(
+        pv_to_poi + result.arrays["discharge_mw"][0, 0] - charge)
+    expected_energy = inputs.state.energy_mwh + battery.eta_charge * charge * hours
+    assert result.arrays["energy_mwh"][0, 1] == pytest.approx(expected_energy)
+
+
 def test_financial_cross_auction_offset_has_no_physical_cycle():
     inputs = example_inputs(pv=np.zeros((1, 1)), auctions={"DA": np.array([[100.]]), "IDA1": np.array([[80.]])})
     result = solve(inputs)

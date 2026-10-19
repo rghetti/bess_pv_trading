@@ -1,0 +1,8 @@
+# Counterfactual ex-post settlement for each auction reoptimization plan.
+include: gme_oracle_2025-01-01_farm910_poi_only.yaml
+
+gme_oracle_experiment:
+  study_id: gme_nord_oracle_2025-01-01_farm910_reoptimization_imbalance
+
+experiment_outputs:
+  run_id: gme_nord_oracle_2025-01-01_farm910_5mwh_reoptimization_imbalance_v3

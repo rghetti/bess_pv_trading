@@ -36,6 +36,19 @@ comparisons against the retained fixed-forecast grid-feedback result.
 individual trade and cumulative position limits derived from the POI, under a
 fresh output ID. Earlier PV runs retain their original commercial cap settings.
 
+`gme_oracle_2025-01-01_farm910_reoptimization_imbalance.yaml` adds an ex-post
+open-loop settlement audit for every auction decision snapshot. It holds each
+snapshot's planned battery commands and contracted grid target fixed, substitutes
+the measured PV series, applies physical SOC/POI protection, and settles the
+resulting deviations at the realized Terna imbalance prices. The summary CSV
+reports both each snapshot's full remaining horizon and the common remaining
+horizon across reoptimization steps. It reports settlements against both the
+snapshot's own planned target and the final realized contract, so the common
+horizon comparison holds the contracted position fixed. The interval CSV
+supports drill-down. This open-loop comparison isolates plan quality from the
+normal closed-loop execution controller, which actively tracks the committed
+grid position.
+
 Future runs automatically save expected-versus-realized mismatches for gross
 auction revenue and final net profit in the replay summary and GME KPI JSON/CSV.
 The baseline is the initial auction solve; signed differences are realized minus

@@ -43,10 +43,14 @@ selected abstraction.
 
 Let `c`, `d`, `u`, `x`, `e` be AC charge MW, AC discharge MW, curtailed AC MW,
 signed grid export MW, and internal battery MWh, respectively. Let `g` be
-available PV AC MW and `h` interval duration. Each leaf satisfies
+available PV AC MW, `p_pv_poi` be PV injection at the POI, and `h` interval
+duration. Each leaf satisfies
 
 \[
-x_{ts}=g_{ts}-u_{ts}+d_{t,n(t,s)}-c_{t,n(t,s)},
+p^{PV,POI}_{ts}+u_{ts}=g_{ts},
+\]
+\[
+x_{ts}=p^{PV,POI}_{ts}+d_{t,n(t,s)}-c_{t,n(t,s)},
 \]
 \[
 e_{t+1,s}=r_t e_{ts}+\eta_c c_{t,n(t,s)}h_t
@@ -56,6 +60,10 @@ e_{t+1,s}=r_t e_{ts}+\eta_c c_{t,n(t,s)}h_t
 Bounds apply to every state including the final boundary:
 `energy_min <= e <= energy_max <= capacity`,
 `-poi_import <= x <= poi_export`, and `0 <= u <= g`.
+Curtailment appears only in the PV plant balance; it has no term in the POI
+or stored-energy balance. With exact delivery and a net import `q_ts < 0`, the
+POI equation implies `c = p_pv_poi + d + abs(q_ts)/h_t`: imported power must
+be absorbed by charging.
 For a binary charging mode `z`,
 `0 <= c <= max_charge*z` and `0 <= d <= max_discharge*(1-z)`.
 Configured AC inverter ratings must be consistent with these AC power limits.

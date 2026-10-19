@@ -42,7 +42,7 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     if not result.has_incumbent:
         return ValidationReport(False, {}, None, (f"No incumbent: {result.status}",))
     count, intervals = np.shape(inputs.scenarios.pv_ac_mw)
-    required = {"charge_mw": (count, intervals), "discharge_mw": (count, intervals), "mode_charge": (count, intervals), "curtailment_mw": (count, intervals), "grid_mw": (count, intervals), "net_position_mwh": (count, intervals), "energy_mwh": (count, intervals + 1), "imbalance_mwh": (count, intervals), "imbalance_positive_mwh": (count, intervals), "imbalance_negative_mwh": (count, intervals)}
+    required = {"charge_mw": (count, intervals), "discharge_mw": (count, intervals), "mode_charge": (count, intervals), "curtailment_mw": (count, intervals), "pv_injection_mw": (count, intervals), "grid_mw": (count, intervals), "net_position_mwh": (count, intervals), "energy_mwh": (count, intervals + 1), "imbalance_mwh": (count, intervals), "imbalance_positive_mwh": (count, intervals), "imbalance_negative_mwh": (count, intervals)}
     if inputs.degradation.mode == "xu_segmented":
         segments = inputs.degradation.segment_count
         required.update(xu_segment_energy_mwh=(count, intervals + 1, segments),
@@ -61,11 +61,16 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
         residual = float(np.max(value, initial=0)) if np.all(np.isfinite(value)) else float("inf")
         errors[name] = max(errors.get(name, 0.0), residual)
 
-    # Check AC bus power and the battery-internal energy transition independently.
+    # Curtailment belongs only to the PV plant balance. The battery's stored-
+    # energy transition is checked separately and contains no PV-curtailment term.
     charge, discharge = arrays["charge_mw"], arrays["discharge_mw"]
     curtailment, energy, grid = arrays["curtailment_mw"], arrays["energy_mwh"], arrays["grid_mw"]
+    pv_injection = arrays["pv_injection_mw"]
     delta = inputs.grid.delta_hours
-    equality("ac_bus_balance_mw", inputs.scenarios.pv_ac_mw + discharge - charge - curtailment - grid)
+    equality("pv_plant_balance_mw", inputs.scenarios.pv_ac_mw - curtailment - pv_injection)
+    equality("poi_power_balance_mw", pv_injection + discharge - charge - grid)
+    upper("pv_injection_lower_mw", -pv_injection)
+    upper("pv_injection_upper_mw", pv_injection - inputs.scenarios.pv_ac_mw)
     for s in range(count):
         predicted = np.empty(intervals)
         for t, duration in enumerate(delta):
