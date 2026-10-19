@@ -126,7 +126,7 @@ def test_ida3_requires_actual_afternoon_products_only_with_audited_untradable_pl
     assert "no observed labels" in bundle.provenance["untradable_price_placeholders"]["IDA3"]["policy"]
     inputs = OptimizationInput(grid, PlantParameters(1, 0., 1., configured_battery("no_bess")),
         PhysicalState(grid.starts[0], 0.), MarketState(), bundle, tree,
-        {"IDA3": tuple(index in event.eligible_intervals for index in range(96))}, .25, .25, 1000., 0.)
+        {"IDA3": tuple(index in event.eligible_intervals for index in range(96))}, 1000., 0.)
     assert not any(inputs.auction_eligibility["IDA3"][:48])
     assert all(inputs.auction_eligibility["IDA3"][48:])
     with pytest.raises(ValueError, match="outside the declared actual price products"):
@@ -182,7 +182,7 @@ def test_oracle_upper_bound_uses_same_constraints_and_actual_price_evaluation(pv
     grid, _, bundle, tree = oracle_fixture(pv)
     plant = PlantParameters(1, 0., 1., configured_battery("no_bess"))
     inputs = OptimizationInput(grid, plant, PhysicalState(grid.starts[0], 0.), MarketState(),
-        bundle, tree, {"DA": (True, True)}, .25, .25, 1000., 0.)
+        bundle, tree, {"DA": (True, True)}, 1000., 0.)
     settings = SolverSettings()
     oracle_model = build_model(inputs)
     oracle = solve_model(oracle_model, settings)

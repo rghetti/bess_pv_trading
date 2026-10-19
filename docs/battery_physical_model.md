@@ -358,11 +358,16 @@ without an assumed settlement charge in this sensitivity. Use `null` to disable
 the planning balance explicitly. This policy does not constitute a verified
 historical imbalance settlement model.
 
-The current study retains its separately configured trading-volume caps:
-0.25 MWh per native hourly product per auction and 0.25 MWh cumulative position
-per quarter hour (1 MW). These financial caps can constrain export and cause
-curtailment even with a 6.638 MW POI and a 2.5 MW BESS. They are not battery
-inverter limits and should be tuned explicitly for subsequent studies.
+The earlier saved studies used separate trading-volume caps: 0.25 MWh per native
+hourly product per auction and 0.25 MWh cumulative position per quarter hour
+(1 MW). These caps have been removed from the model and YAML configurations.
+Future runs bound cumulative contracted positions after each auction by
+`[-plant.poi_import_mw * interval_hours, plant.poi_export_mw * interval_hours]`.
+The farm-910 configuration therefore permits contracted import/export power
+up to 6.638 MW, matching its configured physical POI. Individual adjustments
+have no separate cap and may close and reverse an earlier position. Existing
+saved results still reflect their recorded earlier settings and require a new
+run for an economic comparison under the corrected limits.
 
 ## Four auction decisions
 

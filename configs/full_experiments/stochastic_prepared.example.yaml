@@ -62,8 +62,6 @@ state:
   terminal_target_mwh: null
   origin: known_delivery_start_assumption
 trading:
-  trade_limit_mwh: null
-  position_limit_mwh: null
   imbalance_penalty_eur_per_mwh: null
   imbalance_limit_mwh: null
   grid_import_fee_eur_per_mwh: null

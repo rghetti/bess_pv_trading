@@ -39,7 +39,7 @@ def prepared_config(tmp_path):
         "plant": {"farm_id": 1, "poi_import_mw": 1., "poi_export_mw": 1.},
         "battery": battery_config("half_power"),
         "state": {"initial_energy_mwh": .5, "terminal_target_mwh": .5, "origin": "known_delivery_start_assumption"},
-        "trading": {"trade_limit_mwh": .25, "position_limit_mwh": .25, "imbalance_penalty_eur_per_mwh": 100., "grid_import_fee_eur_per_mwh": 0.},
+        "trading": {"imbalance_penalty_eur_per_mwh": 100., "grid_import_fee_eur_per_mwh": 0.},
         "degradation": {"model": "throughput", "cost_eur_per_mwh_throughput": 5., "assumptions": "synthetic fixture throughput coefficient"}}
 
 

@@ -18,6 +18,7 @@ from ..forecasting.pv import forecast_pv
 from ..markets import AuctionCalendar
 from ..optimization.degradation import degradation_settings_from_config
 from ..reporting.artifacts import organize_run_outputs
+from ..reporting.plots import plot_boundary_series, plot_interval_series
 from ..scenarios import synthetic_price_tree
 from .synthetic import _replay_strategy, write_json
 from .settlement import expected_realized_kpis, load_realized_imbalance_prices, settle_realized_dispatch
@@ -57,17 +58,21 @@ def _plot_settlement(destination, dispatch, summary, timezone):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     times = pd.to_datetime(dispatch.start, utc=True).dt.tz_convert(timezone)
+    ends = pd.to_datetime(dispatch.end, utc=True).dt.tz_convert(timezone)
     widths = (pd.to_datetime(dispatch.end, utc=True) - pd.to_datetime(dispatch.start, utc=True)).dt.total_seconds() / 86400
     fig, axes = plt.subplots(3, 1, figsize=(13, 9), sharex=True, constrained_layout=True)
-    axes[0].step(times, dispatch.imbalance_price_eur_mwh, where="post")
+    plot_interval_series(axes[0], times, ends, dispatch.imbalance_price_eur_mwh)
     axes[0].set_ylabel("Settlement price\nEUR/MWh")
     axes[1].bar(times, dispatch.imbalance_mwh, width=widths, align="edge",
         color=np.where(dispatch.imbalance_mwh >= 0, "tab:green", "tab:red"))
     axes[1].set_ylabel("Executed imbalance\nMWh / quarter-hour")
-    axes[2].step(times, dispatch.realized_imbalance_cashflow_eur.cumsum(), where="post")
+    cumulative = dispatch.realized_imbalance_cashflow_eur.cumsum()
+    plot_boundary_series(axes[2], times, ends,
+        cumulative - dispatch.realized_imbalance_cashflow_eur, cumulative, drawstyle="steps-post")
     axes[2].set_ylabel("Cumulative imbalance\nsettlement EUR")
     axes[2].set_xlabel(f"Delivery time ({timezone})")
     axes[0].set_title("Actual Terna NORD prices applied only to executed quarter-hour deviations")
+    axes[0].set_xlim(times.iloc[0], ends.iloc[-1])
     for axis in axes:
         axis.axhline(0, color="black", linewidth=0.6)
         axis.grid(alpha=0.2)
@@ -297,37 +302,45 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
     import matplotlib.pyplot as plt
 
     local = pd.DatetimeIndex(grid.starts).tz_convert(timezone)
-    x = np.asarray(local.to_pydatetime())
+    local_ends = pd.DatetimeIndex(grid.ends).tz_convert(timezone)
+    if len(plans) and "interval_end_utc" not in plans:
+        # Older saved plans still have exact ends available from the delivery grid.
+        end_by_start = dict(zip(pd.DatetimeIndex(grid.starts), grid.ends))
+        plans = plans.assign(interval_end_utc=pd.to_datetime(
+            plans.interval_start_utc, utc=True).map(end_by_start))
     forecast_curves = _pv_forecast_curves(plans, timezone)
 
     def plot_pv_forecasts(axis):
         """Use identical cycle labels and colors in all PV comparison figures."""
         for index, (label, selected) in enumerate(forecast_curves):
             times = pd.to_datetime(selected.interval_start_utc, utc=True).dt.tz_convert(timezone)
-            axis.step(times, selected.pv_ac_forecast_mw, where="post", linestyle="--",
+            ends = pd.to_datetime(selected.interval_end_utc, utc=True).dt.tz_convert(timezone)
+            plot_interval_series(axis, times, ends, selected.pv_ac_forecast_mw, linestyle="--",
                       color=f"C{index}", linewidth=1.5, label=label)
 
     fig, axis = plt.subplots(figsize=(12, 5), layout="constrained")
     for auction in ("DA", "IDA1", "IDA2"):
         if auction in prices:
-            axis.step(x, prices[auction], where="post", label=auction)
+            plot_interval_series(axis, local, local_ends, prices[auction], label=auction)
     axis.set_title("MGP, MI-A1 and MI-A2 clearing prices")
     axis.set_ylabel("EUR/MWh")
     axis.set_xlabel(f"Delivery time ({timezone})")
     axis.grid(alpha=0.2)
     axis.legend(ncol=3)
+    axis.set_xlim(local[0], local_ends[-1])
     fig.savefig(destination / "prices_da_ida1_ida2.png", dpi=140)
     plt.close(fig)
 
     fig, axis = plt.subplots(figsize=(12, 5), layout="constrained")
     if "IDA3" in prices:
         values = np.where(eligibility["IDA3"], prices["IDA3"], np.nan)
-        axis.step(x, values, where="post", label="MI-A3")
+        plot_interval_series(axis, local, local_ends, values, label="MI-A3")
     axis.set_title("MI-A3 clearing prices")
     axis.set_ylabel("EUR/MWh")
     axis.set_xlabel(f"Delivery time ({timezone})")
     axis.grid(alpha=0.2)
     axis.legend()
+    axis.set_xlim(local[0], local_ends[-1])
     fig.savefig(destination / "prices_ida3.png", dpi=140)
     plt.close(fig)
 
@@ -336,17 +349,20 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
         selected = plans.loc[plans.auction == auction]
         if len(selected):
             times = pd.to_datetime(selected.interval_start_utc, utc=True).dt.tz_convert(timezone)
-            axis.step(times, selected.net_battery_dispatch_mw, where="post", label=auction)
+            ends = pd.to_datetime(selected.interval_end_utc, utc=True).dt.tz_convert(timezone)
+            plot_interval_series(axis, times, ends, selected.net_battery_dispatch_mw, label=auction)
     plot_pv_forecasts(axis)
     axis.axhline(0, color="black", linewidth=0.7)
     executed_times = pd.to_datetime(dispatch.start, utc=True).dt.tz_convert(timezone)
-    axis.step(executed_times, dispatch.discharge_mw-dispatch.charge_mw, where="post",
+    executed_ends = pd.to_datetime(dispatch.end, utc=True).dt.tz_convert(timezone)
+    plot_interval_series(axis, executed_times, executed_ends, dispatch.discharge_mw-dispatch.charge_mw,
               color="black", linewidth=2.2, label="Executed battery dispatch")
     axis.set_title("PV forecast cycles, auction battery plans and executed battery dispatch")
     axis.set_ylabel("PV / battery power (MW AC)")
     axis.set_xlabel(f"Delivery time ({timezone})")
     axis.grid(alpha=0.2)
     axis.legend(ncol=2, fontsize="small")
+    axis.set_xlim(local[0], local_ends[-1])
     fig.savefig(destination / "expected_dispatch_by_auction.png", dpi=140)
     plt.close(fig)
 
@@ -354,13 +370,14 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
         fig, axis = plt.subplots(figsize=(12, 5), layout="constrained")
         plot_pv_forecasts(axis)
         times = pd.to_datetime(dispatch.start, utc=True).dt.tz_convert(timezone)
-        axis.step(times, dispatch.pv_ac_mw, where="post", color="black", linewidth=2,
+        plot_interval_series(axis, times, executed_ends, dispatch.pv_ac_mw, color="black", linewidth=2,
                   label="Realized PV (execution input)")
         axis.set_title("PV forecasts used at each auction and realized generation")
         axis.set_ylabel("PV power (MW AC)")
         axis.set_xlabel(f"Delivery time ({timezone})")
         axis.grid(alpha=0.2)
         axis.legend()
+        axis.set_xlim(local[0], local_ends[-1])
         fig.savefig(destination / "pv_forecast_and_realized.png", dpi=140)
         plt.close(fig)
 
@@ -369,16 +386,17 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
     ends = pd.to_datetime(dispatch.end, utc=True).dt.tz_convert(timezone)
     scale = 100 / battery_capacity_mwh if battery_capacity_mwh > 0 else 0.0
     axis.axhspan(*soc_bounds_percent, color="grey", alpha=0.08, label="Configured SOC box")
-    boundaries = pd.concat([starts.iloc[:1], ends], ignore_index=True)
-    energies = np.r_[dispatch.energy_start_mwh.iloc[0], dispatch.energy_end_mwh.to_numpy()]
-    axis.step(boundaries, energies * scale, where="post", color="black", linewidth=2.2,
+    plot_boundary_series(axis, starts, ends, dispatch.energy_start_mwh * scale,
+              dispatch.energy_end_mwh * scale, color="black", linewidth=2.2,
               label="Executed SOC")
     if len(plans):
         for auction in ("DA", "IDA1", "IDA2", "IDA3"):
             selected = plans.loc[plans.auction == auction]
             if len(selected):
                 times = pd.to_datetime(selected.interval_start_utc, utc=True).dt.tz_convert(timezone)
-                axis.plot(times, selected.soc_start_mwh * scale, alpha=0.65, linewidth=0.9,
+                plan_ends = pd.to_datetime(selected.interval_end_utc, utc=True).dt.tz_convert(timezone)
+                plot_boundary_series(axis, times, plan_ends, selected.soc_start_mwh * scale,
+                          selected.soc_end_mwh * scale, alpha=0.65, linewidth=0.9,
                           label=f"{auction} expected SOC")
     axis.set_title("Battery state of charge: executed trajectory and auction plans")
     axis.set_ylabel("SOC (% of nominal capacity)")
@@ -386,27 +404,29 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
     axis.set_xlabel(f"Delivery time ({timezone})")
     axis.grid(alpha=0.2)
     axis.legend(ncol=3)
+    axis.set_xlim(local[0], local_ends[-1])
     fig.savefig(destination / "soc_evolution.png", dpi=140)
     plt.close(fig)
 
     if "grid_target_mw" in dispatch and "requested_charge_mw" in dispatch:
         fig, axes = plt.subplots(3, 1, figsize=(13, 9), sharex=True, layout="constrained")
         plot_pv_forecasts(axes[0])
-        axes[0].step(starts, dispatch.pv_ac_mw, where="post", color="black", linewidth=2,
+        plot_interval_series(axes[0], starts, ends, dispatch.pv_ac_mw, color="black", linewidth=2,
                      label="Realized PV")
         axes[0].set_ylabel("PV MW")
-        axes[1].step(starts, dispatch.grid_target_mw, where="post", linestyle="--", label="Committed grid target")
-        axes[1].step(starts, dispatch.grid_mw, where="post", label="Executed grid power")
+        plot_interval_series(axes[1], starts, ends, dispatch.grid_target_mw, linestyle="--", label="Committed grid target")
+        plot_interval_series(axes[1], starts, ends, dispatch.grid_mw, label="Executed grid power")
         axes[1].set_ylabel("Grid MW")
-        axes[2].step(starts, dispatch.requested_discharge_mw-dispatch.requested_charge_mw,
-                     where="post", linestyle="--", label="Active auction battery plan")
-        axes[2].step(starts, dispatch.discharge_mw-dispatch.charge_mw, where="post", label="Executed battery power")
+        plot_interval_series(axes[2], starts, ends, dispatch.requested_discharge_mw-dispatch.requested_charge_mw,
+                     linestyle="--", label="Active auction battery plan")
+        plot_interval_series(axes[2], starts, ends, dispatch.discharge_mw-dispatch.charge_mw, label="Executed battery power")
         axes[2].set_ylabel("BESS MW\npositive = discharge")
         axes[2].set_xlabel(f"Delivery time ({timezone})")
         axes[0].set_title("Physical execution feedback using realized interval-average PV")
         for item in axes:
             item.grid(alpha=0.2)
             item.legend()
+        axes[0].set_xlim(local[0], local_ends[-1])
         fig.savefig(destination / "execution_tracking.png", dpi=140)
         plt.close(fig)
 
@@ -458,9 +478,6 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         "terminal_target_mwh": terminal_energy,
         "origin": study_state.get("origin", "known_delivery_start_assumption")}
     trade = config["trading"]
-    config["trading"] = {**trade,
-        "trade_limit_mwh": float(trade["trade_limit_mwh_per_native_product"]),
-        "position_limit_mwh": float(trade["position_limit_mwh_per_quarter_hour"])}
     config["decision_resolution_minutes"] = int(study["decision_resolution_minutes"])
     config["native_interval_minutes_by_auction"] = {
         auction: int(item["native_interval_minutes"])
@@ -512,7 +529,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         _plot_settlement(day_output, dispatch, summary, study["timezone"])
         if summary["imbalance_settlement_status"] == "priced":
             from ..reporting.plots import plot_dispatch
-            plot_dispatch(dispatch, actual_prices, summary, oracle_dir / "dispatch.png")
+            plot_dispatch(dispatch, actual_prices, summary, oracle_dir / "dispatch.png", timezone=study["timezone"])
     plans = pd.read_csv(oracle_dir / "expected_dispatch_plans.csv")
     eligibility = {}
     for event in schedule:

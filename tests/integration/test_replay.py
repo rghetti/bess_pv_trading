@@ -88,8 +88,7 @@ def test_conditional_view_rejects_unpublished_prices():
     inputs=OptimizationInput(grid,fixture["plant"],PhysicalState(grid.starts[0],config["state"]["initial_energy_mwh"]),MarketState(),
         fixture["scenarios"],fixture["tree"],
         {event.auction:tuple(t in event.eligible_intervals for t in range(len(grid.interval_ids)))
-            for event in fixture["schedule"]},config["trading"]["trade_limit_mwh"],
-        config["trading"]["position_limit_mwh"], config["trading"]["imbalance_penalty_eur_per_mwh"],
+            for event in fixture["schedule"]}, config["trading"]["imbalance_penalty_eur_per_mwh"],
         config["state"]["terminal_target_mwh"], DegradationSettings())
     with pytest.raises(ValueError,match="unpublished"):
         condition_and_slice(inputs,first_interval=0,state=inputs.state,market=inputs.market,

@@ -204,7 +204,6 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
                                     for auction,offer in submitted.items() if auction not in known)
                                   for product in residual.interval_ids)
         inputs = OptimizationInput(residual, plant, boundary, market, bundle, tree, masks,
-            trading["trade_limit_mwh"], trading["position_limit_mwh"],
             trading["imbalance_penalty_eur_per_mwh"], config["state"]["terminal_target_mwh"],
             aging, trading["grid_import_fee_eur_per_mwh"],
             imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
@@ -270,6 +269,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             row = {"auction": auction, "interval_id": product,
                 **pv_forecast_metadata,
                 "interval_start_utc": str(full_grid.starts[t]),
+                "interval_end_utc": str(full_grid.ends[t]),
                 "charge_mw": float(result.arrays["charge_mw"][0, local_t]),
                 "discharge_mw": float(result.arrays["discharge_mw"][0, local_t]),
                 "net_battery_dispatch_mw": float(result.arrays["discharge_mw"][0, local_t]
@@ -419,7 +419,8 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
     write_json(destination/"summary.json",summary)
     if config["outputs"].get("plots",True):
         from ..reporting.plots import plot_dispatch
-        plot_dispatch(frame,actual_prices,summary,destination/"dispatch.png")
+        plot_dispatch(frame,actual_prices,summary,destination/"dispatch.png",
+                      timezone=fixture["calendar"].timezone)
     return summary
 
 

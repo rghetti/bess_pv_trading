@@ -278,7 +278,7 @@ def test_joint_gaussian_ida3_paths_optimize_only_true_afternoon_products():
     assert bundle.provenance["untradable_price_placeholders"]["IDA3"]["product_indices"] == list(range(48))
     mask = tuple(index in schedule[0].eligible_intervals for index in range(96))
     inputs = OptimizationInput(grid, PlantParameters(1, 0., 1., configured_battery("no_bess")),
-        PhysicalState(grid.starts[0], 0.), MarketState(), bundle, tree, {"IDA3": mask}, .25, .25, 1000., 0.)
+        PhysicalState(grid.starts[0], 0.), MarketState(), bundle, tree, {"IDA3": mask}, 1000., 0.)
     with pytest.raises(ValueError, match="outside the declared"):
         replace(inputs, auction_eligibility={"IDA3": (True,) * 96})
     built = build_model(inputs)

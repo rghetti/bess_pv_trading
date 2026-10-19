@@ -33,8 +33,7 @@ state:
   origin: known_delivery_start_assumption
   terminal_target_mwh: 0.5
 trading:
-  trade_limit_mwh: 0.25
-  position_limit_mwh: 0.25
+  # Net positions are bounded by the plant POI ratings, with no separate trade cap.
   imbalance_penalty_eur_per_mwh: 100.0
   grid_import_fee_eur_per_mwh: 0.0
   settlement_status: synthetic_signed_single_price

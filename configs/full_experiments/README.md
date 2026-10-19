@@ -1,6 +1,6 @@
 # Full experiment configurations
 
-Store one complete, reproducible end-to-end study configuration per YAML file in this directory. These configurations should explicitly provide the dataset and snapshot selection, study dates, PV forecast selection, market calendar and product resolution, battery and POI parameters, inverter efficiencies, starting and terminal state, trading and imbalance limits, degradation model, Gurobi settings, and output locations. Keep illustrative values clearly labeled; the runner should validate required fields rather than silently supplying plant-specific defaults.
+Store one complete, reproducible end-to-end study configuration per YAML file in this directory. These configurations should explicitly provide the dataset and snapshot selection, study dates, PV forecast selection, market calendar and product resolution, battery and POI parameters, inverter efficiencies, starting and terminal state, imbalance policy, degradation model, Gurobi settings, and output locations. Keep illustrative values clearly labeled; the runner should validate required fields rather than silently supplying plant-specific defaults.
 
 Small synthetic solver examples remain here for software validation. Add real-data studies as separate files with names that describe the study and period.
 
@@ -32,6 +32,10 @@ completed run retains three weather cycles and four optimal auction solves.
 The run includes an independent execution/accounting audit and JSON/CSV
 comparisons against the retained fixed-forecast grid-feedback result.
 
+`gme_oracle_2025-01-01_farm910_poi_only.yaml` reruns the January study with
+the corrected POI-derived cumulative position limits and a fresh output ID.
+Earlier fixed and rolling PV runs retain their original commercial cap settings.
+
 Future runs automatically save expected-versus-realized mismatches for gross
 auction revenue and final net profit in the replay summary and GME KPI JSON/CSV.
 The baseline is the initial auction solve; signed differences are realized minus
@@ -61,3 +65,16 @@ provenance remain available.
 Use only `battery.max_power_mw`, `soc_min_percent` and `soc_max_percent` for power
 and SOC limits. Separate battery inverter limits and absolute MWh bounds are
 rejected. Efficiencies remain configurable independently of power ratings.
+
+Trading has no independent commercial volume cap. Configure `plant.poi_import_mw`
+and `plant.poi_export_mw`: cumulative contracted positions after each auction
+are bounded by these ratings times the delivery interval duration. Physical grid
+power uses the same POI ratings. An auction adjustment may close and reverse
+a previous position; it has no separate cap. Earlier retained results used the
+removed 1 MW commercial ceiling and are historical results under those settings.
+
+Delivery-time plots include both interval boundaries, through next-day local
+00:00 when the full day is available. Power and price are held over their actual
+hourly or quarter-hour interval; SOC uses its recorded end state, and cumulative
+settlement includes the last interval's cash flow at its end. Missing intervals
+remain gaps. Boundary drawing does not add observations or energy to the dataset.

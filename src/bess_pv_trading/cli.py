@@ -30,7 +30,7 @@ def _optimization_inputs(config: dict):
     inputs = OptimizationInput(grid,fixture["plant"],PhysicalState(grid.starts[0],config["state"]["initial_energy_mwh"],
         cycle_segment_energy_mwh=config["state"].get("cycle_segment_energy_mwh")),
         MarketState(),fixture["scenarios"],fixture["tree"],masks,
-        trading["trade_limit_mwh"],trading["position_limit_mwh"],trading["imbalance_penalty_eur_per_mwh"],
+        trading["imbalance_penalty_eur_per_mwh"],
         config["state"]["terminal_target_mwh"],
         degradation_settings_from_config(config),
         trading["grid_import_fee_eur_per_mwh"],

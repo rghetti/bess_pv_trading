@@ -32,7 +32,7 @@ def prepared_case(auctions=None):
         "battery": battery_config("half_power"),
         "state": {"timestamp": grid.starts[0].isoformat(), "initial_energy_mwh": .5,
                   "terminal_target_mwh": .5, "origin": "known_delivery_start_assumption"},
-        "trading": {"trade_limit_mwh": .25, "position_limit_mwh": .25,
+        "trading": {
                     "imbalance_penalty_eur_per_mwh": 100., "grid_import_fee_eur_per_mwh": 0.},
         "degradation": {"model": "throughput", "cost_eur_per_mwh_throughput": 5.,
                         "assumptions": "explicit synthetic fixture coefficient"}}

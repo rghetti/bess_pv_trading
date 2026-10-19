@@ -400,8 +400,6 @@ class OptimizationInput:
     scenarios: ScenarioBundle
     tree: InformationTree
     auction_eligibility: Mapping[str, tuple[bool, ...]]
-    trade_limit_mwh: float
-    position_limit_mwh: float
     imbalance_penalty_eur_per_mwh: float
     terminal_target_mwh: float | None = None
     degradation: DegradationSettings = field(default_factory=DegradationSettings)
@@ -417,7 +415,7 @@ class OptimizationInput:
     def __post_init__(self) -> None:
         if not isinstance(self.optimize_imbalances, bool):
             raise ValueError("optimize_imbalances must be a boolean")
-        for key in ("trade_limit_mwh", "position_limit_mwh", "imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"):
+        for key in ("imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"):
             finite_nonnegative(getattr(self, key), key)
         if self.imbalance_limit_mwh is not None:
             finite_nonnegative(self.imbalance_limit_mwh, "imbalance limit")
@@ -462,8 +460,9 @@ class OptimizationInput:
         fixed_positions = self.market.positions(self.grid)
         if self.pending_position_mwh is not None:
             fixed_positions = fixed_positions + np.asarray(self.pending_position_mwh)
-        if np.any(np.abs(fixed_positions) > self.position_limit_mwh + 1e-8):
-            raise ValueError("Accepted plus pending submitted positions exceed the commercial limit")
+        if (np.any(fixed_positions > self.plant.poi_export_mw * self.grid.delta_hours + 1e-8)
+                or np.any(fixed_positions < -self.plant.poi_import_mw * self.grid.delta_hours - 1e-8)):
+            raise ValueError("Accepted plus pending submitted positions exceed POI energy bounds")
         if set(self.auction_eligibility) != set(self.tree.bid_nodes):
             raise ValueError("Auction masks and bid ownership must match")
         if any(len(mask) != intervals for mask in self.auction_eligibility.values()):

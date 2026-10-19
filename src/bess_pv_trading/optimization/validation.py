@@ -126,14 +126,11 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     expected_keys = {(auction, owner, product) for auction, eligible in inputs.auction_eligibility.items() for owner in inputs.tree.bid_nodes[auction] for t, product in enumerate(inputs.grid.interval_ids) if eligible[t]}
     if set(result.trades) != expected_keys or any(not np.isfinite(value) for value in result.trades.values()):
         return ValidationReport(False, errors, None, ("Trade keys differ from actionable node/products or contain nonfinite values",))
-    product_size = {}
     for auction, eligibility in inputs.auction_eligibility.items():
         bid_nodes = inputs.tree.bid_nodes[auction]
         groups = configured_auction_product_groups(inputs.grid, auction,
             inputs.native_interval_minutes_by_auction.get(auction), inputs.market_timezone)
         for group_index, group in enumerate(groups):
-            for index in group:
-                product_size[auction, index] = len(group)
             if len(group) <= 1 or not all(eligibility[index] for index in group):
                 continue
             for left, right in zip(group, group[1:]):
@@ -143,12 +140,6 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
                     if left_key in result.trades and right_key in result.trades:
                         equality(f"native_product_{auction}_trade_g{group_index}_s{scenario}_t{left}_{right}",
                                  result.trades[left_key] - result.trades[right_key])
-    trade_excess = []
-    for (auction, _owner, index), value in result.trades.items():
-        group_size = product_size.get((auction, index), 1)
-        limit = inputs.trade_limit_mwh / group_size if group_size > 1 else inputs.trade_limit_mwh
-        trade_excess.append(abs(value) - limit)
-    upper("trade_limit_mwh", np.asarray(trade_excess, dtype=float))
     positions = np.repeat(inputs.market.positions(inputs.grid)[None, :], count, axis=0)
     if inputs.pending_position_mwh is not None:
         positions += np.asarray(inputs.pending_position_mwh)[None, :]
@@ -158,9 +149,11 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
             for t, product in enumerate(inputs.grid.interval_ids):
                 if inputs.auction_eligibility[auction][t]:
                     positions[s, t] += result.trades[auction, inputs.tree.bid_nodes[auction][s], product]
-        upper(f"cumulative_position_after_{auction}_mwh", np.abs(positions) - inputs.position_limit_mwh)
+        upper(f"cumulative_poi_export_after_{auction}_mwh", positions - inputs.plant.poi_export_mw * delta)
+        upper(f"cumulative_poi_import_after_{auction}_mwh", -positions - inputs.plant.poi_import_mw * delta)
     equality("contractual_position_mwh", positions - arrays["net_position_mwh"])
-    upper("final_position_limit_mwh", np.abs(positions) - inputs.position_limit_mwh)
+    upper("final_poi_export_mwh", positions - inputs.plant.poi_export_mw * delta)
+    upper("final_poi_import_mwh", -positions - inputs.plant.poi_import_mw * delta)
     imbalance = grid * delta - positions
     if not inputs.optimize_imbalances:
         equality("contracted_delivery_mwh", imbalance)

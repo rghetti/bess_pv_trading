@@ -34,8 +34,13 @@ def example_inputs(prices=None, pv=None, probabilities=None, battery=None, hours
                             battery or configured_battery("no_bess"))
     return OptimizationInput(grid, plant, PhysicalState(start, defaults["initial_energy_mwh"]), MarketState(),
         scenarios, tree, {auction: (True,) * intervals for auction in auction_prices},
-        defaults["trade_limit_mwh"], defaults["position_limit_mwh"],
         defaults["imbalance_penalty_eur_per_mwh"], terminal_target_mwh=defaults["terminal_target_mwh"])
+
+
+def without_new_trades(inputs):
+    """Close every auction while retaining its declared information ownership."""
+    return replace(inputs, auction_eligibility={auction: (False,) * len(inputs.grid.interval_ids)
+                   for auction in inputs.auction_eligibility})
 
 
 def test_ac_converter_efficiency_and_combined_convention():
@@ -183,12 +188,37 @@ def test_optimization_reports_license_error_without_solution(monkeypatch):
     assert result.arrays == {}
 
 
-def test_pending_submitted_positions_have_shape_and_commercial_limits():
+def test_pending_submitted_positions_have_shape_and_poi_bounds():
     inputs = example_inputs()
     with pytest.raises(ValueError, match="finite delivery-length"):
         replace(inputs, pending_position_mwh=(1, 2))
-    with pytest.raises(ValueError, match="commercial limit"):
+    with pytest.raises(ValueError, match="POI energy bounds"):
         replace(inputs, pending_position_mwh=(3,))
+
+
+@pytest.mark.parametrize("direction", ["import", "export"])
+def test_fixed_and_pending_positions_use_directional_poi_and_interval_duration(direction):
+    case = case_config("poi_trading")
+    hours = case["delivery_hours"][0]
+    inputs = example_inputs(hours=hours)
+    inputs = replace(inputs, plant=replace(inputs.plant,
+        poi_import_mw=case["poi_import_mw"], poi_export_mw=case["poi_export_mw"]))
+    signed_bound = case[f"poi_{direction}_mw"] * hours * (-1 if direction == "import" else 1)
+    cutoff = inputs.tree.nodes[0].cutoff
+    ledger = MarketState((AcceptedTrade("DA", cutoff, cutoff, "t0", signed_bound,
+        case["sale_price_eur_per_mwh"]),))
+    assert replace(inputs, market=ledger).market == ledger
+    assert replace(inputs, pending_position_mwh=(signed_bound,)).pending_position_mwh == (signed_bound,)
+    with pytest.raises(ValueError, match="POI energy bounds"):
+        replace(inputs, market=ledger, pending_position_mwh=(signed_bound * (case["beyond_poi_factor"] - 1),))
+
+
+@pytest.mark.parametrize("field", ["trade_limit_mwh", "position_limit_mwh",
+    "trade_limit_mwh_per_native_product", "position_limit_mwh_per_quarter_hour"])
+def test_obsolete_commercial_trading_caps_are_rejected(field):
+    from bess_pv_trading.config import ConfigurationError, validate_config
+    with pytest.raises(ConfigurationError, match="plant.poi_import_mw and plant.poi_export_mw"):
+        validate_config({"trading": {field: None}})
 
 
 def test_imbalance_policy_requires_boolean_in_domain_and_yaml():

@@ -317,19 +317,28 @@ def _plot_pv_forecast(frame: pd.DataFrame, output: Path) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from ..reporting.plots import plot_interval_series
+    def plot_values(axis, values, **kwargs):
+        """Close the last forecast interval when its explicit end is available."""
+        if "interval_end_utc" in frame:
+            return plot_interval_series(axis, frame.index,
+                pd.to_datetime(frame.interval_end_utc, utc=True), values, **kwargs)
+        return axis.plot(frame.index, values, **kwargs)
     fig, axes = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
-    axes[0].plot(frame.index, frame.modeled_dc_mw, label="modeled DC diagnostic MW")
-    axes[0].plot(frame.index, frame.pv_ac_mw, label="predicted farm AC MW")
+    plot_values(axes[0], frame.modeled_dc_mw, label="modeled DC diagnostic MW")
+    plot_values(axes[0], frame.pv_ac_mw, label="predicted farm AC MW")
     if "raw_actual_ac_mw" in frame:
-        axes[0].plot(frame.index, frame.raw_actual_ac_mw, label="raw measured AC MW", linewidth=1.2)
-        axes[0].plot(frame.index, frame.treated_actual_ac_mw, "--", label="policy-treated AC MW", linewidth=1.0)
+        plot_values(axes[0], frame.raw_actual_ac_mw, label="raw measured AC MW", linewidth=1.2)
+        plot_values(axes[0], frame.treated_actual_ac_mw, linestyle="--", label="policy-treated AC MW", linewidth=1.0)
     missing = frame.pv_ac_mw.isna()
     axes[0].scatter(frame.index[missing], np.zeros(missing.sum()), color="red", marker="x", label="missing required PV input")
     axes[0].set_ylabel("MW")
-    axes[1].plot(frame.index, frame.forecast_ghi, label="hourly forecast GHI, uniform redistribution")
-    axes[1].plot(frame.index, frame.forecast_bhi, label="forecast BHI working interpretation")
+    plot_values(axes[1], frame.forecast_ghi, label="hourly forecast GHI, uniform redistribution")
+    plot_values(axes[1], frame.forecast_bhi, label="forecast BHI working interpretation")
     axes[1].set_ylabel("W/m²")
-    axes[1].set_xlabel("UTC delivery interval start")
+    axes[1].set_xlabel("UTC delivery time (including available interval ends)")
+    if "interval_end_utc" in frame and len(frame):
+        axes[0].set_xlim(frame.index[0], pd.to_datetime(frame.interval_end_utc, utc=True).iloc[-1])
     for axis in axes:
         axis.grid(alpha=0.2)
         axis.legend(loc="upper right")

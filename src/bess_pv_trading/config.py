@@ -59,6 +59,9 @@ def validate_config(config: dict[str, Any]) -> None:
             "latest_available_forecast_at_each_reoptimization"}:
         raise ConfigurationError("Unknown forecast.reoptimization_pv_policy")
     trading = config.get("trading", {})
+    if {"trade_limit_mwh", "position_limit_mwh", "trade_limit_mwh_per_native_product",
+            "position_limit_mwh_per_quarter_hour"} & set(trading):
+        raise ConfigurationError("Remove commercial trading caps; physical grid power uses plant.poi_import_mw and plant.poi_export_mw")
     if "optimize_imbalances" in trading and not isinstance(trading["optimize_imbalances"], bool):
         raise ConfigurationError("trading.optimize_imbalances must be a YAML boolean")
     if config.get("execution", {}).get("dispatch_policy", "follow_battery_plan") not in {

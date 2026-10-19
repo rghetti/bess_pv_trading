@@ -6,7 +6,7 @@ import pytest
 
 from bess_pv_trading.domain import AcceptedTrade, BatteryParameters, DegradationSettings, MarketState, SolverSettings
 from bess_pv_trading.optimization import build_model, solve_model, validate_solution
-from test_optimization_contracts import example_inputs
+from test_optimization_contracts import example_inputs, without_new_trades
 from battery_case_config import case_config, configured_battery
 from bess_pv_trading.optimization.degradation import degradation_settings_from_config
 
@@ -133,8 +133,8 @@ def test_disabled_imbalances_do_not_net_quarter_hour_errors_within_hour():
 def test_disabled_imbalances_reject_unbacked_pending_commitments():
     case = case_config("imbalance_policy")
     inputs, _ = configured_solver_inputs(case["reference_solver_case"])
-    result = solve_model(build_model(replace(inputs, optimize_imbalances=False,
-        trade_limit_mwh=0, pending_position_mwh=(case["unbacked_commitment_mwh"],))))
+    result = solve_model(build_model(replace(without_new_trades(inputs), optimize_imbalances=False,
+        pending_position_mwh=(case["unbacked_commitment_mwh"],))))
     assert result.status == "infeasible"
     assert not result.has_incumbent
 
@@ -150,11 +150,91 @@ def test_negative_price_charge_and_curtailment():
 
 def test_financial_cross_auction_offset_has_no_physical_cycle():
     inputs = example_inputs(pv=np.zeros((1, 1)), auctions={"DA": np.array([[100.]]), "IDA1": np.array([[80.]])})
-    result = solve(replace(inputs, trade_limit_mwh=1, position_limit_mwh=1))
-    assert result.trades["DA", "root", "t0"] == pytest.approx(1)
-    assert result.trades["IDA1", "root", "t0"] == pytest.approx(-1)
-    assert result.objective_eur == pytest.approx(20)
+    result = solve(inputs)
+    maximum_sale = inputs.plant.poi_export_mw * inputs.grid.delta_hours[0]
+    assert result.trades["DA", "root", "t0"] == pytest.approx(maximum_sale)
+    assert result.trades["IDA1", "root", "t0"] == pytest.approx(-maximum_sale)
+    prices = inputs.scenarios.auction_prices_eur_per_mwh
+    assert result.objective_eur == pytest.approx(maximum_sale * (prices["DA"][0, 0] - prices["IDA1"][0, 0]))
     assert result.arrays["charge_mw"].sum() + result.arrays["discharge_mw"].sum() == 0
+
+
+@pytest.mark.parametrize("hours", case_config("poi_trading")["delivery_hours"])
+def test_trade_energy_scales_with_poi_and_delivery_duration(hours):
+    """A large PV plant may trade its full POI output at any grid resolution."""
+    case = case_config("poi_trading")
+    inputs = example_inputs(prices=(case["sale_price_eur_per_mwh"],),
+        pv=np.array([[case["pv_ac_mw"]]]), hours=hours)
+    inputs = replace(inputs, plant=replace(inputs.plant, poi_import_mw=case["poi_import_mw"],
+        poi_export_mw=case["poi_export_mw"]), optimize_imbalances=False)
+    result = solve(inputs)
+    energy = case["poi_export_mw"] * hours
+    assert result.trades["DA", "root", "t0"] == pytest.approx(energy)
+    assert result.objective_eur == pytest.approx(energy * case["sale_price_eur_per_mwh"])
+    assert result.arrays["curtailment_mw"][0, 0] == pytest.approx(case["pv_ac_mw"] - case["poi_export_mw"])
+
+
+def test_native_hourly_trade_can_use_full_poi_in_each_quarter():
+    """Product equalities preserve power without a separate hourly volume cap."""
+    case = case_config("poi_trading")
+    count = case["quarter_hours_per_product"]
+    hours = case["native_product_minutes"] / (60 * count)
+    inputs = example_inputs(prices=np.full(count, case["sale_price_eur_per_mwh"]),
+        pv=np.full((1, count), case["pv_ac_mw"]), hours=hours)
+    inputs = replace(inputs, plant=replace(inputs.plant, poi_import_mw=case["poi_import_mw"],
+        poi_export_mw=case["poi_export_mw"]), optimize_imbalances=False,
+        native_interval_minutes_by_auction={"DA": case["native_product_minutes"]})
+    result = solve(inputs)
+    np.testing.assert_allclose(list(result.trades.values()), case["poi_export_mw"] * hours)
+    assert result.objective_eur == pytest.approx(case["poi_export_mw"] * hours * count * case["sale_price_eur_per_mwh"])
+
+
+def test_auction_adjustment_can_reverse_full_poi_position_and_validator_checks_each_stage():
+    """Bound positions after each auction, allowing larger closing/reversing trades."""
+    case = case_config("poi_trading")
+    prices = {auction: np.array([[price]]) for auction, price in case["reversal_prices_eur_per_mwh"].items()}
+    hours = case["delivery_hours"][0]
+    inputs = example_inputs(auctions=prices, pv=np.zeros((1, 1)), hours=hours)
+    inputs = replace(inputs, plant=replace(inputs.plant, poi_import_mw=case["poi_import_mw"],
+        poi_export_mw=case["poi_export_mw"]), optimize_imbalances=False)
+    result = solve(inputs)
+    exported, imported = case["poi_export_mw"] * hours, case["poi_import_mw"] * hours
+    assert result.trades["DA", "root", "t0"] == pytest.approx(exported)
+    assert result.trades["IDA1", "root", "t0"] == pytest.approx(-exported - imported)
+    assert result.trades["IDA2", "root", "t0"] == pytest.approx(imported)
+    expected = sum(result.trades[auction, "root", "t0"] * price
+                   for auction, price in case["reversal_prices_eur_per_mwh"].items())
+    assert result.objective_eur == pytest.approx(expected)
+    # Preserve final position and physical dispatch, but violate an earlier POI bound.
+    tampered = dict(result.trades)
+    excess = exported * (case["beyond_poi_factor"] - 1)
+    tampered["DA", "root", "t0"] += excess
+    tampered["IDA1", "root", "t0"] -= excess
+    report = validate_solution(inputs, replace(result, trades=tampered))
+    assert not report.valid
+    assert report.max_errors["cumulative_poi_export_after_DA_mwh"] == pytest.approx(excess)
+
+
+def test_optional_imbalance_bounds_cover_both_asymmetric_poi_extremes():
+    """A full import commitment and full export execution span the whole POI range."""
+    case = case_config("poi_trading")
+    hours = case["delivery_hours"][0]
+    inputs = example_inputs(prices=(case["sale_price_eur_per_mwh"],),
+        pv=np.array([[case["pv_ac_mw"]]]), hours=hours)
+    inputs = replace(without_new_trades(inputs), plant=replace(inputs.plant,
+        poi_import_mw=case["poi_import_mw"], poi_export_mw=case["poi_export_mw"]),
+        pending_position_mwh=(-case["poi_import_mw"] * hours,), imbalance_penalty_eur_per_mwh=0)
+    inputs = replace(inputs, scenarios=replace(inputs.scenarios,
+        imbalance_prices_eur_per_mwh=np.full_like(inputs.scenarios.pv_ac_mw, case["sale_price_eur_per_mwh"])))
+    bound = (case["poi_import_mw"] + case["poi_export_mw"]) * hours
+    built = build_model(inputs)
+    try:
+        for direction in ("positive", "negative"):
+            assert built.variables[f"imbalance_{direction}"][0, 0].UB == pytest.approx(bound)
+    finally:
+        built.model.dispose()
+    result = solve(inputs)
+    assert result.arrays["imbalance_positive_mwh"][0, 0] == pytest.approx(bound)
 
 
 def test_unequal_probabilities_and_identical_leaf_split_invariance():
@@ -214,7 +294,7 @@ def test_pending_submitted_quantity_is_fixed_before_price_publication_and_can_of
 def test_signed_settlement_binary_prevents_opposite_direction_arbitrage():
     inputs = example_inputs(prices=(0,), pv=np.zeros((1, 1)))
     scenarios = replace(inputs.scenarios, imbalance_prices_eur_per_mwh=np.array([[100.]]), imbalance_negative_prices_eur_per_mwh=np.array([[-100.]]))
-    inputs = replace(inputs, scenarios=scenarios, imbalance_penalty_eur_per_mwh=0, trade_limit_mwh=0)
+    inputs = replace(without_new_trades(inputs), scenarios=scenarios, imbalance_penalty_eur_per_mwh=0)
     result = solve(inputs)
     assert result.objective_eur == pytest.approx(0)
     assert result.arrays["imbalance_positive_mwh"].sum() == 0
@@ -225,7 +305,7 @@ def test_imbalance_cap_and_no_incumbent_infeasibility():
     inputs = example_inputs(pv=np.zeros((1, 1)))
     cutoff = inputs.tree.nodes[0].cutoff
     ledger = MarketState((AcceptedTrade("DA", cutoff, cutoff, "t0", 1, 100),))
-    inputs = replace(inputs, market=ledger, trade_limit_mwh=0, imbalance_limit_mwh=0)
+    inputs = replace(without_new_trades(inputs), market=ledger, imbalance_limit_mwh=0)
     result = solve_model(build_model(inputs), SolverSettings())
     assert result.status == "infeasible"
     assert not result.has_incumbent
@@ -272,7 +352,7 @@ def test_initial_energy_discharge_and_import_fee_use_ac_quantities():
 def test_infeasible_iis_and_lp_export_are_opt_in(tmp_path):
     inputs = example_inputs(pv=np.zeros((1, 1)))
     cutoff = inputs.tree.nodes[0].cutoff
-    inputs = replace(inputs, market=MarketState((AcceptedTrade("DA", cutoff, cutoff, "t0", 1, 100),)), trade_limit_mwh=0, imbalance_limit_mwh=0)
+    inputs = replace(without_new_trades(inputs), market=MarketState((AcceptedTrade("DA", cutoff, cutoff, "t0", 1, 100),)), imbalance_limit_mwh=0)
     exported, iis = tmp_path / "small.lp", tmp_path / "small.ilp"
     result = solve_model(build_model(inputs), SolverSettings(export_path=str(exported), iis_path=str(iis)))
     assert result.status == "infeasible"

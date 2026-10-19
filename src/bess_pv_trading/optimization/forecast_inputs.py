@@ -438,12 +438,12 @@ def build_forecast_inputs(config: Mapping[str, Any], pv_forecasts: pd.DataFrame,
                     raise PreparedInputError("Accepted auction trade price differs from its known clearing curve")
             market = market.accept(AcceptedTrade(str(row["auction"]), _utc(row["submission_time"], "trade submission").to_pydatetime(),
                 publication.to_pydatetime(), str(row["interval_id"]), float(row["quantity_mwh"]), float(row["price_eur_per_mwh"]), str(row["trade_id"])))
-    _require(trading, ("trade_limit_mwh", "position_limit_mwh", "imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"), "trading limits and costs")
+    _require(trading, ("imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"), "trading costs")
     _require(degradation, ("assumptions",), "degradation assumptions")
     masks = {event.auction: tuple(t in event.eligible_intervals for t in range(len(grid.starts)))
              for event in schedule if event.auction in tree.bid_nodes}
     return OptimizationInput(grid, plant, state, market, scenarios, tree, masks,
-        float(trading["trade_limit_mwh"]), float(trading["position_limit_mwh"]), float(trading["imbalance_penalty_eur_per_mwh"]),
+        float(trading["imbalance_penalty_eur_per_mwh"]),
         _terminal_target(state_cfg), degradation_settings_from_config(config), float(trading["grid_import_fee_eur_per_mwh"]),
         planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
         optimize_imbalances=trading.get("optimize_imbalances", True),

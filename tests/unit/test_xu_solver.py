@@ -8,7 +8,7 @@ import pytest
 from bess_pv_trading.domain import PhysicalState, SolverSettings
 from bess_pv_trading.optimization import build_model, solve_model, validate_solution
 from bess_pv_trading.optimization.degradation import evaluate_xu_dispatch, rainflow_discharge_depths
-from test_optimization_contracts import example_inputs
+from test_optimization_contracts import example_inputs, without_new_trades
 from test_xu_degradation import battery, settings
 
 pytestmark = pytest.mark.solver
@@ -30,9 +30,9 @@ def solve_forced(energy, *, eta_charge=1, eta_discharge=1, count=4):
     energy = np.asarray(energy)
     inputs = example_inputs(prices=np.zeros(len(energy)-1), pv=np.zeros((1, len(energy)-1)),
                             battery=battery(eta_charge, eta_discharge), hours=2)
-    inputs = replace(inputs, state=replace(inputs.state, energy_mwh=float(energy[0])),
+    inputs = replace(without_new_trades(inputs), state=replace(inputs.state, energy_mwh=float(energy[0])),
         terminal_target_mwh=float(energy[-1]), degradation=replace(settings(), segment_count=count),
-        imbalance_penalty_eur_per_mwh=0, trade_limit_mwh=0)
+        imbalance_penalty_eur_per_mwh=0)
     built = build_model(inputs)
     for t, change in enumerate(np.diff(energy)):
         built.model.addConstr(built.variables["charge"][t, "root"] == max(change, 0) / (2*eta_charge))
@@ -93,8 +93,8 @@ def test_residual_solve_starts_from_segment_memory_without_rebooking_aging():
     base = example_inputs(prices=(0,), pv=np.zeros((1, 1)), battery=battery())
     state = PhysicalState(base.grid.starts[0], .5, .5, 2.5, "simulated_carried_state",
                           tuple(initial_result.arrays["xu_segment_energy_mwh"][0, -1]))
-    inputs = replace(base, state=state, terminal_target_mwh=.25, degradation=settings(),
-                     imbalance_penalty_eur_per_mwh=0, trade_limit_mwh=0)
+    inputs = replace(without_new_trades(base), state=state, terminal_target_mwh=.25, degradation=settings(),
+                     imbalance_penalty_eur_per_mwh=0)
     result = solve_model(build_model(inputs), SolverSettings())
     assert result.status == "optimal"
     assert validate_solution(inputs, result).valid

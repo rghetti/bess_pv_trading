@@ -89,17 +89,20 @@ q_{ts}=q^{\rm accepted}_t+\sum_a v_{a,n(a,s),t},\qquad
 b_{ts}=x_{ts}h_t-q_{ts}.
 \]
 
-Only eligible open auction/node/products receive trade variables. Each new
-trade is bounded in absolute MWh. Cumulative positions after each modeled
-auction, as well as final net positions, have explicit absolute limits. Thus
-POI limits are not relied upon to bound financial round trips. The generic
-builder handles quarter-hour interval products; historical hourly-to-quarter-
-hour commercial mapping is not an implemented optimizer feature.
+Only eligible open auction/node/products receive trade variables. No separate
+commercial trade or position cap is imposed. Cumulative positions after each
+modeled auction, including accepted and pending commitments, obey
+\(-P^{POI,import}h_t\le q^{(a)}_{ts}\le P^{POI,export}h_t\).
+These POI-derived energy bounds also apply to final net positions; physical grid
+power obeys the same import/export ratings. An auction adjustment may close and
+reverse an earlier position, so its magnitude can exceed a single interval's
+POI energy while the cumulative position remains within its physical bound.
+Hourly product allocations are equal across their quarter-hour energy shares.
 
 Settlement uses the exact positive and negative parts `b+`, `b-` of imbalance.
 They obey `b=b+ - b-`, nonnegative bounds, and a binary direction constraint
 that prevents simultaneous positive and negative settlement. Tight bounds are
-derived from POI power, product duration and the commercial position limit;
+derived from `(poi_import_mw + poi_export_mw) * interval_hours` in either direction;
 an optional `imbalance_limit_mwh` tightens them. This remains exact for negative
 prices and either ordering of directional prices.
 
@@ -126,7 +129,7 @@ residual objective.
 submitted but awaiting results. These fixed quantities participate in every
 physical settlement position before prices are published; they are never
 temporarily forgotten between a gate and its results. Accepted plus pending
-positions must fit the commercial limit. The unpublished-price contractual
+positions must fit the POI-derived interval energy bounds. The unpublished-price contractual
 cash-flow constant is explicitly excluded from the residual objective and
 identified in diagnostics. This exclusion does not change optimizing decisions
 because the submitted quantities are already fixed; expected-profit levels at

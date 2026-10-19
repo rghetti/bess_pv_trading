@@ -96,7 +96,7 @@ they do not describe farm 1's actual battery, POI or operating contract.
 | Self-discharge | Zero |
 | Delivery-start energy / terminal target | 0.5 MWh / 0.5 MWh |
 | AC charge-plus-discharge degradation | EUR 5 per MWh throughput |
-| New auction adjustment / cumulative position bound | 0.25 MWh absolute per product |
+| New auction adjustment / cumulative position bound | No separate trade cap; cumulative position uses POI MW × interval hours (±0.25 MWh for this 1 MW synthetic POI on 15-minute intervals) |
 | Single imbalance price / absolute-imbalance penalty | EUR 60/MWh / EUR 100/MWh |
 | Grid import fee | Zero; taxes and brokerage also excluded |
 

@@ -52,38 +52,32 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
 
 
 def _trading(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
-    """Financial adjustments add to accepted positions without battery losses."""
+    """Bound cumulative positions by POI energy; leave auction adjustments uncapped."""
     count, intervals = np.shape(inputs.scenarios.pv_ac_mw)
     trades, positions, auction_revenue = {}, {}, {}
     auction_order = sorted(inputs.auction_eligibility, key=lambda a: ({"DA": 0, "IDA1": 1, "IDA2": 2, "IDA3": 3}.get(a, 4), a))
     for auction in auction_order:
-        groups = configured_auction_product_groups(inputs.grid, auction,
-            inputs.native_interval_minutes_by_auction.get(auction), inputs.market_timezone)
-        product_size = {t: len(group) for group in groups for t in group}
         for node in sorted(set(inputs.tree.bid_nodes[auction])):
             for t, eligible in enumerate(inputs.auction_eligibility[auction]):
                 if eligible:
-                    limit = inputs.trade_limit_mwh
-                    if t in product_size and product_size[t] > 1:
-                        # Equal subinterval allocations represent one native
-                        # market product and retain its configured energy cap.
-                        limit /= product_size[t]
-                    trades[auction, node, t] = model.addVar(lb=-limit, ub=limit, name=f"trade[{auction},n{node},t{inputs.grid.interval_ids[t]}]")
+                    trades[auction, node, t] = model.addVar(lb=-gp.GRB.INFINITY, name=f"trade[{auction},n{node},t{inputs.grid.interval_ids[t]}]")
     accepted = inputs.market.positions(inputs.grid)
     if inputs.pending_position_mwh is not None:
         accepted = accepted + np.asarray(inputs.pending_position_mwh)
     for s in range(count):
         auction_revenue[s] = gp.LinExpr(0.0)
-        for t in range(intervals):
+        for t, duration in enumerate(inputs.grid.delta_hours):
+            lower = -inputs.plant.poi_import_mw * duration
+            upper = inputs.plant.poi_export_mw * duration
             expression = gp.LinExpr(float(accepted[t]))
             for auction in auction_order:
                 key = (auction, inputs.tree.bid_nodes[auction][s], t)
                 if key in trades:
                     expression = expression + trades[key]
                     auction_revenue[s] += float(inputs.scenarios.auction_prices_eur_per_mwh[auction][s, t]) * trades[key]
-                    model.addConstr(expression <= inputs.position_limit_mwh, name=f"position_upper[{auction},s{s},t{t}]")
-                    model.addConstr(expression >= -inputs.position_limit_mwh, name=f"position_lower[{auction},s{s},t{t}]")
-            positions[s, t] = model.addVar(lb=-inputs.position_limit_mwh, ub=inputs.position_limit_mwh, name=f"net_position[s{s},t{t}]")
+                    model.addConstr(expression <= upper, name=f"position_upper[{auction},s{s},t{t}]")
+                    model.addConstr(expression >= lower, name=f"position_lower[{auction},s{s},t{t}]")
+            positions[s, t] = model.addVar(lb=lower, ub=upper, name=f"net_position[s{s},t{t}]")
             model.addConstr(positions[s, t] == expression, name=f"position_sum[s{s},t{t}]")
     return {"trades": trades, "positions": positions, "auction_revenue": auction_revenue}
 
@@ -165,8 +159,8 @@ def _settlement(model: Any, inputs: OptimizationInput, variables: dict[str, Any]
 def _imbalance_interval(model, inputs, variables, gp, s, t, duration,
                         positive, negative, sign, cashflow, penalty, negative_prices):
     """Build the optional signed deviation split for one scenario and interval."""
-    positive_bound = inputs.plant.poi_export_mw * duration + inputs.position_limit_mwh
-    negative_bound = inputs.plant.poi_import_mw * duration + inputs.position_limit_mwh
+    # Grid energy and contracted energy share the same asymmetric POI range.
+    positive_bound = negative_bound = (inputs.plant.poi_export_mw + inputs.plant.poi_import_mw) * duration
     if inputs.imbalance_limit_mwh is not None:
         positive_bound = min(positive_bound, inputs.imbalance_limit_mwh)
         negative_bound = min(negative_bound, inputs.imbalance_limit_mwh)

@@ -41,9 +41,18 @@ ties battery charge/discharge power and DA trade allocation across the represent
 15-minute intervals in each Europe/Rome clock hour. Repeated autumn clock hours
 remain separate via their DST fold. Battery energy still evolves every 15 minutes,
 and PV output, curtailment and net grid injection may vary by quarter-hour. The
-equal DA allocations are quarter-hour energy shares of one hourly product; the
-historical hourly DA trade limit is split across its four shares. DA price
+equal DA allocations are quarter-hour energy shares of one hourly product. DA price
 coefficients for those four intervals must be identical in every scenario.
+
+There are no separate commercial trade or position caps. For interval `t` of
+duration `dt[t]` hours, the cumulative contracted position after every auction
+must lie in `[-plant.poi_import_mw * dt[t], plant.poi_export_mw * dt[t]]` MWh.
+The same POI ratings bound physical grid power. An individual auction adjustment
+may exceed one interval's POI energy when closing and reversing an earlier
+position; only the resulting cumulative position is bounded. Native product
+equalities preserve this power rating across the product's quarter-hour shares.
+Legacy `trading.trade_limit_mwh`, `position_limit_mwh` and their GME-specific
+variants are rejected when loading YAML; remove them and configure the POI.
 
 This is an optimizer constraint, not a price-data conversion: prepared DA price
 inputs still require the quarter-hour optimizer grid. Native hourly GME/ENTSO-E

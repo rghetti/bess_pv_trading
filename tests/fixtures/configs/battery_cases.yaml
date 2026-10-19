@@ -27,11 +27,29 @@ optimizer_defaults:
   farm_id: 1
   poi_import_mw: 2.0
   poi_export_mw: 2.0
-  trade_limit_mwh: 2.0
-  position_limit_mwh: 2.0
   imbalance_penalty_eur_per_mwh: 1000.0
   initial_energy_mwh: 0.0
   terminal_target_mwh: 0.0
+
+poi_trading:
+  poi_import_mw: 3.0
+  poi_export_mw: 6.0
+  pv_ac_mw: 8.0
+  delivery_hours: [0.25, 0.5, 1.0]
+  native_product_minutes: 60
+  quarter_hours_per_product: 4
+  sale_price_eur_per_mwh: 100.0
+  reversal_prices_eur_per_mwh: {DA: 100.0, IDA1: -100.0, IDA2: 0.0}
+  beyond_poi_factor: 1.1
+
+plot_boundaries:
+  timezone: Europe/Rome
+  starts_utc: ['2025-01-01T21:30:00Z', '2025-01-01T22:30:00Z', '2025-01-01T22:45:00Z']
+  ends_utc: ['2025-01-01T22:30:00Z', '2025-01-01T22:45:00Z', '2025-01-01T23:00:00Z']
+  power_mw: [2.0, 1.0, 3.0]
+  prices_eur_per_mwh: [80.0, 100.0, 90.0]
+  energy_boundaries_mwh: [0.5, 0.7, 0.6, 0.4]
+  settlement_cashflow_eur: [-1.0, 2.0, -3.0]
 
 resizing:
   capacities_mwh: [1.0, 2.0, 7.0]

@@ -56,7 +56,7 @@ def test_gaussian_day_ahead_paths_optimize_with_shared_bids_and_native_energy_un
         decision_cutoff=cutoff, branches=3, seed=18, allow_retrospective=True)
     mask = {"DA": tuple(index in schedule[0].eligible_intervals for index in range(len(grid.interval_ids)))}
     inputs = OptimizationInput(grid, fixture["plant"], PhysicalState(grid.starts[0], .5), MarketState(),
-        scenarios, tree, mask, config["trading"]["trade_limit_mwh"], config["trading"]["position_limit_mwh"],
+        scenarios, tree, mask,
         config["trading"]["imbalance_penalty_eur_per_mwh"], .5,
         degradation=degradation_settings_from_config(config))
     assert set(scenarios.auction_prices_eur_per_mwh) == {"DA"}

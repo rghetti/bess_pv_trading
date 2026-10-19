@@ -233,13 +233,13 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
         raise PreparedInputError("Initial pre-delivery planning requires an explicit known_delivery_start_assumption")
     if state_config.get("timestamp") and _utc(state_config["timestamp"], "state.timestamp") != pd.Timestamp(grid.starts[0]):
         raise PreparedInputError("state.timestamp must equal delivery-day start; a preceding-day state cannot be reused")
-    _require(trading, ("trade_limit_mwh", "position_limit_mwh", "imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"), "trading bounds/cost assumptions")
+    _require(trading, ("imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"), "trading cost assumptions")
     from .degradation import degradation_settings_from_config
     _require(degradation, ("assumptions",), "degradation assumptions")
     return OptimizationInput(grid, plant,
         PhysicalState(grid.starts[0], float(state_config["initial_energy_mwh"]), origin=state_config["origin"],
                       cycle_segment_energy_mwh=state_config.get("cycle_segment_energy_mwh")),
-        MarketState(), scenarios, tree, masks, float(trading["trade_limit_mwh"]), float(trading["position_limit_mwh"]),
+        MarketState(), scenarios, tree, masks,
         float(trading["imbalance_penalty_eur_per_mwh"]), _terminal_target(state_config),
         degradation_settings_from_config(config),
         float(trading["grid_import_fee_eur_per_mwh"]), imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
