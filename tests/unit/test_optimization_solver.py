@@ -9,6 +9,8 @@ from bess_pv_trading.optimization import build_model, solve_model, validate_solu
 from test_optimization_contracts import example_inputs, without_new_trades
 from battery_case_config import case_config, configured_battery
 from bess_pv_trading.optimization.degradation import degradation_settings_from_config
+from bess_pv_trading.config import load_config
+from pathlib import Path
 
 pytestmark = pytest.mark.solver
 
@@ -214,6 +216,50 @@ def test_native_hourly_trade_can_use_full_poi_in_each_quarter():
     result = solve(inputs)
     np.testing.assert_allclose(list(result.trades.values()), case["poi_export_mw"] * hours)
     assert result.objective_eur == pytest.approx(case["poi_export_mw"] * hours * count * case["sale_price_eur_per_mwh"])
+
+
+@pytest.mark.parametrize("auction", ["IDA1", "IDA2", "IDA3"])
+def test_pre_october_ida_and_battery_can_change_within_hour(auction):
+    """Each IDA can capture quarter-hour spreads while hourly controls cannot."""
+    case = load_config(Path(__file__).resolve().parents[1] /
+        "fixtures/configs/gme_workbook_cases.yaml")["ida_cycle"]
+    prices = np.atleast_2d(case["prices_eur_mwh"])
+    inputs = example_inputs(prices=prices, pv=np.atleast_2d(case["pv_ac_mw"]),
+        battery=configured_battery(case["battery"]), hours=case["interval_hours"],
+        auctions={auction: prices}, start=case["start"])
+    inputs = replace(inputs, state=replace(inputs.state, energy_mwh=case["initial_energy_mwh"]),
+        terminal_target_mwh=case["terminal_energy_mwh"], optimize_imbalances=False,
+        native_interval_minutes_by_auction={auction: 15})
+    result = solve(inputs)
+    assert result.objective_eur == pytest.approx(case["expected_objective_eur"])
+    assert np.dot(result.arrays["charge_mw"][0], inputs.grid.delta_hours) == pytest.approx(case["expected_charge_mwh"])
+    assert np.dot(result.arrays["discharge_mw"][0], inputs.grid.delta_hours) == pytest.approx(case["expected_discharge_mwh"])
+    assert result.diagnostics["product_resolution_constraints"]["dispatch_equalities"] == 0
+    assert result.diagnostics["product_resolution_constraints"]["auction_trade_equalities"][auction] == 0
+    assert np.ptp(result.arrays["charge_mw"][0]) > 0
+    assert np.ptp(list(result.trades.values())) > 0
+    # Explicit coarse controls remain configurable, including shared-node controls.
+    coarse = solve(replace(inputs, decision_resolution_minutes=60))
+    assert coarse.objective_eur == pytest.approx(0)
+
+
+def test_mixed_native_auctions_group_da_orders_without_grouping_battery_or_idas():
+    case = load_config(Path(__file__).resolve().parents[1] /
+        "fixtures/configs/gme_workbook_cases.yaml")["ida_cycle"]
+    prices = np.atleast_2d(case["prices_eur_mwh"])
+    auctions = {"DA": np.full_like(prices, prices.mean()),
+                **{auction: prices for auction in ("IDA1", "IDA2", "IDA3")}}
+    inputs = example_inputs(prices=prices, pv=np.atleast_2d(case["pv_ac_mw"]),
+        hours=case["interval_hours"], auctions=auctions, start=case["start"])
+    built = build_model(inputs)
+    try:
+        constraints = built.variables["product_resolution_constraints"]
+        assert constraints["dispatch_equalities"] == 0
+        assert constraints["da_trade_equalities"] == len(inputs.grid.interval_ids) - 1
+        assert all(constraints["auction_trade_equalities"][auction] == 0
+                   for auction in ("IDA1", "IDA2", "IDA3"))
+    finally:
+        built.model.dispose()
 
 
 def test_auction_trades_and_reversals_respect_poi_at_each_stage():

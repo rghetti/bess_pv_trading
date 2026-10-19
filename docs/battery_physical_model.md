@@ -141,9 +141,9 @@ have arrived. The implementation also checks the final energy against the box
 before saving the interval, allowing only numerical roundoff.
 
 The controller is deterministic physical feedback, not an additional market
-optimization: four active auctions still give four MILP solves. The historical
-hourly equality applies to planned battery commands and native auction products;
-physical feedback can adjust each quarter-hour. Actual settlement prices are
+optimization: four active auctions still give four MILP solves. Hourly native
+DA products constrain only DA orders before October 2025. IDA orders and planned
+battery commands may change each quarter-hour, as can physical feedback. Actual settlement prices are
 never used by this controller.
 
 At an auction cutoff inside an unfinished quarter-hour, its next boundary is
@@ -248,7 +248,8 @@ $$
 
 This equality applies per quarter hour even when native auction products are
 hourly. An hourly surplus cannot cancel a planned quarter-hour shortfall. Native
-auction-product and historical hourly battery-dispatch equalities still apply.
+auction-product equalities apply only to orders in the corresponding market;
+they do not impose hourly battery commands.
 Curtailment or feasible battery actions must reconcile the forecast PV profile
 with that position. A changed forecast or fixed commitments can make strict
 delivery infeasible; the runner reports it instead of silently enabling slack.

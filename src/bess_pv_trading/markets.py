@@ -54,7 +54,9 @@ class AuctionEvent:
 
 @dataclass(frozen=True)
 class AuctionCalendar:
-    """Quarter-hour regime verified from October 2025, with bounded validity.
+    """Quarter-hour physical grid and auction events with bounded rule validity.
+
+    Native DA and IDA product resolutions are applied separately by the optimizer.
 
     DA final results are *not earlier than* 13:05 in the consulted rule. A default
     13:30 is an explicit conservative study assumption, not a guaranteed deadline.
@@ -104,7 +106,7 @@ class AuctionCalendar:
     def _date(self, delivery_day: str | date) -> date:
         day = date.fromisoformat(delivery_day) if isinstance(delivery_day, str) else delivery_day
         if not date.fromisoformat(self.valid_from) <= day <= date.fromisoformat(self.valid_to):
-            raise ValueError(f"Delivery day {day} outside verified quarter-hour calendar {self.valid_from}..{self.valid_to}; pre-October 2025 DA hourly mapping is not implemented")
+            raise ValueError(f"Delivery day {day} outside configured auction-calendar validity {self.valid_from}..{self.valid_to}")
         return day
 
     def _local(self, day: date, clock: str) -> pd.Timestamp:

@@ -142,6 +142,8 @@ def _load_api_cache_records(cache, *, provider, dataset, zone, first, stop,
                   "normalized_sha256": manifest.get("normalized_sha256"),
                   "records": manifest.get("records"), "selected_records": len(frame),
                   "checksums_verified": verify_checksums}
+        if "cancelled_delivery_days" in manifest.get("metadata", {}):
+            source["cancelled_delivery_days"] = manifest["metadata"]["cancelled_delivery_days"]
         if database_backend:
             # Snapshot identifiers make an experiment traceable after a refresh.
             source["storage"] = manifest["storage"]

@@ -1,4 +1,4 @@
-"""Delivery-product constraints implied by the Italian MGP time regime."""
+"""Separate native auction-product resolution from physical control resolution."""
 from __future__ import annotations
 
 from collections import defaultdict
@@ -10,16 +10,6 @@ from ..domain import DeliveryGrid
 
 MGP_QUARTER_HOUR_START = date(2025, 10, 1)
 MARKET_TIMEZONE = ZoneInfo("Europe/Rome")
-
-
-def historical_hourly_dispatch_groups(grid: DeliveryGrid) -> tuple[tuple[int, ...], ...]:
-    """Group represented 15-minute controls by pre-transition local market hour.
-
-    The returned groups use interval starts and preserve the autumn DST fold, so
-    the two repeated civil hours remain separate hourly products. In a residual
-    solve, a group can contain only the still-active quarters of its hour.
-    """
-    return tuple(group for group in _historical_hour_groups(grid) if len(group) > 1)
 
 
 def historical_quarter_hour_indices(grid: DeliveryGrid) -> frozenset[int]:
@@ -45,9 +35,13 @@ def market_product_groups(grid: DeliveryGrid, interval_minutes: int,
 
 def configured_dispatch_groups(grid: DeliveryGrid, resolution_minutes: int | None,
                                timezone: str = "Europe/Rome") -> tuple[tuple[int, ...], ...]:
-    """Use explicit study resolution, retaining the historical rule for old callers."""
+    """Physical controls are free each grid interval unless explicitly grouped.
+
+    Hourly MGP products constrain DA orders only. Quarter-hour IDA orders and
+    battery controls remain independent before the October 2025 DA transition.
+    """
     if resolution_minutes is None:
-        return historical_hourly_dispatch_groups(grid)
+        return ()
     return tuple(group for group in market_product_groups(grid, resolution_minutes, timezone)
                  if len(group) > 1)
 

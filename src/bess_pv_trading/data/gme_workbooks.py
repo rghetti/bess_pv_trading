@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import hashlib
+import json
 from pathlib import Path
 from typing import Any, Mapping
 import zipfile
@@ -12,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from .duckdb_store import DuckDBCache
-from .gme import DATASETS
+from .gme import DATASETS, native_price_resolution_minutes
 
 
 class GMEWorkbookError(ValueError):
@@ -142,6 +143,9 @@ def _parse_workbook(payload: bytes, source_file: str, dataset: str,
             raise GMEWorkbookError(f"Invalid delivery date in worksheet row {row_number}") from None
         if not first <= day_value < stop:
             raise GMEWorkbookError(f"Delivery date outside configured bounds in worksheet row {row_number}")
+        native_minutes = native_price_resolution_minutes(dataset, day_value.date())
+        if minutes != native_minutes:
+            raise GMEWorkbookError(f"{dataset} on {day_value.date()} requires native {native_minutes}-minute prices; aggregated {minutes}-minute data are unsupported")
         note_column = columns.get("notes")
         note = row[index[note_column]].strip() if note_column in index else ""
         raw_period = row[index[columns["period"]]].strip()
@@ -156,6 +160,13 @@ def _parse_workbook(payload: bytes, source_file: str, dataset: str,
         except (ValueError, TypeError, IndexError):
             raise GMEWorkbookError(f"Invalid market period in worksheet row {row_number}") from None
         start = _period_start(day_value, period, minutes, settings["timezone"])
+        source_hour = (period - 1) * minutes // 60 + 1
+        if "hour" in columns:
+            try:
+                if int(row[index[columns["hour"]]]) != source_hour:
+                    raise ValueError
+            except (ValueError, TypeError, IndexError):
+                raise GMEWorkbookError(f"Hour/Period mismatch in worksheet row {row_number}") from None
         if eligible_start is not None:
             if start.tz_convert(settings["timezone"]).strftime("%H:%M") < eligible_start:
                 raise GMEWorkbookError(f"Ineligible delivery period in worksheet row {row_number}")
@@ -172,7 +183,7 @@ def _parse_workbook(payload: bytes, source_file: str, dataset: str,
             "revision": "workbook_sha256:" + hashlib.sha256(payload).hexdigest(),
             "record_status": status, "resolution": f"PT{minutes}M",
             "native_interval_minutes": minutes,
-            "source_flow_date": day_value.date().isoformat(), "source_hour": period,
+            "source_flow_date": day_value.date().isoformat(), "source_hour": source_hour,
             "source_period": period, "source_market": metadata["segment"],
             "source_notes": note, "source_file": source_file,
             "interval_provenance": "native chronological GME Period/Hour mapped onto Europe/Rome local-day grid"})
@@ -182,8 +193,66 @@ def _parse_workbook(payload: bytes, source_file: str, dataset: str,
     if frame.duplicated(["product_start", "product_end"]).any():
         raise GMEWorkbookError("GME workbook contains duplicate delivery products")
     frame = frame.sort_values("product_start", kind="stable").reset_index(drop=True)
+    # Accept explicit cancellation markers; reject incomplete or absent days so
+    # hourly summaries cannot masquerade as native quarter-hour observations.
+    for day in pd.date_range(first, stop, freq="D", inclusive="left"):
+        day_key = day.date().isoformat()
+        observed = pd.DatetimeIndex(frame.loc[frame.source_flow_date == day_key, "product_start"])
+        if day_key in cancelled_days:
+            if len(observed):
+                raise GMEWorkbookError(f"Canceled auction also contains products on {day_key}")
+            continue
+        left = day.tz_localize(settings["timezone"])
+        right = (day + pd.Timedelta(days=1)).tz_localize(settings["timezone"])
+        expected = pd.date_range(left, right, freq=f"{minutes}min", inclusive="left")
+        if eligible_start is not None:
+            expected = expected[expected.strftime("%H:%M") >= eligible_start]
+        if not observed.equals(expected.tz_convert("UTC")):
+            raise GMEWorkbookError(f"Incomplete native {dataset} products on {day_key}: expected {len(expected)}, observed {len(observed)}")
     frame.attrs["cancelled_delivery_days"] = sorted(cancelled_days)
     return frame
+
+
+def _retire_hourly_ida_snapshots(cache, prepared, directory):
+    """Archive exact obsolete payloads before removing hourly IDA snapshots only."""
+    scopes = {(dataset, item["zone"]) for item, _, _, dataset, _ in prepared
+              if dataset.startswith("ida") and item["native_interval_minutes"] == 15}
+    retired = []
+    with cache._connect(write=True) as connection:
+        for dataset, zone in sorted(scopes):
+            snapshots = connection.execute("""SELECT s.snapshot_id, s.manifest_json,
+                s.raw_payload, s.normalized_parquet FROM api_snapshots s
+                WHERE s.provider = 'gme' AND s.dataset = ? AND s.zone = ?
+                AND EXISTS (SELECT 1 FROM api_records r WHERE r._snapshot_id = s.snapshot_id
+                    AND r.native_interval_minutes = 60)
+                AND NOT EXISTS (SELECT 1 FROM api_records r WHERE r._snapshot_id = s.snapshot_id
+                    AND (r.native_interval_minutes IS NULL OR r.native_interval_minutes != 60))""",
+                [dataset, zone]).fetchall()
+            for snapshot_id, manifest_json, raw, normalized in snapshots:
+                manifest = json.loads(manifest_json)
+                archive = Path(directory) / snapshot_id
+                archive.mkdir(parents=True, exist_ok=True)
+                raw_name = manifest["raw_file"]
+                if Path(raw_name).name != raw_name:
+                    raise GMEWorkbookError("Unsafe source filename in retired snapshot")
+                payloads = {raw_name: bytes(raw), "records.parquet": bytes(normalized),
+                            "manifest.json": manifest_json.encode()}
+                for name, payload in payloads.items():
+                    target = archive / name
+                    if target.exists() and target.read_bytes() != payload:
+                        raise GMEWorkbookError(f"Retired snapshot archive conflicts at {target}")
+                    target.write_bytes(payload)
+                if (hashlib.sha256(raw).hexdigest() != manifest["raw_sha256"]
+                        or hashlib.sha256(normalized).hexdigest() != manifest["normalized_sha256"]):
+                    raise GMEWorkbookError("Obsolete snapshot checksum mismatch; replacement aborted")
+                connection.execute("DELETE FROM api_current_requests WHERE snapshot_id = ?", [snapshot_id])
+                connection.execute("DELETE FROM api_records WHERE _snapshot_id = ?", [snapshot_id])
+                connection.execute("DELETE FROM api_snapshots WHERE snapshot_id = ?", [snapshot_id])
+                retired.append({"snapshot_id": snapshot_id, "dataset": dataset, "zone": zone,
+                    "records": manifest["records"], "archive": str(archive),
+                    "raw_sha256": manifest["raw_sha256"],
+                    "normalized_sha256": manifest["normalized_sha256"]})
+    return retired
 
 
 def import_gme_workbooks(config: Mapping[str, Any]) -> dict[str, Any]:
@@ -193,21 +262,30 @@ def import_gme_workbooks(config: Mapping[str, Any]) -> dict[str, Any]:
     workbooks = settings.get("workbooks")
     if not database or not isinstance(workbooks, list) or not workbooks:
         raise GMEWorkbookError("Configure database_path and at least one GME workbook")
-    cache = DuckDBCache(database, threads=int(settings["duckdb_threads"]))
     timezone_name = settings["timezone"]
-    first = pd.Timestamp(settings["date_start"]).tz_localize(timezone_name)
-    stop = pd.Timestamp(settings["date_end_exclusive"]).tz_localize(timezone_name)
+    # Parse every source before opening a writable database connection. A wrong
+    # year, missing file, aggregated series or partial day changes no snapshots.
+    prepared = []
+    for item in workbooks:
+        effective = {**settings, **item, "timezone": timezone_name,
+            "columns": {**settings.get("columns", {}), **item.get("columns", {})}}
+        dataset = str(item["dataset"])
+        path = Path(item["path"])
+        if not path.is_file():
+            raise FileNotFoundError(f"Configured GME workbook is missing: {path}")
+        payload = path.read_bytes()
+        frame = _parse_workbook(payload, path.name, dataset, effective)
+        prepared.append((effective, path, payload, dataset, frame))
+    retire = settings.get("retire_hourly_ida_snapshots", False)
+    if not isinstance(retire, bool) or (retire and not settings.get("retired_snapshot_directory")):
+        raise GMEWorkbookError("Hourly IDA replacement requires an explicit archive directory and boolean switch")
+    cache = DuckDBCache(database, threads=int(settings["duckdb_threads"]))
     summary = []
-    with cache.batch_write():
-        for item in workbooks:
-            dataset = str(item["dataset"])
-            path = Path(item["path"])
-            if not path.is_file():
-                raise FileNotFoundError(f"Configured GME workbook is missing: {path}")
-            payload = path.read_bytes()
+    with cache.atomic_write():
+        for item, path, payload, dataset, frame in prepared:
+            first = pd.Timestamp(item["date_start"]).tz_localize(timezone_name)
+            stop = pd.Timestamp(item["date_end_exclusive"]).tz_localize(timezone_name)
             source_file = path.name
-            frame = _parse_workbook(payload, source_file, dataset,
-                                    {**settings, **item, "timezone": timezone_name})
             cancelled_days = list(frame.attrs.get("cancelled_delivery_days", []))
             identity = {"provider": "gme", "dataset": dataset, "zone": str(item["zone"]),
                 "start": first.tz_convert("UTC").isoformat(),
@@ -229,13 +307,23 @@ def import_gme_workbooks(config: Mapping[str, Any]) -> dict[str, Any]:
                 status = "imported"
             summary.append({"dataset": dataset, "auction": DATASETS[dataset]["auction"],
                 "zone": item["zone"], "records": int(manifest["records"]),
+                "date_start": str(item["date_start"]),
+                "date_end_exclusive": str(item["date_end_exclusive"]),
                 "observed_prices": int(frame["price_eur_mwh"].notna().sum()),
                 "missing_price_rows": int(frame["price_eur_mwh"].isna().sum()),
                 "cancelled_delivery_days": cancelled_days,
                 "native_interval_minutes": int(item["native_interval_minutes"]),
                 "source_sha256": raw_sha, "snapshot_id": manifest["snapshot_id"],
                 "status": status})
-    return {"status": "complete", "database": str(database),
+        retired = (_retire_hourly_ida_snapshots(cache, prepared, settings["retired_snapshot_directory"])
+                   if retire else [])
+    result = {"status": "complete", "database": str(database),
             "date_start": str(settings["date_start"]),
             "date_end_exclusive": str(settings["date_end_exclusive"]),
-            "datasets": summary}
+            "datasets": summary, "retired_hourly_ida_snapshots": retired}
+    if settings.get("report_path"):
+        report = Path(settings["report_path"])
+        report.parent.mkdir(parents=True, exist_ok=True)
+        report.write_text(json.dumps(result, indent=2, allow_nan=False) + "\n")
+        result["report_path"] = str(report)
+    return result

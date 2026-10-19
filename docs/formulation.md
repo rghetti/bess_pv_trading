@@ -108,6 +108,16 @@ power obeys the same import/export ratings. An auction adjustment may close and
 reverse an earlier position, subject to its own direction-specific POI rating
 and the cumulative position bound.
 Hourly product allocations are equal across their quarter-hour energy shares.
+Before 1 October 2025 this applies to DA orders only. IDA1/2/3 prices and orders
+are native quarter-hour products in the supported 2025 history. Physical battery
+commands are independently free on every quarter-hour, including in the first
+optimization that anticipates later IDAs. An hourly DA price does not impose an
+hourly battery trajectory. `decision_resolution_minutes: 60` can explicitly
+request coarse battery controls; the corrected GME studies use `15`, and an
+unspecified control resolution follows the delivery grid.
+The historical distinction is described in [GME Technical Rule 25, effective
+January 2025](https://www.mercatoelettrico.org/Portals/0/Documents/en-US/20250101DTF25MPE_en.pdf),
+which explicitly treats hourly MGP and quarter-hour MI products separately.
 
 Settlement uses the exact positive and negative parts `b+`, `b-` of imbalance.
 They obey `b=b+ - b-`, nonnegative bounds, and a binary direction constraint

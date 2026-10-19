@@ -54,6 +54,20 @@ plot_boundaries:
   energy_boundaries_mwh: [0.5, 0.7, 0.6, 0.4]
   settlement_cashflow_eur: [-1.0, 2.0, -3.0]
 
+pv_power_allocation:
+  # Independent examples: PV charging/export, grid charging, battery discharge,
+  # no PV, full PV curtailment during imports, and direct PV export.
+  input:
+    pv_ac_mw:      [8.0, 3.0, 4.0, 0.0, 0.0, 4.0, 2.0]
+    curtailment_mw: [1.0, 0.0, 1.0, 0.0, 0.0, 4.0, 0.0]
+    charge_mw:     [2.0, 5.0, 0.0, 2.0, 0.0, 1.0, 0.0]
+    discharge_mw:  [0.0, 0.0, 2.0, 0.0, 1.0, 0.0, 0.0]
+    grid_mw:       [5.0, -2.0, 5.0, -2.0, 1.0, -1.0, 2.0]
+  expected:
+    pv_to_grid_mw:    [5.0, 0.0, 3.0, 0.0, 0.0, 0.0, 2.0]
+    pv_to_battery_mw: [2.0, 3.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    pv_curtailed_mw:  [1.0, 0.0, 1.0, 0.0, 0.0, 4.0, 0.0]
+
 resizing:
   capacities_mwh: [1.0, 2.0, 7.0]
   invalid_overrides:
@@ -334,6 +348,14 @@ full_replay:
     - {name: four_auctions_grid_feedback, physical_refresh: false, terminal: free, optimize_imbalances: false, dispatch_policy: track_committed_grid, realized_pv_scale: 1.5}
     - {name: depleted_feedback_exposes_infeasible_commitments, physical_refresh: false, terminal: free, optimize_imbalances: false, dispatch_policy: track_committed_grid, realized_pv_scale: 0.5, expected_infeasible: true}
     - {name: rolling_forecasts_four_auctions, physical_refresh: false, terminal: free, rolling_forecast: true}
+    - name: hourly_da_quarter_hour_ida_four_auctions
+      physical_refresh: false
+      terminal: free
+      strategy: oracle
+      optimize_imbalances: false
+      delivery_day: '2025-01-01'
+      decision_resolution_minutes: 15
+      native_interval_minutes_by_auction: {DA: 60, IDA1: 15, IDA2: 15, IDA3: 15}
 
 rolling_pv_forecast:
   farm_id: 910

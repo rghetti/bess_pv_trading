@@ -146,8 +146,12 @@ through events, rather than reset at each auction.
 GME DTF03 revisions 13/14 supply auction gates and IDA result deadlines. The
 13:30 local DA result time is a conservative study clock, not an official
 guaranteed deadline; actual recorded results can override ordinary schedules.
-Quarter-hour DA delivery begins 1 October 2025, and earlier native-hourly
-commercial mapping is not implemented. IDA3 products begin at local noon.
+Quarter-hour DA delivery begins 1 October 2025; earlier DA orders retain hourly
+product allocations across the quarter-hour delivery grid. IDA1/2/3 are native
+quarter-hour markets in the supported 2025 history, and battery controls may
+vary every quarter-hour regardless of the DA price resolution. IDA3 products
+begin at local noon. Explicit source cancellation markers skip an auction;
+missing price data otherwise stop the study.
 
 No historical auction-price series or usable imbalance-settlement regime is
 contained in the farm dataset. Manual imports require actual source fields and

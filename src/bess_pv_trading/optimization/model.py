@@ -93,25 +93,23 @@ def _trading(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
     return {"trades": trades, "positions": positions, "auction_revenue": auction_revenue}
 
 
-def _historical_hourly_equalities(model: Any, inputs: OptimizationInput,
-                                  variables: dict[str, Any]) -> dict[str, int]:
-    """Tie dispatch and hourly-market quantities at configured product resolution."""
+def _product_resolution_equalities(model: Any, inputs: OptimizationInput,
+                                   variables: dict[str, Any]) -> dict[str, Any]:
+    """Group controls only when requested; tie each auction's native products."""
     groups = configured_dispatch_groups(inputs.grid, inputs.decision_resolution_minutes,
                                         inputs.market_timezone)
     count = len(inputs.scenarios.scenario_ids)
     controls = inputs.tree.control_nodes
     trades = variables.get("trades", {})
     control_equalities = 0
-    trade_equalities: dict[str, int] = {}
+    trade_equalities: dict[str, int] = {auction: 0 for auction in inputs.auction_eligibility}
     for group_index, group in enumerate(groups):
         for left, right in zip(group, group[1:]):
             control_pairs = {(controls[s][left], controls[s][right]) for s in range(count)}
             for left_node, right_node in sorted(control_pairs):
-                if left_node == right_node:
-                    continue
                 for name, label in (("charge", "charge"), ("discharge", "discharge"), ("mode", "mode")):
                     model.addConstr(variables[name][left, left_node] == variables[name][right, right_node],
-                                    name=f"historical_hourly_{label}_g{group_index}_t{left}_{right}_n{left_node}_{right_node}")
+                                    name=f"configured_dispatch_{label}_g{group_index}_t{left}_{right}_n{left_node}_{right_node}")
                     control_equalities += 1
 
     for auction in inputs.auction_eligibility:
@@ -134,7 +132,8 @@ def _historical_hourly_equalities(model: Any, inputs: OptimizationInput,
                     model.addConstr(trades[left_key] == trades[right_key],
                                     name=f"native_product_{auction}_trade_g{product_index}_t{left}_{right}_n{owner}")
                     trade_equalities[auction] = trade_equalities.get(auction, 0) + 1
-    return {"hour_groups": len(groups), "dispatch_equalities": control_equalities,
+    return {"dispatch_groups": len(groups), "dispatch_equalities": control_equalities,
+            "decision_resolution_minutes": inputs.decision_resolution_minutes,
             "da_trade_equalities": trade_equalities.get("DA", 0),
             "auction_trade_equalities": trade_equalities}
 
@@ -205,7 +204,7 @@ def build_model(inputs: OptimizationInput) -> BuiltModel:
     variables = _physical(model, inputs, gp)
     commercial = _trading(model, inputs, gp)
     variables.update({key: commercial[key] for key in ("trades", "positions")})
-    variables["historical_hourly_market_constraints"] = _historical_hourly_equalities(model, inputs, variables)
+    variables["product_resolution_constraints"] = _product_resolution_equalities(model, inputs, variables)
     # Contracts must be backed by planned net AC energy when this policy is
     # enabled. Native-hour balancing preserves natural quarter-hour PV variation.
     resolution = inputs.planned_delivery_balance_resolution_minutes
@@ -264,8 +263,8 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     diagnostics["absolute_mip_gap_configured"] = False
     diagnostics["degradation_mode"] = inputs.degradation.mode
     diagnostics["optimization_imbalances_enabled"] = inputs.optimize_imbalances
-    diagnostics["historical_hourly_market_constraints"] = built.variables.get(
-        "historical_hourly_market_constraints", {"hour_groups": 0, "dispatch_equalities": 0,
+    diagnostics["product_resolution_constraints"] = built.variables.get(
+        "product_resolution_constraints", {"dispatch_groups": 0, "dispatch_equalities": 0,
             "da_trade_equalities": 0, "auction_trade_equalities": {}})
     for attribute, key in (("ObjBound", "objective_bound_eur"), ("MIPGap", "mip_gap"), ("MaxVio", "max_violation")):
         try:

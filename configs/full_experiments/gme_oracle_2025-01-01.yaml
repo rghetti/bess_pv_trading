@@ -21,17 +21,17 @@ gme_oracle_experiment:
       native_interval_minutes: 60
     IDA1:
       dataset: ida1_prices
-      native_interval_minutes: 60
+      native_interval_minutes: 15
     IDA2:
       dataset: ida2_prices
-      native_interval_minutes: 60
+      native_interval_minutes: 15
     IDA3:
       dataset: ida3_prices
-      native_interval_minutes: 60
+      native_interval_minutes: 15
   missing_auction_policy: skip_if_no_products_fail_if_partial
   price_information: perfect_foresight_actual_clearing_curves
-  decision_resolution_minutes: 60
-  price_display_resolution_minutes: 60
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
 
 market:
   timezone: Europe/Rome

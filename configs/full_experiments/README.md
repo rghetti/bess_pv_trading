@@ -4,6 +4,27 @@ Store one complete, reproducible end-to-end study configuration per YAML file in
 
 Small synthetic solver examples remain here for software validation. Add real-data studies as separate files with names that describe the study and period.
 
+The corrected January studies use native hourly DA prices/orders and native
+15-minute IDA1/2/3 prices/orders. `decision_resolution_minutes: 15` permits battery
+commands to change each quarter-hour at all four optimizations. An hourly DA
+order is allocated equally across its four quarters without tying battery
+commands or IDA adjustments together. Old saved January results used hourly
+IDA summaries and hourly battery controls and must not be used as corrected
+economic benchmarks. Reimport using `configs/api_experiments/gme_workbook_import.yaml`
+before a new real-data run; the importer validates all files, archives obsolete
+hourly IDA snapshots outside the catalog, and replaces them transactionally.
+The shared catalog now contains 21,640 native IDA prices through 1 April 2025
+inclusive. MI-A2 is documented as cancelled on 4 February; MI-A3 on 17 and
+22 January. Native IDA data after 1 April are unavailable until additional
+workbooks are imported. Replacement and verification reports are under
+`outputs/data_imports/gme_native_prices/`; retired snapshots are under
+`data/archive/gme/hourly_ida/`.
+
+`gme_oracle_2025-01-01_farm910_quarter_hour_ida.yaml` reproduces the corrected
+native-price January study in a fresh `native_ida_pt15` output folder. It
+inherits the latest rolling-PV, grid-feedback, POI-bounded trade, throughput
+degradation and reoptimization settlement settings.
+
 `gme_oracle_2025-01-01_farm910_throughput.yaml` selects the largest farm (6.638 MWp
 DC), a 5 MWh BESS with a symmetric 2.5 MW AC power limit, percentage SOC bounds,
 and a free terminal SOC. It sets `trading.optimize_imbalances: false`: forecast
@@ -74,6 +95,14 @@ paths. Single `optimize` runs use `json/result.json` and `arrays/solution.npz`.
 Only the latest grid-feedback study was retained during output cleanup; older
 experiment/QA outputs were removed, while input data and acquisition/import
 provenance remain available.
+
+GME runs save `plots/pv_power_allocation.png` and its source data in
+`csv/pv_power_allocation.csv`. The three stacked components (PV exported,
+PV charging the battery, and PV curtailed) sum to realized AC PV in every
+interval, with the production total overlaid. Uncurtailed PV supplies charging
+first; grid-supplied charging and battery discharge are excluded from the PV
+components. This replaces the combined `expected_dispatch_by_auction.png`;
+the four individual auction reoptimization plots remain available.
 
 Use only `battery.max_power_mw`, `soc_min_percent` and `soc_max_percent` for power
 and SOC limits. Separate battery inverter limits and absolute MWh bounds are

@@ -115,7 +115,21 @@ def test_all_four_auction_submissions_clear_once_and_reconcile(tmp_path, monkeyp
     config["execution"] = {"reoptimize_physical_controls": policy["physical_refresh"]}
     config["execution"]["dispatch_policy"] = policy.get("dispatch_policy", "follow_battery_plan")
     config["trading"]["optimize_imbalances"] = policy.get("optimize_imbalances", True)
+    if "delivery_day" in policy:
+        config["synthetic"]["delivery_day"] = policy["delivery_day"]
+        config["market"].update(valid_from=policy["delivery_day"], valid_to=policy["delivery_day"])
+        config["decision_resolution_minutes"] = policy["decision_resolution_minutes"]
+        config["native_interval_minutes_by_auction"] = policy["native_interval_minutes_by_auction"]
     fixture = synthetic_inputs(config)
+    if "native_interval_minutes_by_auction" in policy:
+        from bess_pv_trading.optimization.market_regime import market_product_groups
+        # Build native realized curves before reducing the test horizon. The
+        # oracle then supplies those same native curves at every auction solve.
+        for auction, minutes in policy["native_interval_minutes_by_auction"].items():
+            curve = fixture["actual_prices"][auction].copy()
+            for group in market_product_groups(fixture["grid"], minutes, fixture["calendar"].timezone):
+                curve[list(group)] = curve[group[0]]
+            fixture["actual_prices"][auction] = curve
     reference = reference_cases()["full_replay"]
     selected = slice(reference["first_interval"], reference["stop_interval"])
     full = fixture["grid"]
@@ -150,11 +164,14 @@ def test_all_four_auction_submissions_clear_once_and_reconcile(tmp_path, monkeyp
                 pd.DataFrame({"pv_ac_mw": values}, index=starts), {"pv_ac_mw": "MW_AC"})
         fixture["pv_forecast_provider"] = refreshed_pv
     planned = []
+    product_constraints = []
     original_build = synthetic.build_model
     def capture_plan(inputs):
         """Inspect actual solver inputs at every refresh without changing decisions."""
         planned.append(inputs)
-        return original_build(inputs)
+        built = original_build(inputs)
+        product_constraints.append(built.variables["product_resolution_constraints"])
+        return built
     monkeypatch.setattr(synthetic, "build_model", capture_plan)
     if policy.get("expected_infeasible", False):
         # A persistent production deficit can exhaust the real battery. Strict
@@ -166,7 +183,7 @@ def test_all_four_auction_submissions_clear_once_and_reconcile(tmp_path, monkeyp
         first = fixture["grid"].interval_ids.index(final.grid.interval_ids[0])
         np.testing.assert_allclose(final.scenarios.pv_ac_mw[0],fixture["pv"][first:])
         return
-    summary = _replay_strategy(config,fixture,"stochastic_integrated",tmp_path/"replay")
+    summary = _replay_strategy(config,fixture,policy.get("strategy", "stochastic_integrated"),tmp_path/"replay")
     ledger = pd.read_csv(tmp_path/"replay/ledger.csv")
     dispatch = pd.read_csv(tmp_path/"replay/dispatch.csv")
     auction_count = len(fixture["schedule"])
@@ -213,6 +230,19 @@ def test_all_four_auction_submissions_clear_once_and_reconcile(tmp_path, monkeyp
     assert sum(item["solve_trigger"]=="auction_submission" for item in solves) == auction_count
     assert sum(item["solve_trigger"]=="physical_control" for item in solves) == physical_solves
     assert all(item["solve_trigger"] != "auction_results" for item in solves)
+    if "native_interval_minutes_by_auction" in policy:
+        # Only the hourly DA order is tied across quarter-hours. Each refresh
+        # retains independent IDA orders and quarter-hour physical controls.
+        for inputs, constraints in zip(planned, product_constraints):
+            assert constraints["dispatch_equalities"] == 0
+            assert constraints["dispatch_groups"] == 0
+            for auction, count in constraints["auction_trade_equalities"].items():
+                assert (count > 0) == (auction == "DA")
+                assert inputs.native_interval_minutes_by_auction[auction] == policy["native_interval_minutes_by_auction"][auction]
+        da = ledger.loc[ledger.auction.eq("DA")].copy()
+        da["hour"] = pd.to_datetime(da.interval_id, utc=True).dt.floor("h")
+        for _, hour in da.groupby("hour"):
+            np.testing.assert_allclose(hour.quantity_mwh, hour.quantity_mwh.iloc[0], atol=1e-8)
     if policy.get("rolling_forecast", False):
         assert len(forecast_requests) == auction_count
         for item, inputs in zip(solves, planned):

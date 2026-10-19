@@ -1,0 +1,9 @@
+# Corrected native-price replay: hourly MGP, quarter-hour MI-A1/2/3 and controls.
+# Preserve the latest assets, rolling PV, POI bounds and ex-post settlement audit.
+include: gme_oracle_2025-01-01_farm910_reoptimization_imbalance.yaml
+
+gme_oracle_experiment:
+  study_id: gme_nord_oracle_2025-01-01_farm910_native_quarter_hour_ida
+
+experiment_outputs:
+  run_id: gme_nord_oracle_2025-01-01_farm910_5mwh_native_ida_pt15

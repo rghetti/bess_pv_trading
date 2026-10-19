@@ -94,9 +94,16 @@ def _bounds(start: Any, end: Any) -> tuple[pd.Timestamp, pd.Timestamp]:
     return first, last
 
 
+def native_price_resolution_minutes(dataset: str, day: date) -> int:
+    """Return the native clearing-price resolution, separately for DA and IDA."""
+    if dataset not in DATASETS:
+        raise GMEAPIError("Unsupported GME zonal-price dataset")
+    return 60 if dataset == "day_ahead_prices" and day < DAY_AHEAD_QUARTER_HOUR_START else 15
+
+
 def _native_minutes(dataset: str, day: date, granularity_type: str | None) -> int:
     """Keep provider aggregations distinct from native observed clearing labels."""
-    native = 60 if dataset == "day_ahead_prices" and day < DAY_AHEAD_QUARTER_HOUR_START else 15
+    native = native_price_resolution_minutes(dataset, day)
     if granularity_type is not None:
         if dataset != "day_ahead_prices" or granularity_type != f"PT{native}":
             raise GMEAPIError("Only native GME granularity is supported; aggregated PT30/PT60 prices cannot replace native quarter-hour labels")

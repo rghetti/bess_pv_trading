@@ -13,13 +13,14 @@ import pandas as pd
 from ..data import (align_forecast, config_path, load_metadata, load_observations,
                     open_store, select_forecast_vintage)
 from ..data.api_catalog import load_api_cache_records
+from ..data.gme import native_price_resolution_minutes
 from ..domain import (BatteryParameters, DegradationSettings, PhysicalState, PlantParameters,
                       battery_parameters_from_config)
 from ..forecasting.pv import forecast_pv
 from ..markets import AuctionCalendar
 from ..optimization.degradation import degradation_settings_from_config
 from ..reporting.artifacts import organize_run_outputs
-from ..reporting.plots import plot_boundary_series, plot_interval_series
+from ..reporting.plots import plot_boundary_series, plot_interval_series, plot_pv_allocation
 from ..scenarios import synthetic_price_tree
 from .synthetic import _replay_strategy, write_json
 from .replay import execute_interval
@@ -204,7 +205,7 @@ def _expected_product_starts(grid, eligible: tuple[int, ...], resolution: int,
 
 def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
                          grid, events) -> tuple[dict[str, np.ndarray], dict[str, Any], list[dict]]:
-    """Load exact native prices; skip absent auctions and reject partial curves."""
+    """Load exact native prices; skip documented cancellations and reject gaps."""
     study = config["gme_oracle_experiment"]
     timezone = str(study["timezone"])
     first, stop = pd.Timestamp(grid.starts[0]), pd.Timestamp(grid.ends[-1])
@@ -216,10 +217,15 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
         raise ValueError("Unsupported missing_auction_policy; choose skip_if_no_products_fail_if_partial")
     canceled = set(config.get("market", {}).get("cancelled_auctions", []))
     event_by_name = {event.auction: event for event in events}
+    delivery_day = first.tz_convert(timezone).date()
     for auction, item in study["auction_datasets"].items():
         if auction not in event_by_name:
             raise ValueError(f"No market schedule exists for configured auction {auction}")
         event = event_by_name[auction]
+        expected_resolution = int(item["native_interval_minutes"])
+        native_resolution = native_price_resolution_minutes(item["dataset"], delivery_day)
+        if expected_resolution != native_resolution:
+            raise ValueError(f"{auction} requires native {native_resolution}-minute prices on {delivery_day}; update the experiment YAML")
         if auction in canceled:
             skipped.append({"auction": auction, "reason": "configured_cancelled_auction"})
             continue
@@ -227,9 +233,12 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
             provider=study["provider"], dataset=item["dataset"], zone=study["zone"],
             start=first, end=stop, verify_checksums=True)
         if frame.empty:
-            skipped.append({"auction": auction, "dataset": item["dataset"],
-                            "reason": "no_price_products_in_DuckDB"})
-            continue
+            if any(delivery_day.isoformat() in source.get("cancelled_delivery_days", [])
+                   for source in sources):
+                skipped.append({"auction": auction, "dataset": item["dataset"],
+                                "reason": "documented_cancelled_auction"})
+                continue
+            raise ValueError(f"{auction} has no native prices for {delivery_day}; missing data do not establish auction cancellation")
         if "price_eur_mwh" not in frame:
             raise ValueError(f"{auction} price snapshot lacks price_eur_mwh")
         frame = frame.copy()
@@ -238,7 +247,6 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
         frame = frame.loc[(frame.product_start >= first) & (frame.product_end <= stop)]
         if frame.duplicated("product_start").any():
             raise ValueError(f"{auction} has duplicate native delivery products")
-        expected_resolution = int(item["native_interval_minutes"])
         declared = pd.to_numeric(frame.get("native_interval_minutes", expected_resolution), errors="coerce")
         if np.any(pd.Series(declared).dropna().to_numpy(dtype=int) != expected_resolution):
             raise ValueError(f"{auction} cached native resolution differs from the experiment YAML")
@@ -246,9 +254,7 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
                                             expected_resolution, timezone)
         observed_starts = pd.DatetimeIndex(frame.product_start).sort_values()
         if not len(observed_starts):
-            skipped.append({"auction": auction, "dataset": item["dataset"],
-                            "reason": "no_products_for_delivery_day"})
-            continue
+            raise ValueError(f"{auction} has no native prices contained in {delivery_day}; check product alignment")
         if not observed_starts.equals(expected.sort_values()):
             absent = expected.difference(observed_starts)
             extra = observed_starts.difference(expected)
@@ -444,27 +450,10 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
     fig.savefig(destination / "prices_ida3.png", dpi=140)
     plt.close(fig)
 
-    fig, axis = plt.subplots(figsize=(12, 5), layout="constrained")
-    for auction in ("DA", "IDA1", "IDA2", "IDA3"):
-        selected = plans.loc[plans.auction == auction]
-        if len(selected):
-            times = pd.to_datetime(selected.interval_start_utc, utc=True).dt.tz_convert(timezone)
-            ends = pd.to_datetime(selected.interval_end_utc, utc=True).dt.tz_convert(timezone)
-            plot_interval_series(axis, times, ends, selected.net_battery_dispatch_mw, label=auction)
-    plot_pv_forecasts(axis)
-    axis.axhline(0, color="black", linewidth=0.7)
-    executed_times = pd.to_datetime(dispatch.start, utc=True).dt.tz_convert(timezone)
+    allocation = plot_pv_allocation(dispatch, destination / "pv_power_allocation.png",
+                                    timezone=timezone)
+    allocation.to_csv(destination / "pv_power_allocation.csv", index=False)
     executed_ends = pd.to_datetime(dispatch.end, utc=True).dt.tz_convert(timezone)
-    plot_interval_series(axis, executed_times, executed_ends, dispatch.discharge_mw-dispatch.charge_mw,
-              color="black", linewidth=2.2, label="Executed battery dispatch")
-    axis.set_title("PV forecast cycles, auction battery plans and executed battery dispatch")
-    axis.set_ylabel("PV / battery power (MW AC)")
-    axis.set_xlabel(f"Delivery time ({timezone})")
-    axis.grid(alpha=0.2)
-    axis.legend(ncol=2, fontsize="small")
-    axis.set_xlim(local[0], local_ends[-1])
-    fig.savefig(destination / "expected_dispatch_by_auction.png", dpi=140)
-    plt.close(fig)
 
     # Keep each reoptimization's information set and schedule together. The
     # executed trajectory is common to all panels, so deviations from each
@@ -874,7 +863,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         "settlement_price_provenance": settlement_provenance,
         "optimizer_solves": len(solve_data), "summary": summary,
         "artifacts": ["prices_da_ida1_ida2.png", "prices_ida3.png",
-            "expected_dispatch_by_auction.png", "soc_evolution.png", "pv_forecast_and_realized.png",
+            "pv_power_allocation.png", "pv_power_allocation.csv", "soc_evolution.png", "pv_forecast_and_realized.png",
             "execution_tracking.png",
             "auction_prices_expanded.csv", "pv_forecast_and_realized.csv", "kpis.json", "kpis.csv",
             "oracle/summary.json",

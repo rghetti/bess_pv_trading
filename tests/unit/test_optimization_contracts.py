@@ -12,7 +12,7 @@ from pathlib import Path
 from battery_case_config import battery_config, case_config, configured_battery
 
 
-def example_inputs(prices=None, pv=None, probabilities=None, battery=None, hours=None, auctions=None):
+def example_inputs(prices=None, pv=None, probabilities=None, battery=None, hours=None, auctions=None, start=None):
     """Hand-built shared root with unresolved outcome leaves, not path revelation."""
     defaults = case_config("optimizer_defaults")
     values = np.atleast_2d(np.array(defaults["prices"] if prices is None else prices, dtype=float))
@@ -21,7 +21,7 @@ def example_inputs(prices=None, pv=None, probabilities=None, battery=None, hours
         pv = np.full_like(values, defaults["pv_ac_mw"])
     count, intervals = values.shape
     probabilities = np.array(probabilities if probabilities is not None else np.full(count, 1 / count))
-    start = datetime.fromisoformat(defaults["start"])
+    start = datetime.fromisoformat(defaults["start"] if start is None else start)
     starts = tuple(start + timedelta(hours=t * hours) for t in range(intervals))
     ends = tuple(value + timedelta(hours=hours) for value in starts)
     grid = DeliveryGrid(tuple(f"t{t}" for t in range(intervals)), starts, ends)

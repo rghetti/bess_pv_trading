@@ -41,7 +41,7 @@ def test_calendar_dst_products_gates_and_results_are_separate():
 
 def test_historical_validity_missing_results_cancellation():
     calendar = AuctionCalendar()
-    with pytest.raises(ValueError, match="hourly mapping"):
+    with pytest.raises(ValueError, match="outside configured auction-calendar validity"):
         calendar.delivery_grid("2025-09-30")
     events = calendar.schedule("2025-10-02", recorded_results={"DA": "2025-10-01T12:00:00Z", "IDA1": None}, cancelled=("IDA2",))
     assert events[0].result_provenance == "recorded_publication"

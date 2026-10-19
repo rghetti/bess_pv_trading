@@ -1,0 +1,19 @@
+prices_eur_mwh: [160.0, 153.78, 121.1, 98.47]
+days:
+  regular: {start: '2025-01-01', stop: '2025-01-02', ida_products: 96, ida3_products: 48, da_products: 24}
+  spring: {start: '2025-03-30', stop: '2025-03-31', ida_products: 92, ida3_products: 48, da_products: 23}
+  autumn: {start: '2025-10-26', stop: '2025-10-27', ida_products: 100, ida3_products: 48, da_products: 100}
+wrong_year: '2026-01-01'
+canceled_day: '2025-01-02'
+canceled_stop: '2025-01-03'
+ida_cycle:
+  start: '2025-01-01T11:00:00+00:00'
+  interval_hours: 0.25
+  battery: unit
+  prices_eur_mwh: [0.0, 200.0, 0.0, 200.0]
+  pv_ac_mw: [0.0, 0.0, 0.0, 0.0]
+  initial_energy_mwh: 0.0
+  terminal_energy_mwh: 0.0
+  expected_charge_mwh: 0.5
+  expected_discharge_mwh: 0.47045
+  expected_objective_eur: 94.09

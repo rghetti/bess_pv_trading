@@ -11,7 +11,7 @@ from matplotlib.figure import Figure
 
 from battery_case_config import battery_config, case_config, configured_battery
 from bess_pv_trading.domain import DeliveryGrid
-from bess_pv_trading.reporting.plots import plot_interval_series, plot_dispatch
+from bess_pv_trading.reporting.plots import plot_interval_series, plot_dispatch, pv_power_allocation
 from bess_pv_trading.simulation.gme_oracle import _plot_experiment, _plot_settlement
 
 
@@ -23,6 +23,7 @@ def plot_fixture():
     power = np.asarray(case["power_mw"])
     dispatch = pd.DataFrame({"start": starts, "end": ends, "pv_ac_mw": power,
         "grid_mw": power, "grid_target_mw": power,
+        "curtailment_mw": np.zeros(len(starts)),
         "charge_mw": np.zeros(len(starts)), "discharge_mw": np.zeros(len(starts)),
         "requested_charge_mw": np.zeros(len(starts)), "requested_discharge_mw": np.zeros(len(starts)),
         "energy_start_mwh": case["energy_boundaries_mwh"][:-1],
@@ -60,6 +61,16 @@ def test_mixed_interval_steps_preserve_energy_and_include_end_without_bridging_g
         plt.close(fig)
 
 
+def test_pv_allocation_excludes_grid_charging_and_battery_discharge():
+    case = case_config("pv_power_allocation")
+    dispatch = pd.DataFrame(case["input"])
+    allocation = pv_power_allocation(dispatch)
+    for column, expected in case["expected"].items():
+        np.testing.assert_allclose(allocation[column], expected)
+    np.testing.assert_allclose(allocation[list(case["expected"])].sum(axis=1),
+                               dispatch.pv_ac_mw)
+
+
 @pytest.mark.parametrize("legacy_plan", [False, True])
 def test_every_delivery_panel_reaches_midnight_and_preserves_final_soc(tmp_path, monkeypatch, legacy_plan):
     case, grid, dispatch, prices, plans = plot_fixture()
@@ -80,6 +91,16 @@ def test_every_delivery_panel_reaches_midnight_and_preserves_final_soc(tmp_path,
         "components": {"auction_revenue_eur": 0, "degradation_eur": 0, "import_fee_eur": 0}}
     _plot_settlement(tmp_path, dispatch, summary, case["timezone"])
     plot_dispatch(dispatch, prices, summary, tmp_path / "dispatch.png", timezone=case["timezone"])
+    assert "expected_dispatch_by_auction.png" not in figures
+    allocation_figure = figures["pv_power_allocation.png"]
+    assert len(allocation_figure.axes) == 1
+    stacks = allocation_figure.axes[0].containers
+    assert len(stacks) == len(case_config("pv_power_allocation")["expected"])
+    np.testing.assert_allclose(np.sum([[patch.get_height() for patch in stack]
+        for stack in stacks], axis=0), dispatch.pv_ac_mw)
+    allocation = pd.read_csv(tmp_path / "pv_power_allocation.csv")
+    np.testing.assert_allclose(allocation[["pv_to_grid_mw", "pv_to_battery_mw",
+        "pv_curtailed_mw"]].sum(axis=1), allocation.pv_ac_mw)
     for auction in prices:
         name = f"reoptimization_{auction}.png"
         assert name in figures

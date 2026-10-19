@@ -12,6 +12,38 @@
 \begin{document}
 \maketitle
 \section{Snapshot and scope}
+\paragraph{Market-resolution correction, 19 October 2026.}
+The corrected pipeline retains hourly MGP orders before 1 October 2025 but uses
+native 15-minute MI-A1/2/3 orders throughout the supported 2025 history. Battery
+commands are free each quarter-hour at all four auction optimizations. The former
+date-based hourly battery equalities were removed; only native hourly DA order
+allocations remain equal across quarters. Manual import maps MI \texttt{Periodo}
+to the chronological quarter-hour, checks DST and explicit cancellations, and
+archives/removes obsolete hourly IDA snapshots in the same database transaction
+that publishes their replacements. Missing data do not imply cancellation.
+The shared DuckDB catalog contains 21,640 native IDA prices for 1 January through
+1 April 2025 inclusive; 5,831 hourly MGP prices for January--August are preserved.
+All 1,994 unrelated snapshots retain identical catalog checksums. Replacement
+and verification reports are under \path{outputs/data_imports/gme_native_prices/}.
+Earlier January economic results used the superseded hourly IDA summaries and
+hourly battery restriction and require a new run before interpretation.
+The corrected farm 910 run is
+\texttt{gme\_nord\_oracle\_2025-01-01\_farm910\_5mwh\_native\_ida\_pt15}.
+It completed four optimal auction solves with relative MIP gap tolerance
+$10^{-4}$ and no configured absolute gap. The 5 MWh, 2.5 MW BESS starts at
+50\% SOC and ends at 72.696\%, with no terminal SOC constraint. Realized auction
+revenue is EUR 7,723.43, realized throughput degradation is EUR 112.31, and net
+profit after actual Terna imbalance settlement is EUR 7,611.12. The initial
+expected net profit was EUR 7,902.98; realized minus expected is EUR $-291.86$
+($-3.693$\%). Actual charging/discharging totals are 2.659/1.401 MWh, curtailment
+is 0.335 MWh, and residual delivery imbalances are numerical roundoff under
+grid feedback. Native-quarter orders vary within 9, 14 and 7 delivery hours
+for IDA1, IDA2 and IDA3 respectively; DA orders remain hourly constant.
+The saved \texttt{json/execution\_audit.json} independently reconciles SOC,
+AC power, PV allocation, wear, positions and cash flow and checks physical
+limits. This remains a perfect-price benchmark using one rolling PV member
+and three distinct forecast vintages.
+
 This report describes delivered code and observed executions, with machine-readable
 evidence in \path{implementation_status.json}. The repository is
 \path{/home/rghetti/bess_pv_trading}; revision \texttt{839793674af5}

@@ -70,6 +70,7 @@ class DuckDBCache:
         self.threads = threads
         self._session_connection = None
         self._session_writable = False
+        self._atomic_write_active = False
 
     def location(self, identity: Mapping[str, Any]) -> Path:
         """Return a virtual provenance locator; it is never a disk directory."""
@@ -90,6 +91,7 @@ class DuckDBCache:
             raise _error("DuckDB API storage requires python-duckdb in the bess conda environment; install it with conda after obtaining permission") from None
         connection = self._session_connection
         owns_connection = connection is None
+        transaction = transaction and not self._atomic_write_active
         if write and connection is not None and not self._session_writable:
             raise _error("Cannot write through a read-only DuckDB cache session")
         try:
@@ -153,6 +155,25 @@ class DuckDBCache:
     def batch_write(self):
         """Reuse an offline migration connection, committing each snapshot alone."""
         return self._session(write=True)
+
+    @contextmanager
+    def atomic_write(self):
+        """Commit a validated offline replacement and its snapshot removals together."""
+        if self._atomic_write_active:
+            yield self
+            return
+        with self.batch_write():
+            connection = self._session_connection
+            connection.execute("BEGIN TRANSACTION")
+            self._atomic_write_active = True
+            try:
+                yield self
+                connection.execute("COMMIT")
+            except BaseException:
+                connection.execute("ROLLBACK")
+                raise
+            finally:
+                self._atomic_write_active = False
 
     def read_session(self):
         """Reuse a read connection for bulk ingestion; never hold it over HTTP."""

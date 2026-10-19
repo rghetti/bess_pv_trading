@@ -99,9 +99,9 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     for group_index, group in enumerate(dispatch_groups):
         first = group[0]
         for index in group[1:]:
-            equality(f"historical_hourly_charge_mw_g{group_index}_t{index}", charge[:, index] - charge[:, first])
-            equality(f"historical_hourly_discharge_mw_g{group_index}_t{index}", discharge[:, index] - discharge[:, first])
-            equality(f"historical_hourly_mode_g{group_index}_t{index}", arrays["mode_charge"][:, index] - arrays["mode_charge"][:, first])
+            equality(f"configured_dispatch_charge_mw_g{group_index}_t{index}", charge[:, index] - charge[:, first])
+            equality(f"configured_dispatch_discharge_mw_g{group_index}_t{index}", discharge[:, index] - discharge[:, first])
+            equality(f"configured_dispatch_mode_g{group_index}_t{index}", arrays["mode_charge"][:, index] - arrays["mode_charge"][:, first])
     upper("poi_export_mw", grid - inputs.plant.poi_export_mw)
     upper("poi_import_mw", -grid - inputs.plant.poi_import_mw)
     if inputs.degradation.mode == "xu_segmented":

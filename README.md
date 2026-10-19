@@ -41,21 +41,29 @@ MI-A2 and MI-A3 NORD prices, month by month, without repeating the ENTSO-E DA
 download. Run one writer at a time. [GME access and storage details](docs/gme_api.md)
 distinguish documented/offline-tested parsing from pending authenticated checks.
 
-For the already downloaded January–August 2025 GME XLSX files, import them
-offline and run the configured one-day oracle benchmark:
+For the downloaded GME XLSX files, import hourly MGP prices for January–August
+2025 and native quarter-hour MI-A1/2/3 prices for 1 January–1 April 2025 inclusive,
+then run the configured one-day oracle benchmark:
 
 ```bash
 PYTHONPATH=src python -m bess_pv_trading import-gme-workbooks --config configs/api_experiments/gme_workbook_import.yaml
 PYTHONPATH=src python -m bess_pv_trading experiment-gme-oracle --config configs/full_experiments/gme_oracle_2025-01-01.yaml
 ```
 
-The run keeps historical hourly products and dispatch hourly-equal before
-October 2025, skips fully absent/cancelled auctions, and fails on partial price
-curves. Its result folder contains separate auction price plots, four expected
-dispatch plans, SOC, KPI and solver/model diagnostics. The perfect-price result
-is an oracle benchmark; the assumed imbalance price is zero until a verified
-settlement series is available. BESS and POI values in the example are clearly
-marked as illustrative and are all editable in the full-experiment YAML.
+Before October 2025, DA orders remain constant across the four quarters of each
+hour; IDA orders and battery controls can vary every 15 minutes at all four
+optimization steps. The importer validates chronological `Periodo` indices,
+daylight-saving transitions and complete daily curves. It archives and removes
+the obsolete hourly IDA snapshots while preserving MGP and other providers.
+Only documented or explicitly configured cancellations are skipped; missing
+or partial curves fail. Earlier saved January results require a new run with
+the corrected data and product resolutions.
+
+Results include auction prices, four dispatch plans, PV allocation, SOC, KPIs
+and solver/model diagnostics, grouped into subfolders by file type. The
+perfect-price result is an oracle benchmark. The farm910 throughput study
+loads actual Terna NORD quarter-hour settlement prices for post-processing.
+BESS and POI values remain configurable in the full-experiment YAML files.
 
 Completed database snapshots can be used immediately, even when the configured download window is incomplete:
 

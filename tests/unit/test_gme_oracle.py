@@ -46,3 +46,45 @@ def test_completed_dispatch_is_repriced_with_actual_imbalance_curve(tmp_path, mo
     assert result["realized_minus_expected_auction_revenue_eur"] == pytest.approx(case["expected"]["auction_revenue_mismatch_eur"])
     assert result["realized_minus_expected_auction_revenue_percent"] == pytest.approx(case["expected"]["auction_revenue_mismatch_percent"])
     assert (tmp_path / "imbalance_prices.csv").is_file()
+
+
+@pytest.mark.parametrize("ida_status", ["quarter_hour", "canceled", "missing", "hourly_config"])
+def test_native_auction_loader_separates_hourly_da_from_quarter_hour_ida(monkeypatch, ida_status):
+    import numpy as np
+    import pandas as pd
+    from pathlib import Path
+    from bess_pv_trading.config import load_config
+    from bess_pv_trading.markets import AuctionCalendar
+    from bess_pv_trading.simulation import gme_oracle
+    root = Path(__file__).resolve().parents[2]
+    config = load_config(root / "configs/full_experiments/gme_oracle_2025-01-01.yaml")
+    study = config["gme_oracle_experiment"]
+    study["auction_datasets"] = {name: spec for name, spec in study["auction_datasets"].items()
+                                 if name in ("DA", "IDA1")}
+    if ida_status == "hourly_config":
+        study["auction_datasets"]["IDA1"]["native_interval_minutes"] = 60
+    calendar = AuctionCalendar.from_config(config)
+    grid = calendar.delivery_grid(study["delivery_day"]).to_domain()
+    case = load_config(root / "tests/fixtures/configs/gme_workbook_cases.yaml")
+    price_pattern = np.asarray(case["prices_eur_mwh"])
+    def read_prices(database, *, dataset, **kwargs):
+        if dataset == "ida1_prices" and ida_status in ("canceled", "missing"):
+            return pd.DataFrame(), [{"cancelled_delivery_days": [study["delivery_day"]]
+                                     if ida_status == "canceled" else []}]
+        minutes = 60 if dataset == "day_ahead_prices" else 15
+        times = pd.date_range(grid.starts[0], grid.ends[-1], freq=f"{minutes}min", inclusive="left")
+        return pd.DataFrame({"product_start": times, "product_end": times+pd.Timedelta(minutes=minutes),
+            "native_interval_minutes": minutes, "price_eur_mwh": np.resize(price_pattern, len(times))}), []
+    monkeypatch.setattr(gme_oracle, "load_api_cache_records", read_prices)
+    if ida_status in ("missing", "hourly_config"):
+        with pytest.raises(ValueError, match="no native prices|requires native 15-minute"):
+            gme_oracle._load_auction_prices(config, calendar, grid, calendar.schedule(study["delivery_day"]))
+        return
+    actual, _, skipped = gme_oracle._load_auction_prices(config, calendar, grid,
+        calendar.schedule(study["delivery_day"]))
+    np.testing.assert_allclose(actual["DA"][:len(price_pattern)], price_pattern[0])
+    if ida_status == "canceled":
+        assert set(actual) == {"DA"}
+        assert skipped[0]["reason"] == "documented_cancelled_auction"
+    else:
+        np.testing.assert_allclose(actual["IDA1"][:len(price_pattern)], price_pattern)
