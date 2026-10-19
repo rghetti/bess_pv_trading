@@ -1,6 +1,7 @@
 """Exercise acquisition, failure recovery and source reuse against DuckDB offline."""
 
 from pathlib import Path
+import json
 
 import pytest
 
@@ -93,3 +94,25 @@ def test_storage_configuration_rejects_unknown_backend(tmp_path):
     config["api"]["storage_backend"] = "misspelled"
     with pytest.raises(api.DataAPIError, match="storage_backend"):
         api.download_from_config(config, dry_run=True)
+
+
+def test_retained_terna_no_results_reuses_duckdb_without_credentials_or_http(tmp_path, monkeypatch):
+    config = terna_configuration(tmp_path)
+    config["api"].update(storage_backend="duckdb", database_path=str(tmp_path / "market.duckdb"),
+                         start="2025-03-26", end="2025-03-27")
+    config["api"]["requests"] = [{"provider": "terna", "dataset": "wind_forecast",
+                                  "options": {"zone": "NORD", "session_type": "MSD1"}}]
+    identity = api.plan_downloads(config)[0]["identity"]
+    cache = DuckDBCache(config["api"]["database_path"])
+    payload = json.dumps({"result": {"status": "Completed", "message":
+        "No results found for the following input. Date from: 26/03/2025, date to: 26/03/2025"}}).encode()
+    cache.save_unparsed(identity, payload, "2026-01-01T12:00:00Z")
+    monkeypatch.setattr(api, "_secret", lambda *a, **k: pytest.fail("Retained response requested credentials"))
+    session = StubSession([])
+    result = api.download_from_config(config, transport=transport(session))
+    assert result["no_data_chunks"] == 1
+    assert result["status"] == "complete-with-gaps"
+    assert result["authentication_operations"] == result["data_http_operations"] == 0
+    assert not session.calls and cache.load(identity) is None
+    assert cache.load_unparsed(identity)[0] == payload
+    assert api.download_from_config(config, transport=transport(session))["items"][0]["status"] == "no-data-cached"

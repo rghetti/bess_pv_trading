@@ -28,6 +28,32 @@ def parse(payload=None, dataset="total_load", options=None):
     return parse_terna_json(payload or response(dataset), dataset, options, "2026-01-01T12:00:00Z")
 
 
+def test_explicit_dated_no_results_is_missing_data_without_invented_values():
+    payload = json.dumps({"result": {"status": "Completed", "message":
+        "No results found for the following input. Date from: 26/03/2025, date to: 26/03/2025"}})
+    frame = parse_terna_json(payload, "wind_forecast", retrieved_at="2026-01-01T12:00:00Z",
+                             requested_day="2025-03-26")
+    assert frame.empty and "value_mw" in frame
+    assert str(frame.reference_time.dt.tz) == "UTC"
+    assert frame.attrs["provider_no_data_message"].startswith("No results found")
+    with pytest.raises(MarketDataError, match="requested day"):
+        parse_terna_json(payload, "wind_forecast", retrieved_at="2026-01-01T12:00:00Z",
+                         requested_day="2025-03-27")
+
+
+@pytest.mark.parametrize("message,extra", [
+    ("OK", {}),
+    ("No results found", {}),
+    ("No results found for the following input. Date from: 31/02/2025, date to: 31/02/2025", {}),
+    ("No results found for the following input. Date from: 26/03/2025, date to: 26/03/2025",
+     {"unexpected_forecasts": [{"value": 10}]}),
+])
+def test_no_results_handling_does_not_hide_other_schema_errors(message, extra):
+    payload = json.dumps({"result": {"status": "Completed", "message": message}, **extra})
+    with pytest.raises(MarketDataError):
+        parse(payload, "wind_forecast")
+
+
 def test_observed_wind_schema_preserves_forecast_publication_and_original_field():
     """The live wind contract has its own array/value names, unlike the docs example."""
     document={"result":{"status":"Completed"},"wind_production_forecast":[{

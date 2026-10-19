@@ -130,7 +130,7 @@ def parse_token(payload: bytes | str) -> tuple[str, int]:
 
 # Retain the provider's source labels, dimensions, and provenance on every row.
 def parse_terna_json(payload: bytes | str, dataset: str, options: Mapping[str, Any] | None = None,
-                     retrieved_at: Any = None) -> pd.DataFrame:
+                     retrieved_at: Any = None, *, requested_day: str | None = None) -> pd.DataFrame:
     """Normalize documented responses; missing publication clocks remain unknown.
 
     Explicit interval options are study declarations, not facts established by
@@ -162,6 +162,23 @@ def parse_terna_json(payload: bytes | str, dataset: str, options: Mapping[str, A
             array_name=present[0]
             value_field=variants[array_name]
     records = document.get(array_name)
+    no_results = None
+    if array_name not in document and set(document) == {"result"}:
+        # Observed Terna absence responses omit the array entirely. Recognize
+        # only the explicit dated message, preserving other schema failures.
+        no_results = re.fullmatch(
+            r"No results found for the following input\. Date from: (\d{2}/\d{2}/\d{4}), date to: (\d{2}/\d{2}/\d{4})",
+            str(result.get("message", "")))
+        if no_results:
+            try:
+                first, last = (datetime.strptime(value, "%d/%m/%Y").date()
+                               for value in no_results.groups())
+            except ValueError:
+                raise MarketDataError("Terna no-results response contains invalid dates") from None
+            if first > last or (requested_day is not None and
+                                (first != date.fromisoformat(requested_day) or last != first)):
+                raise MarketDataError("Terna no-results dates differ from the requested day")
+            records = []
     if not isinstance(records, list):
         raise MarketDataError(f"Terna response is missing its supported {array_name} array")
     rows = []
@@ -222,6 +239,8 @@ def parse_terna_json(payload: bytes | str, dataset: str, options: Mapping[str, A
     if frame.duplicated(identity).any():
         raise MarketDataError("Duplicate Terna reference/zone/session/source/vintage records; no undocumented correction was applied")
     frame.attrs.update({"documentation": DOCUMENTATION[dataset], "source_array":array_name,"source_value_field":value_field,"historical_coverage": "not guaranteed by the public endpoint documentation", "pagination": "not documented; one request per configured date slice", "product_interval_semantics": "configured assumption" if interval_minutes is not None else "unresolved"})
+    if no_results:
+        frame.attrs["provider_no_data_message"] = result["message"]
     return frame.sort_values(["reference_time", "zone"], kind="stable").reset_index(drop=True)
 
 

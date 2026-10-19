@@ -634,7 +634,8 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
                 else:
                     payload,retrieved_at=reused
                 try:
-                    frame=parse_terna_json(payload,dataset=identity["dataset"],options=identity["options"],retrieved_at=retrieved_at)
+                    frame=parse_terna_json(payload,dataset=identity["dataset"],options=identity["options"],retrieved_at=retrieved_at,
+                        requested_day=identity["local_day"])
                 except ValueError as error:
                     retained_path=cache.save_unparsed(identity,payload,retrieved_at,
                         sensitive_values=[*secret_values.values(),terna_token])
