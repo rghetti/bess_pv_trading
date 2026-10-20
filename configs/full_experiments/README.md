@@ -25,6 +25,17 @@ native-price January study in a fresh `native_ida_pt15` output folder. It
 inherits the latest rolling-PV, grid-feedback, POI-bounded trade, throughput
 degradation and reoptimization settlement settings.
 
+`gme_oracle_2025-01-01_farm910_perfect_pv_comparison.yaml` adds one
+deterministic, ex-post MILP using the effective realized AC PV series and all
+actual native auction prices. It keeps the same battery, SOC box, POI, DA-hour
+equality, quarter-hour IDA products, exact delivery and throughput wear. Its
+four-panel plot compares feedback and full-information battery dispatch, PV
+curtailment and SOC, and shows the dispatch difference through the next
+midnight boundary. KPIs and solver validation are saved separately. The model
+feasible objective (`ObjVal`) is reported as the perfect-information benchmark
+and compared with feedback profit. Positive ex-post imbalance receipts are
+reported separately because they are outside that optimization objective.
+
 `gme_oracle_2025-01-01_farm910_throughput.yaml` selects the largest farm (6.638 MWp
 DC), a 5 MWh BESS with a symmetric 2.5 MW AC power limit, percentage SOC bounds,
 and a free terminal SOC. It sets `trading.optimize_imbalances: false`: forecast
@@ -120,3 +131,22 @@ Delivery-time plots include both interval boundaries, through next-day local
 hourly or quarter-hour interval; SOC uses its recorded end state, and cumulative
 settlement includes the last interval's cash flow at its end. Missing intervals
 remain gaps. Boundary drawing does not add observations or energy to the dataset.
+
+The `gme_oracle_2025-01-01_farm910_perfect_pv_comparison.yaml` study adds an
+ex-post full-day optimization using the effective realized AC PV series and
+all actual auction clearing prices, subject to the same configured assets,
+POI, market products and degradation model. This is a clairvoyant benchmark,
+not an executable strategy. Its feasible objective (`ObjVal`) is used as the
+perfect-information benchmark KPI and compared with feedback profit. Any PV
+measurement gaps use the configured execution fallback and are recorded in
+the diagnostics.
+
+Every perfect-information comparison also solves a PV-only case with zero
+BESS capacity and power, using the same realized PV, clearing prices, POI,
+auction products and terminal SOC policy. The reported battery incremental
+operating value is the PV+BESS objective minus the PV-only objective, after
+modeled battery wear and before battery capital, fixed operating and financing
+costs. A one-day ex-post value helps isolate operational contribution but does
+not by itself establish investment payback. The config
+`gme_oracle_2025-01-01_farm910_perfect_pv_comparison_terminal_soc_50.yaml`
+sets the terminal SOC target to 50%.

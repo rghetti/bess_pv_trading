@@ -1,0 +1,8 @@
+# January 1 oracle replay plus ex-post realized-PV/full-price schedule comparison.
+include: gme_oracle_2025-01-01_farm910_quarter_hour_ida.yaml
+
+gme_oracle_experiment:
+  study_id: gme_nord_oracle_2025-01-01_farm910_perfect_pv_comparison
+
+experiment_outputs:
+  run_id: gme_nord_oracle_2025-01-01_farm910_native_ida_pt15_perfect_pv_comparison

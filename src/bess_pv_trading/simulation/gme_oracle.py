@@ -1,7 +1,7 @@
 """Offline one-day GME oracle replay using manual prices and one PV vintage."""
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
@@ -14,11 +14,15 @@ from ..data import (align_forecast, config_path, load_metadata, load_observation
                     open_store, select_forecast_vintage)
 from ..data.api_catalog import load_api_cache_records
 from ..data.gme import native_price_resolution_minutes
-from ..domain import (BatteryParameters, DegradationSettings, PhysicalState, PlantParameters,
+from ..domain import (BatteryParameters, DegradationSettings, InformationNode,
+                      InformationTree, MarketState, OptimizationInput, PhysicalState,
+                      PlantParameters, ScenarioBundle, SolverSettings,
                       battery_parameters_from_config)
 from ..forecasting.pv import forecast_pv
 from ..markets import AuctionCalendar
 from ..optimization.degradation import degradation_settings_from_config
+from ..optimization.model import build_model, solve_model
+from ..optimization.validation import validate_solution
 from ..reporting.artifacts import organize_run_outputs
 from ..reporting.plots import plot_boundary_series, plot_interval_series, plot_pv_allocation
 from ..scenarios import synthetic_price_tree
@@ -148,6 +152,230 @@ def _counterfactual_reoptimization_settlement(plans, dispatch, realized_pv,
             "common_horizon_final_contract_cashflow_eur": float(
                 comparable.final_contract_imbalance_cashflow_eur.sum())})
     return pd.DataFrame(summaries), details
+
+
+def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_prices,
+                                        effective_pv, initial_energy, destination,
+                                        *, artifact_name="perfect_pv_counterfactual",
+                                        degradation_settings=None):
+    """Solve the ex-post market MILP with effective PV and clearing prices known.
+
+    The single deterministic scenario is intentionally clairvoyant. It retains
+    the study's battery, POI, efficiencies, degradation, SOC and auction-product
+    constraints, and removes forecast and price uncertainty. Its objective is an
+    perfect-information feasible incumbent for the configured model; the
+    solver's objective bound is retained separately as optimality context.
+    """
+    intervals = len(grid.interval_ids)
+    prices = {auction: np.asarray(curve, dtype=float).reshape(1, intervals)
+              for auction, curve in actual_prices.items()}
+    eligibility = {}
+    eligible_indices = {}
+    for event in schedule:
+        mask = np.zeros(intervals, dtype=bool)
+        mask[list(event.eligible_intervals)] = True
+        eligibility[event.auction] = tuple(bool(value) for value in mask)
+        eligible_indices[event.auction] = np.flatnonzero(mask).tolist()
+
+    root_cutoff = min([pd.Timestamp(grid.starts[0]),
+                       *(event.submission_at for event in schedule)])
+    root = InformationNode("perfect_information", None, root_cutoff.to_pydatetime())
+    scenario = ScenarioBundle(
+        scenario_ids=("realized_full_information",),
+        probabilities=np.ones(1),
+        pv_ac_mw=np.asarray(effective_pv, dtype=float).reshape(1, intervals),
+        auction_prices_eur_per_mwh=prices,
+        imbalance_prices_eur_per_mwh=np.zeros((1, intervals)),
+        origin="ex_post_perfect_information_PV_and_auction_prices",
+        provenance={
+            "counterfactual": "clairvoyant schedule with effective execution PV and all actual clearing prices",
+            "information_available_at": "ex post only; this is not a causal or executable schedule",
+            "auction_eligible_product_indices": eligible_indices,
+            "pv_source": "same measured AC series and configured missing-measurement fallback used by execution",
+        })
+    tree = InformationTree(
+        nodes=(root,), leaf_nodes=(root.node_id,),
+        bid_nodes={event.auction: (root.node_id,) for event in schedule},
+        control_nodes=(tuple([root.node_id] * intervals),))
+    state = PhysicalState(grid.starts[0], initial_energy,
+        origin=config["state"].get("origin", "known_delivery_start_assumption"))
+    study = config["gme_oracle_experiment"]
+    trade = config["trading"]
+    inputs = OptimizationInput(
+        grid=grid, plant=plant, state=state, market=MarketState(),
+        scenarios=scenario, tree=tree, auction_eligibility=eligibility,
+        imbalance_penalty_eur_per_mwh=float(trade["imbalance_penalty_eur_per_mwh"]),
+        terminal_target_mwh=config["state"]["terminal_target_mwh"],
+        degradation=(degradation_settings if degradation_settings is not None
+                     else degradation_settings_from_config(config)),
+        grid_import_fee_eur_per_mwh=float(trade["grid_import_fee_eur_per_mwh"]),
+        imbalance_limit_mwh=trade.get("imbalance_limit_mwh"),
+        decision_resolution_minutes=int(study["decision_resolution_minutes"]),
+        market_timezone=study["timezone"],
+        native_interval_minutes_by_auction={auction: int(study["auction_datasets"][auction]["native_interval_minutes"])
+            for auction in actual_prices},
+        planned_delivery_balance_resolution_minutes=trade.get("planned_delivery_balance_resolution_minutes"),
+        optimize_imbalances=bool(trade.get("optimize_imbalances", True)))
+
+    save_model = bool(config["experiment_outputs"].get("save_model_files", True))
+    model_file = destination / "models" / f"{artifact_name}.lp" if save_model else None
+    settings = SolverSettings(**{**config["solver"],
+        "export_path": str(model_file) if model_file is not None else None})
+    built = build_model(inputs)
+    try:
+        result = solve_model(built, settings)
+    finally:
+        built.model.dispose()
+    if not result.has_incumbent:
+        raise RuntimeError(f"Perfect-information PV benchmark failed: {result.status}: {result.message}")
+    validation = validate_solution(inputs, result)
+    if not validation.valid:
+        raise RuntimeError(f"Perfect-information solution failed independent validation: {validation.violations}")
+
+    rows = []
+    for index, interval_id in enumerate(grid.interval_ids):
+        row = {
+            "interval_id": interval_id,
+            "start_utc": grid.starts[index].isoformat(),
+            "end_utc": grid.ends[index].isoformat(),
+            "duration_hours": float(grid.delta_hours[index]),
+            "pv_ac_mw": float(scenario.pv_ac_mw[0, index]),
+            "pv_injection_mw": float(result.arrays["pv_injection_mw"][0, index]),
+            "charge_mw": float(result.arrays["charge_mw"][0, index]),
+            "discharge_mw": float(result.arrays["discharge_mw"][0, index]),
+            "net_battery_dispatch_mw": float(result.arrays["discharge_mw"][0, index]
+                                               - result.arrays["charge_mw"][0, index]),
+            "curtailment_mw": float(result.arrays["curtailment_mw"][0, index]),
+            "grid_mw": float(result.arrays["grid_mw"][0, index]),
+            "net_position_mwh": float(result.arrays["net_position_mwh"][0, index]),
+            "soc_start_mwh": float(result.arrays["energy_mwh"][0, index]),
+            "soc_end_mwh": float(result.arrays["energy_mwh"][0, index + 1]),
+            "throughput_mwh": float((result.arrays["charge_mw"][0, index]
+                                      + result.arrays["discharge_mw"][0, index])
+                                     * grid.delta_hours[index]),
+        }
+        for auction in actual_prices:
+            quantity = result.trades.get((auction, root.node_id, interval_id), 0.0)
+            row[f"{auction}_trade_mwh"] = float(quantity)
+            row[f"{auction}_revenue_eur"] = float(quantity * actual_prices[auction][index])
+        rows.append(row)
+
+    diagnostics = {
+        "status": result.status,
+        "objective_eur": result.objective_eur,
+        "components": {key: float(values[0]) for key, values in result.components.items()},
+        "validation": {"valid": validation.valid,
+                       "max_errors": dict(validation.max_errors),
+                       "violations": list(validation.violations)},
+        **result.diagnostics,
+        "model_file": str(model_file) if model_file is not None else None,
+        "scenario_origin": scenario.origin,
+        "asset_case": artifact_name,
+        "objective_interpretation": "maximum configured-market objective under full ex-post PV and actual-price information",
+    }
+    return pd.DataFrame(rows), diagnostics
+
+
+def _plot_perfect_information_schedule(destination, grid, feedback, perfect,
+                                      battery, timezone, *, objective_eur,
+                                      feedback_profit_eur):
+    """Compare optimal and executed dispatch/SOC through the delivery boundary."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    starts = pd.DatetimeIndex(grid.starts).tz_convert(timezone)
+    ends = pd.DatetimeIndex(grid.ends).tz_convert(timezone)
+    feedback_net = (feedback.discharge_mw - feedback.charge_mw).to_numpy(dtype=float)
+    perfect_net = perfect.net_battery_dispatch_mw.to_numpy(dtype=float)
+    difference = perfect_net - feedback_net
+    fig, axes = plt.subplots(4, 1, figsize=(13, 12), sharex=True,
+                             gridspec_kw={"height_ratios": [1.1, 0.8, 1.1, 0.75]},
+                             layout="constrained")
+    plot_interval_series(axes[0], starts, ends, feedback_net,
+        color="black", linewidth=1.8, label="Executed grid-feedback dispatch")
+    plot_interval_series(axes[0], starts, ends, perfect_net,
+        color="tab:blue", linewidth=1.6, linestyle="--",
+        label="Full-information optimal dispatch")
+    axes[0].set_ylabel("Battery MW AC\npositive = discharge")
+
+    plot_interval_series(axes[1], starts, ends, feedback.curtailment_mw,
+        color="black", linewidth=1.5, label="Feedback PV curtailment")
+    plot_interval_series(axes[1], starts, ends, perfect.curtailment_mw,
+        color="tab:orange", linewidth=1.5, linestyle="--",
+        label="Full-information PV curtailment")
+    axes[1].set_ylabel("PV curtailment\nMW AC")
+
+    scale = 100 / battery.capacity_mwh
+    plot_boundary_series(axes[2], starts, ends,
+        feedback.energy_start_mwh.to_numpy(dtype=float) * scale,
+        feedback.energy_end_mwh.to_numpy(dtype=float) * scale,
+        color="black", linewidth=1.8, label="Executed SOC")
+    plot_boundary_series(axes[2], starts, ends,
+        perfect.soc_start_mwh.to_numpy(dtype=float) * scale,
+        perfect.soc_end_mwh.to_numpy(dtype=float) * scale,
+        color="tab:blue", linewidth=1.6, linestyle="--",
+        label="Full-information SOC")
+    axes[2].axhline(battery.energy_min_mwh / battery.capacity_mwh * 100,
+                    color="grey", linewidth=0.8, linestyle=":")
+    axes[2].axhline(battery.maximum_energy / battery.capacity_mwh * 100,
+                    color="grey", linewidth=0.8, linestyle=":")
+    axes[2].set_ylabel("SOC (%)")
+    axes[2].set_ylim(0, 100)
+
+    axes[3].bar(starts, difference, width=ends - starts, align="edge",
+                color=np.where(difference >= 0, "tab:blue", "tab:orange"), linewidth=0,
+                label="Full-information minus feedback")
+    axes[3].axhline(0, color="black", linewidth=0.8)
+    axes[3].set_ylabel("Optimal − executed\nbattery MW")
+    axes[3].set_xlabel(f"Delivery time ({timezone})")
+    for axis in axes:
+        axis.grid(alpha=0.2)
+        axis.legend(loc="best")
+        axis.set_xlim(starts[0], ends[-1])
+    axes[0].set_title(
+        "Ex-post perfect-information schedule: "
+        f"€{objective_eur:,.2f} objective vs €{feedback_profit_eur:,.2f} feedback profit")
+    fig.savefig(destination, dpi=150)
+    plt.close(fig)
+
+
+def _plot_battery_incremental_value(destination, grid, bess, pv_only, timezone,
+                                    *, bess_objective_eur, pv_only_objective_eur):
+    """Compare ex-post optimal plant schedules with and without storage."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    starts = pd.DatetimeIndex(grid.starts).tz_convert(timezone)
+    ends = pd.DatetimeIndex(grid.ends).tz_convert(timezone)
+    incremental_value = bess_objective_eur - pv_only_objective_eur
+    fig, axes = plt.subplots(3, 1, figsize=(13, 9), sharex=True,
+                             layout="constrained")
+    plot_interval_series(axes[0], starts, ends, bess.grid_mw,
+        color="tab:blue", linewidth=1.6, label="PV + BESS")
+    plot_interval_series(axes[0], starts, ends, pv_only.grid_mw,
+        color="tab:orange", linewidth=1.5, linestyle="--", label="PV only")
+    axes[0].set_ylabel("Grid schedule\nMW (+ export)")
+    plot_interval_series(axes[1], starts, ends, bess.curtailment_mw,
+        color="tab:blue", linewidth=1.5, label="PV + BESS curtailment")
+    plot_interval_series(axes[1], starts, ends, pv_only.curtailment_mw,
+        color="tab:orange", linewidth=1.5, linestyle="--", label="PV-only curtailment")
+    axes[1].set_ylabel("PV curtailment\nMW")
+    plot_interval_series(axes[2], starts, ends, bess.net_battery_dispatch_mw,
+        color="tab:green", linewidth=1.5, label="BESS dispatch (+ discharge)")
+    axes[2].axhline(0, color="black", linewidth=0.7)
+    axes[2].set_ylabel("Battery dispatch\nMW")
+    axes[2].set_xlabel(f"Delivery time ({timezone})")
+    for axis in axes:
+        axis.grid(alpha=0.2)
+        axis.legend(loc="best")
+        axis.set_xlim(starts[0], ends[-1])
+    axes[0].set_title(
+        f"Perfect-information operating value of storage: €{incremental_value:,.2f} "
+        f"(PV + BESS €{bess_objective_eur:,.2f}; PV only €{pv_only_objective_eur:,.2f})")
+    fig.savefig(destination, dpi=150)
+    plt.close(fig)
 
 
 def _plot_settlement(destination, dispatch, summary, timezone):
@@ -669,6 +897,12 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     if day_output.exists():
         raise FileExistsError(f"Experiment output exists; choose a fresh run_id: {day_output}")
     day_output.mkdir(parents=True, exist_ok=False)
+    for folder in ("csv", "json"):
+        (day_output / folder).mkdir()
+    if config["experiment_outputs"].get("plots", True):
+        (day_output / "plots").mkdir()
+    if config["experiment_outputs"].get("save_model_files", True):
+        (day_output / "models").mkdir()
     oracle_dir = day_output / "oracle"
     summary = _replay_strategy(config, fixture, "oracle", oracle_dir)
     dispatch = pd.read_csv(oracle_dir / "dispatch.csv")
@@ -691,6 +925,77 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
             day_output / "reoptimization_imbalance_settlements.csv", index=False)
         reoptimization_settlement_intervals.to_csv(
             day_output / "reoptimization_imbalance_intervals.csv", index=False)
+    perfect_schedule, perfect_diagnostics = _solve_perfect_information_schedule(
+        config, grid, plant, schedule, actual_prices, realized_pv,
+        initial_energy, day_output)
+    no_bess = replace(battery, capacity_mwh=0.0, max_power_mw=0.0,
+                      energy_min_mwh=0.0, energy_max_mwh=0.0)
+    no_bess_plant = replace(plant, battery=no_bess)
+    no_bess_config = {**config, "state": {**config["state"], "terminal_target_mwh": 0.0}}
+    pv_only_schedule, pv_only_diagnostics = _solve_perfect_information_schedule(
+        no_bess_config, grid, no_bess_plant, schedule, actual_prices, realized_pv,
+        0.0, day_output, artifact_name="perfect_pv_only_counterfactual",
+        degradation_settings=DegradationSettings(0.0))
+    pv_only_objective = float(pv_only_diagnostics["objective_eur"])
+    battery_incremental_value = float(perfect_diagnostics["objective_eur"]) - pv_only_objective
+    perfect_schedule = perfect_schedule.merge(
+        pv_only_schedule[["interval_id", "grid_mw", "curtailment_mw"]].rename(columns={
+            "grid_mw": "pv_only_grid_mw", "curtailment_mw": "pv_only_curtailment_mw"}),
+        on="interval_id", how="left", validate="one_to_one")
+    pv_only_diagnostics.update({
+        "comparison_case": "PV-only plant with zero battery capacity and power",
+        "compared_with_pv_bess_objective_eur": float(perfect_diagnostics["objective_eur"]),
+        "incremental_pv_bess_value_eur": battery_incremental_value,
+        "comparison_basis": "same effective realized PV, actual auction prices, POI, auction products, terminal target policy, and objective accounting"})
+    perfect_diagnostics.update({
+        "pv_only_objective_eur": pv_only_objective,
+        "incremental_battery_operating_value_eur": battery_incremental_value,
+        "incremental_value_interpretation": "PV+BESS perfect-information objective minus PV-only perfect-information objective; after modeled battery degradation and before battery capital, fixed operating, and financing costs"})
+    feedback_schedule = dispatch[["interval_id", "charge_mw", "discharge_mw",
+        "curtailment_mw", "grid_mw", "net_position_mwh", "energy_start_mwh",
+        "energy_end_mwh"]].rename(columns={
+            "charge_mw": "feedback_charge_mw",
+            "discharge_mw": "feedback_discharge_mw",
+            "curtailment_mw": "feedback_curtailment_mw",
+            "grid_mw": "feedback_grid_mw",
+            "net_position_mwh": "feedback_net_position_mwh",
+            "energy_start_mwh": "feedback_soc_start_mwh",
+            "energy_end_mwh": "feedback_soc_end_mwh"})
+    perfect_schedule = perfect_schedule.merge(feedback_schedule, on="interval_id",
+                                                how="left", validate="one_to_one")
+    perfect_schedule["battery_dispatch_difference_mw"] = (
+        perfect_schedule.net_battery_dispatch_mw
+        - (perfect_schedule.feedback_discharge_mw - perfect_schedule.feedback_charge_mw))
+    perfect_schedule["curtailment_difference_mw"] = (
+        perfect_schedule.curtailment_mw - perfect_schedule.feedback_curtailment_mw)
+    perfect_objective = float(perfect_diagnostics["objective_eur"])
+    feedback_profit = float(summary.get("realized_profit_after_imbalance_eur")
+        if summary.get("realized_profit_after_imbalance_eur") is not None
+        else summary["profit_before_imbalance_settlement_eur"])
+    perfect_profit_gap = perfect_objective - feedback_profit
+    feasible_incumbent_gap = perfect_objective - feedback_profit
+    perfect_fallback_intervals = int(pv_provenance["realized_power_missing_fallback_intervals"])
+    perfect_diagnostics.update({
+        "feedback_realized_profit_eur": feedback_profit,
+        "feasible_incumbent_objective_eur": perfect_objective,
+        "objective_minus_feedback_profit_eur": perfect_profit_gap,
+        "feasible_incumbent_minus_feedback_profit_eur": feasible_incumbent_gap,
+        "comparison_scope": "feasible perfect-information incumbent compared with feedback-controller realized profit under the same configured assets, POI, auction products, effective PV trajectory and actual auction prices",
+        "effective_pv_fallback_intervals": perfect_fallback_intervals})
+    perfect_schedule.to_csv(day_output / "csv/perfect_pv_counterfactual_schedule.csv", index=False)
+    pv_only_schedule.to_csv(day_output / "csv/perfect_pv_only_counterfactual_schedule.csv", index=False)
+    write_json(day_output / "json/perfect_pv_counterfactual.json", perfect_diagnostics)
+    write_json(day_output / "json/perfect_pv_only_counterfactual.json", pv_only_diagnostics)
+    if config["outputs"]["plots"]:
+        _plot_perfect_information_schedule(
+            day_output / "plots/perfect_pv_counterfactual_comparison.png",
+            grid, dispatch, perfect_schedule, battery, study["timezone"],
+            objective_eur=perfect_objective, feedback_profit_eur=feedback_profit)
+        _plot_battery_incremental_value(
+            day_output / "plots/perfect_pv_battery_incremental_value.png",
+            grid, perfect_schedule, pv_only_schedule, study["timezone"],
+            bess_objective_eur=perfect_objective,
+            pv_only_objective_eur=pv_only_objective)
     eligibility = {}
     for event in schedule:
         mask = np.zeros(len(grid.interval_ids), dtype=bool)
@@ -783,6 +1088,22 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
             "realized_minus_expected_profit_eur", "realized_minus_expected_profit_percent",
             "realized_minus_expected_auction_revenue_eur", "realized_minus_expected_auction_revenue_percent")},
         "auction_revenue_eur": float(summary["components"]["auction_revenue_eur"]),
+        "perfect_information_objective_eur": perfect_objective,
+        "perfect_information_profit_gap_eur": perfect_profit_gap,
+        "perfect_information_feasible_objective_eur": perfect_objective,
+        "perfect_information_feasible_profit_gap_eur": feasible_incumbent_gap,
+        "perfect_information_objective_label": "feasible perfect-information incumbent objective (Gurobi ObjVal)",
+        "pv_only_perfect_information_objective_eur": pv_only_objective,
+        "battery_incremental_operating_value_eur": battery_incremental_value,
+        "battery_incremental_value_basis": "PV+BESS objective minus PV-only objective after modeled degradation and before battery capital, fixed operating, and financing costs",
+        "pv_only_model_status": pv_only_diagnostics["status"],
+        "pv_only_model_variables": pv_only_diagnostics.get("variables"),
+        "pv_only_model_constraints": pv_only_diagnostics.get("constraints"),
+        "perfect_information_realized_pv_fallback_intervals": perfect_fallback_intervals,
+        "perfect_information_model_status": perfect_diagnostics["status"],
+        "perfect_information_model_variables": perfect_diagnostics.get("variables"),
+        "perfect_information_model_constraints": perfect_diagnostics.get("constraints"),
+        "perfect_information_model_mip_gap": perfect_diagnostics.get("mip_gap"),
         "imbalance_cashflow_eur_assumed": float(summary["components"].get("imbalance_cashflow_eur_assumed",
             summary["components"]["imbalance_cashflow_eur"])),
         "imbalance_penalty_eur": float(summary["components"]["imbalance_penalty_eur"]),
@@ -869,6 +1190,20 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
             "oracle/summary.json",
             "oracle/dispatch.csv", "oracle/expected_dispatch_plans.csv", "oracle/ledger.csv",
             "oracle/solves.json", "oracle/price_publications.json"]}
+    manifest["artifacts"].extend([
+        "csv/perfect_pv_counterfactual_schedule.csv",
+        "json/perfect_pv_counterfactual.json",
+        "csv/perfect_pv_only_counterfactual_schedule.csv",
+        "json/perfect_pv_only_counterfactual.json",
+        "models/perfect_pv_counterfactual.lp",
+        "models/perfect_pv_only_counterfactual.lp"] if config["experiment_outputs"].get("save_model_files", True) else [
+        "csv/perfect_pv_counterfactual_schedule.csv",
+        "json/perfect_pv_counterfactual.json",
+        "csv/perfect_pv_only_counterfactual_schedule.csv",
+        "json/perfect_pv_only_counterfactual.json"])
+    if config["outputs"]["plots"]:
+        manifest["artifacts"].extend(["plots/perfect_pv_counterfactual_comparison.png",
+                                       "plots/perfect_pv_battery_incremental_value.png"])
     manifest["artifacts"].extend(
         f"reoptimization_{auction}.png" for auction in actual_prices
         if (day_output / f"reoptimization_{auction}.png").exists())

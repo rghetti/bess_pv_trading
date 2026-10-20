@@ -1,0 +1,11 @@
+# January 1 comparison with initial and terminal SOC fixed at 50%.
+include: gme_oracle_2025-01-01_farm910_perfect_pv_comparison.yaml
+
+gme_oracle_experiment:
+  study_id: gme_nord_oracle_2025-01-01_farm910_perfect_pv_comparison_terminal_soc_50_pv_only_baseline
+
+experiment_outputs:
+  run_id: gme_nord_oracle_2025-01-01_farm910_native_ida_pt15_perfect_pv_comparison_terminal_soc_50_pv_only_baseline
+
+state:
+  terminal_soc_percent: 50.0
