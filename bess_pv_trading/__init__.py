@@ -2,8 +2,8 @@
 
 from pathlib import Path
 
-# Prefer the new application while retaining the original audit modules.
-_source_package = Path(__file__).resolve().parents[1] / "src" / "bess_pv_trading"
+# Load the application directly from src while retaining the original audit modules.
+_source_package = Path(__file__).resolve().parents[1] / "src"
 if _source_package.is_dir():
     __path__.insert(0, str(_source_package))
 

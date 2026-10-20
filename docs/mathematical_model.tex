@@ -1,0 +1,874 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=23mm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,booktabs,longtable,array}
+\usepackage{xurl}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue]{hyperref}
+\hypersetup{pdftitle={PV and Battery Trading: Current Mathematical Model},pdfauthor={bess pv trading repository}}
+\usepackage{enumitem}
+\setlist{itemsep=3pt,topsep=5pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\setlength{\emergencystretch}{3em}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\pos}[1]{\left[#1\right]_+}
+\DeclareMathOperator{\clip}{clip}
+\title{PV and Battery Trading in MGP and MI Auctions\\Current Mathematical Model and Execution Workflow}
+\author{\texttt{bess\_pv\_trading} repository}
+\date{Implementation reviewed on 20 October 2026}
+\begin{document}
+\maketitle
+\begin{abstract}
+This document describes the implemented optimization and execution system for a
+single photovoltaic farm and an AC-coupled battery sharing one point of
+interconnection. It distinguishes auction plans, immutable market commitments,
+physical feedback execution, and ex-post settlement. The shared Gurobi formulation
+supports a risk-neutral scenario tree. The current historical January experiment
+instead uses one deterministic rolling weather forecast and perfect auction-price
+information, followed by execution against measured AC production. Separate
+full-information PV+BESS and PV-only optimizations quantify an ex-post operating
+value of storage. Equations below follow the current source code; they are not a
+proposal or a claim of a fully causal historical trading strategy.
+\end{abstract}
+\tableofcontents
+\newpage
+
+\section{Scope and implementation map}
+
+One farm has PV generation, an AC-coupled BESS, and a common AC grid connection.
+There is no local electricity demand. PV can be exported, stored, or curtailed;
+the battery can charge from PV or grid imports and discharge toward the grid.
+The market sequence is MGP (called DA in code), MI-A1, MI-A2, and MI-A3 (IDA1,
+IDA2, IDA3). Every submitted signed quantity is assumed to execute in full at the
+auction clearing price. Bid prices, acceptance uncertainty, market impact, and
+continuous intraday trading are outside this formulation.
+
+The implementation has three distinct objects:
+\begin{enumerate}
+\item An optimization plan, which includes the current actionable auction order,
+future auction recourse, and a battery/PV schedule over the remaining horizon.
+\item An immutable commitment ledger, updated at submission and publication.
+\item A physical trajectory produced by a feedback/protection policy using
+realized interval-average PV. Its energy, wear, and deviations are settled
+separately from the optimization objective.
+\end{enumerate}
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.40\textwidth}>{\raggedright\arraybackslash}p{0.53\textwidth}}
+\toprule Source & Responsibility \\
+\midrule\endhead
+\path{src/bess_pv_trading/domain.py} & Validated grids, assets, scenarios, information nodes, states and solver contracts.\\
+\path{src/bess_pv_trading/optimization/model.py} & Physical, trading, product-resolution, optional imbalance constraints and objective.\\
+\path{src/bess_pv_trading/optimization/degradation.py} & Throughput coefficient and segmented cycle-depth model.\\
+\path{src/bess_pv_trading/optimization/validation.py} & Numerical validation independent of the solver constraint objects.\\
+\path{src/bess_pv_trading/simulation/synthetic.py} & Shared event replay and auction submission/publication accounting.\\
+\path{src/bess_pv_trading/simulation/replay.py} & Residual scenario conditioning and bounded physical execution.\\
+\path{src/bess_pv_trading/simulation/gme_oracle.py} & Manual-data historical price oracle, rolling PV and full-information asset comparisons.\\
+\path{src/bess_pv_trading/simulation/settlement.py} & Exact-grid actual settlement and expected/realized KPI reconciliation.\\
+\path{src/bess_pv_trading/forecasting/pv.py} & Weather-to-AC PV conversion.\\
+\path{src/bess_pv_trading/markets.py} & Configurable local auction gates, publication events and DST-aware delivery grids.\\
+\bottomrule
+\end{longtable}
+
+\section{Time, units, signs and information}
+
+\subsection{Delivery intervals and auction products}
+A local delivery day is partitioned into physical intervals
+$\mathcal T=\{0,\ldots,T-1\}$, with starts $\tau_t$, ends $\tau_{t+1}$ and durations
+\begin{equation}
+ \Delta_t=(\tau_{t+1}-\tau_t)/\text{one hour}.
+\end{equation}
+The historical study uses quarter-hours, so $\Delta_t=0.25$. A local day is
+constructed between successive midnights in \texttt{Europe/Rome}, then stored in
+UTC: $T$ is 92, 96, or 100 for spring-DST, ordinary, or autumn-DST days. Repeated
+local hours are distinguished by their actual UTC offset/fold. No equation
+assumes that every day has exactly 24 elapsed hours.
+
+A physical interval is not necessarily an independent market product. Before
+1 October 2025, DA products are hourly; the MI auctions in the current 2025
+history are already quarter-hourly. Physical battery controls are quarter-hourly
+at all four optimization stages. For the four equal-duration quarters of one
+native DA hour $h$, the implementation enforces
+\begin{equation}\label{eq:hourly}
+ q_{\mathrm{DA},n,t}=q_{\mathrm{DA},n,t'}\quad(t,t'\in h).
+\end{equation}
+These are equal MWh shares of one hourly order, whose total is
+$\sum_{t\in h}q_{\mathrm{DA},n,t}$. The hourly clearing price is repeated as an
+objective coefficient on those shares. The quarters do not become separate DA
+trades or separate observed prices. There is no corresponding date-based
+hourly equality on battery charging or discharging. Native product resolution
+and optional physical-control grouping are separate configuration fields.
+
+The current study's configured local calendar is:
+\begin{center}
+\begin{tabular}{llll}
+\toprule Auction & Gate & Results time used & Eligible delivery \\
+\midrule
+DA & D$-1$ 12:00 & D$-1$ 13:30 & Whole day D\\
+IDA1 & D$-1$ 15:00 & D$-1$ 15:30 & Whole day D\\
+IDA2 & D$-1$ 22:00 & D$-1$ 22:30 & Whole day D\\
+IDA3 & D 10:00 & D 10:30 & D 12:00 onward\\
+\bottomrule
+\end{tabular}
+\end{center}
+Submissions are planned five minutes before the gate in the supplied study.
+These times, date validity, result-time provenance and cancellations are explicit
+YAML settings. In particular, the historical DA publication time is a study
+assumption. Gate time and the start of IDA3 delivery are different events.
+Recorded publication timestamps can override configured times.
+
+An auction $a$ has an eligibility set $\mathcal T_a$. A documented/configured
+cancellation removes that auction from the active set. Missing data alone does
+not establish a cancellation: unexplained missing or incomplete curves fail
+validation. Absent auctions create no trade variables and no submission solve.
+
+\subsection{Notation and electrical basis}
+\begin{longtable}{p{0.20\textwidth}p{0.17\textwidth}p{0.54\textwidth}}
+\toprule Symbol & Unit & Meaning \\
+\midrule\endhead
+$E$ & MWh & Nominal internal stored-energy capacity.\\
+$E^{\min},E^{\max}$ & MWh & Operational energy limits derived from SOC percentages.\\
+$\overline P$ & MW AC & One symmetric battery charging/discharging rating.\\
+$P^{\rm imp},P^{\rm exp}$ & MW AC & Directional shared POI ratings.\\
+$\eta_c,\eta_d$ & fraction & Complete AC-bus-to-storage and storage-to-AC efficiencies.\\
+$\sigma$ & fraction/hour & Configured hourly self-discharge fraction.\\
+$V_{s,t}$ & MW AC & Forecast available PV in scenario $s$.\\
+$\widetilde V_t$ & MW AC & Effective realized PV used for execution.\\
+$c_{n,t},d_{n,t}$ & MW AC & Battery charge/discharge commands at information node $n$.\\
+$u_{n,t}$ & MW AC & PV curtailment.\\
+$i_{s,t}$ & MW AC & Uncurtailed PV injection into the common AC bus.\\
+$g_{s,t}$ & MW AC & Net grid exchange; positive is export, negative is import.\\
+$e_{s,t}$ & MWh & Internal battery energy at an interval boundary.\\
+$q_{a,n,t}$ & MWh & Signed auction adjustment; positive sale, negative purchase.\\
+$Q_{s,t}$ & MWh & Final cumulative contracted delivery position.\\
+$\pi_{a,s,t}$ & EUR/MWh & Auction-price coefficient for interval $t$.\\
+$w_s$ & fraction & Scenario probability, summing to one.\\
+\bottomrule
+\end{longtable}
+
+Power variables are AC at the common bus/POI. Battery energy is internal stored
+energy. Nameplate PV capacity is DC; measured historical \texttt{power} is already
+AC kW, converted once to MW. A separate PV-output/transformer conversion is used
+only when predicting AC PV from modeled DC. BESS efficiency is not applied to
+measured PV or direct PV exports.
+
+\subsection{Forecast vintages and observability}
+A weather forecast cycle $v$ has source time $t_v$ and availability time $A_v$.
+Without explicit source publication times, the configured convention is
+$A_v=t_v+4$ hours. At decision cutoff $k$, the rolling policy chooses the latest
+eligible cycle with $A_v\le k$ and required remaining-horizon coverage. Weather
+cycles about six hours apart are successive forecast vintages, not ensemble
+members. The current dataset supplies one deterministic weather member.
+
+Measured interval-average PV becomes available after interval end plus configured
+telemetry delay. A forecast for future intervals is not replaced by future
+realized power in the ordinary auction replay. If a decision occurs inside an
+unfinished quarter-hour, the next boundary state is projected through that
+interval with forecast PV and the same execution policy. Its final realized
+average cannot yet be observed. The hindsight counterfactuals deliberately have
+future PV and price information and are labeled as such.
+
+Policy-treated observations carry evidence times. Plateau evidence can require
+later samples; two-sided interpolation requires its right endpoint and applicable
+mask evidence. A finalized corrected time series therefore differs from the
+as-of view available to a past decision. This remains relevant even when a study
+uses actual-price foresight.
+
+\section{PV power from weather forecasts}
+
+\subsection{Irradiance and orientation}
+The input mappings declare forecast shortwave radiation as GHI and direct
+radiation as horizontal beam irradiance (BHI), with the latter an explicit
+working assumption. Hourly radiation means are end-labelled and redistributed
+uniformly over contained quarters. Other fields follow their declared
+instantaneous/accumulation semantics rather than the same blanket interpolation.
+Solar geometry is evaluated at each quarter-hour midpoint using configured
+coordinates and farm elevation.
+
+For eligible irradiance data,
+\begin{equation}
+ G_{\rm DHI}=G_{\rm GHI}-G_{\rm BHI},\qquad
+ G_{\rm DNI}=\frac{G_{\rm BHI}}{\cos\theta_z}
+ \quad\text{away from the low-sun cutoff}.
+\end{equation}
+The code uses pvlib's DNI helper with configured low-sun handling and a finite
+DNI cap or invalidation rule. BHI exceeding GHI is either invalidated or explicitly
+clipped and flagged. Optional Erbs decomposition can replace missing/unusable
+direct input under its declared conditions; it is not a general repair of
+contradictory source values.
+
+Fixed arrays use metadata tilt and a declared source-to-pvlib azimuth conversion.
+Tracking IDs 1 and 3 use \texttt{pvlib.tracking.singleaxis} with configurable axis
+tilt, axis azimuth, rotation limit, backtracking and ground-coverage ratio. Type
+3 currently requires the explicit front-side-only approximation; rear-side
+bifacial gain is omitted. The current geometry uses an acknowledged Milan
+location proxy rather than verified farm coordinates.
+
+With panel tilt $\beta$, incidence angle $\alpha$ and ground albedo $a$, the
+isotropic transposition can be written
+\begin{equation}
+ G_{\rm POA}=G_{\rm DNI}\pos{\cos\alpha}
+   +G_{\rm DHI}\frac{1+\cos\beta}{2}
+   +aG_{\rm GHI}\frac{1-\cos\beta}{2}.
+\end{equation}
+
+\subsection{Temperature, DC output and AC conversion}
+Wind speed is the magnitude of the configured horizontal wind components,
+$v=\sqrt{v_u^2+v_v^2}$. The Faiman temperature model is
+\begin{equation}
+ T_{\rm mod}=T_{\rm air}+\frac{G_{\rm POA}}{U_0+U_1 v}.
+\end{equation}
+The supplied wind height is explicitly acknowledged as a module-wind proxy.
+The resulting temperature is passed to pvlib's PVWatts DC calculation:
+\begin{equation}
+ P_{\rm DC}=\max\left\{0,\ P_{\rm DC,STC}
+ \frac{G_{\rm POA}}{1000}
+ \left[1+\gamma(T_{\rm mod}-T_{\rm ref})\right]\right\}.
+\end{equation}
+DC power is scaled to AC by the configured explicit PV-output efficiency
+$\eta_{\rm PV}$, or by an explicitly fitted DC-to-AC coefficient $\kappa$:
+\begin{equation}
+ \widehat P_{\rm AC}=
+ \begin{cases}
+ \eta_{\rm tr}\eta_{\rm PV}P_{\rm DC},&\text{explicit-efficiency route},\\
+ \eta_{\rm tr}\kappa P_{\rm DC},&\text{fitted-coefficient route}.
+ \end{cases}
+\end{equation}
+A configured AC cap clips this output if present; the night mask and validity
+flags are then applied. The present study uses an unfitted explicit output factor
+and a configurable separate transformer factor. This is not a full calibrated
+module-and-inverter electrical model. Temperature and wind affect production
+through temperature; irradiance and orientation affect POA. Cloud/dew-point
+fields retained in the store are not additional direct PV predictors here.
+
+Invalid required inputs remain invalid unless an explicit policy applies.
+Historical GME studies may use their configured night-zero forecast policy and
+a bounded fallback for missing realized-power intervals. Both the number and
+identity of substituted intervals are recorded. All counterfactuals use the same
+\emph{effective} realized PV series, including these substitutions.
+
+\section{Optimization at an auction decision}
+
+Each residual solve uses only the remaining suffix of the delivery grid. In the
+equations below that suffix is reindexed from zero, with $T$ denoting its final
+boundary; its original UTC product identifiers are retained for commitments.
+
+\subsection{Scenario tree and nonanticipativity}
+At decision $k$, let $\mathcal S_k$ be represented leaf scenarios and let
+$\mathcal A_k$ be the open active auctions. An information tree assigns an auction
+bid owner $n_a(s)$ to each auction/leaf and a control owner $n_t(s)$ to each
+interval/leaf. Curtailment may have a separate owner $m_t(s)$ under the selected
+execution-information convention.
+
+Decisions are node-owned variables, not independent leaf decisions followed by a
+penalty for disagreement. For example,
+\begin{equation}
+ c_{s,t}=c_{n_t(s),t},\quad d_{s,t}=d_{n_t(s),t},\quad
+ q_{a,s,t}=q_{a,n_a(s),t},\quad u_{s,t}=u_{m_t(s),t}.
+\end{equation}
+Thus two scenarios with the same observable history share actionable decisions.
+A latent PV-member label is not available information by itself. Constraints
+apply to every represented leaf, including zero-probability leaves if supplied;
+probabilities only weight the objective. In the current one-scenario historical
+price oracle, the tree degenerates to deterministic planning with known future
+prices and a forecast PV trajectory.
+
+\subsection{Physical variables and balances}
+For every scenario and remaining interval:
+\begin{align}
+ i_{s,t}+u_{s,t}&=V_{s,t}, & i_{s,t}&\ge0, & 0\le u_{s,t}&\le V_{s,t},\label{eq:pvbalance}\\
+ g_{s,t}&=i_{s,t}+d_{s,t}-c_{s,t},\label{eq:bus}\\
+ -P^{\rm imp}\le g_{s,t}&\le P^{\rm exp}.\label{eq:poi}
+\end{align}
+Curtailment appears only in the PV balance. It cannot erase bought grid energy
+or battery charging energy. A negative grid exchange must be absorbed by net
+battery charging since there is no local demand. The model does not explicitly
+assign charging power to its PV/grid source; that partition is an accounting
+convention used in post-processing.
+
+With $z_{n,t}\in\{0,1\}$ denoting charging mode,
+\begin{equation}\label{eq:power}
+ 0\le c_{n,t}\le\overline P z_{n,t},\qquad
+ 0\le d_{n,t}\le\overline P(1-z_{n,t}).
+\end{equation}
+This excludes simultaneous charge and discharge, uses one symmetric AC rating,
+and introduces no separate battery-inverter power limit.
+
+SOC percentage parameters $s_{\min},s_{\max}$ define
+\begin{equation}
+ E^{\min}=E\frac{s_{\min}}{100},\qquad
+ E^{\max}=E\frac{s_{\max}}{100},\qquad
+ E^{\min}\le e_{s,t}\le E^{\max}.
+\end{equation}
+For $\rho_t=(1-\sigma)^{\Delta_t}$, the transition is
+\begin{equation}\label{eq:soc}
+ e_{s,t+1}=\rho_t e_{s,t}
+    +\eta_c c_{s,t}\Delta_t-\frac{d_{s,t}\Delta_t}{\eta_d}.
+\end{equation}
+One AC MWh charged stores $\eta_c$ MWh. Delivering one AC MWh consumes
+$1/\eta_d$ internal MWh. In combined mode the two configured efficiencies each
+cover their entire directional path. In converter-and-cell mode,
+$\eta_c=\eta_{c,\rm conv}\eta_{c,\rm cell}$ and
+$\eta_d=\eta_{d,\rm conv}\eta_{d,\rm cell}$. The alternatives cannot be mixed.
+The round-trip factor is $\eta_c\eta_d$. Self-discharge acts on stored energy,
+not on a power variable, and is separate from cycle degradation cost.
+
+The initial boundary is fixed to measured/carried/projected state $e^k$:
+\begin{equation}
+ e_{s,0}=e^k.
+\end{equation}
+If the terminal target is configured, also impose
+\begin{equation}\label{eq:terminal}
+ e_{s,T}=e^{\rm target}.
+\end{equation}
+In the GME adapter, initial/terminal percentages are converted using nominal
+capacity. A \texttt{null} terminal SOC omits~\eqref{eq:terminal}. Prepared and
+synthetic boundary-state contracts use explicitly named MWh values. Neither
+version adds a terminal energy salvage value to the objective.
+
+\subsection{Auction quantities and physical delivery}
+Let $Q^{\rm fix}_t$ contain all previously submitted commitments, priced or still
+pending. The new final position on leaf $s$ is
+\begin{equation}\label{eq:position}
+ Q_{s,t}=Q^{\rm fix}_t+
+       \sum_{a\in\mathcal A_k:\,t\in\mathcal T_a}q_{a,n_a(s),t}.
+\end{equation}
+An ineligible auction/interval has no trade variable. The model allows signed
+sales/purchases; they are adjustments to prior positions, not gross generation.
+For every eligible trade,
+\begin{equation}\label{eq:tradepoi}
+ -P^{\rm imp}\Delta_t\le q_{a,n,t}\le P^{\rm exp}\Delta_t.
+\end{equation}
+For every open auction $a$ in chronological order, define the cumulative planned
+position after that auction as
+\begin{equation}
+ C^a_{s,t}=Q^{\rm fix}_t+
+ \sum_{b\in\mathcal A_k:\,b\le a,\,t\in\mathcal T_b}q_{b,n_b(s),t}.
+\end{equation}
+It satisfies
+\begin{equation}\label{eq:cumulative}
+ -P^{\rm imp}\Delta_t\le C^a_{s,t}\le P^{\rm exp}\Delta_t,
+ \qquad -P^{\rm imp}\Delta_t\le Q_{s,t}\le P^{\rm exp}\Delta_t.
+\end{equation}
+There is no independent commercial volume cap. The directional POI ratings apply
+to individual auction adjustments, cumulative positions after each auction, and
+physical delivery. An offsetting later trade is allowed, subject to its own
+POI-derived limit and the resulting position limit. Thus the model permits
+bounded cross-auction spread trading even without a battery; its revenues can be
+present in both asset counterfactuals.
+
+With \texttt{trading.optimize\_imbalances: false}, which is the current farm-910
+policy, planned delivery is exact in every interval:
+\begin{equation}\label{eq:exact}
+ g_{s,t}\Delta_t=Q_{s,t}.
+\end{equation}
+No positive/negative imbalance variables or imbalance direction binary are
+created. Forecast deviations are not an additional dispatch resource.
+An optional configured product-group delivery equality can additionally impose
+$\sum_{t\in h}(g_{s,t}\Delta_t-Q_{s,t})=0$. It is redundant with~\eqref{eq:exact}
+and does not replace it in the disabled-imbalance mode.
+
+\subsection{Current objective and sunk cash flows}
+For throughput degradation with coefficient $c_{\rm thr}$ and an optional import
+fee $f$, the current residual objective is
+\begin{equation}\label{eq:objective}
+ \max J_k=\sum_{s\in\mathcal S_k}w_s\left[
+ \sum_{a\in\mathcal A_k}\sum_{t\in\mathcal T_a}\pi_{a,s,t}q_{a,n_a(s),t}
+ -c_{\rm thr}\sum_t(c_{s,t}+d_{s,t})\Delta_t
+ -f\sum_t\pos{-g_{s,t}}\Delta_t\right].
+\end{equation}
+The implementation uses an exact import-power linearization with a direction
+binary only when $f$ is nonzero. The farm-910 study sets $f=0$.
+
+Past auction cash flow and already incurred degradation are sunk at residual
+reoptimization. Priced commitments remain in the external ledger, and pending
+unpriced submitted quantities enter $Q^{\rm fix}$ without adding an optimizable
+cash-flow term. Their future clearing value is constant with respect to all
+remaining decisions and is excluded from $J_k$. This avoids double counting.
+The initial pre-DA solve has no prior commitments; its objective spans the
+modeled whole-day opportunity set. Residual objective values therefore should
+not be summed across auction solves to compute daily profit.
+
+There is no explicit curtailment penalty, risk measure, capital cost, fixed O\&M,
+tax, brokerage fee, ramp constraint, minimum dwell time, or calendar-aging charge
+in~\eqref{eq:objective}. Curtailment can affect revenue through delivery choices,
+but is not independently priced. The horizon can exploit inventory when its
+terminal target is free; this matters when comparing asset value.
+
+\subsection{What is free at each of the four decisions}
+\begin{center}\small
+\begin{tabular}{p{0.13\textwidth}p{0.37\textwidth}p{0.39\textwidth}}
+\toprule Decision & New free auction quantities & Previously submitted fixed quantities\\
+\midrule
+DA & DA, IDA1, IDA2, IDA3 plans & None\\
+IDA1 & IDA1, IDA2, IDA3 plans & DA\\
+IDA2 & IDA2, IDA3 plans & DA and IDA1\\
+IDA3 & IDA3 eligible products & DA, IDA1 and IDA2\\
+\bottomrule
+\end{tabular}
+\end{center}
+At each decision, remaining-horizon charge/discharge modes, curtailment, grid
+powers and energy states are free subject to their balances, boundary state,
+nonanticipativity, product rules and terminal condition. Executed past intervals
+are absent from the residual grid. Future-auction quantities are plans until
+their own submission. Only the current auction order is committed from that
+solve. Before noon, IDA3 cannot change orders for the morning; physical control
+replanning of remaining earlier intervals must respect their already fixed
+market positions.
+
+\section{Battery degradation models}
+
+\subsection{Current AC throughput approximation}
+For one trajectory,
+\begin{equation}
+ H=\sum_t(c_t+d_t)\Delta_t,\qquad D_{\rm thr}=c_{\rm thr}H.
+\end{equation}
+Both directional AC throughputs are charged once. The YAML can directly supply
+$c_{\rm thr}$ or derive it from replacement economics and reference cycle life.
+Let $p_{\rm USD}$ be pack USD/kWh, $x$ be USD per EUR, $p_{\rm extra}$ additional
+EUR/kWh replacement cost, $s_R$ salvage fraction, $N$ reference cycle life and
+$d_{\rm ref}$ reference internal depth of discharge. Then
+\begin{align}
+ R&=1000E\left(\frac{p_{\rm USD}}{x}+p_{\rm extra}\right)(1-s_R),\label{eq:replacement}\\
+ H_{\rm life}&=N d_{\rm ref}E\left(\frac{1}{\eta_c}+\eta_d\right),\\
+ c_{\rm thr}&=\frac{R}{H_{\rm life}}.\label{eq:cthr}
+\end{align}
+One reference internal cycle charges $d_{\rm ref}E/\eta_c$ AC MWh and discharges
+$d_{\rm ref}E\eta_d$ AC MWh, explaining the normalization. There is no additional
+factor of two or half applied to~\eqref{eq:cthr}. The configured end-of-life
+capacity fraction is descriptive metadata, not an extra multiplier or a dynamic
+capacity update.
+
+The current inherited farm-910 YAML uses a historical generic pack-price proxy,
+a dated FX conversion, and an illustrative reference cycle life. Those are study
+inputs with source metadata, not an estimate of a specific installed BESS cost.
+The resolved $R$ and $c_{\rm thr}$ are saved. The cost is financial wear; it does
+not reduce $E$, $\overline P$, or efficiencies as the simulation proceeds.
+
+\subsection{Optional segmented depth-dependent aging}
+The optional \texttt{xu\_segmented} mode follows the configured segmented
+cycle-depth construction described in the repository's Xu notes and the author
+paper~\cite{xu}. It is distinct from the current throughput study.
+For a configurable convex stress curve $\Phi(d)=\alpha d^\beta$, $\beta\ge1$,
+partition nominal internal capacity into $J$ equal segments of size $E/J$.
+The marginal AC discharge cost of segment $j=1,\ldots,J$ is
+\begin{equation}
+ m_j=\frac{RJ}{\eta_d E}
+       \left[\Phi(j/J)-\Phi((j-1)/J)\right].
+\end{equation}
+It is nondecreasing with depth. The degradation charge is
+\begin{equation}
+ D_{\rm Xu}=\sum_t\sum_{j=1}^J m_j d_{j,t}\Delta_t.
+\end{equation}
+Only discharging is charged under this convention. A discharging half-cycle
+incurs the convention's depth cost, while a charging half-cycle does not; do not
+add an extra factor of one half. Nonzero throughput cost is rejected in this mode.
+
+Segment flows and energies obey
+\begin{align}
+ \sum_j c_{j,t}&=c_t,& \sum_j d_{j,t}&=d_t,&\sum_j h_{j,t}&=e_t,\\
+ h_{j,t+1}&=h_{j,t}+\Delta_t(\eta_c c_{j,t}-d_{j,t}/\eta_d),&
+ 0\le h_{j,t}&\le E/J.
+\end{align}
+Segment energies represent cycle-depth memory, not fixed absolute SOC buckets.
+Charging and discharging both use shallow available segments first. For each
+$j<J$, the implementation adds priorities $v^c_{j,t},v^d_{j,t}\in\{0,1\}$:
+\begin{align}
+ \sum_{\ell>j}c_{\ell,t}&\le\overline P v^c_{j,t},&
+ h_{j,t+1}&\ge(E/J)v^c_{j,t},\\
+ \sum_{\ell>j}d_{\ell,t}&\le\overline P v^d_{j,t},&
+ h_{j,t+1}&\le(E/J)(1-v^d_{j,t}).
+\end{align}
+Using a deeper segment therefore requires the shallower segment to end full
+when charging or empty when discharging. This chooses a deterministic shallow-
+first representative, including otherwise indifferent charging allocations.
+Segment actions have the same information ownership as aggregate battery power.
+
+At a declared fresh study start, initialize
+\begin{equation}
+ h_{j,0}=\clip\big(e_0-(j-1)E/J,\ 0,\ E/J\big).
+\end{equation}
+Afterwards the segment vector must be carried with actual execution; an arbitrary
+residual solve cannot reconstruct it from aggregate SOC. Previous throughput or
+aging requires explicit memory. Xu mode currently rejects nonzero self-discharge.
+It remains a finite-segment approximation and omits calendar, temperature and
+current-rate aging, capacity-fade feedback and unknown pre-study cycle history.
+
+\section{Submission, publication and reoptimization workflow}
+
+Before each active auction submission, the GME replay refreshes the latest
+available PV forecast over unexecuted intervals, projects a boundary if necessary,
+and solves the residual planning problem. Previously submitted quantities,
+including still-unpriced ones, are fixed. At submission, only the current
+auction's node-shared action is extracted. Later planned auction quantities are
+not booked and can change.
+
+At publication, known prices are updated, and actual contractual revenue
+$\pi^{\rm real}_{a,t}q^{\rm sub}_{a,t}$ is entered exactly once in the ledger.
+Publication does not reopen a market. The current GME experiment forces
+\texttt{reoptimize\_physical\_controls=false}; it uses four auction solves for
+four active auctions, not an extra set of publication solves or 96 physical
+optimizations. Physical feedback is algebraic. Synthetic replay can separately
+enable interval-control reoptimization, so its solve count need not be four.
+
+At the next auction, closed commitments are carried, remaining open opportunities
+are reconsidered, and past executed state/aging remain fixed. In the actual-price
+oracle all future auction prices are already supplied as a benchmark, so price
+publication does not remove price uncertainty there. In a forecast-based route,
+known results condition subsequent price distributions without changing the
+commitments that produced them.
+
+\section{Physical feedback with realized PV}
+
+\subsection{Feasible interval power range}
+The current policy is \texttt{track\_committed\_grid}. For interval $t$ its target is
+\begin{equation}
+ g_t^\star=Q_t^{\rm committed}/\Delta_t.
+\end{equation}
+The controller uses effective realized interval-average PV $\widetilde V_t$;
+this is an idealized interval simulator, not a subsecond telemetry/control model.
+It does not disclose this final average to the earlier auction optimizer.
+Given actual initial energy $e_t$ and retained energy $\bar e_t=\rho_t e_t$,
+the feasible charging/discharging maxima are
+\begin{align}
+ C_t&=\min\left\{\overline P,
+           \frac{\pos{E^{\max}-\bar e_t}}{\eta_c\Delta_t}\right\},\\
+ D_t&=\min\left\{\overline P,
+           \frac{\eta_d\pos{\bar e_t-E^{\min}}}{\Delta_t}\right\}.
+\end{align}
+First clip the planned charge/discharge commands to these maxima, obtaining
+$c_t^0,d_t^0$. Simultaneous positive requested charging and discharging after
+protection is rejected. Initially curtail only available PV:
+$u_t^0=\min\{\widetilde V_t,\pos{u_t^{\rm plan}}\}$.
+
+\subsection{Grid-tracking policy}
+Release scheduled curtailment if it can help meet a deficit:
+\begin{align}
+ g_t^0&=\widetilde V_t-u_t^0+d_t^0-c_t^0,\\
+ \bar u_t&=u_t^0-\min\{u_t^0,\pos{g_t^\star-g_t^0}\}.
+\end{align}
+The desired net battery dispatch and its feasible projection are
+\begin{align}
+ b_t^{\rm req}&=g_t^\star-\widetilde V_t+\bar u_t,\\
+ b_t&=\clip(b_t^{\rm req},-C_t,D_t),\\
+ c_t&=\pos{-b_t},\qquad d_t=\pos{b_t}.
+\end{align}
+Finally curtail any remaining surplus that battery adjustment cannot absorb:
+\begin{equation}
+ u_t=\bar u_t+
+ \min\{\widetilde V_t-\bar u_t,
+             \pos{\widetilde V_t-\bar u_t+b_t-g_t^\star}\}.
+\end{equation}
+Thus excess PV first decreases discharge, then increases charging as needed and
+feasible, then is curtailed. A PV shortfall first releases planned curtailment,
+then reduces charging or increases discharge within the actual SOC box. The
+remaining tracking error is preserved if battery power/energy cannot supply it.
+
+POI protection follows. If net import exceeds its rating, charging is reduced.
+If export exceeds its rating, discharge is reduced first and remaining excess
+PV is curtailed. Grid power is recomputed consistently with the adjusted actions.
+Actual energy then advances using~\eqref{eq:soc} with these executed powers, and
+bounds are checked before accepting the new state. Both throughput/Xu memory and
+cumulative financial wear are advanced from executed actions, not from the old
+auction plan. Protection is mandatory under either execution policy; the
+alternative \texttt{follow\_battery\_plan} skips grid-tracking adjustment.
+
+There is no controller constraint forcing the actual terminal energy to the
+auction plan's target. Forecast errors and grid tracking can cause an ending-SOC
+difference even if every optimization imposed~\eqref{eq:terminal}. This is visible
+in the current terminal-50\% study and is not equivalent to guaranteeing 50\%
+realized SOC. Any hard actual-terminal policy would be an additional controller
+design and could create different imbalances/cash flows.
+
+\subsection{PV source allocation for reporting}
+For the executed trajectory, use the explicit PV-first accounting convention
+\begin{align}
+ P^{\rm PV\to B}_t&=\min\{\widetilde V_t-u_t,c_t\},\\
+ P^{\rm PV\to G}_t&=\widetilde V_t-u_t-P^{\rm PV\to B}_t,\\
+ P^{\rm PV\to curt}_t&=u_t.
+\end{align}
+They sum to $\widetilde V_t$ in every interval. Grid-supplied charging and battery
+discharge are not counted as PV production. These are post-processing flows;
+there are no separate source-attribution decision variables in the MILP.
+
+\section{Settlement and expected-versus-realized accounting}
+
+Actual net deviation is retained at the native quarter-hour:
+\begin{equation}
+ \delta_t^{\rm real}=g_t^{\rm real}\Delta_t-Q_t^{\rm committed}.
+\end{equation}
+Positive means more net export than promised. With the selected single Terna
+NORD settlement price $\lambda_t$, the modeled cash flow is
+\begin{equation}
+ S_t=\lambda_t\delta_t^{\rm real}.
+\end{equation}
+A positive price therefore does not mean every imbalance is penalized: positive
+excess export is credited and a negative deviation is debited. Negative prices
+are allowed and reverse these cash-flow signs. The general settlement helper
+also accepts two directional curves:
+\begin{equation}
+ S_t=\lambda_t^+\pos{\delta_t^{\rm real}}
+       -\lambda_t^-\pos{-\delta_t^{\rm real}}.
+\end{equation}
+This documents the implemented study accounting, not every possible Italian
+participant-specific settlement item or regulatory regime. The workbook adapter
+selects the declared NORD macrozone and the imbalance-price column, retaining
+other imported fields as provenance. Product starts and ends must match the
+execution grid exactly. Prices are neither hourly-averaged nor filled across
+gaps; missing enabled settlement prices are an error.
+
+Actual daily auction cash flow and settled operating profit are
+\begin{align}
+ A^{\rm real}&=\sum_{a,t}\pi^{\rm real}_{a,t}q^{\rm sub}_{a,t},\\
+ J^{\rm real}&=A^{\rm real}+\sum_t S_t
+       -D^{\rm executed}-f\sum_t\pos{-g_t^{\rm real}}\Delta_t.
+\end{align}
+A model deterrence penalty is not an actual settlement charge and is not
+subtracted a second time by actual post-processing. If settlement is unavailable,
+profit before settlement is reported and fully settled profit remains unknown.
+
+Let $J^{\rm init}$ and $A^{\rm init}$ be the initial auction solve's expected
+profit and auction revenue. Saved mismatches are
+\begin{equation}
+ \Delta J=J^{\rm real}-J^{\rm init},\qquad
+ \Delta A=A^{\rm real}-A^{\rm init},\qquad
+ r_J=100\frac{\Delta J}{|J^{\rm init}|}.
+\end{equation}
+The percentage is undefined/\texttt{null} when its expectation is zero; unsettled
+profit comparisons remain unknown. Differences include later replanning and
+physical execution effects, not only price-forecast error.
+
+The replay also evaluates each stored auction snapshot as an open-loop diagnostic
+against realized PV and the same settlement prices. Its planned battery commands
+are protected physically. Deviations are measured against that snapshot's planned
+grid schedule (which can include assumed future trades) or the final contract,
+as labeled in the recorded comparisons. It is not another auction
+optimization. Because IDA3 covers a shorter residual horizon, a common-horizon
+comparison is also saved; unaligned whole-horizon totals should not be compared
+as if their delivery intervals were identical.
+
+\section{Perfect-information schedules and the PV-only baseline}
+
+\subsection{PV+BESS versus the feedback controller}
+After replay, one additional full-day problem uses $V_t=\widetilde V_t$ and all
+actual auction-price curves, with a single scenario and all auction orders
+jointly free subject to their native products, eligibility, POI and physical
+constraints. It retains the BESS ratings, efficiencies, SOC box, degradation,
+initial energy and configured terminal target. Call its achieved solver
+objective $J_{\rm PV+BESS}^{\rm PI}$.
+
+This is deliberately a hindsight plan rather than a causally executable policy.
+It is compared with the feedback controller's actual dispatch, curtailment and
+SOC, and its objective is saved as the solver's \texttt{ObjVal}. Four missing
+measurement intervals, if permitted by the selected run, are handled through
+that run's explicit fallback; diagnostics record their count and identities.
+The schedule figure shows both trajectories and their battery-power difference
+through the final day boundary. It does not assert that feedback should reproduce
+the hindsight trajectory or terminal energy.
+
+\subsection{PV-only asset counterfactual}
+When \texttt{experiment\_outputs.pv\_only\_baseline: true}, a second independent
+solve uses the same optimizer builder with
+\begin{equation}
+ E=0,\quad\overline P=0,\quad E^{\min}=E^{\max}=0,\quad e_0=e_T=0,
+ \quad D=0.
+\end{equation}
+Battery powers and energy variables are consequently fixed to zero; the code
+reuses one physical/trading formulation instead of implementing a second,
+potentially inconsistent PV-only model. Unused variables can be removed by
+solver presolve. PV injection/curtailment and auction trades remain free subject
+to the same effective realized PV, native products, active auctions and POI.
+Call its achieved objective $J_{\rm PV}^{\rm PI}$.
+
+The incremental operating-value KPI is
+\begin{equation}\label{eq:value}
+ \Delta J_{\rm BESS}^{\rm PI}
+       =J_{\rm PV+BESS}^{\rm PI}-J_{\rm PV}^{\rm PI}.
+\end{equation}
+The BESS side includes its own modeled degradation; the PV-only side has no
+battery wear. Both sides retain permitted cross-auction spread trading, so
+market-trading revenue common to both is not credited to battery ownership.
+The KPI does not subtract realized feedback wear from a different ideal schedule.
+Each counterfactual reports its own objective components. Directly subtracting
+a PV-only hindsight objective from the realized PV+BESS feedback profit would
+mix information and execution policies and is not the asset-value KPI.
+
+This comparison is one-day operating value before capital expenditure, fixed
+operating costs, financing and taxes. A free terminal target can also use initial
+stored energy or leave different inventory; the selected 50\% initial/terminal
+hindsight comparison avoids that particular inventory difference for the BESS
+model. Realized feedback may still finish at a different SOC. No residual-energy
+valuation, annualization, payback, NPV or investment optimization is implemented.
+Those need a representative horizon and additional cost/cash-flow assumptions.
+
+Setting the switch to \texttt{false} skips the PV-only solve and its model, JSON,
+CSV and figure. Incremental-value metrics become \texttt{null} and an explicit
+baseline-enabled KPI is false. The perfect-information PV+BESS-versus-feedback
+comparison still runs. Four active auctions therefore produce four replay
+solves plus one PV+BESS hindsight solve and, when enabled, one PV-only solve.
+Counterfactual solve diagnostics are separate from replay solve counts.
+
+\section{Forecast prices and the general stochastic route}
+
+The historical GME study described above has no price noise and uses actual
+prices in every auction decision. The repository separately implements
+chronological point-price studies and an artifact-to-optimization route for
+uncertain prices and probabilistic PV members.
+
+A generic selected linear model is $\widehat\pi=x^\top\widehat\beta$, possibly
+modeling a change from yesterday's price rather than the absolute level.
+Calendar, lagged prices, daily profiles and configured regional load/renewable
+forecasts form features. OLS, ridge, weighted ridge, lasso, elastic net and Huber
+estimators share training-only preprocessing and portable fitted artifacts.
+Validation selects specifications before later calibration and evaluation.
+
+For an auction's native delivery vector, Gaussian calibration uses out-of-sample
+errors to estimate a bias $b_a$ and temporal covariance $\Sigma_a$. Paths are
+\begin{equation}
+ \pi_a=\mu_a(\mathcal H_a)+b_a+\varepsilon_a,
+ \qquad\varepsilon_a\sim\mathcal N(0,\Sigma_a).
+\end{equation}
+An example covariance policy is
+\begin{equation}
+ \Sigma_a=(1-\gamma)S_a+\gamma\operatorname{diag}(S_a)+\epsilon I,
+\end{equation}
+with saved shrinkage and variance-floor settings. Bias and zero-mean innovations
+are distinct; finite Monte Carlo samples need not have exactly zero sample mean.
+IDA conditional means may be reconstructed from a predecessor-price curve plus
+a learned spread, using only ancestor sampled/known clearing curves at their
+information nodes. Innovations are temporally correlated within an auction
+equation and independent across auction equations; their conditional means
+propagate inter-auction dependence. Negative simulated prices are not clipped.
+
+For $B$ branches at each of $K$ unknown auction results there are up to $B^K$
+price paths per supplied PV member, before history merging and configured limits.
+Two branches at four unknown auctions give up to 16 price paths per member.
+Known results are fixed, not sampled. The prepared route forms joint scenario
+mass from PV-member and price-path masses; price draws shared across members
+represent the declared independent product-measure assumption rather than
+estimated PV/price dependence. Member identity remains latent until observations
+distinguish histories. The actual-price oracle repeats a common price curve
+across members and adds no artificial price noise.
+
+Hourly and quarter-hour price regimes and DST templates remain distinct.
+Historical retrieved revisions lacking publication evidence are marked
+retrospective. A model fit cutoff, static feature availability, forecast cycle,
+and source timestamp must satisfy the selected decision cutoff policy.
+Explicit retrospective opt-in does not establish an operationally causal
+backtest. The prepared examples need their complete supplied tables/artifacts;
+they are not a fully populated alternative historical strategy by default.
+
+\section{Optional optimized-imbalance formulation}
+
+This section describes supported code that is disabled in the current farm-910
+study. When \texttt{optimize\_imbalances=true}, replace~\eqref{eq:exact} by
+\begin{align}
+ \delta^+_{s,t}-\delta^-_{s,t}&=g_{s,t}\Delta_t-Q_{s,t},\\
+ 0\le\delta^+_{s,t}&\le M_t y_{s,t},\\
+ 0\le\delta^-_{s,t}&\le M_t(1-y_{s,t}),\qquad y_{s,t}\in\{0,1\}.
+\end{align}
+Here $M_t=(P^{\rm imp}+P^{\rm exp})\Delta_t$, optionally reduced by a configured
+imbalance-energy cap. The common $M_t$ is valid because physical and contractual
+net energy use the same directional POI range. The sign binary prevents
+simultaneous positive/negative deviations, including with negative prices.
+Add to each scenario's objective
+\begin{equation}
+ \sum_t\left[\lambda^+_{s,t}\delta^+_{s,t}
+      -\lambda^-_{s,t}\delta^-_{s,t}
+      -\kappa(\delta^+_{s,t}+\delta^-_{s,t})\right].
+\end{equation}
+If this mode has zero settlement price, zero penalty and no useful delivery
+restriction, an optimized contract need not be backed by delivered energy.
+That is why the present experiment disables optimized deviations and computes
+physical mismatches only afterwards. The optional formulation is a mathematical
+study mode, not an assertion that deliberate imbalance strategies are permitted.
+
+\section{Data provenance, outputs and reproducibility}
+
+Farm inputs are local read-only Zarr/Parquet stores. API and workbook records use
+\path{data/api/market.duckdb}. Raw/normalized snapshots, source identities,
+checksums, revision and retrieval metadata support repeated offline studies.
+Historical publication remains a separate field/convention. Provider acquisition
+is an explicit user-run command; neither the MILP builder nor the historical
+experiment downloads missing inputs. DuckDB writers and analysis processes must
+be coordinated; complete cached days can be studied before an entire acquisition
+window is complete.
+
+YAML controls study date, calendar validity, source mappings, PV and data policies,
+BESS and POI characteristics, state, degradation, solver and outputs. One include
+is resolved relative to the containing YAML, with recursive mapping overrides.
+The current 50\% study is configured by
+\path{configs/full_experiments/gme_oracle_2025-01-01_farm910_perfect_pv_comparison_terminal_soc_50.yaml}.
+Its inherited assumptions include a 5 MWh battery, 2.5 MW symmetric power,
+10--90\% SOC box, 0.97 combined efficiencies and a 6.638 MW directional POI.
+These are reproducible study settings, not confirmed anonymous-farm hardware.
+
+Each historical run is grouped under
+\path{outputs/full_experiments/gme_oracle/<run>/farm_<id>/<day>/} with
+\texttt{plots/}, \texttt{csv/}, \texttt{json/}, and optional \texttt{models/}.
+The effective configuration, input provenance and artifact manifest accompany
+auction plans, immutable ledger, actual dispatch, used PV vintages, settlement
+and objective comparisons. The main KPI distinctions are:
+\begin{itemize}
+\item \texttt{total\_gain\_eur}: actual feedback profit after available settlement;
+\item \texttt{perfect\_information\_objective\_eur}: achieved full-information PV+BESS objective;
+\item \texttt{pv\_only\_perfect\_information\_objective\_eur}: achieved optional PV-only objective;
+\item \texttt{battery\_incremental\_operating\_value\_eur}: the difference in~\eqref{eq:value};
+\item initial expectation, realized-minus-expected revenue/profit, and separate executed versus counterfactual degradation components.
+\end{itemize}
+Figures preserve interval widths and both available boundary points, including
+next-day local midnight. Held hourly/quarter-hour prices and powers do not create
+new samples; SOC uses the actual boundary states. Snapshot settlement diagnostics
+include their different delivery windows and common-horizon comparisons.
+
+Solver settings use relative MIP gap $10^{-4}$ (0.01\%) by default, with no absolute
+MIP gap configured. Objective comparisons use achieved \texttt{ObjVal}. Status,
+relative gap, model sizes and timing remain recorded. Before a schedule is used,
+independent validation recomputes physical balances, limits, native product
+consistency, information sharing, degradation and objective components. Execution
+separately checks actual SOC and power/POI protection. Software consistency does
+not resolve uncertain farm metadata, forecast bias or historical publication
+vintages.
+
+\section{Current limitations and extension boundaries}
+
+The current empirical workflow is a single-day perfect-price benchmark with one
+weather member, approximate geometry and an idealized interval-average controller.
+Measured AC is effective observed production, not an independently estimated
+unconstrained irradiance-to-generation potential; hidden plant curtailment/faults
+in source production are not identified automatically. Configured cleaning and
+fallback choices remain part of the experiment.
+
+The model currently omits continuous trading, order acceptance, market impact,
+multiple-farm network coupling, ancillary services, intrainterval dynamics,
+ramping/startup constraints, dynamic capacity loss, calendar aging, thermal
+battery dynamics, fixed operating costs and investment cash-flow optimization.
+The generic \texttt{backtest} CLI remains synthetic-only; the separate historical
+\texttt{experiment-gme-oracle} workflow is the implemented manual-data replay.
+Future uncertain-price evaluations need their own causal inputs and comparison
+protocol rather than relabeling the current oracle results.
+
+The original implementation-status report is retired. This source and its PDF
+are the maintained mathematical description; run manifests and saved solver
+results are the numerical evidence for particular configurations. Practical
+commands and configuration examples are in the root \path{README.md}.
+
+\begin{thebibliography}{9}
+\bibitem{xu} B. Xu, J. Zhao, T. Zheng, E. Litvinov and D. S. Kirschen,
+\emph{Factoring the Cycle Aging Cost of Batteries Participating in Electricity
+Markets}. Author preprint and published paper links retained by the repository:
+\url{https://arxiv.org/abs/1707.04567} and
+\url{https://doi.org/10.1109/TPWRS.2017.2733339}.
+\bibitem{pvlib} pvlib Python documentation. The installed library implements the
+solar-position, single-axis tracking, isotropic transposition, Faiman and PVWatts
+functions called by \path{forecasting/pv.py}.
+\url{https://pvlib-python.readthedocs.io/}.
+\bibitem{gme} GME market timing references and period-specific study provenance
+are recorded in \path{markets.py} and the selected study's YAML. The January
+historical configuration explicitly labels assumed result-publication clocks.
+\bibitem{code} Repository source files listed in Section 1 and the effective
+configuration saved with each run are authoritative for implemented behavior.
+Conceptual references do not replace inspection of those inputs and policies.
+\end{thebibliography}
+\end{document}

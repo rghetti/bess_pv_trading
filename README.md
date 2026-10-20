@@ -1,286 +1,335 @@
-# PV+BESS auction trading and farm audit
+# PV and battery trading in the Italian electricity auctions
 
-The new application under `src/bess_pv_trading/` implements a node-based stochastic Gurobi MILP, causal data policy and pvlib AC forecasts, price regression/scenario interfaces, and an event-driven synthetic auction replay. The original audit below remains available. The implementation plan is `CODEX_PV_BESS_IMPLEMENTATION_PROMPT_DATASET_BOUND.md`; actual status and evidence are in [docs/implementation_status.pdf](docs/implementation_status.pdf), with [LaTeX](docs/implementation_status.tex) and [JSON](docs/implementation_status.json).
+This repository studies one photovoltaic farm and an AC-coupled battery sharing a point of interconnection (POI). It prepares farm and market data, converts rolling weather forecasts into PV power with pvlib, optimizes energy positions in MGP and MI-A1/2/3 with Gurobi, executes the plans against realized PV through a feedback controller, and settles delivery deviations afterwards.
 
-The default relative MIP gap is `1e-4` (0.01%); no absolute MIP gap is configured. This convention is also recorded in `AGENTS.md`.
+The current historical experiment is **one delivery day in the NORD zone, with perfect auction-price information and one deterministic weather-forecast member**. It refreshes the PV forecast before each active auction and makes four auction decisions when all auctions take place. Separate hindsight optimizations use realized PV to compare the feedback trajectory with a perfect-information schedule and to measure the incremental operating value of a battery against a PV-only plant. The general optimizer also supports scenario trees and probabilistic prepared forecasts; the current historical study does not use learned uncertain price forecasts.
 
-Every submitted auction quantity is assumed to execute in full at its published
-clearing price. Quantities stay fixed while their price is unpublished. Each
-publication books the actual cash flow once and refreshes conditional forecasts
-and the residual plan; forecast objectives and realized profit are reported
-separately.
+The full equations, information structure, execution policy, and economic comparisons are in **[the mathematical model](docs/mathematical_model.pdf)**, with editable **[LaTeX source](docs/mathematical_model.tex)**. This document replaces the retired implementation-status LaTeX/PDF. Numerical results belong to each run's saved configuration and KPIs, rather than a fixed result in this README.
 
-**API acquisition:** run the verified provider pipeline yourself with hidden credential entry:
+## Start here
+
+Run commands from the repository root in the existing `bess` environment:
 
 ```bash
 conda activate bess
-PYTHONPATH=src python -m bess_pv_trading download-data --config configs/api_experiments/api_download.yaml --interactive
-PYTHONPATH=src python -m bess_pv_trading download-data --config configs/api_experiments/api_history.yaml --interactive
+export PYTHONPATH="$PWD/src${PYTHONPATH:+:$PYTHONPATH}"
+python -m bess_pv_trading --help
 ```
 
-The first command checks one day; the second covers the farm-record window, 1 January 2025–31 August 2026. The provider configurations now store raw responses, exact typed snapshots, revision history and queryable records together in `data/api/market.duckdb`. Requests still complete month by month and resume at daily request boundaries after an outage. Acquisition plots are grouped by dataset/month under `outputs/api/<run>/`; CSV exports are no longer duplicated for each request. `--dry-run` needs no credentials or network, while `--refresh-cache` retains previous database snapshots. See [API commands and storage contract](docs/api_pipeline.md). IDA prices, verified imbalance settlement and unrecorded historical publication remain separate gaps.
+On the current workstation the interpreter is `/home/rghetti/miniforge3/envs/bess/bin/python`. The project runs directly from the checkout; its root compatibility package also exposes the original audit tools. There is no package-install step in this workflow. Runtime dependencies include NumPy, pandas, SciPy, xarray/Zarr, PyArrow, PyYAML, DuckDB, pvlib, Matplotlib, and, for optimization, `gurobipy` with a working Gurobi license. LaTeX tools are optional for rebuilding the model document. Do not change the shared environment or its license to run a study.
 
-Import the existing verified file cache once, entirely offline, before resuming acquisition or running experiments:
+For the current historical workflow, first check that the private farm stores and imported market snapshots are present. Validation does not download data:
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading migrate-api-cache --config configs/api_experiments/api_history.yaml
+python -m bess_pv_trading validate-config --config configs/full_experiments/gme_oracle_2025-01-01_farm910_perfect_pv_comparison_terminal_soc_50.yaml
 ```
 
-Migration is resumable and idempotent. It verifies raw and normalized checksums, compares imported values and dtypes, and writes its report under `outputs/api/migrations/`. Original files remain a backup. The Python dependency is supplied by conda's `python-duckdb` package in the existing `bess` environment. Farm Zarr data is independent of this migration.
+Create a new study YAML under `configs/full_experiments/` so that its run ID does not collide with an existing run. For example, save the following as `configs/full_experiments/my_january_study.yaml`:
 
-**GME intraday prices:** after obtaining a separate GME API username/password,
-run the one-day check and then the missing IDA history:
+```yaml
+include: gme_oracle_2025-01-01_farm910_perfect_pv_comparison_terminal_soc_50.yaml
+
+gme_oracle_experiment:
+  study_id: my_january_study
+
+experiment_outputs:
+  run_id: my_january_study
+  plots: true
+  save_model_files: true
+  pv_only_baseline: true
+
+state:
+  initial_soc_percent: 50.0
+  terminal_soc_percent: 50.0
+```
+
+Then run it offline:
 
 ```bash
-PYTHONPATH=src python -m bess_pv_trading download-data --config configs/api_experiments/gme_api.yaml --interactive
-PYTHONPATH=src python -m bess_pv_trading download-data --config configs/api_experiments/gme_history.yaml --interactive
+python -m bess_pv_trading experiment-gme-oracle --config configs/full_experiments/my_january_study.yaml
 ```
 
-Both use `data/api/market.duckdb`. The second command requests actual MI-A1,
-MI-A2 and MI-A3 NORD prices, month by month, without repeating the ENTSO-E DA
-download. Run one writer at a time. [GME access and storage details](docs/gme_api.md)
-distinguish documented/offline-tested parsing from pending authenticated checks.
+Existing run directories cannot be overwritten. Change `experiment_outputs.run_id` for a new run. Configuration validation checks declared settings; the experiment additionally checks actual data coverage, product resolution, forecast eligibility, settlement alignment, and solver feasibility. It never silently substitutes synthetic market prices.
 
-For the downloaded GME XLSX files, import hourly MGP prices for January–August
-2025 and native quarter-hour MI-A1/2/3 prices for 1 January–1 April 2025 inclusive,
-then run the configured one-day oracle benchmark:
+## What happens in a full experiment
 
-```bash
-PYTHONPATH=src python -m bess_pv_trading import-gme-workbooks --config configs/api_experiments/gme_workbook_import.yaml
-PYTHONPATH=src python -m bess_pv_trading experiment-gme-oracle --config configs/full_experiments/gme_oracle_2025-01-01.yaml
+1. Read the selected day's actual NORD auction prices from `data/api/market.duckdb`, with source snapshot/checksum provenance. Require complete native product curves for active auctions. Explicitly recorded or configured cancellations remove the corresponding auction and its trade variables; an unexplained gap is an error.
+2. Select the latest weather forecast available at the first decision, convert it into AC PV power, and prepare realized AC production for execution. Declared missing-value policies and every fallback remain recorded.
+3. Immediately before each active auction, refresh the remaining PV forecast, carry the current battery state and all prior commitments, and optimize the remaining horizon. Only that auction's quantity is submitted. Later-auction quantities in the solve are revisable plans.
+4. At price publication, book each submitted quantity times the actual clearing price once. The current auction-only GME replay performs no additional optimization at publication or at each physical interval.
+5. At delivery, the controller tries to track the cumulative committed grid position using realized interval-average PV. It adjusts charging/discharging and PV curtailment within SOC, battery-power, and POI limits. Residual mismatches are retained.
+6. Apply the actual Terna NORD quarter-hour settlement curve after physical execution. Compute realized profit from auction cash flow, signed imbalance cash flow, executed battery wear, and any configured import fees.
+7. Solve a full-day perfect-information PV+BESS problem using the same effective realized PV and actual auction prices. If enabled, solve the same asset counterfactual with zero battery capacity and power. Save schedules, comparisons, KPIs, model diagnostics, and plots by file type.
+
+With all four auctions active, this means **four auction-decision solves, one perfect-information PV+BESS solve, and one optional PV-only solve**. The replay's `optimizer_solves`/`reoptimization_solves` counts describe the auction replay; counterfactual diagnostics are saved separately. This is different from synthetic configurations that optionally replan physical controls every interval.
+
+## Files and configuration
+
+```text
+src/bess_pv_trading/
+  data/             DuckDB catalog, providers, workbook imports, farm adapters, data policy
+  forecasting/      pvlib conversion, linear/conditional price models, Gaussian calibration
+  optimization/     shared MILP builder, prepared-input adapters, degradation, validation
+  simulation/       auction events, immutable commitments, feedback execution, settlement
+  reporting/        figures, output organization, legacy evidence reporting
+configs/
+  api_experiments/   acquisition, provider diagnostics, workbook imports
+  price_experiments/ forecasting, calibration, and chronological evaluation studies
+  full_experiments/  complete historical/synthetic studies and prepared-input examples
+  data_schema.yaml  private-data mappings, source clocks, and cleaning policy
+  farms_nord.yaml   shared PV model and farm metadata assumptions
+bess_pv_trading/     preserved audit tools and checkout import compatibility
+data/               private inputs, DuckDB snapshots, reusable derived data; ignored by Git
+outputs/            run-specific results; ignored by Git
+docs/               mathematical model and focused technical notes
+tests/              unit/integration tests and explicitly synthetic fixtures
 ```
 
-Before October 2025, DA orders remain constant across the four quarters of each
-hour; IDA orders and battery controls can vary every 15 minutes at all four
-optimization steps. The importer validates chronological `Periodo` indices,
-daylight-saving transitions and complete daily curves. It archives and removes
-the obsolete hourly IDA snapshots while preserving MGP and other providers.
-Only documented or explicitly configured cancellations are skipped; missing
-or partial curves fail. Earlier saved January results require a new run with
-the corrected data and product resolutions.
+YAML supports one `include`, resolved relative to the including YAML file. Nested mappings merge recursively; lists and scalar values replace inherited values. Data/output paths are generally repository-relative, so use the repository root as the working directory. Shared configurations are inherited: inspect the complete include chain before changing a parameter. Runs save the effective configuration.
 
-Results include auction prices, four dispatch plans, PV allocation, SOC, KPIs
-and solver/model diagnostics, grouped into subfolders by file type. The
-perfect-price result is an oracle benchmark. The farm910 throughput study
-loads actual Terna NORD quarter-hour settlement prices for post-processing.
-BESS and POI values remain configurable in the full-experiment YAML files.
+Useful full-study entry points:
 
-Completed database snapshots can be used immediately, even when the configured download window is incomplete:
-
-```bash
-PYTHONPATH=src python -m bess_pv_trading api-cache-status --config configs/api_experiments/api_history.yaml
-PYTHONPATH=src python -m bess_pv_trading experiment-api-prices --config configs/price_experiments/price_experiment.yaml
-```
-
-Experiments are offline and read only completed snapshots. Stop the downloader before opening the same database for analysis; embedded DuckDB uses a process-level write lock. Several offline experiments can share the database read-only. All connections are short-lived so provider backoff does not hold a database lock.
-
-The offline price experiment compares calendar/lag ridge regression with day/week seasonal baselines on a chronological holdout, separately for hourly and quarter-hour regimes. Monthly reusable tables go under `data/analysis/api_prices/`, with metrics, predictions, models and plots under `outputs/price_experiments/<run>/`. Retrieved revisions support a retrospective study; unknown historical publication prevents claiming a validated trading backtest.
-
-The first regional-forecast comparison uses the complete January 2025 ENTSO-E
-price/load/solar/wind caches and holds out 25–31 January:
-
-```bash
-PYTHONPATH=src python -m bess_pv_trading experiment-price-fundamentals --config configs/price_experiments/price_fundamentals_january.yaml
-```
-
-It compares calendar/price lags, added load, and added load/solar/wind against
-day/week baselines on identical products. Monthly joined tables live under
-`data/analysis/price_fundamentals/`; frozen inputs, provenance, models, predictions
-and plots live under `outputs/price_fundamentals/<run>/`. This small retrospective
-study uses 17 training days and a seven-day holdout; historical forecast vintages
-remain unverified. Long history downloads now retry transient failures up to
-eight times with visible bounded backoff; rerun the same command after an outage
-to reuse completed caches.
-
-The rolling linear-price pipeline compares richer lag/calendar/profile models,
-including a model for the change from yesterday's price, against yesterday,
-last week and their fixed average:
-
-```bash
-PYTHONPATH=src python -m bess_pv_trading study-linear-prices --config configs/price_experiments/price_linear_study.yaml
-PYTHONPATH=src python -m bess_pv_trading study-linear-prices --config configs/price_experiments/price_linear_fundamentals.yaml
-PYTHONPATH=src python -m bess_pv_trading study-linear-prices --config configs/price_experiments/price_linear_hourly.yaml
-PYTHONPATH=src python -m bess_pv_trading study-linear-prices --config configs/price_experiments/price_linear_methods.yaml
-```
-
-Model settings are selected on an earlier validation period. A separate period
-estimates forecast bias and Gaussian error covariance; the final chronological
-holdout measures accuracy and interval coverage. Coefficients refit on a configured
-schedule using earlier days only. Hourly and quarter-hour prices stay separate.
-The fundamentals configuration uses the common completed forecast history as it
-arrives. Each run freezes inputs and source manifests under
-`outputs/linear_price_studies/<run>/`, with reusable monthly features under
-`data/analysis/linear_prices/`. Reloadable Gaussian artifacts, held-out scores,
-sample price paths and plots live in that run's `uncertainty/` subdirectory.
-
-The hourly-structure configuration also compares separate linear coefficients
-for each delivery hour. The fitting-method comparison reuses that run's frozen
-DuckDB-derived inputs through August 2026: ordinary least squares, ridge,
-lasso, elastic net, Huber and recency-weighted ridge. All methods retain
-training-only scaling, chronological selection and portable coefficients.
-Method-specific penalties and iterative convergence settings are saved with
-each candidate; failed convergence cannot silently become a different fit.
-A separate command selects rolling Gaussian covariance
-settings using the calibration period alone, then updates uncertainty from
-completed earlier forecast errors:
-
-```bash
-PYTHONPATH=src python -m bess_pv_trading calibrate-price-scenarios --config configs/price_experiments/price_gaussian_adaptive.yaml
-```
-
-On the existing July–August quarter-hour holdout, the selected point model's
-MAE is 16.44 EUR/MWh, versus 17.50 for the fixed day/week average. Adaptive
-Gaussian 95% intervals cover 92.3% of prices; their estimated bias correction
-also increases MAE to 17.20. These results do not establish calibrated uncertainty.
-The saved September–October protocol freezes these settings before inspecting
-the additional prices. Download that price-only extension, then evaluate it
-after the downloader finishes:
-
-```bash
-PYTHONPATH=src python -m bess_pv_trading download-data --config configs/entsoe_price_extension.yaml --interactive
-PYTHONPATH=src python -m bess_pv_trading check-frozen-prices --config configs/price_experiments/price_forward_check.yaml
-```
-
-The check reads DuckDB snapshots and saves a new run under
-`outputs/price_forward_checks/`. Incomplete data produces a waiting status rather
-than a partial scored holdout. Weekly coefficient refits and Gaussian updates
-use only earlier eligible observations; model and covariance settings are not
-reselected from the new period.
-
-The completed September 1–October 16 check scores 4,416 prices. The frozen ridge
-model has MAE 15.56 EUR/MWh versus 18.29 for the day/week average; the weighted
-model has MAE 16.16. Their adaptive nominal 95% coverage is 94.25% and 95.24%,
-respectively. The weighted intervals are wider, and its CRPS is worse. Both
-checks reproduce all 8,160 earlier point predictions exactly. These are
-previously uninspected historical revisions, with unverified publication
-vintages; the results do not establish operational trading performance.
-
-The Gaussian mean is the linear prediction plus a separately estimated bias;
-noise has zero mean and covariance estimated from out-of-sample prediction
-errors. `forecasting.gaussian_prices.gaussian_price_tree` connects these paths to
-the MILP's existing scenario/tree contracts. It rejects unverified vintages by
-default; retrospective studies require an explicit opt-in. A DA-only schedule
-is supported while actual IDA labels remain absent. See
-[price study protocol and limitations](docs/market_price_notes.md).
-
-`build_future_linear_price_features` assembles tomorrow's predictors without
-requiring its realized prices. `LinearPriceForecast.load(...).predict(...)`
-reuses a selected point model, and `GaussianPriceCalibration.load(...)` reuses
-its uncertainty calibration. Feature settings and model cutoffs must match the
-saved study; the most recent refit cannot be used to predict earlier test days.
-
-`forecasting.price_oracle.build_perfect_foresight_scenarios` supplies the separate
-perfect-foresight benchmark. It repeats actual price curves across the supplied
-PV members, currently one, with no price noise. It retains member probabilities
-and shared decisions until completed PV observations distinguish members. Its
-outputs explicitly identify a non-executable benchmark. Forecast and oracle
-comparisons must use the same assets, settlement assumptions and PV observation
-convention.
-
-**Depth-dependent aging:** `configs/full_experiments/synthetic_xu.yaml` enables the implemented Xu segmented cycle-depth equations, with discharge-only costs, carried segment memory and explicitly illustrative lifetime/cost parameters. It can be used with either `optimize` or `run-synthetic`. The throughput baseline remains available. See [Xu equations, assumptions and executed tests](docs/xu_degradation.md).
-
-Use the existing `bess` environment without installing anything:
-
-```bash
-conda activate bess
-PYTHONPATH=src python -m bess_pv_trading validate-config --config configs/farms_nord.yaml
-PYTHONPATH=src python -m bess_pv_trading inspect-data --config configs/farms_nord.yaml
-PYTHONPATH=src python -m bess_pv_trading prepare-analysis-data --config configs/farms_nord.yaml
-PYTHONPATH=src python -m bess_pv_trading forecast-pv --config configs/farms_nord.yaml
-PYTHONPATH=src python -m bess_pv_trading optimize --config configs/full_experiments/synthetic_small.yaml
-PYTHONPATH=src python -m bess_pv_trading run-synthetic --config configs/full_experiments/synthetic_small.yaml
-PYTHONPATH=src python -m bess_pv_trading run-synthetic --config configs/full_experiments/synthetic_dst_fall.yaml
-PYTHONPATH=src python -m bess_pv_trading run-synthetic --config configs/full_experiments/synthetic_dst_spring.yaml
-PYTHONPATH=src python -m bess_pv_trading import-market-data --config configs/price_experiments/synthetic_prices.yaml
-PYTHONPATH=src python -m bess_pv_trading train-price-models --config configs/price_experiments/synthetic_prices.yaml
-PYTHONPATH=src python -m pytest -q --junitxml=docs/generated/tests.xml
-PYTHONPATH=src python -m bess_pv_trading report-implementation --config configs/report.yaml
-```
-
-`backtest` accepts the synthetic configuration and runs its complete event replay. Historical market replay rejects missing real auction prices, unresolved settlement and unspecified hardware. `configs/price_experiments/italy_nord.example.yaml` describes the canonical market import/training boundary; it requires actual files. `configs/price_experiments/synthetic_prices.yaml` uses a small, explicitly synthetic sparse fixture, preserves gaps and demonstrates the import/cache/regression commands. It does not supply historical market labels. `optimize` also accepts prepared complete PV/point-price CSV forecasts and explicit equipment through `configs/full_experiments/prepared_optimization.example.yaml`; its null inputs must be supplied first. That route validates provenance and supports initial pre-DA planning.
-
-The broader prepared-input route in
-`configs/full_experiments/stochastic_prepared.example.yaml` accepts probabilistic PV members,
-saved point/conditional-spread models and Gaussian calibrations, known auction
-prices and committed positions. It supports both initial and residual solves
-through the same `optimize` command. See the
-[canonical input contract](docs/forecast_optimization_inputs.md) for the table
-schemas, timing checks and explicit study assumptions. Its integration evidence
-uses synthetic fixtures; actual intraday history is still required for empirical
-trading evaluation.
-
-Trading outputs are grouped under `outputs/trading/<run>/farm_<id>/<delivery day>/` by file type: `plots/<strategy>/`, `csv/<strategy>/`, `json/<strategy>/` and `models/<strategy>/`. These contain the immutable accepted-trade ledger, dispatch, event trace, solver/independent validation records, cash flow summaries and plots. The run manifest is `json/manifest.json`; GME full experiments use the same layout, with study-wide figures and KPI files directly inside the corresponding type folders. Single `optimize` runs save `json/result.json` and `arrays/solution.npz`. Generated run IDs are unique; existing run directories cannot be overwritten. Equipment values in `synthetic_small.yaml` are illustrative. Ordinary, spring and autumn DST days use 96, 92 and 100 products. The four separate benchmarks use the same realization and constraints; the oracle explicitly receives future truth. Pending submitted quantities remain fixed until publication, when contractual cash enters the accepted ledger once.
-
-`configs/farms_nord.yaml` binds the actual schema. Its conservative real-data PV example flags four BHI/GHI contradictions and cannot provide a complete optimizer input. `configs/farms_nord_radiation_sensitivity.yaml` explicitly clips those contradictions as an exploratory sensitivity. Both retain source values, flags, exact-grid AC evaluation and assumptions. No farm or market series is silently made complete.
-
-Measured production is already **AC**. Installed capacity is **DC nameplate**. The assumed **0.97 efficiency is the BESS converter's efficiency in each direction**; it is not applied to measured PV or direct PV exports. The fallback PV DC-to-AC forecast factor is separately configured and unfitted. Milan geometry, tracker parameters and farm-901 front-side-only treatment remain declared approximations. Available aging models are constant AC charge-plus-discharge throughput and Xu segmented cycle-depth aging; their coefficients and replacement cost remain explicit assumptions.
-
-See [dataset contract](docs/dataset_contract.md), [assumptions](docs/assumptions.md), [formulation](docs/formulation.md), [data/PV notes](docs/data_pv_notes.md), [market/price notes](docs/market_price_notes.md) and [consulted sources](docs/sources.md). No dependencies, licenses, commits or remotes are changed by these commands. If an execution sandbox masks the host identifier, solver commands need the ordinary host execution context for the existing license.
-
-## Preserved farm data audit
-
-The first implementation audits four anonymous PV plants before any PV model is fitted. It reads the full Zarr time series and Parquet farm metadata, keeps all raw values, and writes reviewable CSV tables and PNG plots. There is no automatic correction, exclusion mask, time shift, or fault verdict.
-
-The source files live in `data/farms/`. The `data/` directory is also reserved for later price downloads; raw and downloaded data are ignored by Git.
-
-## Run
-
-Use the existing `bess` environment and run from this repository:
-
-```bash
-conda activate bess
-python -m bess_pv_trading.audit --config configs/audit.yaml
-```
-
-The command creates a new `outputs/qa/<UTC run ID>/` directory. Set `outputs.run_id` in the YAML to give a run a fixed name; a run ID cannot overwrite an existing output directory. The CLI prints the destination at completion. Every run includes a copy of its effective YAML config.
-
-The config chooses input paths, the inclusive UTC historical interval-start window, Milan proxy coordinates, the assumed forecast publication lag, diagnostic bins and thresholds, and plot limits. Paths in the config are resolved from this repository. The bins are *count sensitivities*: changing a bin does not change any source value. The episode thresholds only select review candidates and are also adjustable.
-
-`plots.pinned_events` can name a farm, category, and UTC instant to keep specific observed episodes in the bounded plot set. The supplied config pins the four previously identified examples; pins outside a selected date window are skipped.
-
-## Input conventions
-
-| Coordinate | Meaning |
+| Configuration | Purpose |
 | --- | --- |
-| `time` | Start of a historical 15-minute interval. `power` is average AC kW; satellite `ghi` is W/m² with the same start-label convention. The satellite within-interval measurement operator is not independently established. |
-| `cycle_time` | Timestamp identifying one forecast issue or vintage, usually six hours after the preceding cycle. It is not a delivery timestamp. |
-| `lead_time` | Offset from `cycle_time` to a forecast target, at hourly steps from zero to 48 hours in the current store. |
-| `valid_time` | `cycle_time + lead_time`. For radiation, this marks the *end* of the forecast hour: an hourly value at 11:00 UTC represents `[10:00, 11:00)`. |
+| `gme_oracle_2025-01-01_farm910_perfect_pv_comparison_terminal_soc_50.yaml` | Current January study with a 50% planned terminal SOC, perfect-PV comparison, and optional PV-only baseline |
+| `gme_oracle_2025-01-01_farm910_perfect_pv_comparison.yaml` | Same comparisons with the inherited free terminal SOC |
+| `gme_oracle_2025-01-01_farm910_quarter_hour_ida.yaml` | Native hourly DA / quarter-hour IDA historical replay |
+| `synthetic_small.yaml` | Reproducible synthetic replay comparing four trading strategies |
+| `synthetic_xu.yaml` | Synthetic segmented depth-dependent aging example |
+| `synthetic_dst_spring.yaml`, `synthetic_dst_fall.yaml` | Synthetic 23-hour and 25-hour delivery days |
+| `prepared_optimization.example.yaml` | Initial point-price planning from complete prepared CSV forecasts |
+| `stochastic_prepared.example.yaml` | Initial/residual planning from PV members, saved price models, calibrations, and commitments |
 
-The current store has one forecast per cycle and **no ensemble-member dimension**. Later ensemble data can add members while retaining the vintage and valid-time structure. A cycle is treated as usable from `cycle_time + availability_lag_hours` (four hours in the default config). For each historical quarter-hour the audit attaches the latest forecast whose cycle was available before its forecast hour started. Forecast accuracy tables separately score every forecast vintage against the mean of its four matching historical GHI quarters, where all four quarters are present. No future-issued cycle is used as event context.
+These files are under `configs/full_experiments/`. The prepared examples deliberately contain `null` inputs that must be supplied. Earlier experimental YAMLs remain reproducibility settings; their filenames do not establish which data or assumptions were used in an old saved run.
 
-The Parquet file supplies the farm-level metadata by `farm_id`, including `total_power`, which is **installed DC capacity in kW**. Solar elevation is calculated at the midpoint of each historical interval with Milan as a proxy; farm coordinates are anonymous, so twilight classifications are approximate. All timestamps in outputs are UTC, including those on daylight-saving transition days.
+### Battery, POI, and initial/terminal state
 
-The new Zarr labels `shortwave_radiation` and `direct_radiation` as hourly interval-average W/m² without identifying the source parameters. If they originated from ECMWF `ssrd` and `fdir`, respectively, their physical counterparts are total shortwave and direct-beam irradiance on a **horizontal** surface. ECMWF defines [ssrd](https://codes.ecmwf.int/grib/param-db/169) as direct plus diffuse surface radiation and [fdir](https://codes.ecmwf.int/grib/param-db/228021) as its direct component on a horizontal plane. That source mapping remains an inference, not a verified field-level provenance claim. The audit compares shortwave to historical GHI as a diagnostic; it does not call either forecast ground truth.
+For the GME study, configure the following in your study YAML:
 
-## Review files
+```yaml
+plant:
+  farm_id: 910
+  poi_import_mw: 6.638
+  poi_export_mw: 6.638
 
-| File | Use |
-| --- | --- |
-| `summary.md` | Coverage, grid and missing checks, event counts, reporting-bin sensitivity, forecast errors, lag correlations, and examples to inspect. |
-| `events.csv` | One row per adjacent suspicious episode, with a stable ID, UTC interval, raw extrema, neighboring values, solar elevation, and available forecast context. A simultaneous daytime GHI-zero episode has a portfolio row as well as individual-farm rows. |
-| `historical_context.csv` | One row per farm and 15-minute historical interval, with raw power/GHI and time-aligned forecast context; open or plot directly in VS Code or pandas. |
-| `forecast_checks.csv` | Forecast-vs-GHI error summaries by farm and lead hour. |
-| `review_template.csv` | Event IDs with blank `decision` and `notes` columns for a human review. |
-| `plots/<farm_id>/<date>/` | PNG overview and bounded event-window plots. |
+battery:
+  capacity_mwh: 5.0
+  max_power_mw: 2.5
+  soc_min_percent: 10.0
+  soc_max_percent: 90.0
+  efficiency_convention: combined
+  combined_charge_efficiency: 0.97
+  combined_discharge_efficiency: 0.97
+  self_discharge_per_hour: 0.0
 
-An event is a prompt to inspect a period, not a judgement that the underlying GHI or power is wrong. The candidate families include deep-night positive power, daylight zero GHI, unexpectedly low power under substantial GHI, abrupt power or GHI moves, constant positive power, missing measurements, and values outside configurable physical ranges. Event windows include surrounding points to show whether the series recovers. Shared GHI events help distinguish a common irradiance data issue from one plant's power issue.
+state:
+  initial_soc_percent: 50.0
+  terminal_soc_percent: 50.0  # null omits the terminal equality
 
-The CSV uses short decimal representations of the source `float32` values. Reading those columns back as `float32` exactly reproduces the Zarr values; reading them as default `float64` can display tiny decimal differences because of the change in numeric type.
-
-Reviewing and labeling these events remains a separate task. The new application applies only the explicitly requested derived policy, retaining original audit verdicts. Legacy audit column names such as `power_dc_kw` are preserved for compatibility and refer to the corrected measured AC series; they do not imply a second conversion.
-
-## Cloud correlation study
-
-Run the supplementary study against a completed audit:
-
-```bash
-python -m bess_pv_trading.cloud_check --config configs/audit.yaml \
-  --audit-dir outputs/qa/<run_id>
+solver:
+  threads: 10
+  time_limit_seconds: 120.0
+  mip_gap: 0.0001
+  seed: 17
+  output_flag: false
 ```
 
-It compares shared GHI zeros and sudden AC power drops with available total, low, middle and high cloud forecasts. The main comparisons select intervals with recorded/forecast irradiance or production evidence; they do not infer actual daylight from Milan coordinates. An irradiance-only comparison shows the effect of possible faulty power readings. Milan solar elevation is retained as a reference and selection sensitivity, and never determines a fault verdict. Instantaneous hourly cloud cover is interpolated within one forecast cycle to each measurement midpoint. Cloud tendencies over 15 and 60 minutes also use one cycle, which prevents forecast revisions from appearing as passing clouds. The study writes CSVs, a report, and plots below that audit's `cloud_cover_check/<study_run_id>/` directory.
+These are the current farm-910 study assumptions, not verified equipment ratings. The selected farm has 6.638 MWp DC nameplate. `max_power_mw` is one symmetric AC charging/discharging rating. SOC percentages refer to nominal internal energy capacity, so changing capacity automatically rescales the SOC limits and GME initial/terminal energy. Absolute MWh SOC limits and separate charge/discharge or battery-inverter power limits are rejected. Internal solver state and prepared-input/synthetic boundary states still use explicitly named MWh fields.
 
-The comparisons include cloud-bin event rates, month/UTC-hour matched controls for shared zeros, selection and hourly aggregation sensitivity checks, and power-drop rates conditioned on enough preceding production to allow the drop. Cloud cover is a forecast of coverage, and does not measure cloud optical thickness or verify what happened directly over the farm. `cloud_analysis` in the YAML sets the comparison thresholds and plot limits. These define reporting cohorts, not cleaning rules.
+Battery charging and discharging can contribute to grid imports/exports as well as absorb PV. Only PV can be curtailed. The battery energy transition applies charging and discharging efficiencies exactly once. Alternatively choose `converter_and_cell` and provide its separate converter/cell efficiency fields; do not mix the two conventions. There is no additional independent battery inverter power limit.
 
-The supplementary study checks that the audit's date window, solar proxy, publication lag and event-selection thresholds still match the supplied YAML. Rerun the main audit first if those choices change.
+Every auction trade, cumulative contracted position after each auction, and physical grid power uses the configured directional POI limits. There is no separate 1 MW commercial cap. Individual trades can offset earlier trades, so trading between auctions can generate spread revenue in both the PV-only and PV+BESS cases.
+
+The terminal equality constrains optimization plans. The realized feedback controller enforces physical limits and grid tracking, rather than a separate terminal-SOC objective; it may finish away from the target after forecast errors. The perfect-information schedule obeys its terminal equality. Compare terminal energy as well as profit when interpreting results.
+
+Solver optimality uses a **relative MIP gap of `1e-4` (0.01%)** by default. Do not configure an absolute MIP gap. Status, objective, achieved relative gap, runtime, and model size are saved with each solve.
+
+### Trading, execution, and comparisons
+
+```yaml
+forecast:
+  reoptimization_pv_policy: latest_available_forecast_at_each_reoptimization
+
+trading:
+  optimize_imbalances: false
+  imbalance_penalty_eur_per_mwh: 0.0
+  grid_import_fee_eur_per_mwh: 0.0
+
+execution:
+  dispatch_policy: track_committed_grid
+
+experiment_outputs:
+  plots: true
+  save_model_files: true
+  pv_only_baseline: true
+```
+
+`optimize_imbalances: false` omits optimized imbalance variables and requires forecast grid energy to equal the contracted position in every planning interval. Actual deviations are then an execution/settlement outcome. The general formulation also has an optional optimized-deviation mode, which is not used by the current farm-910 experiment. Curtailment has no explicit cost in the current objective.
+
+The alternative PV policy is `freeze_initial_forecast_for_unobserved_delivery_intervals`. The alternative execution policy is `follow_battery_plan`, with the same physical protection. The GME workflow always disables additional physical-control optimizations, retaining one solve per active auction.
+
+Set `experiment_outputs.pv_only_baseline: false` to skip the extra PV-only solve, its files and comparison figure. Its objective and incremental-value KPI fields become `null`, with `pv_only_baseline_enabled: false`. The perfect-information PV+BESS-versus-feedback comparison still runs. The switch defaults to `true`; the comparison YAML declares it explicitly.
+
+### Degradation and investment interpretation
+
+The current farm-910 study uses `degradation.model: throughput`. It charges the sum of AC charging and discharging energy. Its coefficient is derived from the YAML replacement-pack price, currency conversion, reference cycle life and depth of discharge, normalized for the configured battery efficiencies. The resolved EUR/MWh coefficient and replacement cost are saved with the run.
+
+The inherited example uses a historical generic pack-price proxy and 2,500 cycles at 80% depth; these are editable study assumptions, not a battery-specific installed cost or lifetime calibration. End-of-life capacity metadata does not dynamically reduce usable capacity. `xu_segmented` is a separate optional model with cycle-depth memory, marginal discharge costs and additional priority binaries; see the mathematical document and [Xu implementation notes](docs/xu_degradation.md).
+
+The battery-value comparison is
+
+`battery_incremental_operating_value_eur = PV+BESS perfect-information objective - PV-only perfect-information objective`.
+
+Both cases use the same realized PV, actual prices, auction eligibility and POI. The PV-only solve reuses the same builder with battery capacity, power, stored energy and wear set to zero; battery variables are fixed at zero rather than handled by a different formulation. The PV+BESS case retains its configured initial/terminal energy policy. Its objective difference is after modeled degradation and before capital expenditure, fixed O&M, financing, taxes or residual inventory valuation. It is distinct from feedback-controller realized profit. An investment study needs a representative longer horizon and an explicit cost/cash-flow treatment; a single hindsight day is an operational comparison.
+
+### Changing the study day
+
+Keep `gme_oracle_experiment.delivery_day`, `forecast_run.delivery_day`, the initial forecast cutoff, and `market.valid_from`/`valid_to` consistent. Ensure all selected price datasets, required weather vintages, realized PV and enabled settlement prices cover that day. Set `auction_datasets.<auction>.native_interval_minutes` to the actual native product resolution. Choose a fresh run ID. Calendar and availability settings are explicit study assumptions and must match the period studied.
+
+## Data acquisition and local imports
+
+Private farm inputs are the Zarr and Parquet paths in `configs/data_schema.yaml`, currently under `data/farms/`. The shared acquisition/import catalog is **`data/api/market.duckdb`**. It stores normalized products and typed/raw snapshots with request identity, checksums, retrieval metadata and revision history. Farm Zarr data is independent of this database.
+
+Use one writer at a time. Stop a running downloader before opening the database from another analysis process. Offline experiments read completed snapshots; incomplete acquisition does not prevent studying complete covered days. Do not treat retrieval time or an unverified provider creation timestamp as historical publication evidence.
+
+### Provider APIs
+
+Plan requests without network/authentication, inspect cache coverage, then download explicitly when needed:
+
+```bash
+python -m bess_pv_trading download-data --config configs/api_experiments/api_history.yaml --dry-run
+python -m bess_pv_trading api-cache-status --config configs/api_experiments/api_history.yaml
+python -m bess_pv_trading download-data --config configs/api_experiments/api_history.yaml --interactive
+```
+
+The history config currently requests 1 January 2025 through 31 August 2026 (`api.end` is exclusive) and completes requested datasets month by month using daily request keys. Rerunning resumes cached completed chunks; transient failures have bounded retry/backoff. `--refresh-cache` requests new snapshots while retaining prior revisions. No data is downloaded by an offline experiment command.
+
+| Provider | Configuration examples | Credentials / scope |
+| --- | --- | --- |
+| ENTSO-E | `entsoe_api.yaml`, `api_history.yaml` | `ENTSOE_API_TOKEN`; day-ahead prices and regional forecasts |
+| Terna | `terna_api.yaml`, `terna_wind_check.yaml` | `TERNA_CLIENT_ID`, `TERNA_CLIENT_SECRET`; configured load, forecast and renewable datasets |
+| GME | `gme_api.yaml`, `gme_history.yaml` | `GME_USERNAME`, `GME_PASSWORD`; separate GME API account, MGP and MI-A prices |
+
+Provider configs live under `configs/api_experiments/`. Use the hidden `--interactive` prompts for missing credentials, or set the environment variables named by the chosen config. Never put secrets into YAML or source control. See [API storage/workflow](docs/api_pipeline.md), [ENTSO-E](docs/entsoe_api.md), [Terna](docs/terna_api.md), and [GME](docs/gme_api.md). The legacy file-cache migration command is available when needed:
+
+```bash
+python -m bess_pv_trading migrate-api-cache --config configs/api_experiments/api_history.yaml
+```
+
+### GME and Terna workbooks
+
+The manual historical study uses local GME auction-price and Terna imbalance workbooks:
+
+```bash
+python -m bess_pv_trading import-gme-workbooks --config configs/api_experiments/gme_workbook_import.yaml
+python -m bess_pv_trading import-terna-workbooks --config configs/api_experiments/terna_workbook_import.yaml
+```
+
+The import YAMLs declare paths, sheet/column mappings, native product resolutions, selected zone and date ranges. The current GME config covers hourly MGP January–August 2025 and native quarter-hour MI-A1/2/3 from 1 January through 1 April 2025 inclusive. It archives and retires the superseded hourly IDA snapshots while preserving DA and unrelated providers. The Terna config selects NORD macrozone quarter-hour settlement prices for January–August 2025. Actual local coverage is established by importer manifests and catalog checks, not by these configured ranges alone.
+
+Native `Periodo` indices and local delivery dates identify MI products, including DST and the IDA3 noon-to-midnight window. The importer requires supported missing-price markers/cancellation evidence; missing files or partial curves are not inferred to mean cancellation. Workbook settlement remains a signed energy-accounting implementation under the study's selected price convention, not a complete reproduction of every participant-specific imbalance charge.
+
+## Time, data quality, and PV forecasting
+
+All internal event/product timestamps are timezone-aware and use UTC. Market days, gates and figures use `Europe/Rome`. Local midnight-to-midnight grids produce 92, 96 or 100 quarter-hours on spring-DST, ordinary and autumn-DST days. Repeated local hours retain their UTC offsets/folds.
+
+| Quantity | Representation |
+| --- | --- |
+| Historical farm `power` | Interval-average AC kW, start-labelled, scaled to MW once |
+| Farm installed nameplate | DC kW in metadata; reported as MWp DC |
+| Historical satellite GHI | Observed irradiance, not an available future weather forecast |
+| Weather radiation | End-labelled hourly means; redistributed over their contained quarters |
+| Other weather fields | Interpolated only under their declared semantics and coverage |
+| Forecast vintages | Separate cycle and availability times; default publication lag is four hours |
+| Optimization powers / stored energy | AC MW / internal MWh |
+| Auction quantities / prices | Signed interval MWh / EUR per MWh |
+
+Weather cycles occur about every six hours; overlapping cycles are successive vintages, not independent ensemble members. At each auction the rolling policy selects the latest eligible vintage, including IDA3's remaining delivery horizon. More than one auction can legitimately use the same vintage when no newer cycle is available yet. Realized production is used for feedback and settled observations, not substituted for unknown future PV in an ordinary auction plan. At a cutoff inside an unfinished interval, the next boundary state is projected with forecast PV through the controller; the final interval-average measurement is not known yet.
+
+The data policy preserves raw values and records flags, adjustments and evidence times. Current policies include nonzero plateau treatment, a configured local night window, allowlisted nonnegative forecast fields, and two-sided interpolation of eligible historical power/GHI gaps. Those are explicit analysis assumptions: some corrections become knowable only after a later sample. As-of views retain that distinction. Forecast gaps are not automatically filled; the historical GME study permits its configured night-zero forecast handling and a bounded, recorded realized-power fallback.
+
+The PV model uses forecast GHI and horizontal direct irradiance, solar position, fixed or single-axis orientation, isotropic plane-of-array irradiance, Faiman temperature from air temperature and wind speed, and PVWatts DC power. A configurable DC-to-AC factor and separate PV transformer factor produce predicted AC output, optionally clipped to an AC rating. Measured AC is not converted again. The current location is an acknowledged Milan proxy; tracker geometry and temperature coefficients are configured assumptions. Bifacial tracking is currently a front-side-only approximation. Clouds and dew point may be retained in the input store but do not directly enter this conversion. See [data contract](docs/dataset_contract.md) and [PV notes](docs/data_pv_notes.md).
+
+Before 1 October 2025, **DA energy orders are hourly**, represented as equal quarter-hour shares. **IDA orders and physical battery controls remain quarter-hourly**, including in January 2025. Repeating a native hourly DA price into four objective coefficients does not create four independent DA prices or require hourly-flat battery dispatch. IDA3's configured gate is 10:00 local, its decision cutoff is five minutes earlier, and its eligible deliveries begin at 12:00 local. Other gates/results and their historical validity are YAML settings. Figures include the final delivery boundary when available.
+
+## Outputs and how to read them
+
+Historical studies are organized under:
+
+```text
+outputs/full_experiments/gme_oracle/<run_id>/farm_<id>/<delivery_day>/
+  json/
+    manifest.json                     artifact inventory and input provenance
+    study_config.json                 effective configuration
+    kpis.json                         aggregate metrics and assumptions
+    pv_forecast_updates.json          forecast cycles used at auction decisions
+    perfect_pv_counterfactual.json     full-information PV+BESS result and validation
+    perfect_pv_only_counterfactual.json  optional PV-only result
+    oracle/                           auction solve/publication/ledger summaries
+  csv/
+    kpis.csv                          scalar KPI table
+    auction_prices_expanded.csv       objective coefficients on physical intervals
+    pv_forecast_and_realized.csv      forecast/measurement comparison and vintages
+    pv_power_allocation.csv           PV-to-grid, PV-to-battery, curtailed PV
+    perfect_pv_counterfactual_schedule.csv
+    perfect_pv_only_counterfactual_schedule.csv
+    reoptimization_imbalance_*.csv    snapshot-plan ex-post settlement diagnostics
+    oracle/                           executed dispatch, auction plans and trade ledger
+  plots/                              study figures and oracle/ dispatch figures
+  models/                             optional LP exports, including oracle/ residual models
+```
+
+Availability of settlement/counterfactual files follows enabled settings and actual data. The saved manifest inventories files actually present. Important figures include DA/IDA1/IDA2 prices together, separate IDA3 prices, four auction-specific forecast/dispatch figures, all-used PV vintages, executed SOC and tracking, PV allocation, settlement/profit breakdown, the perfect-PV-versus-feedback comparison, and the optional storage-value comparison. The removed combined `expected_dispatch_by_auction` plot is not generated.
+
+`json/kpis.json` includes study date/farm, installed capacity, complete asset/solver/degradation settings, auction cash flows, realized gain, signed and absolute imbalance, curtailment, charging/discharging, throughput and executed wear, SOC metrics, model sizes/statuses, forecast errors and vintages, source snapshot provenance, and expected-versus-realized revenue/profit differences. Detailed runtimes and validation residuals are in the solve diagnostics; dispatch CSVs hold the complete state trajectory. Differences use **realized minus initial expected**; percentages divide by the absolute initial expectation and are `null` for a zero baseline. If actual settlement is unavailable, net settled profit is unknown rather than silently priced at zero.
+
+The current comparison fields are `perfect_information_objective_eur`, `pv_only_perfect_information_objective_eur`, and `battery_incremental_operating_value_eur`. Those objectives are solver `ObjVal` values. The storage-value difference compares the two hindsight models, while `total_gain_eur` is the executed feedback strategy's settled profit. Degradation in these distinct trajectories is not interchangeable: executed wear is computed from executed powers; each counterfactual reports its own component costs.
+
+Single `optimize` runs save `json/result.json` and `arrays/solution.npz`. Synthetic replays use the same file-type organization under `outputs/trading/<run>/farm_<id>/<day>/`, with one subdirectory per strategy.
+
+## Other supported workflows
+
+| Task | Command and example configuration |
+| --- | --- |
+| Inspect farm schemas | `inspect-data --config configs/farms_nord.yaml` |
+| Prepare policy-treated data | `prepare-analysis-data --config configs/farms_nord.yaml` |
+| Convert a selected weather vintage to PV | `forecast-pv --config configs/farms_nord_radiation_sensitivity.yaml` |
+| Initial/residual prepared optimization | `optimize --config configs/full_experiments/stochastic_prepared.example.yaml` after filling its inputs |
+| Single synthetic optimization | `optimize --config configs/full_experiments/synthetic_small.yaml` |
+| Synthetic strategy replay | `run-synthetic --config configs/full_experiments/synthetic_small.yaml` |
+| Baseline DA price experiment | `experiment-api-prices --config configs/price_experiments/price_experiment.yaml` |
+| Load/wind/solar feature study | `experiment-price-fundamentals --config configs/price_experiments/price_fundamentals_january.yaml` |
+| Rolling point-price model selection | `study-linear-prices --config configs/price_experiments/price_linear_methods.yaml` |
+| Gaussian calibration study | `calibrate-price-scenarios --config configs/price_experiments/price_gaussian_adaptive.yaml` |
+| Frozen later-period evaluation | `check-frozen-prices --config configs/price_experiments/price_forward_check.yaml` |
+| Canonical CSV/XML market imports | `import-market-data --config configs/price_experiments/italy_nord.example.yaml` after supplying files |
+| Portable level/spread model training | `train-price-models --config configs/price_experiments/synthetic_prices.yaml` for the synthetic fixture |
+
+Prefix each command with `python -m bess_pv_trading`. `backtest` currently routes synthetic configurations through their replay and rejects an unsupported generic historical backtest; use `experiment-gme-oracle` for the implemented manual-data historical experiment. `report-implementation` is a retained legacy evidence renderer, not the source of the current mathematical document; the old JSON evidence and bibliography are historical records.
+
+Price studies use chronological training, earlier validation for model selection, separate out-of-sample errors for calibration, and later evaluation periods. Features include lagged prices, calendar/seasonal terms, daily profiles, and configured regional load/wind/solar forecasts. Available estimators include OLS, ridge, recency-weighted ridge, lasso, elastic net and Huber. Gaussian scenarios add separately estimated bias and zero-mean temporally correlated innovations to a point prediction; covariance settings are saved rather than an unexplained fixed noise level. Native hourly/quarter-hour and DST grids remain distinct.
+
+In the prepared multiauction route, `branches` is the number at each unknown auction result: two branches at four auctions give up to 16 price paths per PV member, capped by the configured joint-leaf limit. Sampled/known predecessor prices enter conditional IDA means; innovations are independent between auction equations and correlated over delivery products within an equation. Shared-history decisions remain nonanticipative. The actual-price benchmark repeats the same clearing curve across PV members and adds no noise. Retrieved historical revisions with unknown publication vintages remain explicitly retrospective; a timestamped download alone does not establish causal forecast eligibility. See [prepared forecast contracts](docs/forecast_optimization_inputs.md) and [price study notes](docs/market_price_notes.md).
+
+The original farm audit and cloud comparison tools remain available through `python -m bess_pv_trading.audit --config configs/audit.yaml` and `python -m bess_pv_trading.cloud_check --help`. Audit outputs are review candidates and raw-data diagnostics; they are distinct from the policy-treated optimization data.
+
+## Validation and maintaining the documentation
+
+The optimizer independently validates extracted energy/power balances, SOC/power/POI limits, product equalities, information sharing, degradation and objective components before a schedule is accepted. The executor also enforces physical limits and carries realized stored energy and wear. Tests cover farm data semantics, provider/workbook parsing, DuckDB provenance, price forecasts, market calendars, optimization, feedback, settlement and output organization.
+
+To run the suite explicitly in the existing environment:
+
+```bash
+python -m pytest -q
+```
+
+Solver-dependent tests require the existing Gurobi license. Successful software checks do not establish hardware calibration or historical publication validity. Continuous intraday trading, bid-price/acceptance models, market impact, portfolio coupling, ancillary services, battery calendar aging, dynamic capacity fade, and a complete investment valuation are outside the current model.
+
+Rebuild the model document with installed LaTeX tools:
+
+```bash
+latexmk -pdf -interaction=nonstopmode -halt-on-error -outdir=docs/generated/latex docs/mathematical_model.tex
+cp docs/generated/latex/mathematical_model.pdf docs/mathematical_model.pdf
+```
+
+The LaTeX is maintained from the actual implementations in `optimization/model.py`, `optimization/degradation.py`, `simulation/replay.py`, `simulation/synthetic.py`, `simulation/gme_oracle.py`, and `simulation/settlement.py`. Update both the equations and practical config descriptions when behavior changes. Further details are in [battery physics](docs/battery_physical_model.md), [DuckDB/API workflow](docs/api_pipeline.md), [source notes](docs/sources.md), and the new [model document](docs/mathematical_model.tex).

@@ -101,7 +101,7 @@ def _components(tests: dict, runs: list[dict], pv: dict, analysis: dict,
         ("Xu cycle-depth segmented aging","optimization/degradation.py",tested,"Eq.5/7 segment costs, appendix priority/state carry; analytical/rainflow/solver/replay tests"),
         ("Independent numerical validation","optimization/validation.py",tested,"Recomputed accounting/bounds; intentionally altered solutions rejected"),
     ]
-    return [{"component":name,"module":"src/bess_pv_trading/"+module,"status":status,"evidence":evidence}
+    return [{"component":name,"module":"src/"+module,"status":status,"evidence":evidence}
             for name,module,status,evidence in definitions]
 
 

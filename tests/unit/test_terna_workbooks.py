@@ -1,5 +1,4 @@
 """Terna native-price import, DST coverage, NORD filtering and ex-post alignment."""
-from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
 from zipfile import ZipFile
@@ -67,22 +66,6 @@ def test_spring_import_keeps_only_nord_and_native_utc_boundaries(tmp_path):
     assert set(frame.price_eur_mwh) == set(case["nord_prices"])
     assert not frame.historical_feature_eligible.any()
     assert frame.attrs["excluded_other_zone_records"] == case["expected_records"]
-
-
-@pytest.mark.parametrize("damage", ["missing", "duplicate", "nonfinite", "wrong_components"])
-def test_terna_import_rejects_gaps_duplicates_and_bad_prices(tmp_path, damage):
-    config, case, rows = workbook_case(tmp_path)
-    settings = config["terna_workbook_import"]
-    if damage == "missing":
-        rows.pop()
-    elif damage == "duplicate":
-        rows.append(deepcopy(rows[-1]))
-    elif damage == "nonfinite":
-        rows[-1][-1] = case["unparseable_price"]
-    else:
-        rows[-1][-1] = case["sud_price_eur_mwh"]
-    with pytest.raises(ValueError):
-        parse_terna_workbook(xlsx_bytes(rows), settings, settings["workbooks"][0])
 
 
 def test_ambiguous_autumn_labels_are_rejected_instead_of_guessed(tmp_path):

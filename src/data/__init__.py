@@ -12,7 +12,7 @@ import importlib.util as _import_util
 from pathlib import Path as _Path
 import sys as _sys
 
-_audit_source = _Path(__file__).resolve().parents[3] / "bess_pv_trading" / "data.py"
+_audit_source = _Path(__file__).resolve().parents[2] / "bess_pv_trading" / "data.py"
 if _audit_source.is_file():
     _spec = _import_util.spec_from_file_location("bess_pv_trading._legacy_data", _audit_source)
     _legacy = _import_util.module_from_spec(_spec)
