@@ -150,3 +150,8 @@ costs. A one-day ex-post value helps isolate operational contribution but does
 not by itself establish investment payback. The config
 `gme_oracle_2025-01-01_farm910_perfect_pv_comparison_terminal_soc_50.yaml`
 sets the terminal SOC target to 50%.
+
+Set `experiment_outputs.pv_only_baseline: false` in a study YAML to skip the
+PV-only optimization, its schedule and plot, and the incremental-value KPI. It
+defaults to `true` in the perfect-information comparison study and adds one
+optimization solve when enabled.

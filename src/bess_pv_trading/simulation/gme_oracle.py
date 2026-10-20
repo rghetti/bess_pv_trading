@@ -928,29 +928,35 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     perfect_schedule, perfect_diagnostics = _solve_perfect_information_schedule(
         config, grid, plant, schedule, actual_prices, realized_pv,
         initial_energy, day_output)
-    no_bess = replace(battery, capacity_mwh=0.0, max_power_mw=0.0,
-                      energy_min_mwh=0.0, energy_max_mwh=0.0)
-    no_bess_plant = replace(plant, battery=no_bess)
-    no_bess_config = {**config, "state": {**config["state"], "terminal_target_mwh": 0.0}}
-    pv_only_schedule, pv_only_diagnostics = _solve_perfect_information_schedule(
-        no_bess_config, grid, no_bess_plant, schedule, actual_prices, realized_pv,
-        0.0, day_output, artifact_name="perfect_pv_only_counterfactual",
-        degradation_settings=DegradationSettings(0.0))
-    pv_only_objective = float(pv_only_diagnostics["objective_eur"])
-    battery_incremental_value = float(perfect_diagnostics["objective_eur"]) - pv_only_objective
-    perfect_schedule = perfect_schedule.merge(
-        pv_only_schedule[["interval_id", "grid_mw", "curtailment_mw"]].rename(columns={
-            "grid_mw": "pv_only_grid_mw", "curtailment_mw": "pv_only_curtailment_mw"}),
-        on="interval_id", how="left", validate="one_to_one")
-    pv_only_diagnostics.update({
-        "comparison_case": "PV-only plant with zero battery capacity and power",
-        "compared_with_pv_bess_objective_eur": float(perfect_diagnostics["objective_eur"]),
-        "incremental_pv_bess_value_eur": battery_incremental_value,
-        "comparison_basis": "same effective realized PV, actual auction prices, POI, auction products, terminal target policy, and objective accounting"})
-    perfect_diagnostics.update({
-        "pv_only_objective_eur": pv_only_objective,
-        "incremental_battery_operating_value_eur": battery_incremental_value,
-        "incremental_value_interpretation": "PV+BESS perfect-information objective minus PV-only perfect-information objective; after modeled battery degradation and before battery capital, fixed operating, and financing costs"})
+    include_pv_only = bool(config["experiment_outputs"].get("pv_only_baseline", True))
+    pv_only_schedule = None
+    pv_only_diagnostics = None
+    pv_only_objective = None
+    battery_incremental_value = None
+    if include_pv_only:
+        no_bess = replace(battery, capacity_mwh=0.0, max_power_mw=0.0,
+                          energy_min_mwh=0.0, energy_max_mwh=0.0)
+        no_bess_plant = replace(plant, battery=no_bess)
+        no_bess_config = {**config, "state": {**config["state"], "terminal_target_mwh": 0.0}}
+        pv_only_schedule, pv_only_diagnostics = _solve_perfect_information_schedule(
+            no_bess_config, grid, no_bess_plant, schedule, actual_prices, realized_pv,
+            0.0, day_output, artifact_name="perfect_pv_only_counterfactual",
+            degradation_settings=DegradationSettings(0.0))
+        pv_only_objective = float(pv_only_diagnostics["objective_eur"])
+        battery_incremental_value = float(perfect_diagnostics["objective_eur"]) - pv_only_objective
+        perfect_schedule = perfect_schedule.merge(
+            pv_only_schedule[["interval_id", "grid_mw", "curtailment_mw"]].rename(columns={
+                "grid_mw": "pv_only_grid_mw", "curtailment_mw": "pv_only_curtailment_mw"}),
+            on="interval_id", how="left", validate="one_to_one")
+        pv_only_diagnostics.update({
+            "comparison_case": "PV-only plant with zero battery capacity and power",
+            "compared_with_pv_bess_objective_eur": float(perfect_diagnostics["objective_eur"]),
+            "incremental_pv_bess_value_eur": battery_incremental_value,
+            "comparison_basis": "same effective realized PV, actual auction prices, POI, auction products and objective accounting; no battery terminal-energy state exists in the PV-only case"})
+        perfect_diagnostics.update({
+            "pv_only_objective_eur": pv_only_objective,
+            "incremental_battery_operating_value_eur": battery_incremental_value,
+            "incremental_value_interpretation": "PV+BESS perfect-information objective minus PV-only perfect-information objective; after modeled battery degradation and before battery capital, fixed operating, and financing costs"})
     feedback_schedule = dispatch[["interval_id", "charge_mw", "discharge_mw",
         "curtailment_mw", "grid_mw", "net_position_mwh", "energy_start_mwh",
         "energy_end_mwh"]].rename(columns={
@@ -983,19 +989,22 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         "comparison_scope": "feasible perfect-information incumbent compared with feedback-controller realized profit under the same configured assets, POI, auction products, effective PV trajectory and actual auction prices",
         "effective_pv_fallback_intervals": perfect_fallback_intervals})
     perfect_schedule.to_csv(day_output / "csv/perfect_pv_counterfactual_schedule.csv", index=False)
-    pv_only_schedule.to_csv(day_output / "csv/perfect_pv_only_counterfactual_schedule.csv", index=False)
+    if include_pv_only:
+        pv_only_schedule.to_csv(day_output / "csv/perfect_pv_only_counterfactual_schedule.csv", index=False)
     write_json(day_output / "json/perfect_pv_counterfactual.json", perfect_diagnostics)
-    write_json(day_output / "json/perfect_pv_only_counterfactual.json", pv_only_diagnostics)
+    if include_pv_only:
+        write_json(day_output / "json/perfect_pv_only_counterfactual.json", pv_only_diagnostics)
     if config["outputs"]["plots"]:
         _plot_perfect_information_schedule(
             day_output / "plots/perfect_pv_counterfactual_comparison.png",
             grid, dispatch, perfect_schedule, battery, study["timezone"],
             objective_eur=perfect_objective, feedback_profit_eur=feedback_profit)
-        _plot_battery_incremental_value(
-            day_output / "plots/perfect_pv_battery_incremental_value.png",
-            grid, perfect_schedule, pv_only_schedule, study["timezone"],
-            bess_objective_eur=perfect_objective,
-            pv_only_objective_eur=pv_only_objective)
+        if include_pv_only:
+            _plot_battery_incremental_value(
+                day_output / "plots/perfect_pv_battery_incremental_value.png",
+                grid, perfect_schedule, pv_only_schedule, study["timezone"],
+                bess_objective_eur=perfect_objective,
+                pv_only_objective_eur=pv_only_objective)
     eligibility = {}
     for event in schedule:
         mask = np.zeros(len(grid.interval_ids), dtype=bool)
@@ -1093,12 +1102,14 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         "perfect_information_feasible_objective_eur": perfect_objective,
         "perfect_information_feasible_profit_gap_eur": feasible_incumbent_gap,
         "perfect_information_objective_label": "feasible perfect-information incumbent objective (Gurobi ObjVal)",
+        "pv_only_baseline_enabled": include_pv_only,
         "pv_only_perfect_information_objective_eur": pv_only_objective,
         "battery_incremental_operating_value_eur": battery_incremental_value,
-        "battery_incremental_value_basis": "PV+BESS objective minus PV-only objective after modeled degradation and before battery capital, fixed operating, and financing costs",
-        "pv_only_model_status": pv_only_diagnostics["status"],
-        "pv_only_model_variables": pv_only_diagnostics.get("variables"),
-        "pv_only_model_constraints": pv_only_diagnostics.get("constraints"),
+        "battery_incremental_value_basis": ("PV+BESS objective minus PV-only objective after modeled degradation and before battery capital, fixed operating, and financing costs"
+            if include_pv_only else None),
+        "pv_only_model_status": pv_only_diagnostics["status"] if include_pv_only else None,
+        "pv_only_model_variables": pv_only_diagnostics.get("variables") if include_pv_only else None,
+        "pv_only_model_constraints": pv_only_diagnostics.get("constraints") if include_pv_only else None,
         "perfect_information_realized_pv_fallback_intervals": perfect_fallback_intervals,
         "perfect_information_model_status": perfect_diagnostics["status"],
         "perfect_information_model_variables": perfect_diagnostics.get("variables"),
@@ -1192,18 +1203,19 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
             "oracle/solves.json", "oracle/price_publications.json"]}
     manifest["artifacts"].extend([
         "csv/perfect_pv_counterfactual_schedule.csv",
-        "json/perfect_pv_counterfactual.json",
-        "csv/perfect_pv_only_counterfactual_schedule.csv",
-        "json/perfect_pv_only_counterfactual.json",
-        "models/perfect_pv_counterfactual.lp",
-        "models/perfect_pv_only_counterfactual.lp"] if config["experiment_outputs"].get("save_model_files", True) else [
-        "csv/perfect_pv_counterfactual_schedule.csv",
-        "json/perfect_pv_counterfactual.json",
-        "csv/perfect_pv_only_counterfactual_schedule.csv",
-        "json/perfect_pv_only_counterfactual.json"])
+        "json/perfect_pv_counterfactual.json"])
+    if config["experiment_outputs"].get("save_model_files", True):
+        manifest["artifacts"].append("models/perfect_pv_counterfactual.lp")
+    if include_pv_only:
+        manifest["artifacts"].extend([
+            "csv/perfect_pv_only_counterfactual_schedule.csv",
+            "json/perfect_pv_only_counterfactual.json"])
+        if config["experiment_outputs"].get("save_model_files", True):
+            manifest["artifacts"].append("models/perfect_pv_only_counterfactual.lp")
     if config["outputs"]["plots"]:
-        manifest["artifacts"].extend(["plots/perfect_pv_counterfactual_comparison.png",
-                                       "plots/perfect_pv_battery_incremental_value.png"])
+        manifest["artifacts"].append("plots/perfect_pv_counterfactual_comparison.png")
+        if include_pv_only:
+            manifest["artifacts"].append("plots/perfect_pv_battery_incremental_value.png")
     manifest["artifacts"].extend(
         f"reoptimization_{auction}.png" for auction in actual_prices
         if (day_output / f"reoptimization_{auction}.png").exists())

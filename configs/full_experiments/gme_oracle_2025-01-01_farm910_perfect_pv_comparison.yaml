@@ -6,3 +6,4 @@ gme_oracle_experiment:
 
 experiment_outputs:
   run_id: gme_nord_oracle_2025-01-01_farm910_native_ida_pt15_perfect_pv_comparison
+  pv_only_baseline: true
