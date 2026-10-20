@@ -1,0 +1,4 @@
+include: synthetic_fees_none.yaml
+transaction_fees:
+  mode: flat
+  flat_eur_per_mwh: 0.04

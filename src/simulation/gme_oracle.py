@@ -26,6 +26,7 @@ from ..optimization.validation import validate_solution
 from ..reporting.artifacts import organize_run_outputs
 from ..reporting.plots import plot_boundary_series, plot_interval_series, plot_pv_allocation
 from ..scenarios import synthetic_price_tree
+from ..transaction_fees import transaction_fees_from_config
 from .synthetic import _replay_strategy, write_json
 from .replay import execute_interval
 from .settlement import expected_realized_kpis, load_realized_imbalance_prices, settle_realized_dispatch
@@ -38,6 +39,7 @@ def _apply_actual_settlement(config, grid, dispatch, summary, destination):
         return dispatch, summary, provenance
     settled, kpis = settle_realized_dispatch(dispatch,
         auction_revenue_eur=summary["components"]["auction_revenue_eur"],
+        transaction_fees_eur=summary["components"].get("transaction_fee_eur", 0.0),
         imbalance_prices=prices.settlement_price_eur_mwh.to_numpy(float))
     settled["imbalance_cashflow_eur_assumed"] = settled.imbalance_cashflow_eur
     settled["imbalance_cashflow_eur"] = settled.realized_imbalance_cashflow_eur
@@ -46,7 +48,7 @@ def _apply_actual_settlement(config, grid, dispatch, summary, destination):
         "imbalance_cashflow_eur": kpis["realized_imbalance_cashflow_eur"]}
     summary = {**summary, **kpis, "components": components,
         "realized_operating_profit_eur": kpis["realized_profit_after_imbalance_eur"],
-        "realized_operating_profit_status": "actual_single_price_settlement_minus_executed_wear_and_import_fees",
+        "realized_operating_profit_status": "actual_single_price_settlement_minus_executed_wear_import_and_transaction_fees",
         "settlement_price_provenance": provenance}
     summary.update(expected_realized_kpis(
         initial_expected_profit_eur=summary["initial_expected_profit_eur"],
@@ -201,8 +203,9 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
         origin=config["state"].get("origin", "known_delivery_start_assumption"))
     study = config["gme_oracle_experiment"]
     trade = config["trading"]
+    fees = transaction_fees_from_config(config)
     inputs = OptimizationInput(
-        grid=grid, plant=plant, state=state, market=MarketState(),
+        grid=grid, plant=plant, state=state, market=MarketState(transaction_fee_state=fees.initial_state),
         scenarios=scenario, tree=tree, auction_eligibility=eligibility,
         imbalance_penalty_eur_per_mwh=float(trade["imbalance_penalty_eur_per_mwh"]),
         terminal_target_mwh=config["state"]["terminal_target_mwh"],
@@ -215,7 +218,9 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
         native_interval_minutes_by_auction={auction: int(study["auction_datasets"][auction]["native_interval_minutes"])
             for auction in actual_prices},
         planned_delivery_balance_resolution_minutes=trade.get("planned_delivery_balance_resolution_minutes"),
-        optimize_imbalances=bool(trade.get("optimize_imbalances", True)))
+        optimize_imbalances=bool(trade.get("optimize_imbalances", True)),
+        transaction_fees=fees,
+        auction_submission_times={event.auction: event.submission_at for event in schedule})
 
     save_model = bool(config["experiment_outputs"].get("save_model_files", True))
     model_file = destination / "models" / f"{artifact_name}.lp" if save_model else None
@@ -399,19 +404,28 @@ def _plot_settlement(destination, dispatch, summary, timezone):
         cumulative - dispatch.realized_imbalance_cashflow_eur, cumulative, drawstyle="steps-post")
     axes[2].set_ylabel("Cumulative imbalance\nsettlement EUR")
     axes[2].set_xlabel(f"Delivery time ({timezone})")
-    axes[0].set_title("Actual Terna NORD prices applied only to executed quarter-hour deviations")
+    axes[0].set_title("Realized settlement prices applied only to executed quarter-hour deviations")
     axes[0].set_xlim(times.iloc[0], ends.iloc[-1])
     for axis in axes:
         axis.axhline(0, color="black", linewidth=0.6)
         axis.grid(alpha=0.2)
     fig.savefig(destination / "imbalance_settlement.png", dpi=140)
     plt.close(fig)
+    fee_summary = summary.get("transaction_fees", {})
+    gross = fee_summary.get("gross_traded_mwh", 0.0)
+    labels = ["Auction revenue", "Imbalance settlement", "Battery wear", f"Trading fees\n{gross:.2f} MWh gross"]
     values = [summary["components"]["auction_revenue_eur"], summary["realized_imbalance_cashflow_eur"],
-        -summary["components"]["degradation_eur"], -summary["components"]["import_fee_eur"],
-        summary["realized_profit_after_imbalance_eur"]]
+        -summary["components"]["degradation_eur"], -summary["components"].get("transaction_fee_eur", 0.0)]
+    colors = ["tab:blue", "tab:green" if values[1] >= 0 else "tab:red", "tab:red", "tab:red"]
+    if summary["components"]["import_fee_eur"]:
+        labels.append("Grid import fees")
+        values.append(-summary["components"]["import_fee_eur"])
+        colors.append("tab:red")
+    labels.append("Net operating profit")
+    values.append(summary["realized_profit_after_imbalance_eur"])
+    colors.append("tab:purple")
     fig, axis = plt.subplots(figsize=(10, 5), constrained_layout=True)
-    bars = axis.bar(["Auction revenue", "Imbalance settlement", "Battery wear", "Import fees", "Net operating profit"],
-        values, color=["tab:blue", "tab:green" if values[1] >= 0 else "tab:red", "tab:red", "tab:red", "tab:purple"])
+    bars = axis.bar(labels, values, color=colors)
     axis.bar_label(bars, fmt="%.2f", padding=3)
     axis.set_ylabel("EUR")
     axis.set_title("Executed daily operating profit with actual imbalance settlement")
@@ -1050,7 +1064,11 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     ledger = pd.read_csv(oracle_dir / "ledger.csv")
     for auction in actual_prices:
         selected = ledger.loc[ledger.auction == auction] if "auction" in ledger else pd.DataFrame()
-        trade_volumes[auction] = {"accepted_volume_mwh": float(pd.to_numeric(selected.get("quantity_mwh", pd.Series(dtype=float)), errors="coerce").abs().sum()),
+        quantities = pd.to_numeric(selected.get("quantity_mwh", pd.Series(dtype=float)), errors="coerce")
+        trade_volumes[auction] = {"accepted_volume_mwh": float(quantities.abs().sum()),
+            "purchased_mwh": float((-quantities).clip(lower=0).sum()),
+            "sold_mwh": float(quantities.clip(lower=0).sum()),
+            "transaction_fee_eur": float(selected.get("transaction_fee_eur", pd.Series(dtype=float)).sum()),
             "cashflow_eur": float(summary["auction_cashflows_eur"].get(auction, 0.0))}
     fallback_ids = set(pv_provenance["realized_power_fallback_interval_ids"])
     measured_mask = np.asarray([interval_id not in fallback_ids for interval_id in grid.interval_ids], dtype=bool)
@@ -1097,6 +1115,14 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
             "realized_minus_expected_profit_eur", "realized_minus_expected_profit_percent",
             "realized_minus_expected_auction_revenue_eur", "realized_minus_expected_auction_revenue_percent")},
         "auction_revenue_eur": float(summary["components"]["auction_revenue_eur"]),
+        "transaction_fee_eur": float(summary["components"]["transaction_fee_eur"]),
+        "transaction_fee_mode": summary["transaction_fees"]["mode"],
+        "gross_traded_mwh": summary["transaction_fees"]["gross_traded_mwh"],
+        "purchased_mwh": summary["transaction_fees"]["purchased_mwh"],
+        "sold_mwh": summary["transaction_fees"]["sold_mwh"],
+        "transaction_fees": summary["transaction_fees"],
+        "initial_expected_transaction_fees_eur": summary["initial_expected_transaction_fees_eur"],
+        "realized_minus_expected_transaction_fees_eur": summary["realized_minus_expected_transaction_fees_eur"],
         "perfect_information_objective_eur": perfect_objective,
         "perfect_information_profit_gap_eur": perfect_profit_gap,
         "perfect_information_feasible_objective_eur": perfect_objective,

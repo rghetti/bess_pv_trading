@@ -58,16 +58,18 @@ separately from the optimization objective.
 \begin{longtable}{>{\raggedright\arraybackslash}p{0.40\textwidth}>{\raggedright\arraybackslash}p{0.53\textwidth}}
 \toprule Source & Responsibility \\
 \midrule\endhead
-\path{src/bess_pv_trading/domain.py} & Validated grids, assets, scenarios, information nodes, states and solver contracts.\\
-\path{src/bess_pv_trading/optimization/model.py} & Physical, trading, product-resolution, optional imbalance constraints and objective.\\
-\path{src/bess_pv_trading/optimization/degradation.py} & Throughput coefficient and segmented cycle-depth model.\\
-\path{src/bess_pv_trading/optimization/validation.py} & Numerical validation independent of the solver constraint objects.\\
-\path{src/bess_pv_trading/simulation/synthetic.py} & Shared event replay and auction submission/publication accounting.\\
-\path{src/bess_pv_trading/simulation/replay.py} & Residual scenario conditioning and bounded physical execution.\\
-\path{src/bess_pv_trading/simulation/gme_oracle.py} & Manual-data historical price oracle, rolling PV and full-information asset comparisons.\\
-\path{src/bess_pv_trading/simulation/settlement.py} & Exact-grid actual settlement and expected/realized KPI reconciliation.\\
-\path{src/bess_pv_trading/forecasting/pv.py} & Weather-to-AC PV conversion.\\
-\path{src/bess_pv_trading/markets.py} & Configurable local auction gates, publication events and DST-aware delivery grids.\\
+\path{src/domain.py} & Validated grids, assets, scenarios, information nodes, states and solver contracts.\\
+\path{src/optimization/model.py} & Physical, trading, product-resolution, optional imbalance constraints and objective.\\
+\path{src/optimization/degradation.py} & Throughput coefficient and segmented cycle-depth model.\\
+\path{src/optimization/validation.py} & Numerical validation independent of the solver constraint objects.\\
+\path{src/transaction_fees.py} & Pure-Python fee integration, dated tariffs and operator monthly state.\\
+\path{src/optimization/transaction_fees.py} & Flat-band LP costs and exact progressive ABS/PWL constraints.\\
+\path{src/simulation/synthetic.py} & Shared event replay and auction submission/publication accounting.\\
+\path{src/simulation/replay.py} & Residual scenario conditioning and bounded physical execution.\\
+\path{src/simulation/gme_oracle.py} & Manual-data historical price oracle, rolling PV and full-information asset comparisons.\\
+\path{src/simulation/settlement.py} & Exact-grid actual settlement and expected/realized KPI reconciliation.\\
+\path{src/forecasting/pv.py} & Weather-to-AC PV conversion.\\
+\path{src/markets.py} & Configurable local auction gates, publication events and DST-aware delivery grids.\\
 \bottomrule
 \end{longtable}
 
@@ -376,10 +378,59 @@ fee $f$, the current residual objective is
  \max J_k=\sum_{s\in\mathcal S_k}w_s\left[
  \sum_{a\in\mathcal A_k}\sum_{t\in\mathcal T_a}\pi_{a,s,t}q_{a,n_a(s),t}
  -c_{\rm thr}\sum_t(c_{s,t}+d_{s,t})\Delta_t
- -f\sum_t\pos{-g_{s,t}}\Delta_t\right].
+ -f\sum_t\pos{-g_{s,t}}\Delta_t-C^{\rm trading}_s\right].
 \end{equation}
 The implementation uses an exact import-power linearization with a direction
 binary only when $f$ is nonzero. The farm-910 study sets $f=0$.
+
+\subsection{Market transaction fees and operator monthly volume}
+The optional \texttt{transaction\_fees.mode} is \texttt{none} (default),
+\texttt{flat}, or \texttt{gme\_real}. Let $m(a)$ be the calendar month of auction
+submission in market local time, $V_m$ known already executed operator volume,
+and $G_{m,s}=\sum_{a:m(a)=m,t}|q_{a,n_a(s),t}|$ new gross MWh. Purchases and
+sales count separately even when final delivery is zero. Quarter-hour energy
+shares of an hourly product are summed once, without another duration factor.
+For a cumulative progressive tariff $F_m$,
+\begin{equation}
+ C^{\rm trading}_s=\sum_m\left[F_m(V_m+G_{m,s})-F_m(V_m)\right].
+\end{equation}
+In flat mode this is the configured EUR/MWh coefficient times gross MWh.
+The published GME MPE marginal rates are 0 on the first 20,000 MWh/month,
+0.04 up to 1,000,000, 0.03 up to 10,000,000, and 0.02 thereafter.
+These bands are progressive and not a retroactive rate on the monthly total.
+
+Fee-free horizons introduce no auxiliary variables. Positive single-band costs
+use linear absolute-value epigraphs. Across reachable breakpoints, exact Gurobi
+ABS general constraints and a PWL equality represent both gross volume and the
+nonconvex tariff; a convex epigraph alone is not used for regressive bands.
+Absolute-value variables retain auction-node ownership and native-product
+sharing. Costs are evaluated for each leaf and weighted by $w_s$.
+
+The fee state includes pending guaranteed transactions immediately at submission.
+Publication adds no second fee. Executed gross volume remains in $V_m$ during
+residual solves, while incurred EUR are sunk. The state carries an availability
+clock and declared provenance; nonzero future executed monthly volume is
+rejected. Months use transaction dates, so pre-DA/IDA1/IDA2 and IDA3 for one
+delivery day may belong to different months. A new month starts at zero.
+The saved final fee state can initialize a later chronological study. Operator
+scope must explicitly distinguish a standalone plant from a portfolio with
+exogenous starting volume. Unknown future external activity is not invented:
+costs are exact conditional on the supplied initial state, not a complete
+operator-level monthly forecast.
+
+Tariffs have explicit nonoverlapping complete-month validity windows, version,
+source, thresholds, marginal rates and an applicability status. The current
+\href{https://gme.mercatoelettrico.org/it-it/Home/Accesso-ai-Mercati/Elettricita/MercatiElettrici/CorrispettiviSettlement/CorrispettiviElettricita}{GME tariff}
+and the \href{https://gme.mercatoelettrico.org/Portals/0/Documents/it-IT/20070502Bilancio2006.pdf}{2006 annual report}
+show the same structure, the latter effective in 2007. A dated confirmation of
+2025 applicability was not established; the supplied historical example marks
+this explicitly as \texttt{assumed\_unchanged}. Unsupported dates fail.
+Example YAMLs are
+\path{configs/full_experiments/synthetic_fees_none.yaml},
+\path{configs/full_experiments/synthetic_fees_flat.yaml}, and
+\path{configs/full_experiments/synthetic_fees_gme.yaml}.
+Membership, taxes, ACER record charges and separate aggregator commissions remain
+excluded; physical grid fees and degradation remain separate cost components.
 
 Past auction cash flow and already incurred degradation are sunk at residual
 reoptimization. Priced commitments remain in the external ledger, and pending
@@ -622,11 +673,19 @@ Actual daily auction cash flow and settled operating profit are
 \begin{align}
  A^{\rm real}&=\sum_{a,t}\pi^{\rm real}_{a,t}q^{\rm sub}_{a,t},\\
  J^{\rm real}&=A^{\rm real}+\sum_t S_t
-       -D^{\rm executed}-f\sum_t\pos{-g_t^{\rm real}}\Delta_t.
+       -D^{\rm executed}-f\sum_t\pos{-g_t^{\rm real}}\Delta_t-C^{\rm trading,real}.
 \end{align}
 A model deterrence penalty is not an actual settlement charge and is not
 subtracted a second time by actual post-processing. If settlement is unavailable,
 profit before settlement is reported and fully settled profit remains unknown.
+Only actually submitted guaranteed transactions enter $C^{\rm trading,real}$;
+future plans that are never submitted contribute no realized fees. The ledger
+retains transaction-month volume, per-trade charges and tariff versions. An
+independent Python calculation reconciles those charges and the final monthly
+state. Expected and realized transaction fees are reported separately from gross
+auction revenue. In \path{realized_profit_breakdown.png}, trading-fee EUR and
+gross MWh occupy the former import-fee slot; nonzero physical grid fees appear
+as their own additional bar.
 
 Let $J^{\rm init}$ and $A^{\rm init}$ be the initial auction solve's expected
 profit and auction revenue. Saved mismatches are

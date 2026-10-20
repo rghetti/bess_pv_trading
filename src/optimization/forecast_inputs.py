@@ -24,6 +24,7 @@ from ..markets import AuctionCalendar
 from ..scenarios import conditional_price_tree
 from .degradation import degradation_settings_from_config
 from .prepared import PreparedInputError, _boolean, _planning_settlement_price, _require, _terminal_target, _timestamps, _utc
+from ..transaction_fees import transaction_fees_from_config
 
 
 AUCTIONS = ("DA", "IDA1", "IDA2", "IDA3")
@@ -414,7 +415,8 @@ def build_forecast_inputs(config: Mapping[str, Any], pv_forecasts: pd.DataFrame,
     state = PhysicalState(grid.starts[0], float(state_cfg["initial_energy_mwh"]),
         float(state_cfg.get("cumulative_throughput_mwh", 0)), float(state_cfg.get("cumulative_degradation_eur", 0)),
         str(state_cfg["origin"]), state_cfg.get("cycle_segment_energy_mwh"))
-    market = MarketState()
+    fees = transaction_fees_from_config(config)
+    market = MarketState(transaction_fee_state=fees.initial_state)
     if accepted_trades is not None and not accepted_trades.empty:
         required = ("auction", "submission_time", "publication_time", "interval_id", "quantity_mwh", "price_eur_per_mwh", "trade_id")
         _require({name: True for name in accepted_trades}, required, "accepted trade columns")
@@ -437,7 +439,8 @@ def build_forecast_inputs(config: Mapping[str, Any], pv_forecasts: pd.DataFrame,
                 if not np.isclose(float(row["price_eur_per_mwh"]), actual, rtol=0, atol=1e-9):
                     raise PreparedInputError("Accepted auction trade price differs from its known clearing curve")
             market = market.accept(AcceptedTrade(str(row["auction"]), _utc(row["submission_time"], "trade submission").to_pydatetime(),
-                publication.to_pydatetime(), str(row["interval_id"]), float(row["quantity_mwh"]), float(row["price_eur_per_mwh"]), str(row["trade_id"])))
+                publication.to_pydatetime(), str(row["interval_id"]), float(row["quantity_mwh"]), float(row["price_eur_per_mwh"]), str(row["trade_id"]),
+                transaction_fee_eur=float(row.get("transaction_fee_eur", 0.0))))
     _require(trading, ("imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"), "trading costs")
     _require(degradation, ("assumptions",), "degradation assumptions")
     masks = {event.auction: tuple(t in event.eligible_intervals for t in range(len(grid.starts)))
@@ -447,7 +450,8 @@ def build_forecast_inputs(config: Mapping[str, Any], pv_forecasts: pd.DataFrame,
         _terminal_target(state_cfg), degradation_settings_from_config(config), float(trading["grid_import_fee_eur_per_mwh"]),
         planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
         optimize_imbalances=trading.get("optimize_imbalances", True),
-        imbalance_limit_mwh=trading.get("imbalance_limit_mwh"), pending_position_mwh=settings.get("pending_position_mwh"))
+        imbalance_limit_mwh=trading.get("imbalance_limit_mwh"), pending_position_mwh=settings.get("pending_position_mwh"),
+        transaction_fees=fees, auction_submission_times={event.auction: event.submission_at for event in schedule})
 
 
 def load_forecast_inputs(config: Mapping[str, Any]) -> OptimizationInput:

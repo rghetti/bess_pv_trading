@@ -41,6 +41,8 @@ def merge_mapping(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, 
 
 def validate_config(config: dict[str, Any]) -> None:
     """Check common settings; specialized adapters validate their own inputs."""
+    from .transaction_fees import transaction_fees_from_config
+    transaction_fees_from_config(config)
     credential_fields = {"token", "securitytoken", "security_token", "api_key", "access_token", "refresh_token",
                          "client_secret", "password", "authorization", "login", "username"}
     def check_credentials(value: Any) -> None:

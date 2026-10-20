@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 
 from .config import load_config
+from .transaction_fees import transaction_fees_from_config
 from .simulation.synthetic import json_default, write_json
 
 
@@ -24,19 +25,22 @@ def _optimization_inputs(config: dict):
         from .optimization.prepared import load_prepared_inputs
         return load_prepared_inputs(config)
     fixture = synthetic_inputs(config)
+    fees = transaction_fees_from_config(config)
     grid, trading = fixture["grid"], config["trading"]
     masks = {event.auction:tuple(t in event.eligible_intervals for t in range(len(grid.interval_ids)))
              for event in fixture["schedule"]}
     inputs = OptimizationInput(grid,fixture["plant"],PhysicalState(grid.starts[0],config["state"]["initial_energy_mwh"],
         cycle_segment_energy_mwh=config["state"].get("cycle_segment_energy_mwh")),
-        MarketState(),fixture["scenarios"],fixture["tree"],masks,
+        MarketState(transaction_fee_state=fees.initial_state),fixture["scenarios"],fixture["tree"],masks,
         trading["imbalance_penalty_eur_per_mwh"],
         config["state"]["terminal_target_mwh"],
         degradation_settings_from_config(config),
         trading["grid_import_fee_eur_per_mwh"],
         imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
         optimize_imbalances=trading.get("optimize_imbalances", True),
-        planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"))
+        planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
+        transaction_fees=fees,
+        auction_submission_times={event.auction: event.submission_at for event in fixture["schedule"]})
     return inputs
 
 

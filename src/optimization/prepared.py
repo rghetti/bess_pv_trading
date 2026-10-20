@@ -12,6 +12,7 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
+from ..transaction_fees import transaction_fees_from_config
 from ..domain import (BatteryParameters, DegradationSettings, MarketState,
                       OptimizationInput, PhysicalState, PlantParameters)
 from ..markets import AuctionCalendar
@@ -236,12 +237,14 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
     _require(trading, ("imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"), "trading cost assumptions")
     from .degradation import degradation_settings_from_config
     _require(degradation, ("assumptions",), "degradation assumptions")
+    fees = transaction_fees_from_config(config)
     return OptimizationInput(grid, plant,
         PhysicalState(grid.starts[0], float(state_config["initial_energy_mwh"]), origin=state_config["origin"],
                       cycle_segment_energy_mwh=state_config.get("cycle_segment_energy_mwh")),
-        MarketState(), scenarios, tree, masks,
+        MarketState(transaction_fee_state=fees.initial_state), scenarios, tree, masks,
         float(trading["imbalance_penalty_eur_per_mwh"]), _terminal_target(state_config),
         degradation_settings_from_config(config),
         float(trading["grid_import_fee_eur_per_mwh"]), imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
+        transaction_fees=fees, auction_submission_times={event.auction: event.submission_at for event in schedule},
         planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
         optimize_imbalances=trading.get("optimize_imbalances", True))

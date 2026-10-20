@@ -7,6 +7,8 @@ from typing import Any, Mapping
 
 import numpy as np
 
+from .transaction_fees import TransactionFeeSettings, TransactionFeeState, validate_fee_context
+
 
 def aware(value: datetime, label: str) -> None:
     """Reject ambiguous naive clocks at application boundaries."""
@@ -212,6 +214,7 @@ class AcceptedTrade:
     quantity_mwh: float
     price_eur_per_mwh: float
     trade_id: str = ""
+    transaction_fee_eur: float = 0.0
 
     def __post_init__(self) -> None:
         aware(self.submission_time, "trade submission")
@@ -220,6 +223,7 @@ class AcceptedTrade:
             raise ValueError("Trade publication precedes submission")
         if not np.isfinite(self.quantity_mwh) or not np.isfinite(self.price_eur_per_mwh):
             raise ValueError("Accepted trade must have finite quantity and price")
+        finite_nonnegative(self.transaction_fee_eur, "Transaction fee")
 
     @property
     def cashflow_eur(self) -> float:
@@ -230,11 +234,12 @@ class AcceptedTrade:
 class MarketState:
     """Append-only accepted trades are fixed inputs to residual optimization."""
     accepted_trades: tuple[AcceptedTrade, ...] = ()
+    transaction_fee_state: TransactionFeeState | None = None
 
     def accept(self, trade: AcceptedTrade) -> MarketState:
         if trade.trade_id and any(item.trade_id == trade.trade_id for item in self.accepted_trades):
             raise ValueError("Duplicate accepted trade ID")
-        return MarketState(self.accepted_trades + (trade,))
+        return MarketState(self.accepted_trades + (trade,), self.transaction_fee_state)
 
     def positions(self, grid: DeliveryGrid) -> np.ndarray:
         totals = {key: 0.0 for key in grid.interval_ids}
@@ -411,8 +416,18 @@ class OptimizationInput:
     native_interval_minutes_by_auction: Mapping[str, int] = field(default_factory=dict)
     planned_delivery_balance_resolution_minutes: int | None = None
     optimize_imbalances: bool = True
+    transaction_fees: TransactionFeeSettings = field(default_factory=TransactionFeeSettings)
+    auction_submission_times: Mapping[str, datetime] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
+        if self.transaction_fees.mode != "none":
+            if not set(self.auction_eligibility).issubset(self.auction_submission_times):
+                raise ValueError("Transaction fees require explicit auction submission times")
+            validate_fee_context(self.transaction_fees,
+                self.market.transaction_fee_state or self.transaction_fees.initial_state,
+                {auction: self.auction_submission_times[auction] for auction in self.auction_eligibility},
+                min(node.cutoff for node in self.tree.nodes if node.parent_id is None),
+                self.market.accepted_trades)
         if not isinstance(self.optimize_imbalances, bool):
             raise ValueError("optimize_imbalances must be a boolean")
         for key in ("imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"):

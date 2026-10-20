@@ -1,0 +1,20 @@
+# The quoted structure is published currently and in GME's 2006 annual report
+# (effective 2007). Its exact 2024/2025 applicability is an explicit study assumption.
+include: synthetic_fees_none.yaml
+transaction_fees:
+  mode: gme_real
+  timezone: Europe/Rome
+  operator_scope: operator_with_exogenous_volume
+  initial_state:
+    as_of: '2025-10-01T09:55:00Z'
+    monthly_volume_mwh: {'2025-10': 19999.0}
+    cumulative_fees_eur: 0.0
+    provenance: Synthetic known operator volume near the first band; not observed portfolio data.
+  tariffs:
+    - version: gme_mpe_published_structure_assumed_2024_2026
+      valid_from: '2024-12-01'
+      valid_to: '2026-12-31'
+      applicability: assumed_unchanged
+      source: https://gme.mercatoelettrico.org/it-it/Home/Accesso-ai-Mercati/Elettricita/MercatiElettrici/CorrispettiviSettlement/CorrispettiviElettricita
+      thresholds_mwh: [20000.0, 1000000.0, 10000000.0]
+      marginal_eur_per_mwh: [0.0, 0.04, 0.03, 0.02]

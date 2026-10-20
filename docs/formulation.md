@@ -1,7 +1,7 @@
 # Implemented optimization formulation
 
-The implementation is `src/bess_pv_trading/domain.py` and
-`src/bess_pv_trading/optimization/{model,validation}.py`. One farm is optimized
+The implementation is `src/domain.py` and
+`src/optimization/{model,validation}.py`. One farm is optimized
 per model. The same builder serves deterministic and stochastic runs; stochastic
 leaves live in one deterministic equivalent, without Gurobi's multiple-scenario
 feature. All optimization powers are MW, energies MWh, prices EUR/MWh and cash
@@ -213,10 +213,78 @@ is
 
 \[
 \max\sum_s p_s\left(R^{\rm auction}_s+R^{\rm imbalance}_s
- -C^{\rm imbalance}_s-C^{\rm aging}_s-C^{\rm other}_s\right).
+ -C^{\rm imbalance}_s-C^{\rm aging}_s-C^{\rm other}_s-C^{\rm trading}_s\right).
 \]
 
 Named components are retained for extraction and independent accounting.
+
+## Market transaction fees
+
+`transaction_fees.mode` selects `none` (the backward-compatible default), `flat`,
+or `gme_real`. These are market transaction charges, separate from physical
+grid import fees, degradation, settlement, membership fees, taxes and aggregator
+commissions. Gross traded volume is `sum(abs(trade_mwh))` across auctions:
+a 5 MWh sale followed by a 5 MWh purchase costs fees on 10 MWh. The variables
+already contain energy; no interval-duration multiplier is applied. Four equal
+quarter-hour energy shares sum to their original hourly product's MWh once.
+
+For transaction month `m` and scenario `s`, let `V_m` be known executed operator
+volume (including pending guaranteed quantities), `G_ms` new contingent gross
+volume, and `F_m` the cumulative progressive tariff. New optimization cost is
+
+\[
+C^{\rm trading}_s=\sum_m [F_m(V_m+G_{ms})-F_m(V_m)].
+\]
+
+The month comes from the auction submission clock in `Europe/Rome`, independently
+of delivery month. The currently published MPE marginal bands are 0 EUR/MWh on
+the first 20,000 MWh, then 0.04 through 1,000,000, 0.03 through 10,000,000 and
+0.02 thereafter. Rates are progressive, never retroactive.
+[GME's tariff page](https://gme.mercatoelettrico.org/it-it/Home/Accesso-ai-Mercati/Elettricita/MercatiElettrici/CorrispettiviSettlement/CorrispettiviElettricita)
+and its [2006 annual report](https://gme.mercatoelettrico.org/Portals/0/Documents/it-IT/20070502Bilancio2006.pdf)
+show this structure, the latter effective in 2007. A dated 2025 tariff confirmation
+was not established. The example explicitly marks 2024–2026 applicability
+`assumed_unchanged`; this is not a verified historical tariff assertion.
+Tariff versions require nonoverlapping complete-month `valid_from`/`valid_to`
+windows, source, applicability, thresholds and marginal rates. Unsupported dates
+fail rather than borrowing the current tariff.
+
+`none` adds no fee variables or constraints. A flat rate, or a provably reachable
+single positive marginal band, uses shared linear absolute-value epigraphs.
+Positive marginal cost makes these exact at an optimum. A provably free horizon
+adds no variables. If reachable volume crosses a tariff breakpoint, exact Gurobi
+ABS constraints and a PWL equality enforce the gross volume and nonconvex tariff;
+independent Python integration validates the extracted cost. Native-product
+shares reuse absolute-value variables. Fee expressions are scenario dependent;
+their trade variables retain their existing information-node ownership.
+
+Configuration examples are `configs/full_experiments/synthetic_fees_{none,flat,gme}.yaml`.
+The flat setting is `transaction_fees: {mode: flat, flat_eur_per_mwh: 0.04}`.
+GME mode additionally requires explicit `operator_scope` (`standalone_plant` or
+`operator_with_exogenous_volume`), dated `tariffs`, and `initial_state` containing
+an aware `as_of`, `monthly_volume_mwh`, `cumulative_fees_eur` and `provenance`.
+The initial volume is the operator total already executed, including all supplied
+ledger and pending quantities; it must not be added to those quantities again.
+It may include documented or explicitly assumed external portfolio activity.
+Missing current/earlier monthly volume fails; a new month begins at zero.
+Nonzero future monthly volume and states unavailable at the solve cutoff fail.
+
+Guaranteed execution incurs fees at submission. Publication only books MCP cash
+once; prior fees are sunk and their volume remains in the monthly state. Each
+strategy starts from the same supplied state. Persist the saved fee `final_state`
+as a later run's `initial_state`, with the same operator scope and chronological
+transaction ordering. The one-day replay does not fetch external portfolio
+history or simulate unknown later monthly activity: the fee is exact conditional
+on the supplied starting volume, not a forecast of the complete operator invoice.
+
+The existing ledger contains per-transaction gross/purchased/sold MWh, fee EUR,
+transaction month, tariff version and before/after monthly volume. Summaries,
+solver diagnostics and GME KPIs retain expected and realized fees, by-auction and
+by-month totals, initial/final state, assumptions and independent reconciliation.
+Net operating profit subtracts fees once; gross auction revenue remains before
+fees. `realized_profit_breakdown.png` places trading-fee EUR in the former import
+fee slot and labels its gross traded MWh. Nonzero physical import charges retain
+a separate bar so all contributions still reconcile to net profit.
 
 ## Solving and numerical validation
 

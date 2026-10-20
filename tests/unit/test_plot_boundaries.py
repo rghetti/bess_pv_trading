@@ -71,6 +71,30 @@ def test_pv_allocation_excludes_grid_charging_and_battery_discharge():
                                dispatch.pv_ac_mw)
 
 
+@pytest.mark.parametrize("import_fee", [0.0, 3.0])
+def test_profit_breakdown_shows_trading_fees_and_gross_volume(tmp_path, monkeypatch, import_fee):
+    """Trading fees occupy the old import slot; nonzero grid charges stay separate."""
+    case, grid, dispatch, prices, plans = plot_fixture()
+    figures = {}
+    monkeypatch.setattr(Figure, "savefig", lambda figure, path, **kwargs: figures.update({path.name: figure}))
+    imbalance = float(dispatch.realized_imbalance_cashflow_eur.sum())
+    summary = {"imbalance_settlement_status": "priced", "realized_imbalance_cashflow_eur": imbalance,
+        "realized_profit_after_imbalance_eur": 100 + imbalance - 10 - 2.5 - import_fee,
+        "components": {"auction_revenue_eur": 100, "degradation_eur": 10,
+                       "transaction_fee_eur": 2.5, "import_fee_eur": import_fee},
+        "transaction_fees": {"gross_traded_mwh": 62.5}}
+    _plot_settlement(tmp_path, dispatch, summary, case["timezone"])
+    axis = figures["realized_profit_breakdown.png"].axes[0]
+    labels = [item.get_text() for item in axis.get_xticklabels()]
+    bars = axis.containers[0]
+    assert labels[3] == "Trading fees\n62.50 MWh gross"
+    assert bars[3].get_height() == -2.5
+    if import_fee:
+        assert labels[4] == "Grid import fees"
+        assert bars[4].get_height() == -import_fee
+    assert sum(bar.get_height() for bar in bars[:-1]) == pytest.approx(bars[-1].get_height())
+
+
 @pytest.mark.parametrize("legacy_plan", [False, True])
 def test_every_delivery_panel_reaches_midnight_and_preserves_final_soc(tmp_path, monkeypatch, legacy_plan):
     case, grid, dispatch, prices, plans = plot_fixture()

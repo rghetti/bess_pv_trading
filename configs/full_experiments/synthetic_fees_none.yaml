@@ -1,0 +1,9 @@
+# Shared synthetic market for fee-mode comparison; no historical trading claim.
+include: synthetic_single.yaml
+transaction_fees:
+  mode: none
+execution:
+  reoptimize_physical_controls: false
+outputs:
+  root: outputs/transaction_fee_checks
+  plots: true

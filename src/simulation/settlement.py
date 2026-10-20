@@ -69,7 +69,8 @@ def load_realized_imbalance_prices(config, grid) -> tuple[pd.DataFrame | None, d
 
 
 def settle_realized_dispatch(dispatch: pd.DataFrame, *, auction_revenue_eur: float,
-                             imbalance_prices=None, imbalance_negative_prices=None
+                             imbalance_prices=None, imbalance_negative_prices=None,
+                             transaction_fees_eur: float = 0.0
                              ) -> tuple[pd.DataFrame, dict]:
     """Apply aligned settlement prices only after dispatch; missing prices stay unknown.
 
@@ -89,7 +90,9 @@ def settle_realized_dispatch(dispatch: pd.DataFrame, *, auction_revenue_eur: flo
     frame["imbalance_mwh"] = imbalance
     # Financial wear is allocated only from execution; model deterrence penalties
     # are not actual settlement charges and do not enter this cash correction.
-    before = float(auction_revenue_eur - frame.degradation_eur.sum() - frame.import_fee_eur.sum())
+    if not np.isfinite(transaction_fees_eur) or transaction_fees_eur < 0:
+        raise ValueError("Realized transaction fees must be finite and nonnegative")
+    before = float(auction_revenue_eur - frame.degradation_eur.sum() - frame.import_fee_eur.sum() - transaction_fees_eur)
     kpis = {"profit_before_imbalance_settlement_eur": before,
         "net_imbalance_mwh": float(imbalance.sum()),
         "absolute_imbalance_mwh": float(np.abs(imbalance).sum()),

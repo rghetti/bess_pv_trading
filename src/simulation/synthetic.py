@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 from pathlib import Path
 import subprocess
@@ -21,6 +21,7 @@ from ..optimization import build_model, solve_model, validate_solution
 from ..optimization.degradation import advance_degradation_state, degradation_settings_from_config
 from ..reporting.artifacts import organize_run_outputs
 from ..scenarios import synthetic_price_tree
+from ..transaction_fees import account_trade_fees, transaction_fees_from_config
 from .events import Event, EventEngine, EventKind
 from .replay import execute_interval
 from .settlement import expected_realized_kpis, settle_realized_dispatch
@@ -28,7 +29,7 @@ from .settlement import expected_realized_kpis, settle_realized_dispatch
 
 def json_default(value: Any) -> Any:
     """Serialize evidence arrays and clocks without serializing private objects."""
-    if isinstance(value, (datetime, pd.Timestamp, Path)):
+    if isinstance(value, (date, datetime, pd.Timestamp, Path)):
         return str(value)
     if isinstance(value, np.ndarray):
         return value.tolist()
@@ -86,7 +87,9 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
     schedule, actual_prices = fixture["schedule"], fixture["actual_prices"]
     state = PhysicalState(full_grid.starts[0], config["state"]["initial_energy_mwh"], origin=config["state"]["origin"],
         cycle_segment_energy_mwh=config["state"].get("cycle_segment_energy_mwh"))
-    market = MarketState()
+    fees = transaction_fees_from_config(config)
+    market = MarketState(transaction_fee_state=fees.initial_state)
+    fee_records: dict[str, dict] = {}
     known: dict[str, np.ndarray] = {}
     submitted: dict[str, dict[str, float]] = {}
     pending: dict[int, tuple[float, float, float]] = {}
@@ -214,7 +217,8 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             market_timezone=config.get("market", {}).get("timezone", fixture["calendar"].timezone),
             native_interval_minutes_by_auction={auction: minutes for auction, minutes
                 in config.get("native_interval_minutes_by_auction", {}).items()
-                if auction in masks})
+                if auction in masks}, transaction_fees=fees,
+            auction_submission_times={event.auction: event.submission_at for event in schedule})
         built = build_model(inputs)
         try:
             model_settings = config["solver"]
@@ -246,6 +250,12 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             "status":result.status,"objective_eur":result.objective_eur,
             "expected_auction_revenue_eur": float(np.dot(
                 inputs.scenarios.probabilities, result.components["auction_revenue"])),
+            "expected_transaction_fees_eur": float(np.dot(
+                inputs.scenarios.probabilities, result.components["transaction_fees"])),
+            "expected_transaction_fees_by_auction_eur": {auction: sum(
+                float(probability) * item["by_auction"].get(auction, {}).get("transaction_fee_eur", 0.0)
+                for probability, item in zip(inputs.scenarios.probabilities,
+                    result.diagnostics.get("transaction_fees_by_scenario", []))) for auction in masks},
             "validation":asdict(validation),**result.diagnostics})
         return inputs, result
 
@@ -254,13 +264,24 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
         current_forecast = fixture["pv"].copy()
 
     def submit(event: Event) -> None:
+        nonlocal market
         auction = event.payload.auction
+        if auction in submitted:
+            raise RuntimeError("An auction cannot submit and incur transaction fees twice")
         inputs, result = plan(event.at, auction, trigger="auction_submission")
         owner = inputs.tree.bid_nodes[auction][0]
         if len(set(inputs.tree.bid_nodes[auction])) != 1:
             raise RuntimeError("Actionable bid is not shared at the current information cutoff")
         submitted[auction] = {product:quantity for (a,node,product),quantity in result.trades.items()
                               if a==auction and node==owner}
+        # Guaranteed full execution makes quantities and fees fixed at submission,
+        # even while MCP cashflow is unpublished. Future contingent bids stay free.
+        next_fee_state, charged, _ = account_trade_fees(fees,
+            market.transaction_fee_state, [{"auction": auction, "submission_time": event.at,
+                "interval_id": product, "quantity_mwh": quantity, "trade_id": f"{auction}:{product}"}
+                for product, quantity in submitted[auction].items()])
+        market = replace(market, transaction_fee_state=next_fee_state)
+        fee_records.update({row["trade_id"]: row for row in charged})
         snapshot = []
         for local_t, product in enumerate(inputs.grid.interval_ids):
             t = full_grid.interval_ids.index(product)
@@ -279,6 +300,8 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
                     - result.arrays["curtailment_mw"][0, local_t]),
                 "expected_grid_mw": float(result.arrays["grid_mw"][0, local_t]),
                 "auction_trade_mwh": trade_mwh,
+                "auction_gross_traded_mwh": abs(trade_mwh),
+                "auction_transaction_fee_eur": fee_records.get(f"{auction}:{product}", {}).get("transaction_fee_eur", 0.0),
                 "curtailment_mw": float(result.arrays["curtailment_mw"][0, local_t]),
                 "soc_start_mwh": float(result.arrays["energy_mwh"][0, local_t]),
                 "soc_end_mwh": float(result.arrays["energy_mwh"][0, local_t + 1]),
@@ -301,7 +324,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             t = full_grid.interval_ids.index(product)
             market = market.accept(AcceptedTrade(auction, event.payload.submission_at.to_pydatetime(),
                 event.at.to_pydatetime(), product, quantity, float(actual_prices[auction][t]),
-                f"{auction}:{product}"))
+                f"{auction}:{product}", transaction_fee_eur=fee_records[f"{auction}:{product}"]["transaction_fee_eur"]))
         # Publication settles fixed offers and updates information. The next
         # actionable auction/control decision uses it without a diagnostic solve.
         publications.append(dict(auction=auction, published_at=event.at.isoformat(),
@@ -309,6 +332,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             accepted_contractual_cashflow_eur=market.cashflow_eur,
             publication_booked_trades=len(submitted[auction]),
             publication_quantity_mwh=sum(submitted[auction].values()),
+            publication_booked_transaction_fee_eur=0.0,
             publication_booked_cashflow_eur=market.cashflow_eur-previous_cash))
 
     def control(event: Event) -> None:
@@ -372,26 +396,51 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
         EventKind.AUCTION_RESULTS:publish_results,EventKind.PHYSICAL_CONTROL:control,
         EventKind.OBSERVATION_AVAILABLE:observation,EventKind.SETTLEMENT:settle})
     frame = pd.DataFrame([records[t] for t in sorted(records)])
+    # Recompute fees independently of the solver and compare with the executed
+    # ledger and carried monthly state before publishing any profit metrics.
+    checked_state, checked_records, fee_summary = account_trade_fees(fees, fees.initial_state,
+        [asdict(trade) for trade in market.accepted_trades])
+    reference = {row["trade_id"]: row for row in checked_records}
+    fee_errors = {"ledger_fee_eur": max((abs(trade.transaction_fee_eur - reference[trade.trade_id]["transaction_fee_eur"])
+        for trade in market.accepted_trades), default=0.0),
+        "monthly_volume_mwh": max((abs(checked_state.monthly_volume_mwh.get(month, 0.0)
+                - market.transaction_fee_state.monthly_volume_mwh.get(month, 0.0))
+            for month in set(checked_state.monthly_volume_mwh) | set(market.transaction_fee_state.monthly_volume_mwh)), default=0.0),
+        "cumulative_fee_eur": abs(checked_state.cumulative_fees_eur - market.transaction_fee_state.cumulative_fees_eur)}
+    fee_summary["validation"] = {"valid": max(fee_errors.values()) <= 1e-6, "max_errors": fee_errors}
+    if not fee_summary["validation"]["valid"]:
+        raise RuntimeError(f"Independent executed transaction-fee accounting failed: {fee_errors}")
+    for name in ("transaction_fee_eur", "gross_traded_mwh"):
+        by_product = {}
+        for row in checked_records:
+            by_product[row["interval_id"]] = by_product.get(row["interval_id"], 0.0) + row[name]
+        frame[name] = frame.interval_id.map(by_product).fillna(0.0)
     frame, realized_settlement = settle_realized_dispatch(frame, auction_revenue_eur=market.cashflow_eur,
         imbalance_prices=fixture.get("realized_imbalance_prices_eur_per_mwh"),
-        imbalance_negative_prices=fixture.get("realized_imbalance_negative_prices_eur_per_mwh"))
+        imbalance_negative_prices=fixture.get("realized_imbalance_negative_prices_eur_per_mwh"),
+        transaction_fees_eur=fee_summary["transaction_fee_eur"])
     frame.to_csv(destination/"dispatch.csv",index=False)
     plan_rows = [row for auction in [event.auction for event in schedule]
                  for row in plan_snapshots.get(auction, [])]
     if plan_rows:
         pd.DataFrame(plan_rows).to_csv(destination/"expected_dispatch_plans.csv", index=False)
-    pd.DataFrame([{**asdict(trade),"cashflow_eur":trade.cashflow_eur} for trade in market.accepted_trades]).to_csv(destination/"ledger.csv",index=False)
+    pd.DataFrame([{**asdict(trade), **reference[trade.trade_id],
+        "cashflow_eur":trade.cashflow_eur} for trade in market.accepted_trades]).to_csv(destination/"ledger.csv",index=False)
     write_json(destination/"event_trace.json",engine.trace)
     write_json(destination/"solves.json",solves)
     write_json(destination/"price_publications.json",publications)
     auction_cash = {a:sum(trade.cashflow_eur for trade in market.accepted_trades if trade.auction==a)
                     for a in actual_prices}
     components = {"auction_revenue_eur":market.cashflow_eur,
+        "transaction_fee_eur": fee_summary["transaction_fee_eur"],
         **{key:float(frame[key].sum()) for key in
             ("imbalance_cashflow_eur","imbalance_penalty_eur","degradation_eur","import_fee_eur")}}
-    profit = components["auction_revenue_eur"]+components["imbalance_cashflow_eur"]-components["imbalance_penalty_eur"]-components["degradation_eur"]-components["import_fee_eur"]
+    profit = components["auction_revenue_eur"]+components["imbalance_cashflow_eur"]-components["imbalance_penalty_eur"]-components["degradation_eur"]-components["import_fee_eur"]-components["transaction_fee_eur"]
     summary = {"strategy":strategy,"executable":strategy!="oracle","components":components,
         **realized_settlement,
+        "transaction_fees": fee_summary,
+        "initial_expected_transaction_fees_eur": solves[0]["expected_transaction_fees_eur"],
+        "realized_minus_expected_transaction_fees_eur": fee_summary["transaction_fee_eur"] - solves[0]["expected_transaction_fees_eur"],
         "optimization_imbalances_enabled": trading.get("optimize_imbalances", True),
         "execution_dispatch_policy": dispatch_policy,
         "pv_forecast_policy": fixture.get("pv_forecast_policy", "fixed_fixture_forecast"),

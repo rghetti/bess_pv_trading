@@ -2,6 +2,13 @@
 
 Store one complete, reproducible end-to-end study configuration per YAML file in this directory. These configurations should explicitly provide the dataset and snapshot selection, study dates, PV forecast selection, market calendar and product resolution, battery and POI parameters, inverter efficiencies, starting and terminal state, imbalance policy, degradation model, Gurobi settings, and output locations. Keep illustrative values clearly labeled; the runner should validate required fields rather than silently supplying plant-specific defaults.
 
+`synthetic_fees_none.yaml`, `synthetic_fees_flat.yaml` and
+`synthetic_fees_gme.yaml` compare transaction-fee modes on the same market.
+Use `optimize` for the initial plan or `run-synthetic` for the executed ledger.
+The GME example declares a synthetic starting operator volume and explicitly
+assumes the published tariff applied historically. See
+[fee formulas, state and reporting](../../docs/formulation.md#market-transaction-fees).
+
 Small synthetic solver examples remain here for software validation. Add real-data studies as separate files with names that describe the study and period.
 
 The corrected January studies use native hourly DA prices/orders and native

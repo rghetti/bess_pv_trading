@@ -10,6 +10,8 @@ import numpy as np
 from ..domain import BuiltModel, OptimizationInput, OptimizationResult, SolverSettings
 from .degradation import build_xu_degradation
 from .market_regime import configured_auction_product_groups, configured_dispatch_groups, market_product_groups
+from .transaction_fees import build_transaction_fees
+from ..transaction_fees import scenario_fee_details
 
 
 class SolverUnavailableError(RuntimeError):
@@ -217,8 +219,9 @@ def build_model(inputs: OptimizationInput) -> BuiltModel:
                     name=f"planned_delivery_balance[s{s},g{group_index}]")
     settlement = _settlement(model, inputs, variables, gp)
     variables.update({key: settlement[key] for key in ("imbalance_positive", "imbalance_negative", "imbalance_sign")})
-    components = {"auction_revenue": commercial["auction_revenue"], "imbalance_cashflow": settlement["imbalance_cashflow"], "imbalance_penalty": settlement["imbalance_penalty"], "battery_degradation_cost": _degradation(model, inputs, variables, gp), "other_costs": settlement["other_costs"]}
-    profit = {s: components["auction_revenue"][s] + components["imbalance_cashflow"][s] - components["imbalance_penalty"][s] - components["battery_degradation_cost"][s] - components["other_costs"][s] for s in range(len(inputs.scenarios.scenario_ids))}
+    components = {"auction_revenue": commercial["auction_revenue"], "imbalance_cashflow": settlement["imbalance_cashflow"], "imbalance_penalty": settlement["imbalance_penalty"], "battery_degradation_cost": _degradation(model, inputs, variables, gp), "other_costs": settlement["other_costs"],
+        "transaction_fees": build_transaction_fees(model, inputs, variables, gp)}
+    profit = {s: components["auction_revenue"][s] + components["imbalance_cashflow"][s] - components["imbalance_penalty"][s] - components["battery_degradation_cost"][s] - components["other_costs"][s] - components["transaction_fees"][s] for s in range(len(inputs.scenarios.scenario_ids))}
     components["operating_profit"] = profit
     model.setObjective(gp.quicksum(float(probability) * profit[s] for s, probability in enumerate(inputs.scenarios.probabilities)), gp.GRB.MAXIMIZE)
     model.update()
@@ -262,6 +265,10 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     diagnostics["relative_mip_gap_tolerance"] = settings.mip_gap
     diagnostics["absolute_mip_gap_configured"] = False
     diagnostics["degradation_mode"] = inputs.degradation.mode
+    diagnostics["transaction_fee_formulation"] = built.variables["transaction_fee_formulation"]
+    diagnostics["general_constraints"] = model.NumGenConstrs
+    diagnostics["sunk_transaction_fees_eur"] = (
+        inputs.market.transaction_fee_state or inputs.transaction_fees.initial_state).cumulative_fees_eur
     diagnostics["optimization_imbalances_enabled"] = inputs.optimize_imbalances
     diagnostics["product_resolution_constraints"] = built.variables.get(
         "product_resolution_constraints", {"dispatch_groups": 0, "dispatch_equalities": 0,
@@ -302,6 +309,8 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
         result.arrays[destination] = (np.array([[variable[source][s, t].X for t in range(intervals)] for s in range(count)])
             if inputs.optimize_imbalances else np.maximum(direction * result.arrays["imbalance_mwh"], 0))
     result.trades = {(auction, node, inputs.grid.interval_ids[t]): item.X for (auction, node, t), item in variable["trades"].items()}
+    if inputs.transaction_fees.mode != "none":
+        diagnostics["transaction_fees_by_scenario"] = scenario_fee_details(inputs, result.trades)
     result.components = {name: np.array([expression[s].getValue() for s in range(count)]) for name, expression in built.components.items()}
     result.objective_eur = float(model.ObjVal)
     return result

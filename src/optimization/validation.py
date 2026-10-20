@@ -6,6 +6,7 @@ import numpy as np
 from ..domain import OptimizationInput, OptimizationResult, ValidationReport
 from .degradation import evaluate_xu_dispatch, initial_segment_energy, xu_segment_parameters
 from .market_regime import configured_auction_product_groups, configured_dispatch_groups, market_product_groups
+from ..transaction_fees import scenario_fee_details
 
 
 def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray], trades: dict[tuple[str, str, str], float]) -> dict[str, np.ndarray]:
@@ -34,7 +35,9 @@ def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray]
             discharge_mw=arrays["discharge_mw"][s], delta_hours=inputs.grid.delta_hours)["degradation_eur"]
             for s in range(count)])
     fees = np.sum(np.maximum(-arrays["grid_mw"], 0) * inputs.grid.delta_hours, axis=1) * inputs.grid_import_fee_eur_per_mwh
-    return {"auction_revenue": revenue, "imbalance_cashflow": settlement, "imbalance_penalty": penalty, "battery_degradation_cost": aging, "other_costs": fees, "operating_profit": revenue + settlement - penalty - aging - fees, "cumulative_throughput_mwh": inputs.state.cumulative_throughput_mwh + throughput, "cumulative_degradation_eur": inputs.state.cumulative_degradation_eur + aging}
+    transaction_fees = (np.zeros(count) if inputs.transaction_fees.mode == "none" else
+        np.array([item["transaction_fee_eur"] for item in scenario_fee_details(inputs, trades)]))
+    return {"auction_revenue": revenue, "imbalance_cashflow": settlement, "imbalance_penalty": penalty, "battery_degradation_cost": aging, "other_costs": fees, "transaction_fees": transaction_fees, "operating_profit": revenue + settlement - penalty - aging - fees - transaction_fees, "cumulative_throughput_mwh": inputs.state.cumulative_throughput_mwh + throughput, "cumulative_degradation_eur": inputs.state.cumulative_degradation_eur + aging}
 
 
 def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tolerance: float = 1e-6) -> ValidationReport:
