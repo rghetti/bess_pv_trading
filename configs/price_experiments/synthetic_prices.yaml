@@ -1,11 +1,25 @@
 # Sparse, explicitly synthetic labels demonstrate import/training without APIs.
-include: italy_nord.example.yaml
+include: ../standard.yaml
+market:
+  rule_versions:
+    - version: GME-DTF03-rev13
+      event_valid_from: '2025-09-29'
+      event_valid_to: '2026-01-12'
+    - version: GME-DTF03-rev14
+      event_valid_from: '2026-01-13'
+      event_valid_to: '2026-08-31'
+  result_provenance:
+    DA: study_assumption_13:30; official final results not earlier than 13:05; recorded publication preferred
+  pre_quarter_hour_regime: excluded_no_native_hourly_DA_mapping
+  settlement_status: unresolved_historical_rules_do_not_run_real_settlement
 market_data:
   provider: manual_gme_csv
   input_path: tests/fixtures/synthetic_market_prices.csv
   output_path: outputs/market_price_fixture/canonical_prices.csv
   cache_directory: outputs/market_price_fixture/cache
-  requested_auctions: [DA, IDA1, IDA2, IDA3]
+  column_mapping: {}
+  constants: {}
+  separator: ','
   cache_key:
     provider: synthetic_fixture
     dataset: synthetic_conditional_auction_prices_seed29
@@ -15,10 +29,27 @@ market_data:
     end: '2025-10-19'
     vintage_revision: fixture-v1
     schema_version: market-v1
+  requested_auctions:
+    - DA
+    - IDA1
+    - IDA2
+    - IDA3
 price_forecasting:
   input_path: outputs/market_price_fixture/canonical_prices.csv
   output_directory: outputs/market_price_fixture/models
   fit_cutoff: '2025-10-19T00:00:00Z'
-  minimum_training_rows: 16
+  auctions:
+    - DA
+    - IDA1
+    - IDA2
+    - IDA3
   ridge_alpha: 1.0
+  minimum_training_rows: 16
+  residual_method: gaussian
+  covariance_shrinkage: 0.2
+  refit_schedule: expanding_daily_rolling_origin
+  fundamentals_status: unavailable_minimal_calendar_and_price_lags_only
+  local_regional_solar_proxy: disabled
+  seed: 17
   source_status: synthetic_fixture_not_historical_market_data
+farm_id: 1

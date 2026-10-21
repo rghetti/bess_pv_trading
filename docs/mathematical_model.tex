@@ -150,9 +150,13 @@ $w_s$ & fraction & Scenario probability, summing to one.\\
 \end{longtable}
 
 Power variables are AC at the common bus/POI. Battery energy is internal stored
-energy. Nameplate PV capacity is DC; measured historical \texttt{power} is already
-AC kW, converted once to MW. A separate PV-output/transformer conversion is used
-only when predicting AC PV from modeled DC. BESS efficiency is not applied to
+energy. Farm nameplate PV capacity is AC. For pvlib, the DC reference rating is
+derived as $P_{\rm DC,STC}=P_{\rm AC,rated}/\eta_{\rm ref}$, where the reference
+factor is a separate, fixed configured assumption (currently 0.96).
+Forecasts receive the
+DC-to-AC and transformer conversions and are then capped at the farm AC rating.
+Measured historical \texttt{power} is already AC kW and is converted once to MW;
+no PV or transformer efficiency is applied to it. BESS efficiency is not applied to
 measured PV or direct PV exports.
 
 \subsection{Forecast vintages and observability}
@@ -222,9 +226,13 @@ $v=\sqrt{v_u^2+v_v^2}$. The Faiman temperature model is
  T_{\rm mod}=T_{\rm air}+\frac{G_{\rm POA}}{U_0+U_1 v}.
 \end{equation}
 The supplied wind height is explicitly acknowledged as a module-wind proxy.
-The resulting temperature is passed to pvlib's PVWatts DC calculation:
+The AC farm rating is converted to a DC reference rating by dividing by
+the fixed, configurable assumption $\eta_{\rm ref}$, currently 0.96.
+This assumption is independent of the downstream DC-to-AC coefficient.
+The resulting temperature and DC
+reference rating are passed to pvlib's PVWatts DC calculation:
 \begin{equation}
- P_{\rm DC}=\max\left\{0,\ P_{\rm DC,STC}
+ P_{\rm DC}=\max\left\{0,\ \frac{P_{\rm AC,rated}}{\eta_{\rm ref}}
  \frac{G_{\rm POA}}{1000}
  \left[1+\gamma(T_{\rm mod}-T_{\rm ref})\right]\right\}.
 \end{equation}
@@ -237,10 +245,23 @@ $\eta_{\rm PV}$, or by an explicitly fitted DC-to-AC coefficient $\kappa$:
  \eta_{\rm tr}\kappa P_{\rm DC},&\text{fitted-coefficient route}.
  \end{cases}
 \end{equation}
-A configured AC cap clips this output if present; the night mask and validity
-flags are then applied. The present study uses an unfitted explicit output factor
-and a configurable separate transformer factor. This is not a full calibrated
-module-and-inverter electrical model. Temperature and wind affect production
+A configured AC cap, limited to no more than the farm AC rating, clips this output;
+the night mask and validity flags are then applied. The present study uses an
+unfitted explicit output factor and a configurable separate transformer factor.
+An offline calibration pairs each quarter-hour's latest available weather
+vintage with measured AC production $y_i$ and modeled DC $d_i$. With
+$x_i=\eta_{\rm tr}d_i$, it estimates the zero-intercept slope by minimizing
+mean squared error:
+\begin{equation}
+ \hat\kappa=\mathop{\arg\min}_{\kappa>0}\frac1n\sum_i(y_i-\kappa x_i)^2
+ =\frac{\sum_i x_i y_i}{\sum_i x_i^2}.
+\end{equation}
+Low-DC and invalid observations are excluded according to the saved study
+configuration. A chronological holdout compares the training-only fit with
+the configured explicit coefficient; the reported final coefficient is then
+refitted on all eligible pairs. This is a predictive aggregate scale, not an
+identified physical inverter efficiency.
+Temperature and wind affect production
 through temperature; irradiance and orientation affect POA. Cloud/dew-point
 fields retained in the store are not additional direct PV predictors here.
 
@@ -707,6 +728,95 @@ optimization. Because IDA3 covers a shorter residual horizon, a common-horizon
 comparison is also saved; unaligned whole-horizon totals should not be compared
 as if their delivery intervals were identical.
 
+\section{Value of reoptimization through frozen-plan replay}
+
+The optional frozen-plan comparison asks what would happen if planning stopped
+after one auction decision but physical feedback continued. This differs from
+the older open-loop imbalance diagnostic, which follows planned battery commands
+without grid-tracking feedback and does not reconstruct an alternative complete
+auction ledger and net profit.
+
+Let $k$ be an active auction other than the final active auction. At its cutoff,
+retain the entire deterministic future-trade vector from that solve. Define
+\begin{equation}
+ q^{[k]}_{a,t}=
+ \begin{cases}
+ q^{\rm submitted,ref}_{a,t},&a\le k,\\
+ q^{\mathrm{plan},k}_{a,t},&a>k,
+ \end{cases}
+ \qquad Q^{[k]}_t=\sum_a q^{[k]}_{a,t}.
+\end{equation}
+The already submitted trades are fixed even if their prices are unpublished.
+Future orders are the frozen snapshot's orders, not the later realized orders
+from the reoptimized strategy. They are submitted at their original gates and
+priced at actual clearing prices. Their eligibility must ensure submission
+precedes the relevant delivery interval. Thus their cumulative position is a
+valid delivery-time tracking target without prematurely revealing new prices or
+forecasts to the frozen plan.
+
+Executed history before the frozen residual boundary remains identical to the
+reference trajectory. The suffix starts from the actual carried energy,
+throughput, incurred wear and, for Xu mode, segment-memory vector. It is not
+reset to the snapshot's forecast SOC, including when the cutoff projects a
+not-yet-observed boundary. At physical delivery that boundary's actual state is
+carried forward without changing the frozen decisions.
+The same configured execution policy uses the frozen battery/curtailment
+commands, target $Q^{[k]}_t/\Delta_t$, and the same effective realized PV:
+\begin{equation}
+ (c_t^{[k]},d_t^{[k]},u_t^{[k]},e_{t+1}^{[k]})
+ =\mathcal F(e_t^{[k]},\widetilde V_t,Q_t^{[k]}/\Delta_t,
+             c_t^{\rm plan,k},d_t^{\rm plan,k},u_t^{\rm plan,k}).
+\end{equation}
+Here $\mathcal F$ is the grid-feedback/protection policy described above. The
+current study uses grid tracking; the alternative execution policy, if selected,
+is shared with the reference. No later optimization or weather-forecast update
+is applied. The algebraic replay adds zero optimization solves.
+
+Using the same signed settlement convention and actual dated transaction-fee
+accounting as the reference, the full-day frozen profit is
+\begin{equation}
+ J_{\rm frozen}^{[k]}=
+ \sum_{a,t}\pi_{a,t}^{\rm real}q_{a,t}^{[k]}
+ +\sum_t S_t^{[k]}-D^{[k]}-C_{\rm import}^{[k]}
+ -C_{\rm trading}^{[k]}.
+\end{equation}
+Previously executed prefix costs are preserved. Future wear is recomputed from
+the counterfactual's executed commands; gross fees are recomputed from its own
+trade ledger and the same initial operator-volume state, including month
+transitions and tariff bands. Reference future trades or fees are never borrowed
+after the freeze point.
+
+The value KPI is
+\begin{equation}
+ G_k=J_{\rm fully\ reoptimized}^{\rm real}-J_{\rm frozen}^{[k]}.
+\end{equation}
+Both sides cover the entire delivery day, so differing residual lengths do not
+create incomparable profit totals. Positive values favor later reoptimization;
+negative values are retained. Each $G_k$ measures all later replanning after
+$k$: the values are not additive and need not be monotonic. This comparison
+includes new forecasts, revised orders and state-aware planning rather than
+isolating a causal effect of forecast accuracy. Final stored-energy differences
+are reported; no terminal salvage price is assumed. If actual settlement is
+unavailable, settled profit and $G_k$ remain unknown.
+
+The independent YAML section is \path{reoptimization_baseline}.
+Its options are \texttt{enabled}, \path{freeze_after_auctions}, and \texttt{plots}.
+An absent section disables the feature; the comparison study enables it.
+A null auction selection evaluates every active pre-final auction, while a
+list chooses a subset. The last active auction is always excluded, cancelled
+auctions produce no baseline, and an empty selection produces no comparisons.
+The plot switch also respects the global plot setting. Snapshot replay requires
+deterministic plans; it rejects using one selected leaf of a contingent plan as
+if all of its future branches were already known.
+
+The simulator is \path{src/simulation/frozen_plans.py}. Saved dispatch-plan rows
+include every \texttt{planned\_trade\_<auction>\_mwh} and their planned net position.
+Full-day profits, gains and states are saved in the frozen-plan summary CSV/JSON,
+with separate actual counterfactual dispatch and trade ledgers. Individual gains
+also enter the scalar KPI table, and \texttt{reoptimization\_value.png} compares
+frozen profits with the reference. The isolated January configuration is
+\path{configs/full_experiments/gme_oracle_2025-01-01_farm910_reoptimization_value.yaml}.
+
 \section{Perfect-information schedules and the PV-only baseline}
 
 \subsection{PV+BESS versus the feedback controller}
@@ -767,6 +877,151 @@ baseline-enabled KPI is false. The perfect-information PV+BESS-versus-feedback
 comparison still runs. Four active auctions therefore produce four replay
 solves plus one PV+BESS hindsight solve and, when enabled, one PV-only solve.
 Counterfactual solve diagnostics are separate from replay solve counts.
+
+\section{Configurable participation and matched-day profile comparison}
+
+Participation is a choice of a nonempty subset $P$ of the chronologically ordered
+auction set $\mathcal A=\{\mathrm{DA},\mathrm{IDA1},\mathrm{IDA2},\mathrm{IDA3}\}$.
+The single-study configuration is
+\path{gme_oracle_experiment.participating_auctions}. Omission or null selects every
+configured auction dataset. Gate order remains unchanged; unselected auctions
+have no price-data requirement, trade variables, submission event/solve or fees.
+Their orders are absent rather than independent variables fixed after a solve.
+The active set on day $d$ also removes documented/configured cancellations.
+If every selected auction is documented/configured as cancelled, the profile
+retains its full delivery day with zero orders, auction/control solves and
+auction fees. The zero-position feedback policy stores PV within the SOC box
+and curtails remaining surplus; executed wear and settlement remain in actual
+profit. There is no initial auction objective (its expectation KPIs are null),
+and no auction plan enforces the configured terminal target on that day. Missing
+or partial price data without cancellation evidence still fail.
+
+Four independently optional auctions produce
+\begin{equation}
+ |\{P\subseteq\mathcal A:P\ne\varnothing\}|=2^4-1=15.
+\end{equation}
+If DA is mandatory and the three IDA auctions remain optional, there are instead
+\begin{equation}
+ |\{\{\mathrm{DA}\}\cup S:S\subseteq\{\mathrm{IDA1},\mathrm{IDA2},\mathrm{IDA3}\}\}|=2^3=8.
+\end{equation}
+Both families and explicitly listed profiles are supported. For example,
+$P=\{\mathrm{IDA1},\mathrm{IDA2}\}$ and $P=\{\mathrm{IDA3}\}$ are valid without DA.
+All physical, native-product, degradation and settlement constraints continue to
+apply to the same full delivery day.
+
+If the first selected gate occurs after delivery begins, its prefix uses zero
+contracted grid delivery and grid feedback with zero planned battery commands.
+The controller may store PV within the energy box and curtail remaining surplus;
+it does not earn uncontracted export revenue in this prefix. Actual energy and
+wear carry to the first selected solve, including the existing unfinished-interval
+state projection. No extra auction optimization is inserted before the first
+selected decision. Prefix executed/projected costs are subtracted from the first
+residual objective when forming an initial whole-day expected profit; the residual
+model objective is separately retained. Actual whole-day profit already includes
+all executed prefix costs through the ordinary financial accounting.
+
+\subsection{Operational fallback after an infeasible auction decision}
+
+Exact planned delivery does not guarantee feasible recourse after forecast
+updates. For example, the IDA3 decision cannot change products before noon:
+already committed exports can exceed the revised PV forecast plus usable
+stored energy in that closed window. The resulting MILP can be infeasible even
+though the physical controller can continue within SOC/power limits by accepting
+an imbalance. The terminal constraint need not be the conflicting constraint.
+
+The configurable policy \path{execution.infeasible_auction_policy} defaults to
+\texttt{error}. The full-January study uses \texttt{previous\_plan}. When and only
+when the solver confirms infeasibility, this policy uses the last feasible
+deterministic snapshot for the current auction's previously unsubmitted orders
+and remaining requested physical commands:
+\begin{equation}
+ q^{\rm submit}_{a,t}=q^{\rm last\ feasible}_{a,t},\qquad
+ u^{\rm requested}_t=u^{\rm last\ feasible}_t.
+\end{equation}
+The orders are submitted at their actual gate and priced at actual clearing
+prices with ordinary fee accounting; existing commitments remain fixed. The
+same feedback controller executes against actual PV, respects the physical
+limits, and settles unavoidable deviations ex post. This is a retained plan,
+not a new feasible optimum under the updated forecast. No recovery optimization
+or constraint relaxation is introduced. Subsequent selected decisions still
+attempt their normal reoptimization. Missing prior plans, nondeterministic
+snapshots and other solver failures remain errors.
+
+Failed decision/forecast diagnostics, reused plan sources, submitted quantities
+and attempt counts are saved separately from successful solves; optional IIS
+reports use \path{execution.save_infeasibility_diagnostics}. Summary tables retain
+fallback-day and failed-decision counts rather than omitting those dates from
+the comparison. The physical trajectory can finish away from the terminal SOC
+target of its retained plan, just as under ordinary forecast-error feedback.
+
+The \texttt{experiment-participation} command runs configured profiles on a common
+set of delivery days $\mathcal D$. The ranking metric is
+\begin{equation}
+ \overline J(P)=\frac{1}{|\mathcal D|}
+       \sum_{d\in\mathcal D}J^{\rm real}(P,d),\qquad
+ P^\star_{\mathcal D}\in\arg\max_P\overline J(P).
+\end{equation}
+It is an empirical ranking on $\mathcal D$, not an established optimum for unseen
+days. Selecting a different winning profile after each observed day would evaluate
+$|\mathcal D|^{-1}\sum_d\max_P J^{\rm real}(P,d)$ and would use additional hindsight;
+the saved daily-winner table is diagnostic and is not the fixed-profile ranking.
+
+Every profile must complete exactly the same requested dates with fully priced
+actual settlement. Missing or invalid inputs fail the batch; they do not silently
+change a profile's averaging sample. Battery and operator fee initial state are
+identical across profiles and reset independently each study day. This is not a
+continuous multi-day carry of SOC or monthly traded volume. The initialization
+weather cutoff is common before the earliest candidate gate and delivery start.
+Later forecast updates occur only at selected auction decisions. Delivery grids,
+initial PV forecasts, effective realized PV (including configured fallback
+intervals) and shared actual auction-price curves are fingerprinted and checked
+for equality across profiles. The market adapter resolves native auction-product
+durations for each date. Actual price snapshots, model inputs and all daily
+decisions remain in the per-profile run artifacts.
+
+Summary outputs retain average, total, minimum, maximum and median daily profit,
+10th/90th percentiles, daily population standard deviation, negative-profit and
+zero-active-auction day counts, daily wins including configured tolerance ties,
+paired differences to the largest selected profile, mean SOC/energy, curtailment,
+wear, transaction fees and active auction/solve counts. Final stored energy is
+reported without salvage valuation. The current configured terminal SOC remains
+a planning constraint rather than a guarantee on feedback's final state, so cash
+profit and ending inventory must be assessed together. Fee and inventory reset
+assumptions also matter when extrapolating to a longer investment horizon.
+
+The comparison figure places a separate gold perfect-foresight reference above
+the ranked profiles. Its mean and daily standard deviation use the full-day
+perfect-information objective values (Gurobi \texttt{ObjVal}) on the identical
+dates, effective realized PV, assets, costs and configured terminal SOC, with
+every configured auction that remains available. This reference includes markets
+outside a restricted candidate/profile family. Existing all-auction benchmark
+outputs are reused; if that profile is absent, one additional perfect-information
+solve per day supplies the reference without another auction replay. Its daily
+objectives and summary are retained separately, along with objective-minus-profit
+differences in the profile tables. This is a model-objective reference rather than
+an additional feedback participation rank: actual imbalance settlements and
+realized terminal inventory can differ between the accounting cases.
+\path{participation_study.perfect_foresight_reference} enables this feature by
+default and can be set to false.
+
+The batch YAML section \path{participation_study} controls candidate/required
+auctions, explicit profile lists, common dates, output paths, per-profile
+figures/models, summary plotting and profit-tie tolerance.
+The supplied example is
+\path{configs/full_experiments/gme_participation_2025-01-01_03.yaml}.
+The full-month independent-day configuration is
+\path{configs/full_experiments/gme_participation_2025-01.yaml}, with 31 common
+delivery days and 465 profile/day cases. Fully cancelled IDA3-only cases remain
+in the averaging sample rather than changing that profile's denominator.
+The driver is \path{src/simulation/participation_study.py}, while
+\path{src/participation.py} validates/enumerates subsets. Summary CSV/JSON/plots
+are stored apart from each individual replay under its profile/day directory.
+Optional \path{participation_study.resume} verifies the same effective
+configuration, completed child manifests, input fingerprints and saved profits
+before reusing checkpoints. Incomplete children are retained separately and
+rerun; changed configurations are rejected. After independent solution
+validation, tolerated negative floating-point command roundoff is floored to
+zero before the physical controller's strict nonnegative-input checks.
 
 \section{Forecast prices and the general stochastic route}
 
@@ -857,6 +1112,21 @@ window is complete.
 YAML controls study date, calendar validity, source mappings, PV and data policies,
 BESS and POI characteristics, state, degradation, solver and outputs. One include
 is resolved relative to the containing YAML, with recursive mapping overrides.
+Every shipped entry point imports \path{configs/standard.yaml} directly;
+experiment YAMLs contain only their overrides. The standard exposes shared
+feature flags to existing experiments. Explicit null values and replacement
+lists survive the merge. The \texttt{resolve-config} command prints the effective
+YAML without running a study or accessing provider data.
+
+A single root \path{farm_id}, optionally overridden with \texttt{--farm-id},
+selects forecast and physical plant identifiers through typed references resolved
+after merging. Each farm uses its own weather and measured-power series and
+Parquet metadata for PV geometry and tracking. Automatic directional POI ratings
+use declared AC nameplate capacity divided by 1000 as an illustrative MW proxy;
+per-farm ratings or explicit plant limits override that rule. Battery size and
+SOC percentages remain independent of farm selection. The reusable
+\path{configs/full_experiments/gme_day.yaml} exposes this workflow.
+
 The current 50\% study is configured by
 \path{configs/full_experiments/gme_oracle_2025-01-01_farm910_perfect_pv_comparison_terminal_soc_50.yaml}.
 Its inherited assumptions include a 5 MWh battery, 2.5 MW symmetric power,
@@ -882,7 +1152,11 @@ new samples; SOC uses the actual boundary states. Snapshot settlement diagnostic
 include their different delivery windows and common-horizon comparisons.
 
 Solver settings use relative MIP gap $10^{-4}$ (0.01\%) by default, with no absolute
-MIP gap configured. Objective comparisons use achieved \texttt{ObjVal}. Status,
+MIP gap configured. Configurable \path{feasibility_tolerance} and
+\path{integrality_tolerance} map to Gurobi's numerical feasibility and integer
+tolerances. The historical YAML sets both to $10^{-8}$ to avoid tiny binary-mode
+leakage while preserving the independent validator's physical checks.
+Objective comparisons use achieved \texttt{ObjVal}. Status,
 relative gap, model sizes and timing remain recorded. Before a schedule is used,
 independent validation recomputes physical balances, limits, native product
 consistency, information sharing, degradation and objective components. Execution

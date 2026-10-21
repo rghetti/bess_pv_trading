@@ -388,11 +388,17 @@ class SolverSettings:
     output_flag: bool = False
     export_path: str | None = None
     iis_path: str | None = None
+    feasibility_tolerance: float | None = None
+    integrality_tolerance: float | None = None
 
     def __post_init__(self) -> None:
         values = (self.time_limit_seconds, self.mip_gap)
         if self.threads < 1 or not all(np.isfinite(value) and value >= 0 for value in values) or not 0 <= self.seed <= 2_000_000_000:
             raise ValueError("Invalid solver setting")
+        for value, maximum, name in ((self.feasibility_tolerance, 1e-2, "feasibility_tolerance"),
+                (self.integrality_tolerance, 1e-1, "integrality_tolerance")):
+            if value is not None and (isinstance(value, bool) or not np.isfinite(value) or not 1e-9 <= value <= maximum):
+                raise ValueError(f"Invalid solver {name}")
 
 
 @dataclass(frozen=True)

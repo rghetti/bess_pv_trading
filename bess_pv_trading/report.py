@@ -25,10 +25,10 @@ import pandas as pd
 _CONTEXT_COLUMNS = (
     "farm_id",
     "time_utc",
-    "power_dc_kw",
+    "power_ac_kw",
     "ghi_w_m2",
     "fraction_diffuse",
-    "total_power_dc_kw",
+    "total_power_ac_kw",
     "solar_elevation_deg",
     "forecast_shortwave_w_m2",
     "forecast_cycle_time_utc",
@@ -144,7 +144,7 @@ def _coverage_section(context: pd.DataFrame) -> list[str]:
     ]
     counts = context.groupby("farm_id", dropna=False).agg(
         intervals=("time_utc", "size"),
-        missing_power=("power_dc_kw", lambda s: int(s.isna().sum())),
+        missing_power=("power_ac_kw", lambda s: int(s.isna().sum())),
         missing_ghi=("ghi_w_m2", lambda s: int(s.isna().sum())),
         missing_fraction_diffuse=("fraction_diffuse", lambda s: int(s.isna().sum())),
         missing_available_forecast=("forecast_shortwave_w_m2", lambda s: int(s.isna().sum())),
@@ -313,7 +313,7 @@ def _summary_text(
         "## Time and radiation conventions",
         "",
         "- All timestamps are UTC. A historical `time_utc` is the **start** of "
-        "a 15-minute interval; `power_dc_kw` and historical `ghi_w_m2` are "
+        "a 15-minute interval; `power_ac_kw` and historical `ghi_w_m2` are "
         "interval means over `[time_utc, time_utc + 15 min)`. Solar elevation "
         "is computed at that interval's midpoint.",
         "- A forecast `cycle_time` identifies a forecast vintage. `lead_time` "
@@ -438,7 +438,7 @@ def _plot_farm_window(
     title: str,
     highlight: tuple[pd.Timestamp, pd.Timestamp] | None,
 ) -> None:
-    """Plot raw DC power, GHI, eligible forecast, and proxy solar elevation."""
+    """Plot raw AC power, GHI, eligible forecast, and proxy solar elevation."""
     window = farm_context.loc[
         (farm_context["time_utc"] >= start) & (farm_context["time_utc"] < end)
     ]
@@ -447,8 +447,8 @@ def _plot_farm_window(
 
     fig, axes = plt.subplots(3, 1, figsize=(13, 8), sharex=True, constrained_layout=True)
     time = window["time_utc"]
-    axes[0].plot(time, window["power_dc_kw"], color="#1d4ed8", lw=1.35, label="DC power")
-    axes[0].set_ylabel("DC power (kW)")
+    axes[0].plot(time, window["power_ac_kw"], color="#1d4ed8", lw=1.35, label="AC power")
+    axes[0].set_ylabel("AC power (kW)")
     axes[0].legend(loc="upper right")
 
     axes[1].plot(time, window["ghi_w_m2"], color="#d97706", lw=1.35, label="Historical GHI")

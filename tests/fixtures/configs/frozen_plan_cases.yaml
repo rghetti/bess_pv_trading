@@ -1,0 +1,93 @@
+# Independent arithmetic; fixture values are not production study parameters.
+battery_reference: lossless
+farm_id: 1
+poi_import_mw: 1.0
+poi_export_mw: 1.0
+starts: ['2026-01-01T00:00:00Z', '2026-01-01T01:00:00Z', '2026-01-01T02:00:00Z']
+ends: ['2026-01-01T01:00:00Z', '2026-01-01T02:00:00Z', '2026-01-01T03:00:00Z']
+auctions:
+  - {auction: DA, submission_at: '2025-12-31T11:55:00Z', results_at: '2025-12-31T13:30:00Z', eligible_intervals: [0, 1, 2]}
+  - {auction: IDA2, submission_at: '2026-01-01T00:55:00Z', results_at: '2026-01-01T00:59:00Z', eligible_intervals: [1, 2]}
+  - {auction: IDA3, submission_at: '2026-01-01T01:55:00Z', results_at: '2026-01-01T01:59:00Z', eligible_intervals: [2]}
+prices:
+  DA: [10.0, 10.0, 10.0]
+  IDA2: [20.0, 40.0, 20.0]
+  IDA3: [30.0, 30.0, 60.0]
+reference_trades:
+  DA: [0.0, 0.0, 0.0]
+  IDA2: [0.0, 0.25, 0.0]
+  IDA3: [0.0, 0.0, 0.25]
+reference:
+  pv_ac_mw: [0.0, 0.0, 0.0]
+  charge_mw: [0.0, 0.0, 0.0]
+  discharge_mw: [0.0, 0.25, 0.25]
+  grid_mw: [0.0, 0.25, 0.25]
+  energy_start_mwh: [0.5, 0.5, 0.25]
+  energy_end_mwh: [0.5, 0.25, 0.0]
+  curtailment_mw: [0.0, 0.0, 0.0]
+  throughput_mwh: [0.0, 0.25, 0.25]
+  import_fee_eur: [0.0, 0.0, 0.0]
+  imbalance_mwh: [0.0, 0.0, 0.0]
+  net_position_mwh: [0.0, 0.25, 0.25]
+  imbalance_price_eur_mwh: [100.0, 100.0, 100.0]
+  realized_imbalance_cashflow_eur: [0.0, 0.0, 0.0]
+  # Zero requested dispatch makes both counterfactuals rely on feedback.
+plans:
+  DA:
+    first_interval: 0
+    snapshot_scenario_count: 1
+    forecast_pv_mw: [0.0, 0.5, 0.5]
+    planned_net_position_mwh: [0.0, 0.5, 0.5]
+    charge_mw: [0.0, 0.0, 0.0]
+    discharge_mw: [0.0, 0.0, 0.0]
+    curtailment_mw: [0.0, 0.0, 0.0]
+    trades: {DA: [0.0, 0.0, 0.0], IDA2: [0.0, 0.5, 0.0], IDA3: [0.0, 0.0, 0.5]}
+    snapshot_soc_start_mwh: 0.5
+  IDA2:
+    first_interval: 1
+    snapshot_scenario_count: 1
+    forecast_pv_mw: [0.25, 0.75]
+    planned_net_position_mwh: [0.25, 0.75]
+    charge_mw: [0.0, 0.0]
+    discharge_mw: [0.0, 0.0]
+    curtailment_mw: [0.0, 0.0]
+    trades: {DA: [0.0, 0.0], IDA2: [0.25, 0.0], IDA3: [0.0, 0.75]}
+    # Deliberately different from actual 0.5 MWh at this boundary.
+    snapshot_soc_start_mwh: 0.9
+config:
+  state: {origin: known_delivery_start_assumption}
+  execution: {dispatch_policy: track_committed_grid}
+  trading: {grid_import_fee_eur_per_mwh: 0.0}
+  transaction_fees: {mode: flat, flat_eur_per_mwh: 0.4}
+degradation_cases:
+  throughput:
+    settings: {model: throughput, cost_eur_per_mwh_throughput: 2.0}
+    reference_wear_eur: [0.0, 0.5, 0.5]
+    reference_profit_eur: 23.8
+    frozen_profits_eur: [-1.4, 3.6]
+    frozen_wear_eur: 1.0
+  xu:
+    settings: {model: xu_segmented, cost_eur_per_mwh_throughput: 0.0, replacement_cost_eur: 100.0, stress_coefficient: 0.1, stress_exponent: 2.0, segment_count: 4}
+    reference_wear_eur: [0.0, 0.625, 1.875]
+    reference_segment_energy_end_mwh: [[0.25, 0.25, 0.0, 0.0], [0.0, 0.25, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]]
+    reference_profit_eur: 22.3
+    frozen_profits_eur: [-2.9, 2.1]
+    frozen_wear_eur: 2.5
+expected:
+  frozen_auctions: [DA, IDA2]
+  common_prefix_intervals: [0, 1]
+  frozen_revenues_eur: [50.0, 55.0]
+  transaction_fees_eur: [0.4, 0.4]
+  imbalance_cashflows_eur: [-50.0, -50.0]
+  reoptimization_gains_eur: [25.2, 20.2]
+  final_soc_percent: [0.0, 0.0]
+  future_ida3_mwh: [0.5, 0.75]
+invalid_scenario_count: 2
+selected_freezes: [IDA2]
+invalid_baseline_configs:
+  - {enabled: 'false'}
+  - {enabled: true, plots: 'true'}
+  - {enabled: true, freeze_after_auctions: DA}
+  - {enabled: true, freeze_after_auctions: [UNKNOWN]}
+  - {enabled: true, freeze_after_auctions: [DA, DA]}
+  - {enabled: true, unsupported_option: true}

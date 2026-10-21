@@ -1,9 +1,35 @@
 # Corrected native-price replay: hourly MGP, quarter-hour MI-A1/2/3 and controls.
 # Preserve the latest assets, rolling PV, POI bounds and ex-post settlement audit.
-include: gme_oracle_2025-01-01_farm910_reoptimization_imbalance.yaml
-
+include: ../standard.yaml
+analysis:
+  start: '2025-10-01T00:00:00Z'
+  end: '2025-10-01T23:45:00Z'
+  output_dir: outputs/analysis/farm1_20251001
+forecast_run:
+  decision_cutoff: '2024-12-31T10:55:00Z'
+  delivery_day: '2025-01-01'
+  output_dir: outputs/pv/gme_oracle_2025-01-01_farm${farm_id}
+pv:
+  direct_exceeds_ghi: clip_and_flag
 gme_oracle_experiment:
-  study_id: gme_nord_oracle_2025-01-01_farm910_native_quarter_hour_ida
-
+  study_id: gme_nord_oracle_2025-01-01_farm${farm_id}_native_quarter_hour_ida
+  delivery_day: '2025-01-01'
+market:
+  valid_from: '2025-01-01'
+  valid_to: '2025-01-01'
+  result_provenance:
+    DA: study_assumption_13:30_for_historical_day
+    IDA1: study_assumption_15:30_for_historical_day
+    IDA2: study_assumption_22:30_for_historical_day
+    IDA3: study_assumption_10:30_for_historical_day
+forecast:
+  initial_decision_cutoff: '2024-12-31T10:55:00Z'
+state:
+  terminal_soc_percent: null
+solver:
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
 experiment_outputs:
-  run_id: gme_nord_oracle_2025-01-01_farm910_5mwh_native_ida_pt15
+  run_id: gme_nord_oracle_2025-01-01_farm${farm_id}_5mwh_native_ida_pt15
+settlement:
+  enabled: true

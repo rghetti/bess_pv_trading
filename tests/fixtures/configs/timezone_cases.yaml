@@ -1,0 +1,32 @@
+# Independent civil-clock expectations: UTC offsets differ across the event days
+# on the two DST transition dates. Lag cases preserve the old and current studies.
+lag_hours: [4, 6]
+cases:
+  - name: winter
+    delivery_day: '2025-01-01'
+    delivery_intervals: 96
+    utc_gate_clocks: {DA: '11:00', IDA1: '14:00', IDA2: '21:00', IDA3: '09:00'}
+    cycle_clocks_by_lag:
+      4: {DA: '06:00', IDA1: '06:00', IDA2: '12:00', IDA3: '00:00'}
+      6: {DA: '00:00', IDA1: '06:00', IDA2: '12:00', IDA3: '00:00'}
+  - name: summer
+    delivery_day: '2025-07-01'
+    delivery_intervals: 96
+    utc_gate_clocks: {DA: '10:00', IDA1: '13:00', IDA2: '20:00', IDA3: '08:00'}
+    cycle_clocks_by_lag:
+      4: {DA: '00:00', IDA1: '06:00', IDA2: '12:00', IDA3: '00:00'}
+      6: {DA: '00:00', IDA1: '06:00', IDA2: '12:00', IDA3: '00:00'}
+  - name: spring_clock_change
+    delivery_day: '2025-03-30'
+    delivery_intervals: 92
+    utc_gate_clocks: {DA: '11:00', IDA1: '14:00', IDA2: '21:00', IDA3: '08:00'}
+    cycle_clocks_by_lag:
+      4: {DA: '06:00', IDA1: '06:00', IDA2: '12:00', IDA3: '00:00'}
+      6: {DA: '00:00', IDA1: '06:00', IDA2: '12:00', IDA3: '00:00'}
+  - name: autumn_clock_change
+    delivery_day: '2025-10-26'
+    delivery_intervals: 100
+    utc_gate_clocks: {DA: '10:00', IDA1: '13:00', IDA2: '20:00', IDA3: '09:00'}
+    cycle_clocks_by_lag:
+      4: {DA: '00:00', IDA1: '06:00', IDA2: '12:00', IDA3: '00:00'}
+      6: {DA: '00:00', IDA1: '06:00', IDA2: '12:00', IDA3: '00:00'}

@@ -20,7 +20,7 @@ class FarmMetadata:
     """Confirmed static fields; no module specification is inferred from type IDs."""
     farm_id: int
     zone: str
-    dc_capacity_kw: float
+    ac_capacity_kw: float
     tracking_type_id: int
     surface_tilt_deg: float
     source_azimuth_deg: float
@@ -29,9 +29,9 @@ class FarmMetadata:
     assumptions: dict[str, Any] = field(default_factory=dict)
 
     @property
-    def dc_capacity_mw(self) -> float:
-        """Express DC nameplate capacity in optimizer power units."""
-        return self.dc_capacity_kw / 1000.0
+    def ac_capacity_mw(self) -> float:
+        """Express AC nameplate capacity in optimizer power units."""
+        return self.ac_capacity_kw / 1000.0
 
 
 @dataclass

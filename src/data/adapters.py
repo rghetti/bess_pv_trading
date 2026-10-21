@@ -42,7 +42,7 @@ def load_metadata(path: str | Path, farm_ids: list[int] | None = None) -> dict[i
         if farm_ids is not None and farm_id not in farm_ids:
             continue
         if not np.isfinite(row.total_power) or row.total_power <= 0:
-            raise ValueError(f"Invalid DC nameplate capacity for farm {farm_id}")
+            raise ValueError(f"Invalid AC nameplate capacity for farm {farm_id}")
         metadata[farm_id] = FarmMetadata(farm_id, str(row.zone), float(row.total_power), int(row.tracking_type_id), float(row.tilt), float(row.azimuth), float(row.elevation_m), float(row.pv_type_id) if hasattr(row, "pv_type_id") else None)
     if farm_ids is not None and set(farm_ids) != set(metadata):
         raise ValueError("Requested farm IDs absent from metadata")
@@ -100,7 +100,7 @@ def inspect_data(config: dict[str, Any]) -> dict[str, Any]:
         metadata_file = config_path(config, config["inputs"]["metadata_parquet"])
         marker = config_path(config, config["inputs"]["zarr"]) / ".zmetadata"
         stat = marker.stat()
-        return {"zarr": str(config["inputs"]["zarr"]), "metadata_parquet": str(config["inputs"]["metadata_parquet"]), "dimensions": dict(dataset.sizes), "historical_start_utc": times[0].isoformat(), "historical_end_utc": times[-1].isoformat(), "cycle_start_utc": cycles[0].isoformat(), "cycle_end_utc": cycles[-1].isoformat(), "lead_encoding": str(dataset.lead_time.dtype), "lead_hours": list(map(float, leads / pd.Timedelta(hours=1))), "valid_time_verified": valid_matches, "farm_ids": farm_ids, "farms": [asdict(metadata[farm]) for farm in farm_ids], "variables": {name: {"dimensions": list(variable.dims), "dtype": str(variable.dtype), "attributes": dict(variable.attrs)} for name, variable in dataset.data_vars.items()}, "attributes": dict(dataset.attrs), "ensemble_axis_present": any("member" in name or "ensemble" in name for name in dataset.dims), "provenance": {"metadata_size_bytes": metadata_file.stat().st_size, "zarr_metadata_size_bytes": stat.st_size, "zarr_metadata_mtime_ns": stat.st_mtime_ns, "inspection": "coordinates_and_consolidated_metadata_only", "measured_power_basis": "AC_user_confirmed", "capacity_basis": "DC_user_confirmed"}}
+        return {"zarr": str(config["inputs"]["zarr"]), "metadata_parquet": str(config["inputs"]["metadata_parquet"]), "dimensions": dict(dataset.sizes), "historical_start_utc": times[0].isoformat(), "historical_end_utc": times[-1].isoformat(), "cycle_start_utc": cycles[0].isoformat(), "cycle_end_utc": cycles[-1].isoformat(), "lead_encoding": str(dataset.lead_time.dtype), "lead_hours": list(map(float, leads / pd.Timedelta(hours=1))), "valid_time_verified": valid_matches, "farm_ids": farm_ids, "farms": [asdict(metadata[farm]) for farm in farm_ids], "variables": {name: {"dimensions": list(variable.dims), "dtype": str(variable.dtype), "attributes": dict(variable.attrs)} for name, variable in dataset.data_vars.items()}, "attributes": dict(dataset.attrs), "ensemble_axis_present": any("member" in name or "ensemble" in name for name in dataset.dims), "provenance": {"metadata_size_bytes": metadata_file.stat().st_size, "zarr_metadata_size_bytes": stat.st_size, "zarr_metadata_mtime_ns": stat.st_mtime_ns, "inspection": "coordinates_and_consolidated_metadata_only", "measured_power_basis": "AC_user_confirmed", "capacity_basis": "AC_user_confirmed"}}
     finally:
         dataset.close()
 
@@ -307,6 +307,8 @@ def validate_source_config(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("The verified source timezone is UTC")
     if source.get("measured_power_basis", "AC") != "AC":
         raise ValueError("Measured farm power is already AC")
+    if source.get("capacity_basis", "AC") != "AC":
+        raise ValueError("Farm metadata total_power is the AC nameplate rating")
     if source.get("historical_label", "start") != "start" or source.get("forecast_radiation_label", "end") != "end":
         raise ValueError("Historical and forecast radiation labels must be start/end")
     for key in ("availability_lag_hours", "telemetry_latency_minutes"):
@@ -375,20 +377,33 @@ def validate_source_config(config: dict[str, Any]) -> dict[str, Any]:
         gamma = float(pv.get("dc", {}).get("gamma_pdc_per_c", np.nan))
         if not np.isfinite(gamma):
             raise ValueError("PVWatts gamma coefficient must be finite and configured")
+        reference_efficiency = float(pv.get("dc", {}).get("reference_conversion_efficiency", np.nan))
+        if not np.isfinite(reference_efficiency) or not 0 < reference_efficiency <= 1:
+            raise ValueError("PV DC reference conversion efficiency must lie in (0,1]")
         output = pv.get("output", {})
         if output.get("ac_limit_mw") is not None and (not np.isfinite(float(output["ac_limit_mw"])) or float(output["ac_limit_mw"]) <= 0):
             raise ValueError("PV AC limit must be finite and positive or null")
+        if output.get("ac_limit_mw") is not None:
+            farm_id = config.get("forecast", {}).get("farm_id", config.get("farm_id"))
+            farm = config.get("farms", {}).get(str(farm_id), {})
+            farm_capacity_kw = farm.get("ac_capacity_kw")
+            if farm_capacity_kw is not None and float(output["ac_limit_mw"]) > float(farm_capacity_kw) / 1000:
+                raise ValueError("Configured PV AC limit cannot exceed selected-farm AC nameplate")
         if output.get("method") not in {"explicit_efficiency", "calibrated_scale"}:
             raise ValueError("PV-output conversion method must be explicit")
         if output.get("method") == "explicit_efficiency":
             value = float(output.get("pv_output_efficiency", np.nan))
             if not np.isfinite(value) or not 0 < value <= 1 or not output.get("assumption_status"):
                 raise ValueError("PV-output efficiency requires a fraction and assumption status")
+        elif output.get("calibrated_coefficient") is not None:
+            value = float(output["calibrated_coefficient"])
+            if not np.isfinite(value) or value <= 0:
+                raise ValueError("Calibrated PV coefficient must be positive and finite")
         transformer = float(output.get("transformer_efficiency", np.nan))
         if (not np.isfinite(transformer) or not 0 < transformer <= 1
                 or not output.get("transformer_assumption_status")):
             raise ValueError("PV transformer efficiency requires 0<eta<=1 and assumption provenance")
-    return {"source_configured": True, "policy_version": policy.get("version", "requested-v1"), "source_timezone": "UTC", "measured_power_basis": "AC", "review_mode": config.get("review", {}).get("mode", "exploratory")}
+    return {"source_configured": True, "policy_version": policy.get("version", "requested-v1"), "source_timezone": "UTC", "measured_power_basis": "AC", "capacity_basis": "AC", "review_mode": config.get("review", {}).get("mode", "exploratory")}
 
 
 # Figures show policy adjustments explicitly, without treating them as diagnoses.

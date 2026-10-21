@@ -224,7 +224,7 @@ def build_model(inputs: OptimizationInput) -> BuiltModel:
     profit = {s: components["auction_revenue"][s] + components["imbalance_cashflow"][s] - components["imbalance_penalty"][s] - components["battery_degradation_cost"][s] - components["other_costs"][s] - components["transaction_fees"][s] for s in range(len(inputs.scenarios.scenario_ids))}
     components["operating_profit"] = profit
     model.setObjective(gp.quicksum(float(probability) * profit[s] for s, probability in enumerate(inputs.scenarios.probabilities)), gp.GRB.MAXIMIZE)
-    model.update()
+    model.update() #imports the changes to the model
     return BuiltModel(inputs, model, variables, components, perf_counter() - started)
 
 
@@ -250,6 +250,10 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     model.setParam("OutputFlag", int(settings.output_flag))
     for name, value in {"Threads": settings.threads, "TimeLimit": settings.time_limit_seconds, "MIPGap": settings.mip_gap, "Seed": settings.seed}.items():
         model.setParam(name, value)
+    for name, value in (("FeasibilityTol", settings.feasibility_tolerance),
+                        ("IntFeasTol", settings.integrality_tolerance)):
+        if value is not None:
+            model.setParam(name, value)
     if settings.export_path:
         Path(settings.export_path).parent.mkdir(parents=True, exist_ok=True)
         model.write(settings.export_path)
@@ -263,6 +267,8 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
         return OptimizationResult("solver_error", False, diagnostics={"build_seconds": built.build_seconds, "solve_seconds": perf_counter() - started}, message=str(error))
     diagnostics = {"status_code": model.Status, "solution_count": model.SolCount, "build_seconds": built.build_seconds, "solve_seconds": perf_counter() - started, "runtime_seconds": model.Runtime, "variables": model.NumVars, "binary_variables": model.NumBinVars, "constraints": model.NumConstrs, "nodes": len(inputs.tree.nodes), "leaves": len(inputs.scenarios.scenario_ids), "accepted_contractual_cashflow_eur": inputs.market.cashflow_eur, "pending_contractual_cashflow_in_objective": False, "pending_contractual_cashflow_status": "Unpublished-price contractual constant excluded; submitted quantities remain fixed positions"}
     diagnostics["relative_mip_gap_tolerance"] = settings.mip_gap
+    diagnostics["feasibility_tolerance"] = model.Params.FeasibilityTol
+    diagnostics["integrality_tolerance"] = model.Params.IntFeasTol
     diagnostics["absolute_mip_gap_configured"] = False
     diagnostics["degradation_mode"] = inputs.degradation.mode
     diagnostics["transaction_fee_formulation"] = built.variables["transaction_fee_formulation"]

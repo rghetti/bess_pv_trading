@@ -1,0 +1,35 @@
+# Independent enumeration and averaging cases, separate from physical study tuning.
+candidates: [DA, IDA1, IDA2, IDA3]
+required_da: [DA]
+expected_nonempty_profiles: 15
+expected_da_required_profiles: 8
+cancelled_auction_day: '2025-01-17'
+infeasible_auction_policies: [error, previous_plan]
+selected_profiles: [[IDA1, IDA2], [IDA3], [DA], [IDA2]]
+invalid_selections: [[], [DA, DA], [UNKNOWN], DA]
+invalid_profile_settings:
+  - {candidate_auctions: [IDA1, IDA2], required_auctions: [DA]}
+  - {profiles: [[DA], [DA]]}
+  - {required_auctions: [DA], profiles: [[IDA1, IDA2]]}
+ranking:
+  profiles: [[DA], [IDA1, IDA2]]
+  delivery_days: ['2025-01-01', '2025-01-02']
+  profit_tolerance_eur: 0.000001
+  daily:
+    - {profile: DA, study_date: '2025-01-01', net_profit_eur: 100.0}
+    - {profile: DA, study_date: '2025-01-02', net_profit_eur: 80.0}
+    - {profile: 'IDA1+IDA2', study_date: '2025-01-01', net_profit_eur: 90.0}
+    - {profile: 'IDA1+IDA2', study_date: '2025-01-02', net_profit_eur: 110.0}
+  metrics: {final_energy_mwh: 2.5, final_soc_percent: 50.0, degradation_eur: 1.0, curtailment_mwh: 0.0, absolute_imbalance_mwh: 0.0, transaction_fee_eur: 0.5, auction_solves: 1, active_auction_count: 1}
+  expected_order: ['IDA1+IDA2', DA]
+  expected_means_eur: [100.0, 90.0]
+  expected_paired_differences_eur: [0.0, -10.0]
+  expected_daily_wins: [1, 1]
+  realized_pv_mw: [0.0, 1.0]
+perfect_foresight:
+  objectives_eur: [120.0, 140.0]
+  active_auctions_by_day: [[DA, IDA1, IDA2, IDA3], [DA, IDA1, IDA2]]
+  expected_mean_objective_eur: 130.0
+  expected_std_objective_eur: 10.0
+  model_status: optimal
+  model_mip_gap: 0.0

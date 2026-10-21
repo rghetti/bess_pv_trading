@@ -1,4 +1,63 @@
-include: synthetic_fees_none.yaml
+include: ../standard.yaml
+synthetic:
+  delivery_day: '2025-10-02'
+  seed: 17
+  branches_per_auction: 1
+  branch_values:
+    - 0.0
+  branch_probabilities:
+    - 1.0
+  pv_peak_mw: 0.8
+  sunrise_hour: 7.0
+  sunset_hour: 19.0
+  base_price_eur_per_mwh: 70.0
+  daily_price_amplitude: 15.0
+  residual_scale:
+    DA: 8.0
+    IDA1: 5.0
+    IDA2: 4.0
+    IDA3: 3.0
+  stage_spreads:
+    IDA1: -3.0
+    IDA2: 2.0
+    IDA3: 4.0
+  imbalance_price_eur_per_mwh: 60.0
+  strategies:
+    - deterministic_integrated
+plant:
+  assumption_status: illustrative_synthetic_equipment
+battery:
+  capacity_mwh: 1.0
+  max_power_mw: 0.5
+state:
+  initial_energy_mwh: 0.5
+  terminal_target_mwh: 0.5
+trading:
+  imbalance_penalty_eur_per_mwh: 100.0
+  settlement_status: synthetic_signed_single_price
+  excluded_charges:
+    - grid_use_fee
+    - taxes
+    - brokerage
+  optimize_imbalances: true
+degradation:
+  cost_eur_per_mwh_throughput: 5.0
+  assumptions: illustrative AC charge-plus-discharge throughput cost; no calibrated lifetime model
+  segment_count: 16
+  replacement_economics: null
+  throughput_lifetime: null
+solver:
+  threads: 1
+  time_limit_seconds: 30.0
+outputs:
+  root: outputs/transaction_fee_checks
 transaction_fees:
   mode: flat
   flat_eur_per_mwh: 0.04
+execution:
+  dispatch_policy: follow_battery_plan
+farm_id: 1
+farms:
+  '1':
+    poi_import_mw: 1.0
+    poi_export_mw: 1.0

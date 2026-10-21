@@ -75,7 +75,7 @@ All farms are anonymous and associated with Northern Italy's `NORD` bidding zone
 
 Angles are in degrees, and source azimuth 0 degrees denotes south. **The sign/direction of positive azimuth is not established by that statement.** Actual coordinates are unavailable. Milan is a provisional solar-position reference only. Tracker-axis geometry is unresolved; module azimuth/tilt metadata must not automatically be reinterpreted as axis geometry.
 
-The files contain **no electricity prices, BESS specifications, detailed module parameters, or detailed inverter specifications**. Installed capacities in the table are still **DC nameplate capacities**, but the historical `power` series is **already AC output from the farm**. The configurable efficiency of **0.97 belongs to the bidirectional BESS inverter/converter**, in each conversion direction, not to a second conversion of measured PV output. It is a study assumption, not measured hardware metadata.
+The files contain **no electricity prices, BESS specifications, detailed module parameters, or detailed inverter specifications**. The installed capacities in the table are the farm's **AC nameplate capacities**, and the historical `power` series is **already AC output from the farm**. For pvlib, derive a DC reference capacity by dividing the AC rating by the configured PV output efficiency in explicit mode, or by the causally fitted coefficient in calibrated mode; use that same coefficient to convert DC output to AC. After PV and transformer conversion, cap forecasts at the farm AC rating. The configurable efficiency of **0.97 belongs to the bidirectional BESS inverter/converter**, in each conversion direction, not to measured PV output. It is a study assumption, not measured hardware metadata.
 
 ### 3.2 Historical observations
 
@@ -263,7 +263,7 @@ Provide configuration for:
 - Derived-data policy: plateau minimum run length and equality tolerances, variable allowlists, the 21:30–05:00 night window/timezone, negative-forecast clipping, measurement interpolation and optional maximum gap, evidence availability, and raw/treated output paths.
 - Confirmed hourly shortwave/GHI semantics, assumed direct-radiation interpretation, and treatment of `fraction_diffuse` (disabled until confirmed).
 - Proxy coordinates and their status, azimuth sign convention, tracker-axis assumptions, GCR/backtracking/bifacial parameters.
-- PV DC nameplate capacity, DC temperature model, separate PV-output conversion/calibration and AC limit assumptions; historical power remains measured AC.
+- AC farm nameplate capacity, derived pvlib DC reference capacity using the same coefficient used for DC-to-AC conversion (configured efficiency or fitted scale), DC temperature model, optional calibration, final AC rating cap and transformer assumption; historical power remains measured AC.
 - BESS MWh/MW, bidirectional converter efficiency of 0.97 per direction, separately configured cell efficiencies or declared combined efficiencies, SoC bounds, initial state timestamp/value, degradation, and POI limits.
 - Market version, timezone, gates, results publication, decision buffer, delivery-product masks, settlement and position limits.
 - Price regression/features, training and validation dates, residual method/covariance, random seed, conditional branch counts.
@@ -628,11 +628,11 @@ Do not silently choose module databases, axis direction, tracking geometry, or a
 
 Derive wind speeds from the supplied u/v components with the vector magnitude. Use 10 m or 100 m consistently with the chosen temperature model; a height conversion or use of 10 m wind as a module-level proxy must be documented. Temperature is already in degrees Celsius.
 
-Use a transparent DC model compatible with limited metadata, such as pvlib's PVWatts DC model [R11], with DC nameplate capacity, plane-of-array irradiance, cell-temperature estimate, and a configurable temperature coefficient. Respect each library function's units: when it expects nameplate watts, convert the supplied kW to W and convert the returned watts explicitly back to the canonical power unit. Do not invent string/module counts or detailed electrical specifications.
+Use a transparent DC model compatible with limited metadata, such as pvlib's PVWatts DC model [R11], with a DC reference capacity derived as AC farm rating divided by the configured PV output efficiency in explicit mode or the fitted coefficient in calibrated mode, plane-of-array irradiance, cell-temperature estimate, and a configurable temperature coefficient. Use that same coefficient to convert modeled DC to AC in either mode. Respect each library function's units: convert the derived kW reference to W and convert returned watts explicitly back to the canonical power unit. Do not invent string/module counts or detailed electrical specifications.
 
 Calibrate against **historical measured AC output**, using the policy-treated past observations, their flags, any upstream review exclusions, and chronological splits. Fit a conversion/calibration mapping from modeled DC to measured AC where appropriate; never compare modeled DC directly with the AC target as though their electrical bases were identical. Report how masking and interpolation affect the training set. If usable calibration data are insufficient, use only an explicitly configured PV-output model and label its assumptions; do not borrow the BESS converter efficiency.
 
-Do not force DC output to equal nameplate capacity as an undocumented hard clipping rule. Nameplate power is a rating, not an established plant-output cap for every irradiance and temperature. Apply configured physical limits where justified and report their origin.
+Cap final converted AC forecasts at the farm's configured AC nameplate rating after applying the PV-output and transformer efficiencies. A tighter configured AC cap may be used; a configured cap may not exceed the farm rating. Keep this forecast limit separate from the measured AC series, which receives no PV or transformer conversion loss.
 
 ### 8.4 Measured AC, modeled PV conversion, and the BESS inverter
 
@@ -644,9 +644,9 @@ pv_ac_actual_mw = power_ac_kw / 1000
 
 Do not apply 0.97, another PV conversion factor, or a speculative PV inverter clipping model to these already measured AC values.
 
-**Forecast production:** if pvlib first computes DC output from DC nameplate capacity, it still needs a separate, explicit mapping to predicted farm AC output. Use an available PV inverter model with separately supplied parameters, or a documented calibration of modeled PV DC output to the historical AC target. Any fallback PV-output efficiency or DC/AC-ratio assumption must have its own YAML fields and provenance; do not silently set it equal to the battery's 0.97 efficiency. Keep PV-output calibration and inverter clipping distinguishable and avoid double-counting losses.
+**Forecast production:** pvlib computes DC output using a reference capacity derived from the farm AC rating and the configured PV output efficiency in explicit mode or causal fitted slope in calibrated mode. That same coefficient maps DC to AC in either mode. Apply the separately configured transformer efficiency, then cap final AC forecast at the farm AC rating. Note that PVWatts DC is linear in its reference capacity, so use of the same fitted slope in both places cancels its scale effect on uncapped calibrated forecasts. Do not use the BESS converter's 0.97 efficiency as a PV assumption. Keep PV-output calibration and the final AC forecast cap distinguishable and avoid double-counting losses.
 
-An AC inverter rating cannot be inferred as a confirmed fact from DC nameplate capacity. Use supplied ratings or explicit assumptions. Measured clipping/plateaus and the requested plateau-zero policy must be reported when assessing forecast error; do not claim identification of hardware limits from data that the policy has zeroed.
+The metadata's AC farm rating is user-confirmed as the installed farm capacity; it does not establish separate inverter or POI ratings. Use the AC farm rating as the configured forecast cap and retain separate, explicit POI assumptions. Measured clipping/plateaus and the requested plateau-zero policy must be reported when assessing forecast error; do not claim identification of hardware limits from data that the policy has zeroed.
 
 **Battery:** reserve the configured 97% conversion efficiency for the BESS connection in Section 6.3. PV-to-grid energy bypasses that converter. PV-to-battery and grid-to-battery energy pass through its charging direction; battery-to-grid energy passes through its discharging direction.
 
@@ -817,7 +817,7 @@ Implement executable small fixtures, not only descriptions of tests. Separate te
 - Tracker axis and fixed surface orientation are distinct parameters.
 - Unknown PV-type IDs do not trigger invented electrical specifications.
 - Farm 901's rear-side contribution is either explicitly modeled or disclosed as omitted.
-- Wind vector magnitude, Celsius temperature, DC nameplate scaling, and the separate PV-output model/calibration are correct.
+- Wind vector magnitude, Celsius temperature, AC-rating-to-DC-reference scaling through the shared PV efficiency setting, and separate PV-output conversion/calibration are correct.
 - Measured power is AC and is not multiplied by 0.97; AC forecasts are evaluated against AC observations.
 - The BESS converter efficiency is applied once in each physical conversion direction, not to direct PV exports; converter-only round-trip efficiency is 0.9409 when cell efficiencies are one.
 - Combined-efficiency configuration cannot double-count the same 97% converter loss.
@@ -897,7 +897,7 @@ Use the JSON file, test logs, run manifests, and code inspection as traceable ev
 
 2. **Status matrix.** For each major component: module path/entry point, status (`implemented-and-tested`, `implemented-not-executed`, `partial`, `blocked`, or `not-implemented`), actual evidence, and blocker where applicable. Include deterministic/stochastic optimization, nonanticipativity, empirical tree generation, derived masking/interpolation, pvlib conversion, each market adapter, price regressions, residual paths, ledger/replay, throughput and reference aging, and independent validation.
 
-3. **Dataset and provenance.** Exact file names under `data/farms/`, observed dimensions/coverage, farm IDs/DC nameplate capacities, **measured AC power basis**, hourly forecast shortwave/GHI versus quarter-hour satellite GHI, forecast vintages, and the absence of an ensemble axis. Document the masking/interpolation policy, tolerances, clock-window timezone, changed-value counts and energy, evidence availability, and retained audit exclusions. Distinguish user-confirmed meanings from attributes verified in the store and unresolved assumptions.
+3. **Dataset and provenance.** Exact file names under `data/farms/`, observed dimensions/coverage, farm IDs/AC nameplate capacities, **measured AC power basis**, hourly forecast shortwave/GHI versus quarter-hour satellite GHI, forecast vintages, and the absence of an ensemble axis. Document the masking/interpolation policy, tolerances, clock-window timezone, changed-value counts and energy, evidence availability, and retained audit exclusions. Distinguish user-confirmed meanings from attributes verified in the store and unresolved assumptions.
 
 4. **Time semantics and causality.** State interval-start/end conventions, four-hour assumed forecast latency, local/UTC conversion, market gate/publication events, DST, observation availability, historical product regime, and one concrete traced forecast-to-auction example if executed.
 

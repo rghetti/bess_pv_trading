@@ -25,8 +25,8 @@ EVENT_COLUMNS = [
     "duration_minutes",
     "score",
     "related_farms",
-    "min_power_dc_kw",
-    "max_power_dc_kw",
+    "min_power_ac_kw",
+    "max_power_ac_kw",
     "min_ghi_w_m2",
     "max_ghi_w_m2",
     "min_solar_elevation_deg",
@@ -75,10 +75,10 @@ def _prepare_context(context: pd.DataFrame) -> pd.DataFrame:
     required = {
         "farm_id",
         "time_utc",
-        "power_dc_kw",
+        "power_ac_kw",
         "ghi_w_m2",
         "fraction_diffuse",
-        "total_power_dc_kw",
+        "total_power_ac_kw",
         "solar_elevation_deg",
     }
     missing = required.difference(context.columns)
@@ -89,10 +89,10 @@ def _prepare_context(context: pd.DataFrame) -> pd.DataFrame:
     ordered["farm_id"] = ordered["farm_id"].astype(str)
     ordered["time_utc"] = pd.to_datetime(ordered["time_utc"], utc=True)
     for column in (
-        "power_dc_kw",
+        "power_ac_kw",
         "ghi_w_m2",
         "fraction_diffuse",
-        "total_power_dc_kw",
+        "total_power_ac_kw",
         "solar_elevation_deg",
         "forecast_shortwave_w_m2",
         "forecast_lead_hours",
@@ -183,14 +183,14 @@ def _episodes_for_flag(
                 "duration_minutes": len(episode) * 15,
                 "score": _finite_max(episode["_score"]),
                 "related_farms": farm_id,
-                "min_power_dc_kw": _finite_min(episode["power_dc_kw"]),
-                "max_power_dc_kw": _finite_max(episode["power_dc_kw"]),
+                "min_power_ac_kw": _finite_min(episode["power_ac_kw"]),
+                "max_power_ac_kw": _finite_max(episode["power_ac_kw"]),
                 "min_ghi_w_m2": _finite_min(episode["ghi_w_m2"]),
                 "max_ghi_w_m2": _finite_max(episode["ghi_w_m2"]),
                 "min_solar_elevation_deg": _finite_min(episode["solar_elevation_deg"]),
                 "max_solar_elevation_deg": _finite_max(episode["solar_elevation_deg"]),
-                "power_before_kw": before["power_dc_kw"] if before is not None else np.nan,
-                "power_after_kw": after["power_dc_kw"] if after is not None else np.nan,
+                "power_before_kw": before["power_ac_kw"] if before is not None else np.nan,
+                "power_after_kw": after["power_ac_kw"] if after is not None else np.nan,
                 "ghi_before_w_m2": before["ghi_w_m2"] if before is not None else np.nan,
                 "ghi_after_w_m2": after["ghi_w_m2"] if after is not None else np.nan,
                 "forecast_shortwave_w_m2": first["forecast_shortwave_w_m2"],
@@ -244,8 +244,8 @@ def _shared_ghi_episodes(
                 "duration_minutes": duration * 15,
                 "score": float(counts.max()) * duration / 4.0,
                 "related_farms": ";".join(farms),
-                "min_power_dc_kw": _finite_min(episode["power_dc_kw"]),
-                "max_power_dc_kw": _finite_max(episode["power_dc_kw"]),
+                "min_power_ac_kw": _finite_min(episode["power_ac_kw"]),
+                "max_power_ac_kw": _finite_max(episode["power_ac_kw"]),
                 "min_ghi_w_m2": _finite_min(episode["ghi_w_m2"]),
                 "max_ghi_w_m2": _finite_max(episode["ghi_w_m2"]),
                 "min_solar_elevation_deg": _finite_min(episode["solar_elevation_deg"]),
@@ -276,13 +276,13 @@ def detect_events(context: pd.DataFrame, config: dict[str, Any]) -> pd.DataFrame
 
     ordered = _prepare_context(context)
     settings = _diagnostic_config(config)["thresholds"]
-    power = ordered["power_dc_kw"]
+    power = ordered["power_ac_kw"]
     ghi = ordered["ghi_w_m2"]
     fraction = ordered["fraction_diffuse"]
-    capacity = ordered["total_power_dc_kw"]
+    capacity = ordered["total_power_ac_kw"]
     elevation = ordered["solar_elevation_deg"]
-    prev_power = ordered.groupby("farm_id", sort=False)["power_dc_kw"].shift()
-    next_power = ordered.groupby("farm_id", sort=False)["power_dc_kw"].shift(-1)
+    prev_power = ordered.groupby("farm_id", sort=False)["power_ac_kw"].shift()
+    next_power = ordered.groupby("farm_id", sort=False)["power_ac_kw"].shift(-1)
     prev_ghi = ordered.groupby("farm_id", sort=False)["ghi_w_m2"].shift()
     next_ghi = ordered.groupby("farm_id", sort=False)["ghi_w_m2"].shift(-1)
     prev_time = ordered.groupby("farm_id", sort=False)["time_utc"].shift()
@@ -425,8 +425,8 @@ def sensitivity_table(context: pd.DataFrame, config: dict[str, Any]) -> pd.DataF
 
     # Sensitivity counts expose how strongly a conclusion depends on a cutoff.
     for farm_id, farm in ordered.groupby("farm_id", sort=False):
-        power = farm["power_dc_kw"].to_numpy(dtype=float)
-        capacity = farm["total_power_dc_kw"].to_numpy(dtype=float)
+        power = farm["power_ac_kw"].to_numpy(dtype=float)
+        capacity = farm["total_power_ac_kw"].to_numpy(dtype=float)
         ghi = farm["ghi_w_m2"].to_numpy(dtype=float)
         elevation = farm["solar_elevation_deg"].to_numpy(dtype=float)
         time = farm["time_utc"]

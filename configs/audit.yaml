@@ -1,28 +1,39 @@
 # Paths are resolved relative to the project directory containing this config folder.
+include: standard.yaml
 inputs:
   zarr: data/farms data/pv_farms_timeseries_20250101_20260831.zarr
   metadata_parquet: data/farms data/pv_farms_timeseries_20250101_20260831.parquet
-
-# UTC historical interval starts, with both endpoints included.
 window:
-  start: "2025-01-01T00:00:00Z"
-  end: "2026-08-31T23:45:00Z"
-
-# Approximate position: the farm coordinates are anonymous.
+  start: '2025-01-01T00:00:00Z'
+  end: '2026-08-31T23:45:00Z'
 solar:
   latitude: 45.4642
-  longitude: 9.1900
-
+  longitude: 9.19
 forecast:
   availability_lag_hours: 4
   max_lag_quarters: 4
-
-# Bins are for count sensitivity, never validity or cleaning rules.
 diagnostics:
-  solar_elevation_bins_deg: [-18, -6, 0, 10]
-  power_fraction_bins: [0, 0.001, 0.01, 0.05, 0.20]
-  ghi_bins_w_m2: [0, 50, 100, 200, 400]
-  ramp_fraction_bins: [0.10, 0.25, 0.50]
+  solar_elevation_bins_deg:
+    - -18
+    - -6
+    - 0
+    - 10
+  power_fraction_bins:
+    - 0
+    - 0.001
+    - 0.01
+    - 0.05
+    - 0.2
+  ghi_bins_w_m2:
+    - 0
+    - 50
+    - 100
+    - 200
+    - 400
+  ramp_fraction_bins:
+    - 0.1
+    - 0.25
+    - 0.5
   thresholds:
     night_solar_elevation_deg: -18
     positive_power_fraction: 0.001
@@ -32,37 +43,52 @@ diagnostics:
     abrupt_power_fraction: 0.25
     abrupt_ghi_w_m2: 200
     plateau_min_intervals: 8
-    physical_power_fraction_max: 1.10
+    physical_power_fraction_max: 1.1
     physical_ghi_max: 1400
     min_shared_farms: 2
-
 plots:
   max_events_per_farm_category: 4
   max_total_events: 80
   overview_days: 7
   context_hours: 2
-  # Keep these previously observed examples in the bounded plot selection.
   pinned_events:
-    - {farm_id: 345, category: night_positive_power, time_utc: "2025-01-01T00:15:00Z"}
-    - {farm_id: 910, category: constant_positive_power, time_utc: "2025-03-30T12:00:00Z"}
-    - {farm_id: portfolio, category: shared_daylight_zero_ghi, time_utc: "2026-03-26T06:15:00Z"}
-    - {farm_id: 901, category: power_dip, time_utc: "2025-03-02T10:30:00Z"}
-
+    - farm_id: 345
+      category: night_positive_power
+      time_utc: '2025-01-01T00:15:00Z'
+    - farm_id: 910
+      category: constant_positive_power
+      time_utc: '2025-03-30T12:00:00Z'
+    - farm_id: portfolio
+      category: shared_daylight_zero_ghi
+      time_utc: '2026-03-26T06:15:00Z'
+    - farm_id: 901
+      category: power_dip
+      time_utc: '2025-03-02T10:30:00Z'
 outputs:
   base_dir: outputs/qa
-  # Optional fixed run_id. When omitted, the CLI creates a UTC timestamp ID.
-
-# Follow-up correlation study; all thresholds select comparisons, not cleaning.
 cloud_analysis:
   activity_ghi_w_m2: 50
   activity_forecast_shortwave_w_m2: 50
   activity_power_fraction: 0.01
-  proxy_solar_cutoffs_deg: [0, 10, 20]
-  cloud_bins_pct: [0, 20, 50, 80, 95, 100]
-  drop_capacity_fractions: [0.10, 0.25, 0.50]
+  proxy_solar_cutoffs_deg:
+    - 0
+    - 10
+    - 20
+  cloud_bins_pct:
+    - 0
+    - 20
+    - 50
+    - 80
+    - 95
+    - 100
+  drop_capacity_fractions:
+    - 0.1
+    - 0.25
+    - 0.5
   stable_ghi_change_w_m2: 50
   substantial_ghi_drop_w_m2: 100
   recovery_fraction_of_drop: 0.8
   max_shared_event_plots: 3
   max_drop_event_plots_per_farm: 2
   context_hours: 2
+farm_id: 1

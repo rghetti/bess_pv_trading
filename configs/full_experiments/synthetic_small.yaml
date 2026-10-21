@@ -1,59 +1,65 @@
 # All equipment, PV and economics below are illustrative software-test inputs.
+include: ../standard.yaml
 synthetic:
   delivery_day: '2025-10-02'
   seed: 17
   branches_per_auction: 2
-  branch_values: [-1.0, 1.0]
-  branch_probabilities: [0.4, 0.6]
+  branch_values:
+    - -1.0
+    - 1.0
+  branch_probabilities:
+    - 0.4
+    - 0.6
   pv_peak_mw: 0.8
   sunrise_hour: 7.0
   sunset_hour: 19.0
   base_price_eur_per_mwh: 70.0
   daily_price_amplitude: 15.0
-  residual_scale: {DA: 8.0, IDA1: 5.0, IDA2: 4.0, IDA3: 3.0}
-  stage_spreads: {IDA1: -3.0, IDA2: 2.0, IDA3: 4.0}
+  residual_scale:
+    DA: 8.0
+    IDA1: 5.0
+    IDA2: 4.0
+    IDA3: 3.0
+  stage_spreads:
+    IDA1: -3.0
+    IDA2: 2.0
+    IDA3: 4.0
   imbalance_price_eur_per_mwh: 60.0
-  strategies: [deterministic_sequential, deterministic_integrated, stochastic_integrated, oracle]
+  strategies:
+    - deterministic_sequential
+    - deterministic_integrated
+    - stochastic_integrated
+    - oracle
 plant:
-  farm_id: 1
-  poi_import_mw: 1.0
-  poi_export_mw: 1.0
   assumption_status: illustrative_synthetic_equipment
 battery:
   capacity_mwh: 1.0
   max_power_mw: 0.5
-  soc_min_percent: 10.0
-  soc_max_percent: 90.0
-  efficiency_convention: combined
-  combined_charge_efficiency: 0.97
-  combined_discharge_efficiency: 0.97
-  self_discharge_per_hour: 0.0
 state:
   initial_energy_mwh: 0.5
-  origin: known_delivery_start_assumption
   terminal_target_mwh: 0.5
 trading:
-  # Trades and net positions use POI ratings; no independent commercial cap.
   imbalance_penalty_eur_per_mwh: 100.0
-  grid_import_fee_eur_per_mwh: 0.0
   settlement_status: synthetic_signed_single_price
-  excluded_charges: [grid_use_fee, taxes, brokerage]
+  excluded_charges:
+    - grid_use_fee
+    - taxes
+    - brokerage
+  optimize_imbalances: true
 degradation:
-  model: throughput
   cost_eur_per_mwh_throughput: 5.0
   assumptions: illustrative AC charge-plus-discharge throughput cost; no calibrated lifetime model
-market:
-  timezone: Europe/Rome
-  valid_from: '2025-10-01'
-  valid_to: '2026-08-31'
-  decision_buffer_minutes: 5.0
+  segment_count: 16
+  replacement_economics: null
+  throughput_lifetime: null
 solver:
   threads: 1
   time_limit_seconds: 30.0
-  mip_gap: 0.0001
-  seed: 17
-  output_flag: false
-outputs:
-  root: outputs/trading
-  run_id: null
-  plots: true
+farm_id: 1
+execution:
+  dispatch_policy: follow_battery_plan
+  reoptimize_physical_controls: true
+farms:
+  '1':
+    poi_import_mw: 1.0
+    poi_export_mw: 1.0

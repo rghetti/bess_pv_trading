@@ -12,7 +12,7 @@ authorized. Raw farm files and the original audit remain separate.
   basenames `pv_farms_timeseries_20250101_20260831`. Forecasts have
   `(farm_id, cycle_time, lead_time)` dimensions. Cycles are forecast vintages,
   not probabilistic members. Farms are separate plants, not scenarios.
-- DC nameplate capacities are 953.28, 1524.60, 4160 and 6638 kW for IDs
+- AC nameplate capacities are 953.28, 1524.60, 4160 and 6638 kW for IDs
   1, 345, 901 and 910. These do not establish POI or inverter ratings.
   PV-type IDs do not establish electrical module parameters.
 - Historical plant `power` is AC kW on native quarter-hour, interval-start

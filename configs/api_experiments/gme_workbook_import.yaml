@@ -1,4 +1,5 @@
 # Keep hourly MGP; replace the invalid hourly IDA summaries with native PT15 data.
+include: ../standard.yaml
 gme_workbook_import:
   database_path: data/api/market.duckdb
   duckdb_threads: 4
@@ -13,11 +14,14 @@ gme_workbook_import:
   columns:
     delivery_day: Data
     period: Ora
-    price: '€/MWh'
+    price: €/MWh
     notes: Note
   decimal_separator: ','
   thousands_separator: ''
-  missing_price_tokens: ['', '-', '—']
+  missing_price_tokens:
+    - ''
+    - '-'
+    - —
   workbooks:
     - dataset: day_ahead_prices
       zone: NORD
@@ -28,17 +32,24 @@ gme_workbook_import:
       path: data/20250101_20250401_MI-A1_PrezziZonali_Nord.xlsx
       date_end_exclusive: '2025-04-02'
       native_interval_minutes: 15
-      columns: {period: Periodo, hour: Ora}
+      columns:
+        period: Periodo
+        hour: Ora
     - dataset: ida2_prices
       zone: NORD
       path: data/20250101_20250401_MI-A2_PrezziZonali_Nord.xlsx
       date_end_exclusive: '2025-04-02'
       native_interval_minutes: 15
-      columns: {period: Periodo, hour: Ora}
+      columns:
+        period: Periodo
+        hour: Ora
     - dataset: ida3_prices
       zone: NORD
       path: data/20250101_20250401_MI-A3_PrezziZonali_Nord.xlsx
       date_end_exclusive: '2025-04-02'
       native_interval_minutes: 15
-      columns: {period: Periodo, hour: Ora}
+      columns:
+        period: Periodo
+        hour: Ora
       eligible_start_clock: '12:00'
+farm_id: 1

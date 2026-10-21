@@ -1,25 +1,5 @@
 # Credential-free analysis of completed cached DA prices; raw responses stay intact.
 # This is a retrospective study of latest retrieved revisions. Historical
 # publication/revision availability is unverified, so it is not a trading backtest.
-price_experiment:
-  provider: entsoe
-  dataset: day_ahead_prices
-  zone: NORD
-  timezone: Europe/Rome
-  cache_directory: data/api/market.duckdb
-  analysis_directory: data/analysis/api_prices
-  output_directory: outputs/price_experiments
-  alpha: 1.0
-  min_training_days: 30
-  holdout_days: 30
-  # Native SDAC delivery products changed on 1 October 2025. A03 API block
-  # lengths describe compressed equal-value runs and do not identify products.
-  # Hourly recovery requires complete equal-price provider quarters; no averaging.
-  # GME: https://www.mercatoelettrico.org/en-us/Home/NoticesandAnnouncements/NoticesandAnnouncementsME?id=7101
-  native_product_regimes:
-    - start: '2025-01-01'
-      end: '2025-10-01'
-      minutes: 60
-    - start: '2025-10-01'
-      end: null
-      minutes: 15
+include: ../standard.yaml
+farm_id: 1

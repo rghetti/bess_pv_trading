@@ -1,4 +1,7 @@
 # Alternative chosen using old validation only, frozen before extension scoring.
-include: price_forward_check.yaml
+include: ../standard.yaml
 price_forward_check:
   protocol: outputs/price_protocols/20261016T135622425923Z/protocol.json
+  cache_directory: data/api/market.duckdb
+  output_directory: outputs/price_forward_checks
+farm_id: 1

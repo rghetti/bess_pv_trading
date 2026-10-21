@@ -56,7 +56,7 @@ def verify(output_dir: Path) -> None:
             source.time.values,
         )
         for original, exported in (
-            ("power", "power_dc_kw"),
+            ("power", "power_ac_kw"),
             ("ghi", "ghi_w_m2"),
             ("fraction_diffuse", "fraction_diffuse"),
         ):

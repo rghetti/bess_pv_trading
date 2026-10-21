@@ -30,8 +30,8 @@ from .report import write_outputs
 
 def _read_config(config_path: Path) -> dict:
     """Load YAML and check that the required user choices are well formed."""
-    with config_path.open(encoding="utf-8") as stream:
-        config = yaml.safe_load(stream)
+    from .config import load_config
+    config = load_config(config_path)
     if not isinstance(config, dict):
         raise ValueError("Audit config must be a YAML mapping")
 

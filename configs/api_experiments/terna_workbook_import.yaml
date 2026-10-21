@@ -1,4 +1,5 @@
 # Native monthly settlement exports; zero prices are valid. No provider API calls.
+include: ../standard.yaml
 terna_workbook_import:
   database_path: data/api/market.duckdb
   duckdb_threads: 4
@@ -11,26 +12,43 @@ terna_workbook_import:
   sheet_xml: xl/worksheets/sheet1.xml
   header_row: 2
   date_format: '%d/%m/%Y %H:%M:%S'
-  decimal_separator: '.'
+  decimal_separator: .
   thousands_separator: ''
   price_component_tolerance_eur_mwh: 0.00101
   columns:
     timestamp: Data Riferimento
     macrozone: Macrozona
-    aggregate_imbalance_mwh: 'Sbil aggregato zonale [MWh]'
+    aggregate_imbalance_mwh: Sbil aggregato zonale [MWh]
     aggregate_sign: Segno aggregato zonale
-    exchanges_mwh: 'Scambi [MWh]'
-    foreign_mwh: 'Estero [MWh]'
+    exchanges_mwh: Scambi [MWh]
+    foreign_mwh: Estero [MWh]
     base_price_eur_mwh: Prezzo base
     incentive_component_eur_mwh: Componente incentivante
     price_eur_mwh: Prezzo di sbilanciamento
   workbooks:
-    - {path: data/Riepilogo_Mensile_Quarto_Orario_202501.xlsx, date_start: '2025-01-01', date_end_exclusive: '2025-02-01'}
-    - {path: data/Riepilogo_Mensile_Quarto_Orario_202502.xlsx, date_start: '2025-02-01', date_end_exclusive: '2025-03-01'}
-    - {path: data/Riepilogo_Mensile_Quarto_Orario_202503.xlsx, date_start: '2025-03-01', date_end_exclusive: '2025-04-01'}
-    - {path: data/Riepilogo_Mensile_Quarto_Orario_202504.xlsx, date_start: '2025-04-01', date_end_exclusive: '2025-05-01'}
-    - {path: data/Riepilogo_Mensile_Quarto_Orario_202505.xlsx, date_start: '2025-05-01', date_end_exclusive: '2025-06-01'}
-    - {path: data/Riepilogo_Mensile_Quarto_Orario_202506.xlsx, date_start: '2025-06-01', date_end_exclusive: '2025-07-01'}
-    - {path: data/Riepilogo_Mensile_Quarto_Orario_202507.xlsx, date_start: '2025-07-01', date_end_exclusive: '2025-08-01'}
-    - {path: data/Riepilogo_Mensile_Quarto_Orario_202508.xlsx, date_start: '2025-08-01', date_end_exclusive: '2025-09-01'}
+    - path: data/Riepilogo_Mensile_Quarto_Orario_202501.xlsx
+      date_start: '2025-01-01'
+      date_end_exclusive: '2025-02-01'
+    - path: data/Riepilogo_Mensile_Quarto_Orario_202502.xlsx
+      date_start: '2025-02-01'
+      date_end_exclusive: '2025-03-01'
+    - path: data/Riepilogo_Mensile_Quarto_Orario_202503.xlsx
+      date_start: '2025-03-01'
+      date_end_exclusive: '2025-04-01'
+    - path: data/Riepilogo_Mensile_Quarto_Orario_202504.xlsx
+      date_start: '2025-04-01'
+      date_end_exclusive: '2025-05-01'
+    - path: data/Riepilogo_Mensile_Quarto_Orario_202505.xlsx
+      date_start: '2025-05-01'
+      date_end_exclusive: '2025-06-01'
+    - path: data/Riepilogo_Mensile_Quarto_Orario_202506.xlsx
+      date_start: '2025-06-01'
+      date_end_exclusive: '2025-07-01'
+    - path: data/Riepilogo_Mensile_Quarto_Orario_202507.xlsx
+      date_start: '2025-07-01'
+      date_end_exclusive: '2025-08-01'
+    - path: data/Riepilogo_Mensile_Quarto_Orario_202508.xlsx
+      date_start: '2025-08-01'
+      date_end_exclusive: '2025-09-01'
   report_path: outputs/data_import/terna_imbalance_prices/NORD/2025-01_2025-08/manifest.json
+farm_id: 1

@@ -1,14 +1,65 @@
 # The quoted structure is published currently and in GME's 2006 annual report
 # (effective 2007). Its exact 2024/2025 applicability is an explicit study assumption.
-include: synthetic_fees_none.yaml
+include: ../standard.yaml
+synthetic:
+  delivery_day: '2025-10-02'
+  seed: 17
+  branches_per_auction: 1
+  branch_values:
+    - 0.0
+  branch_probabilities:
+    - 1.0
+  pv_peak_mw: 0.8
+  sunrise_hour: 7.0
+  sunset_hour: 19.0
+  base_price_eur_per_mwh: 70.0
+  daily_price_amplitude: 15.0
+  residual_scale:
+    DA: 8.0
+    IDA1: 5.0
+    IDA2: 4.0
+    IDA3: 3.0
+  stage_spreads:
+    IDA1: -3.0
+    IDA2: 2.0
+    IDA3: 4.0
+  imbalance_price_eur_per_mwh: 60.0
+  strategies:
+    - deterministic_integrated
+plant:
+  assumption_status: illustrative_synthetic_equipment
+battery:
+  capacity_mwh: 1.0
+  max_power_mw: 0.5
+state:
+  initial_energy_mwh: 0.5
+  terminal_target_mwh: 0.5
+trading:
+  imbalance_penalty_eur_per_mwh: 100.0
+  settlement_status: synthetic_signed_single_price
+  excluded_charges:
+    - grid_use_fee
+    - taxes
+    - brokerage
+  optimize_imbalances: true
+degradation:
+  cost_eur_per_mwh_throughput: 5.0
+  assumptions: illustrative AC charge-plus-discharge throughput cost; no calibrated lifetime model
+  segment_count: 16
+  replacement_economics: null
+  throughput_lifetime: null
+solver:
+  threads: 1
+  time_limit_seconds: 30.0
+outputs:
+  root: outputs/transaction_fee_checks
 transaction_fees:
   mode: gme_real
-  timezone: Europe/Rome
   operator_scope: operator_with_exogenous_volume
   initial_state:
     as_of: '2025-10-01T09:55:00Z'
-    monthly_volume_mwh: {'2025-10': 19999.0}
-    cumulative_fees_eur: 0.0
+    monthly_volume_mwh:
+      2025-10: 19999.0
     provenance: Synthetic known operator volume near the first band; not observed portfolio data.
   tariffs:
     - version: gme_mpe_published_structure_assumed_2024_2026
@@ -16,5 +67,19 @@ transaction_fees:
       valid_to: '2026-12-31'
       applicability: assumed_unchanged
       source: https://gme.mercatoelettrico.org/it-it/Home/Accesso-ai-Mercati/Elettricita/MercatiElettrici/CorrispettiviSettlement/CorrispettiviElettricita
-      thresholds_mwh: [20000.0, 1000000.0, 10000000.0]
-      marginal_eur_per_mwh: [0.0, 0.04, 0.03, 0.02]
+      thresholds_mwh:
+        - 20000.0
+        - 1000000.0
+        - 10000000.0
+      marginal_eur_per_mwh:
+        - 0.0
+        - 0.04
+        - 0.03
+        - 0.02
+execution:
+  dispatch_policy: follow_battery_plan
+farm_id: 1
+farms:
+  '1':
+    poi_import_mw: 1.0
+    poi_export_mw: 1.0

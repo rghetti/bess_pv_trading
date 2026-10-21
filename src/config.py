@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from copy import deepcopy
 import math
+import re
 
 import yaml
 
@@ -13,8 +15,8 @@ class ConfigurationError(ValueError):
     """An explicit configuration value violates the application contract."""
 
 
-def load_config(path: str | Path, _ancestors: frozenset[Path] = frozenset()) -> dict[str, Any]:
-    """Load a mapping without installing packages or resolving secrets."""
+def _read_mapping(path: str | Path, _ancestors: frozenset[Path] = frozenset()) -> dict[str, Any]:
+    """Merge includes before resolving references or validating final overrides."""
     location = Path(path).resolve()
     if location in _ancestors:
         raise ConfigurationError(f"Circular configuration include: {location.name}")
@@ -23,16 +25,113 @@ def load_config(path: str | Path, _ancestors: frozenset[Path] = frozenset()) -> 
     if not isinstance(config, dict):
         raise ConfigurationError("Configuration must be a YAML mapping.")
     if "include" in config:
-        included = load_config(location.parent / config.pop("include"), _ancestors | {location})
+        include = config.pop("include")
+        if not isinstance(include, str):
+            raise ConfigurationError("Configuration include must be a relative YAML filename")
+        included = _read_mapping(location.parent / include, _ancestors | {location})
         config = merge_mapping(included, config)
-    validate_config(config)
     return config
+
+
+def load_config(path: str | Path, *, overrides: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Load YAML with final CLI overrides; never evaluate code or expand secrets."""
+    config = merge_mapping(_read_mapping(path), overrides or {})
+    return resolve_config(config)
+
+
+def resolve_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Resolve typed ${path} references and selected-farm POI defaults, then validate."""
+    source = deepcopy(config)
+    if isinstance(source.get("farms"), dict):
+        source["farms"] = {str(key): value for key, value in source["farms"].items()}
+    pattern = re.compile(r"\$\{([A-Za-z_][A-Za-z_0-9.]*)\}")
+
+    def reference(path: str, ancestors: tuple[str, ...]):
+        if path in ancestors:
+            raise ConfigurationError(f"Circular configuration reference: {path}")
+        value = source
+        for part in path.split("."):
+            if not isinstance(value, dict) or part not in value:
+                raise ConfigurationError(f"Unknown configuration reference: {path}")
+            value = value[part]
+        return visit(value, ancestors + (path,))
+
+    def visit(value: Any, ancestors: tuple[str, ...] = ()):
+        if isinstance(value, dict):
+            return {key: visit(child, ancestors) for key, child in value.items()}
+        if isinstance(value, list):
+            return [visit(child, ancestors) for child in value]
+        if isinstance(value, str):
+            exact = pattern.fullmatch(value)
+            if exact:
+                return reference(exact[1], ancestors)
+            def substitute(match):
+                result = reference(match[1], ancestors)
+                if result is None or isinstance(result, (dict, list)):
+                    raise ConfigurationError(f"String reference {match[1]} must have a scalar value")
+                return str(result)
+            return pattern.sub(substitute, value)
+        return value
+
+    result = visit(source)
+    plant = result.get("plant", {})
+    for field in ("poi_import_mw", "poi_export_mw"):
+        if plant.get(field) == "auto":
+            farm = result.get("farms", {}).get(str(plant.get("farm_id")), {})
+            value = farm.get(field)
+            if value is None and farm.get("ac_capacity_kw") is not None:
+                value = float(farm["ac_capacity_kw"]) / 1000
+            if value is None or isinstance(value, bool) or not math.isfinite(float(value)) or float(value) <= 0:
+                raise ConfigurationError(f"Automatic plant.{field} requires selected-farm capacity or an explicit POI rating")
+            plant[field] = float(value)
+    pv_output = result.get("pv", {}).get("output", {})
+    if pv_output.get("ac_limit_mw") == "auto":
+        farm_id = result.get("forecast", {}).get("farm_id", result.get("farm_id"))
+        farm = result.get("farms", {}).get(str(farm_id), {})
+        value = farm.get("ac_capacity_kw")
+        if value is None or isinstance(value, bool) or not math.isfinite(float(value)) or float(value) <= 0:
+            raise ConfigurationError("Automatic PV AC limit requires selected-farm AC capacity")
+        pv_output["ac_limit_mw"] = float(value) / 1000
+    validate_config(result)
+    return result
+
+
+def with_standard_defaults(config: dict[str, Any]) -> dict[str, Any]:
+    """Normalize saved legacy configs for resume checks without hiding changed settings."""
+    standard = _read_mapping(Path(__file__).resolve().parents[1] / "configs/standard.yaml")
+    legacy = deepcopy(config)
+    if isinstance(legacy.get("farms"), dict):
+        for farm in legacy["farms"].values():
+            if isinstance(farm, dict) and "dc_capacity_kw" in farm and "ac_capacity_kw" not in farm:
+                farm["ac_capacity_kw"] = farm.pop("dc_capacity_kw")
+    if legacy.get("source", {}).get("capacity_basis") == "DC":
+        legacy["source"]["capacity_basis"] = "AC"
+    if "trading" in legacy:
+        legacy["trading"].setdefault("optimize_imbalances", True)
+    if "synthetic" in legacy:
+        legacy.setdefault("execution", {}).setdefault("dispatch_policy", "follow_battery_plan")
+        legacy["execution"].setdefault("reoptimize_physical_controls", True)
+    # Older direct-cost degradation intentionally omitted replacement economics.
+    if "degradation" in legacy:
+        if not legacy["degradation"].get("replacement_economics") and not legacy["degradation"].get("throughput_lifetime"):
+            from dataclasses import asdict
+            from .domain import DegradationSettings
+            for field, value in asdict(DegradationSettings()).items():
+                if field != "mode":
+                    legacy["degradation"].setdefault(field, value)
+        for field in ("replacement_economics", "throughput_lifetime"):
+            legacy["degradation"].setdefault(field, None)
+    return resolve_config(merge_mapping(standard, legacy))
 
 
 def merge_mapping(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, Any]:
     """Apply nested configuration overrides without discarding sibling fields."""
     result = dict(base)
     for key, value in overrides.items():
+        if key == "farms" and isinstance(value, dict):
+            value = {str(farm): settings for farm, settings in value.items()}
+            if isinstance(result.get(key), dict):
+                result[key] = {str(farm): settings for farm, settings in result[key].items()}
         result[key] = (merge_mapping(result[key], value)
                        if isinstance(value, dict) and isinstance(result.get(key), dict)
                        else value)
@@ -61,6 +160,35 @@ def validate_config(config: dict[str, Any]) -> None:
             "latest_available_forecast_at_each_reoptimization"}:
         raise ConfigurationError("Unknown forecast.reoptimization_pv_policy")
     trading = config.get("trading", {})
+    execution = config.get("execution", {})
+    if execution.get("infeasible_auction_policy", "error") not in {"error", "previous_plan"}:
+        raise ConfigurationError("execution.infeasible_auction_policy must be error or previous_plan")
+    if not isinstance(execution.get("save_infeasibility_diagnostics", False), bool):
+        raise ConfigurationError("execution.save_infeasibility_diagnostics must be a YAML boolean")
+    from .participation import auction_subset, participation_profiles
+    participation = config.get("gme_oracle_experiment", {}).get("participating_auctions")
+    if participation is not None:
+        auction_subset(participation, "gme_oracle_experiment.participating_auctions")
+    if "participation_study" in config:
+        study = config["participation_study"]
+        if not isinstance(study, dict):
+            raise ConfigurationError("participation_study must be a YAML mapping")
+        participation_profiles(study)
+        if any(not isinstance(study.get(key, default), bool) for key, default in
+                (("plots", True), ("per_profile_plots", False), ("save_model_files", False),
+                 ("perfect_foresight_reference", True), ("resume", False))):
+            raise ConfigurationError("Participation study plot/model switches must be YAML booleans")
+    baseline = config.get("reoptimization_baseline", {})
+    if not isinstance(baseline, dict) or set(baseline) - {"enabled", "freeze_after_auctions", "plots"}:
+        raise ConfigurationError("reoptimization_baseline accepts enabled, freeze_after_auctions and plots")
+    if any(not isinstance(baseline.get(key, default), bool)
+           for key, default in (("enabled", False), ("plots", True))):
+        raise ConfigurationError("reoptimization_baseline.enabled and plots must be YAML booleans")
+    freezes = baseline.get("freeze_after_auctions")
+    if freezes is not None and (not isinstance(freezes, list)
+            or any(not isinstance(auction, str) or auction not in {"DA", "IDA1", "IDA2", "IDA3"} for auction in freezes)
+            or len(freezes) != len(set(freezes))):
+        raise ConfigurationError("reoptimization_baseline.freeze_after_auctions must be null or a unique list of auction names")
     if {"trade_limit_mwh", "position_limit_mwh", "trade_limit_mwh_per_native_product",
             "position_limit_mwh_per_quarter_hour"} & set(trading):
         raise ConfigurationError("Remove commercial trading caps; physical grid power uses plant.poi_import_mw and plant.poi_export_mw")
@@ -80,6 +208,10 @@ def validate_config(config: dict[str, Any]) -> None:
             raise ConfigurationError(f"solver.{key} must be finite and nonnegative")
     if "threads" in solver and int(solver["threads"]) != float(solver["threads"]):
         raise ConfigurationError("solver.threads must be an integer")
+    for name, maximum in (("feasibility_tolerance", 1e-2), ("integrality_tolerance", 1e-1)):
+        value = solver.get(name)
+        if value is not None and (isinstance(value, bool) or not math.isfinite(float(value)) or not 1e-9 <= float(value) <= maximum):
+            raise ConfigurationError(f"solver.{name} is outside the supported Gurobi range")
     synthetic = config.get("synthetic", {})
     branches = synthetic.get("branches_per_auction", 1)
     if not isinstance(branches, int) or branches < 1:

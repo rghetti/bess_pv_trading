@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 
 
-def expected_realized_kpis(*, initial_expected_profit_eur: float,
+def expected_realized_kpis(*, initial_expected_profit_eur: float | None,
                            initial_expected_auction_revenue_eur: float,
                            realized_profit_after_imbalance_eur: float | None,
                            auction_revenue_eur: float) -> dict:
@@ -15,16 +15,18 @@ def expected_realized_kpis(*, initial_expected_profit_eur: float,
     expectation so improvements keep a positive sign even for expected losses.
     A zero expectation has no defined percentage; unpriced profit stays unknown.
     Gross auction revenue excludes imbalance settlement and operating costs.
+    When no auction decision exists, the absent initial profit expectation and
+    its comparisons remain null instead of assigning an invented objective.
     """
     comparisons = {
         "profit": (initial_expected_profit_eur, realized_profit_after_imbalance_eur),
         "auction_revenue": (initial_expected_auction_revenue_eur, auction_revenue_eur),
     }
-    kpis = {"initial_expected_profit_eur": float(initial_expected_profit_eur),
+    kpis = {"initial_expected_profit_eur": (None if initial_expected_profit_eur is None else float(initial_expected_profit_eur)),
         "initial_expected_auction_revenue_eur": float(initial_expected_auction_revenue_eur),
-        "expectation_baseline": "initial_auction_solve"}
+        "expectation_baseline": "initial_auction_solve" if initial_expected_profit_eur is not None else "no_auction_decision"}
     for name, (expected, realized) in comparisons.items():
-        difference = None if realized is None else float(realized - expected)
+        difference = None if realized is None or expected is None else float(realized - expected)
         kpis[f"realized_minus_expected_{name}_eur"] = difference
         kpis[f"realized_minus_expected_{name}_percent"] = (
             None if difference is None or expected == 0 else 100 * difference / abs(expected))

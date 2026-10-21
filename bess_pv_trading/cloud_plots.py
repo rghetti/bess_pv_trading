@@ -1,4 +1,4 @@
-"""Plot cloud associations with shared GHI zeros and sudden DC power drops.
+"""Plot cloud associations with shared GHI zeros and sudden AC power drops.
 
 The figures display observations alongside available weather forecasts. They
 provide review context without interpreting a cloud association as a fault verdict.
@@ -149,7 +149,7 @@ def _plot_power_association(
         axis.set(
             title=f"Farm {farm}: sudden power drops in active intervals",
             xlabel="15-minute forecast cloud change (percentage points)",
-            ylabel="15-minute power change (% of DC capacity)",
+            ylabel="15-minute power change (% of AC nameplate)",
         )
         axis.grid(alpha=0.2)
         if axis.get_legend_handles_labels()[0]:
@@ -254,11 +254,11 @@ def _plot_event(
         return None
     figure, axes = plt.subplots(4, 1, figsize=(13, 10), sharex=True, constrained_layout=True)
     time = window["time_utc"]
-    axes[0].plot(time, window["power_dc_kw"], color="#1d4ed8", lw=1.4, label="Historical DC power")
-    capacity = window["total_power_dc_kw"].dropna()
+    axes[0].plot(time, window["power_ac_kw"], color="#1d4ed8", lw=1.4, label="Historical AC power")
+    capacity = window["total_power_ac_kw"].dropna()
     if not capacity.empty:
-        axes[0].axhline(capacity.iloc[0], color="#475569", ls=":", lw=0.9, label="Installed DC capacity")
-    axes[0].set_ylabel("DC power (kW)")
+        axes[0].axhline(capacity.iloc[0], color="#475569", ls=":", lw=0.9, label="Installed AC nameplate")
+    axes[0].set_ylabel("AC power (kW)")
     axes[1].plot(time, window["ghi_w_m2"], color="#d97706", lw=1.4, label="Historical GHI")
     axes[1].plot(
         time, window["forecast_shortwave_w_m2"], color="#047857", lw=1.2,

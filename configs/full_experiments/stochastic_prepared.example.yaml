@@ -1,25 +1,71 @@
 # Prepared forecasts only; no API calls, model fits or invented missing inputs.
 # Complete explicit fields and prepared files before using optimize.
-include: ../price_experiments/italy_nord.example.yaml
+include: ../standard.yaml
+market:
+  rule_versions:
+    - version: GME-DTF03-rev13
+      event_valid_from: '2025-09-29'
+      event_valid_to: '2026-01-12'
+    - version: GME-DTF03-rev14
+      event_valid_from: '2026-01-13'
+      event_valid_to: '2026-08-31'
+  result_provenance:
+    DA: study_assumption_13:30; official final results not earlier than 13:05; recorded publication preferred
+  pre_quarter_hour_regime: excluded_no_native_hourly_DA_mapping
+  settlement_status: unresolved_historical_rules_do_not_run_real_settlement
+market_data:
+  provider: manual_gme_csv
+  input_path: data/market/manual_gme_prices.csv
+  output_path: data/market/canonical_prices.csv
+  cache_directory: data/market/cache
+  column_mapping: {}
+  constants: {}
+  separator: ','
+  cache_key:
+    provider: manual_gme
+    dataset: gme_zonal_auction_prices
+    zone: NORD
+    product: MGP_MI-A1_MI-A2_MI-A3
+    start: '2025-10-01'
+    end: '2026-09-01'
+    vintage_revision: user_supplied_export_revision
+    schema_version: market-v1
+price_forecasting:
+  input_path: data/market/canonical_prices.csv
+  output_directory: outputs/price_models
+  fit_cutoff: '2026-08-01T09:55:00Z'
+  auctions:
+    - DA
+    - IDA1
+    - IDA2
+    - IDA3
+  ridge_alpha: 1.0
+  minimum_training_rows: 96
+  residual_method: gaussian
+  covariance_shrinkage: 0.2
+  refit_schedule: expanding_daily_rolling_origin
+  fundamentals_status: unavailable_minimal_calendar_and_price_lags_only
+  local_regional_solar_proxy: disabled
+  seed: 17
 optimization:
   forecast_inputs:
     delivery_day: null
     decision_cutoff: null
-    residual_start: null # Set to delivery start initially; later use exact carried-state boundary.
+    residual_start: null
     pv_forecast_path: null
     pv_model_fit_status: unfitted_explicit_assumption
-    price_distribution: gaussian # Or explicit point means with zero innovations.
-    auctions: [DA, IDA1, IDA2, IDA3]
-    branches: 2 # Per unknown auction result: up to 16 price paths per PV member.
+    price_distribution: gaussian
+    auctions:
+      - DA
+      - IDA1
+      - IDA2
+      - IDA3
+    branches: 2
     seed: 41
     maximum_joint_scenarios: 2048
-    allow_retrospective: false
     pv_observation_delay_minutes: 0
-    # Known results replace that auction's forecast entry below, never both.
     known_results_path: null
-    accepted_trades_path: null # Legacy name: already executed, priced quantities.
-    # Between submission and publication provide a residual-grid vector here:
-    # pending_position_mwh: [...] # Guaranteed committed quantities, MCP still unknown.
+    accepted_trades_path: null
     settlement_point_price_eur_per_mwh: null
     settlement_point_price_available_at: null
     settlement_point_price_status: study_assumption
@@ -42,10 +88,9 @@ optimization:
       IDA3:
         native_interval_minutes: 15
         spread_model_path: null
-        features_path: null # Actual eligible noon-to-midnight products only.
+        features_path: null
         calibration_path: null
 plant:
-  farm_id: null
   poi_import_mw: null
   poi_export_mw: null
 battery:
@@ -53,29 +98,26 @@ battery:
   max_power_mw: null
   soc_min_percent: null
   soc_max_percent: null
-  efficiency_convention: combined
-  combined_charge_efficiency: 0.97
-  combined_discharge_efficiency: 0.97
 state:
   timestamp: null
   initial_energy_mwh: null
   terminal_target_mwh: null
-  origin: known_delivery_start_assumption
 trading:
   imbalance_penalty_eur_per_mwh: null
-  imbalance_limit_mwh: null
   grid_import_fee_eur_per_mwh: null
+  optimize_imbalances: true
 degradation:
-  model: throughput
-  cost_eur_per_mwh_throughput: null
   assumptions: user_must_supply_explicit_AC_throughput_or_Xu_assumption
+  segment_count: 16
+  replacement_economics: null
+  throughput_lifetime: null
 solver:
   threads: 1
   time_limit_seconds: 30.0
-  mip_gap: 0.0001
   seed: 41
-  output_flag: false
 outputs:
   root: outputs/forecast_optimization
-  run_id: null
-  plots: true
+farm_id: null
+pv:
+  output:
+    ac_limit_mw: null  # This prepared-input route does not generate PV forecasts.

@@ -238,7 +238,7 @@ def build_historical_context(
         }
     )
     for source, target in (
-        ("power", "power_dc_kw"),
+        ("power", "power_ac_kw"),
         ("ghi", "ghi_w_m2"),
         ("fraction_diffuse", "fraction_diffuse"),
     ):
@@ -247,7 +247,7 @@ def build_historical_context(
             if source in historical
             else np.nan
         )
-    metadata_columns = metadata.rename(columns={"total_power": "total_power_dc_kw"})
+    metadata_columns = metadata.rename(columns={"total_power": "total_power_ac_kw"})
     context = context.merge(metadata_columns, on="farm_id", how="left", validate="many_to_one", sort=False)
 
     # Evaluate the proxy sun position at the midpoint of each source interval.
@@ -394,7 +394,7 @@ def build_lag_checks(context: pd.DataFrame, max_lag_quarters: int = 4) -> pd.Dat
     for farm_id, farm in context.groupby("farm_id", sort=True):
         farm = farm.sort_values("time_utc")
         times = farm.time_utc.reset_index(drop=True)
-        power = pd.Series(farm.power_dc_kw.to_numpy(dtype=float))
+        power = pd.Series(farm.power_ac_kw.to_numpy(dtype=float))
         ghi = pd.Series(farm.ghi_w_m2.to_numpy(dtype=float))
         consecutive = times.diff().eq(pd.Timedelta(minutes=15))
         power_change = power.diff().where(consecutive)

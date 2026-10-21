@@ -1,62 +1,11 @@
 # Source details and derived-data policy come from the separately validated schema.
-include: data_schema.yaml
+include: standard.yaml
 farm_id: 1
-farms:
-  1: {dc_capacity_kw: 953.28, tracking_type_id: 0}
-  345: {dc_capacity_kw: 1524.60, tracking_type_id: 0}
-  901: {dc_capacity_kw: 4160.00, tracking_type_id: 3}
-  910: {dc_capacity_kw: 6638.00, tracking_type_id: 1}
 analysis:
   start: '2025-10-01T00:00:00Z'
   end: '2025-10-01T23:45:00Z'
-  # The complete selected-farm history establishes plateau/gap boundary evidence.
-  policy_context: complete_selected_farm_history
-  output_dir: outputs/analysis/farm1_20251001
+  output_dir: outputs/analysis/farm${farm_id}_20251001
 forecast_run:
   decision_cutoff: '2025-09-30T09:45:00Z'
   delivery_day: '2025-10-01'
-  delivery_timezone: Europe/Rome
-  earlier_complete_vintage_fallback: false
-  output_dir: outputs/pv/farm1_20251001
-pv:
-  shortwave_interpretation: ghi
-  shortwave_interpretation_status: user_confirmed
-  direct_radiation_interpretation: horizontal_direct
-  direct_radiation_interpretation_status: user_working_assumption
-  fraction_diffuse_enabled: false
-  # New implementation prompt confirms source west = -90; both directions supported.
-  source_azimuth_positive: east
-  location: {latitude: 45.4642, longitude: 9.1900, location_status: proxy, acknowledged: true}
-  irradiance_redistribution: uniform
-  direct_exceeds_ghi: invalidate
-  ghi_only_decomposition: null
-  low_sun_zenith_deg: 85.0
-  dni_limit_w_m2: 1400.0
-  dni_limit_action: cap_and_flag
-  tracker:
-    assumptions_acknowledged: true
-    axis_tilt: 0.0
-    axis_azimuth: 0.0
-    max_angle: 60.0
-    backtrack: true
-    gcr: 0.35
-  bifacial_front_side_only_enabled: true
-  albedo: 0.2
-  temperature:
-    model: faiman
-    u0: 25.0
-    u1: 6.84
-    wind_height_m: 10
-    wind_as_module_proxy_acknowledged: true
-  dc:
-    model: pvwatts
-    gamma_pdc_per_c: -0.004
-    reference_temperature_c: 25.0
-  output:
-    method: explicit_efficiency
-    pv_output_efficiency: 0.96
-    assumption_status: illustrative_unfitted_pv_output_model
-    transformer_efficiency: 1.0
-    transformer_assumption_status: no_measured_transformer_loss_assumed
-    ac_limit_mw: null
-# This file does not authorize a real-market optimization with unspecified BESS/POI.
+  output_dir: outputs/pv/farm${farm_id}_20251001

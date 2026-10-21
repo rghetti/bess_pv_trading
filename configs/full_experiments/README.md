@@ -1,6 +1,8 @@
 # Full experiment configurations
 
-Store one complete, reproducible end-to-end study configuration per YAML file in this directory. These configurations should explicitly provide the dataset and snapshot selection, study dates, PV forecast selection, market calendar and product resolution, battery and POI parameters, inverter efficiencies, starting and terminal state, imbalance policy, degradation model, Gurobi settings, and output locations. Keep illustrative values clearly labeled; the runner should validate required fields rather than silently supplying plant-specific defaults.
+Every YAML imports `../standard.yaml` directly and contains only its study-specific overrides. Shared feature flags and asset/model parameters live in that one standard; explicit overrides preserve earlier examples' settings. See [the configuration guide](../README.md) for merge rules, farm selection and the effective-YAML command.
+
+Start with `gme_day.yaml` for a single-day study on any farm. Set root `farm_id`, or pass `--farm-id 1`, `345`, `901` or `910`; selected PV/weather and metadata, automatic POI ratings and active output labels follow that selection. Battery size remains independently configurable. Set measured POI ratings under `farms.<id>` or override `plant` limits explicitly. Set study dates, data selection and output IDs in YAML and inspect with `resolve-config` before running.
 
 `synthetic_fees_none.yaml`, `synthetic_fees_flat.yaml` and
 `synthetic_fees_gme.yaml` compare transaction-fee modes on the same market.
@@ -162,3 +164,74 @@ Set `experiment_outputs.pv_only_baseline: false` in a study YAML to skip the
 PV-only optimization, its schedule and plot, and the incremental-value KPI. It
 defaults to `true` in the perfect-information comparison study and adds one
 optimization solve when enabled.
+
+`gme_oracle_2025-01-01_farm910_reoptimization_value.yaml` measures the value of
+later reoptimization using the terminal-50% study. Configure independently:
+
+```yaml
+reoptimization_baseline:
+  enabled: true
+  freeze_after_auctions: null  # Or [DA, IDA1] for selected freeze points.
+  plots: true
+```
+
+The last active auction and cancelled auctions are always excluded. Setting
+`enabled: false` skips the simulations; `plots: false` suppresses their chart.
+The feature defaults to disabled if absent. Each baseline keeps already
+submitted orders and executed history, freezes the snapshot's remaining orders
+and physical commands, and executes with the same feedback against measured PV.
+Future frozen quantities are submitted at their original gates. Actual gross
+fees, executed wear, import fees and settlement enter the full-day profit.
+Reference-minus-frozen profit is a signed cumulative value of all later
+reoptimizations; gains across freeze points are not additive. Final energy
+differences are reported without salvage valuation. Baselines require
+deterministic snapshots and add no optimizer solves. CSV/JSON outputs and the
+optional chart follow the standard file-type folders.
+
+Auction selection is `gme_oracle_experiment.participating_auctions`, e.g.
+`[IDA1, IDA2]` or `[IDA3]`; absent/null selects every configured dataset. Only
+selected active auctions create orders and submission solves. Before an
+intraday-only first decision, zero-position grid feedback runs without an
+auction optimization and carries actual energy and wear into that decision.
+
+`gme_participation_2025-01-01_03.yaml` drives the `experiment-participation`
+command. `participation_study.candidate_auctions` lists optional candidates;
+`required_auctions: []` with all four generates 15 non-empty profiles, while
+`required_auctions: [DA]` generates eight. `profiles` can instead specify exact
+auction lists. Configure common `delivery_days`, output root/run ID, summary
+plots, per-profile plots and model exports. Assets and economics use the same
+inherited YAML fields as individual experiments. Every profile must complete
+the identical dates and effective realized PV series. Day starts independently
+reuse configured SOC/fee state. Averages rank full-day realized net profit,
+report daily variation and final inventory, and describe the selected dates
+only. Output CSVs, JSON and summary plots are separate from each profile's
+replay artifacts. No download is triggered by either participation workflow.
+
+`gme_participation_2025-01.yaml` extends the same experiment to all 31 January
+2025 delivery days (465 profile/day cases). Days independently reset configured
+initial SOC and fee state; this is not a rolling multi-day simulation. A fully
+cancelled selected profile keeps its day with zero trades/auction solves and the
+zero-position physical feedback policy, including executed costs. Its initial
+auction expectation is null. Missing data without cancellation evidence fail.
+Ranking tables also include medians, 10th/90th percentiles and negative-profit/
+zero-active-auction day counts; chart whiskers remain daily standard deviations.
+The monthly YAML also enables `execution.infeasible_auction_policy: previous_plan`:
+a confirmed infeasible auction solve reuses that auction's orders and physical
+commands from the last feasible deterministic plan, then the usual controller
+and actual imbalance accounting execute it. No recovery solve or constraint
+relaxation is inserted. The default is `error`. Failed decisions, source plans,
+fallback counts and optionally IIS reports (`save_infeasibility_diagnostics`)
+are retained, including those cases in each profile's common-date average.
+Monthly `resume: true` verifies the unchanged configuration and saved input/profit
+checkpoints, reuses completed cases, and retains incomplete children under
+`diagnostics/incomplete_runs/` before rerunning them.
+
+`participation_study.perfect_foresight_reference` defaults to `true` and adds a
+gold reference row above the ranked participation profiles. It uses the mean
+perfect-information objective with effective realized PV and every configured
+available auction. Existing all-auction benchmark schedules are reused; studies
+that omit that profile add one perfect-information solve per day, with no extra
+auction replay. Daily objectives and summary are saved separately in
+`csv/perfect_foresight_daily.csv` and `json/perfect_foresight_reference.json`.
+The objective keeps configured costs and terminal SOC; the other rows are actual
+settled feedback profits and can have different ending inventory.

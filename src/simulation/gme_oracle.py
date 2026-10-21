@@ -27,8 +27,10 @@ from ..reporting.artifacts import organize_run_outputs
 from ..reporting.plots import plot_boundary_series, plot_interval_series, plot_pv_allocation
 from ..scenarios import synthetic_price_tree
 from ..transaction_fees import transaction_fees_from_config
+from ..participation import auction_subset, profile_id
 from .synthetic import _replay_strategy, write_json
 from .replay import execute_interval
+from .frozen_plans import plot_frozen_plan_comparison, simulate_frozen_auction_plans
 from .settlement import expected_realized_kpis, load_realized_imbalance_prices, settle_realized_dispatch
 
 
@@ -458,9 +460,17 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
     if policy != "skip_if_no_products_fail_if_partial":
         raise ValueError("Unsupported missing_auction_policy; choose skip_if_no_products_fail_if_partial")
     canceled = set(config.get("market", {}).get("cancelled_auctions", []))
+    participating = auction_subset(study.get("participating_auctions")
+        if study.get("participating_auctions") is not None else list(study["auction_datasets"]),
+                                   "gme_oracle_experiment.participating_auctions")
+    if set(participating) - set(study["auction_datasets"]):
+        raise ValueError("Every participating auction requires its dataset configuration")
     event_by_name = {event.auction: event for event in events}
     delivery_day = first.tz_convert(timezone).date()
     for auction, item in study["auction_datasets"].items():
+        if auction not in participating:
+            skipped.append({"auction": auction, "reason": "not_participating"})
+            continue
         if auction not in event_by_name:
             raise ValueError(f"No market schedule exists for configured auction {auction}")
         event = event_by_name[auction]
@@ -523,8 +533,8 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
             "eligible_products": len(expected), "price_min_eur_per_mwh": float(prices.min()),
             "price_mean_eur_per_mwh": float(prices.mean()),
             "price_max_eur_per_mwh": float(prices.max()), "snapshots": sources}
-    if not actual:
-        raise ValueError("No auction price curves are available for this delivery day")
+    # An empty active set is valid only after the selected auctions have each
+    # been explicitly cancelled above; missing/partial datasets still fail.
     return actual, provenance, skipped
 
 
@@ -611,7 +621,7 @@ def _load_pv(config: dict[str, Any], calendar: AuctionCalendar, grid, *, decisio
     actual = np.maximum(actual, 0.0)
     return forecast, actual, pv, {"farm_id": farm_id,
         "farm_metadata": asdict(metadata),
-        "installed_dc_capacity_mw": metadata.dc_capacity_mw,
+        "installed_ac_capacity_mw": metadata.ac_capacity_mw,
         "forecast_cutoff_utc": cutoff.isoformat(),
         "forecast_vintage_utc": pv.forecast_vintage.isoformat(),
         "forecast_available_at_utc": pv.available_at.isoformat(),
@@ -674,9 +684,11 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
     axis.set_ylabel("EUR/MWh")
     axis.set_xlabel(f"Delivery time ({timezone})")
     axis.grid(alpha=0.2)
-    axis.legend(ncol=3)
+    if axis.lines:
+        axis.legend(ncol=3)
     axis.set_xlim(local[0], local_ends[-1])
-    fig.savefig(destination / "prices_da_ida1_ida2.png", dpi=140)
+    if axis.lines:
+        fig.savefig(destination / "prices_da_ida1_ida2.png", dpi=140)
     plt.close(fig)
 
     fig, axis = plt.subplots(figsize=(12, 5), layout="constrained")
@@ -687,9 +699,11 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
     axis.set_ylabel("EUR/MWh")
     axis.set_xlabel(f"Delivery time ({timezone})")
     axis.grid(alpha=0.2)
-    axis.legend()
+    if axis.lines:
+        axis.legend()
     axis.set_xlim(local[0], local_ends[-1])
-    fig.savefig(destination / "prices_ida3.png", dpi=140)
+    if "IDA3" in prices:
+        fig.savefig(destination / "prices_ida3.png", dpi=140)
     plt.close(fig)
 
     allocation = plot_pv_allocation(dispatch, destination / "pv_power_allocation.png",
@@ -844,6 +858,9 @@ def _soc_energy_targets(state: Mapping[str, Any], battery: BatteryParameters
 def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     """Run the single-day GME price oracle with causally available PV updates."""
     study = config["gme_oracle_experiment"]
+    study["participating_auctions"] = list(auction_subset(study.get("participating_auctions")
+        if study.get("participating_auctions") is not None else list(study["auction_datasets"]),
+        "gme_oracle_experiment.participating_auctions"))
     day = str(study["delivery_day"])
     calendar = AuctionCalendar.from_config(config)
     market_grid = calendar.delivery_grid(day)
@@ -851,14 +868,18 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     scheduled = calendar.schedule(day)
     actual_prices, price_provenance, skipped = _load_auction_prices(config, calendar, grid, scheduled)
     schedule = tuple(event for event in scheduled if event.auction in actual_prices)
-    if not schedule:
-        raise ValueError("All configured auctions were skipped; cannot build a price-taking study")
     pv_policy = config["forecast"]["reoptimization_pv_policy"]
     rolling_pv = pv_policy == "latest_available_forecast_at_each_reoptimization"
+    first_information_cutoff = min([pd.Timestamp(grid.starts[0]), *(event.submission_at for event in schedule)])
+    initialization_cutoff = config["forecast"].get("initialization_cutoff")
+    if initialization_cutoff is not None:
+        initialization_cutoff = pd.Timestamp(initialization_cutoff)
+        if initialization_cutoff.tzinfo is None or initialization_cutoff > first_information_cutoff:
+            raise ValueError("forecast.initialization_cutoff must be timezone-aware and precede delivery and first participation")
     forecast, realized_pv, pv_bundle, pv_provenance = _load_pv(config, calendar, grid,
-        decision_cutoff=schedule[0].submission_at if rolling_pv else None)
-    if pv_bundle.available_at > min(pd.Timestamp(grid.starts[0]),
-                                    min(event.submission_at for event in schedule)):
+        decision_cutoff=(initialization_cutoff if initialization_cutoff is not None else
+                         first_information_cutoff if rolling_pv else None))
+    if pv_bundle.available_at > first_information_cutoff:
         raise ValueError("The initial PV vintage is not available before initial delivery control/auction submission")
 
     battery = battery_parameters_from_config(config["battery"])
@@ -881,16 +902,17 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         "save_model_files": bool(config["experiment_outputs"].get("save_model_files", True))}
 
     auction_order = [event.auction for event in schedule]
-    first_auction = auction_order[0]
+    first_auction = auction_order[0] if auction_order else None
     spreads = {current: actual_prices[current] - actual_prices[previous]
                for previous, current in zip(auction_order, auction_order[1:])}
-    kwargs = {"base_prices": actual_prices[first_auction], "stage_spreads": spreads,
+    base_prices = actual_prices[first_auction] if first_auction else np.zeros(len(grid.interval_ids))
+    kwargs = {"base_prices": base_prices, "stage_spreads": spreads,
         "residual_scale": 0.0, "branch_values": (0.0,), "branch_probabilities": (1.0,),
         "imbalance_price": float(config["trading"].get("imbalance_price_eur_per_mwh", 0.0)),
         "seed": int(config["solver"].get("seed", 0))}
     scenarios, tree = synthetic_price_tree(grid, forecast, schedule, **kwargs)
     fixture = {"calendar": calendar, "grid": grid, "schedule": schedule, "pv": forecast,
-        "realized_pv": realized_pv, "base": actual_prices[first_auction], "plant": plant,
+        "realized_pv": realized_pv, "base": base_prices, "plant": plant,
         "tree": tree, "scenarios": scenarios, "realized": 0, "actual_prices": actual_prices,
         "kwargs": kwargs, "forecast_available_at": pv_bundle.available_at,
         "pv_forecast_vintage": pv_bundle.forecast_vintage, "pv_forecast_policy": pv_policy,
@@ -931,6 +953,29 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
             from ..reporting.plots import plot_dispatch
             plot_dispatch(dispatch, actual_prices, summary, oracle_dir / "dispatch.png", timezone=study["timezone"])
     plans = pd.read_csv(oracle_dir / "expected_dispatch_plans.csv")
+    ledger = pd.read_csv(oracle_dir / "ledger.csv")
+    frozen_settings = config.get("reoptimization_baseline", {})
+    frozen_enabled = frozen_settings.get("enabled", False)
+    frozen_summary = pd.DataFrame()
+    frozen_records = []
+    if frozen_enabled:
+        frozen_summary, frozen_dispatch, frozen_trades = simulate_frozen_auction_plans(
+            config, grid, plant, schedule, actual_prices, plans, dispatch, ledger, summary)
+        if not frozen_summary.empty:
+            frozen_records = frozen_summary.astype(object).where(pd.notna(frozen_summary), None).to_dict("records")
+            frozen_summary.to_csv(day_output / "csv/reoptimization_frozen_plan_summary.csv", index=False)
+            frozen_dispatch.to_csv(day_output / "csv/reoptimization_frozen_plan_dispatch.csv", index=False)
+            frozen_trades.to_csv(day_output / "csv/reoptimization_frozen_plan_trades.csv", index=False)
+            if config["outputs"]["plots"] and frozen_settings.get("plots", True):
+                plot_frozen_plan_comparison(frozen_summary,
+                    day_output / "plots/reoptimization_value.png")
+        write_json(day_output / "json/reoptimization_frozen_plan_baselines.json", {
+            "status": "complete" if frozen_records else "no_selected_pre_final_auction",
+            "settings": frozen_settings,
+            "excluded_last_active_auction": schedule[-1].auction if schedule else None,
+            "method": "freeze remaining auction orders and battery commands at each pre-final snapshot; replay actual PV with the same feedback and actual fees, wear and settlement",
+            "gain_sign": "fully reoptimized realized profit minus frozen-plan realized profit",
+            "additional_optimizer_solves": 0, "baselines": frozen_records})
     reoptimization_settlements, reoptimization_settlement_intervals = (
         _counterfactual_reoptimization_settlement(plans, dispatch, realized_pv,
             grid, plant, tuple(actual_prices)))
@@ -1040,15 +1085,17 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     pv_frame["realized_minus_forecast_mw"] = realized_pv - active_forecast
     pv_frame["interval_id"] = grid.interval_ids
     pv_frame.to_csv(day_output / "pv_forecast_and_realized.csv", index_label="interval_start_utc")
-    _plot_experiment(day_output, grid, actual_prices, plans, dispatch, study["timezone"], eligibility,
-        battery_capacity_mwh=battery.capacity_mwh,
-        soc_bounds_percent=(float(config["battery"]["soc_min_percent"]),
-                            float(config["battery"]["soc_max_percent"])),
-        auction_events=schedule)
+    if config["outputs"]["plots"]:
+        _plot_experiment(day_output, grid, actual_prices, plans, dispatch, study["timezone"], eligibility,
+            battery_capacity_mwh=battery.capacity_mwh,
+            soc_bounds_percent=(float(config["battery"]["soc_min_percent"]),
+                                float(config["battery"]["soc_max_percent"])),
+            auction_events=schedule)
 
     delta = grid.delta_hours
     capacity = battery.capacity_mwh
     solve_data = json_load(oracle_dir / "solves.json")
+    decision_data = sorted(solve_data + summary["infeasible_auction_decisions"], key=lambda row: row["cutoff"])
     forecast_updates = [{key: row.get(key) for key in (
         "current_auction", "cutoff", "planning_start_utc", "planning_end_utc",
         "pv_forecast_vintage_utc", "pv_forecast_available_at_utc",
@@ -1058,10 +1105,9 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     plans[["auction", "optimizer_cutoff_utc", "interval_start_utc", "pv_ac_forecast_mw",
            "pv_forecast_vintage_utc", "pv_forecast_available_at_utc"]].to_csv(
         day_output / "pv_forecasts_by_auction.csv", index=False)
-    model_variables = [int(item["variables"]) for item in solve_data if item.get("variables") is not None]
-    model_constraints = [int(item["constraints"]) for item in solve_data if item.get("constraints") is not None]
+    model_variables = [int(item["variables"]) for item in decision_data if item.get("variables") is not None]
+    model_constraints = [int(item["constraints"]) for item in decision_data if item.get("constraints") is not None]
     trade_volumes = {}
-    ledger = pd.read_csv(oracle_dir / "ledger.csv")
     for auction in actual_prices:
         selected = ledger.loc[ledger.auction == auction] if "auction" in ledger else pd.DataFrame()
         quantities = pd.to_numeric(selected.get("quantity_mwh", pd.Series(dtype=float)), errors="coerce")
@@ -1079,7 +1125,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
                      -(dispatch.requested_discharge_mw-dispatch.requested_charge_mw))
     soc_error = dispatch.energy_end_mwh-dispatch.planned_energy_end_mwh
     kpis = {"study_id": study["study_id"], "study_date": day, "farm_id": plant.farm_id,
-        "pv_installed_dc_mw": pv_provenance["installed_dc_capacity_mw"],
+        "pv_installed_ac_mw": pv_provenance["installed_ac_capacity_mw"],
         "pv_tracking_type_id": pv_provenance["farm_metadata"]["tracking_type_id"],
         "market_zone": study["zone"], "strategy": "perfect_price_foresight_oracle_not_executable",
         "forecast_member_count": pv_provenance["forecast_member_count"],
@@ -1109,12 +1155,19 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         "max_soc_deviation_from_active_plan_percentage_points": float(soc_error.abs().max()*100/capacity) if capacity else 0.0,
         "battery_feedback_intervals": int(command_error.abs().gt(
             config.get("execution", {}).get("comparison_tolerance_mw", 1e-6)).sum()),
-        "oracle_initial_objective_eur": float(summary["initial_expected_profit_eur"]),
+        "oracle_initial_objective_eur": (None if summary["initial_expected_profit_eur"] is None
+                                        else float(summary["initial_expected_profit_eur"])),
         **{key: summary[key] for key in (
             "expectation_baseline", "initial_expected_profit_eur", "initial_expected_auction_revenue_eur",
             "realized_minus_expected_profit_eur", "realized_minus_expected_profit_percent",
             "realized_minus_expected_auction_revenue_eur", "realized_minus_expected_auction_revenue_percent")},
         "auction_revenue_eur": float(summary["components"]["auction_revenue_eur"]),
+        "frozen_plan_baselines_enabled": frozen_enabled,
+        "reoptimization_frozen_plan_baselines": frozen_records,
+        **{f"reoptimization_gain_after_{row['frozen_after_auction']}_eur": row["reoptimization_gain_eur"]
+            for row in frozen_records},
+        **{f"frozen_plan_profit_after_{row['frozen_after_auction']}_eur": row["frozen_plan_profit_eur"]
+            for row in frozen_records},
         "transaction_fee_eur": float(summary["components"]["transaction_fee_eur"]),
         "transaction_fee_mode": summary["transaction_fees"]["mode"],
         "gross_traded_mwh": summary["transaction_fees"]["gross_traded_mwh"],
@@ -1181,8 +1234,14 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         "soc_min_percent": float(dispatch.energy_start_mwh.min()) / capacity * 100 if capacity else None,
         "soc_max_percent": float(dispatch.energy_end_mwh.max()) / capacity * 100 if capacity else None,
         "dispatch_intervals": len(dispatch), "active_auctions": list(actual_prices),
+        "all_selected_auctions_cancelled": not bool(schedule),
+        "participating_auctions": list(config["gme_oracle_experiment"].get("participating_auctions", actual_prices)),
+        "participation_profile": profile_id(tuple(event.auction for event in schedule)),
         "skipped_auctions": skipped, "auction_trade_kpis": trade_volumes,
-        "reoptimization_solves": len(solve_data), "optimizer_statuses": [item["status"] for item in solve_data],
+        "reoptimization_solves": len(decision_data), "optimizer_statuses": [item["status"] for item in decision_data],
+        "infeasible_auction_decision_count": summary["infeasible_auction_decision_count"],
+        "infeasible_auction_decisions": summary["infeasible_auction_decisions"],
+        "infeasible_auction_policy": summary["infeasible_auction_policy"],
         "auction_decision_solves": summary["auction_decision_solves"],
         "physical_control_solves": summary["physical_control_solves"],
         "price_publication_events": summary["price_publication_events"],
@@ -1217,9 +1276,10 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         "study_date": day, "code_revision": revision, "output_dir": str(day_output),
         "strategy": "perfect_price_foresight_oracle_not_executable", "scenario_count": 1,
         "active_auctions": list(actual_prices), "skipped_auctions": skipped,
+        "participating_auctions": list(study.get("participating_auctions", actual_prices)),
         "price_provenance": price_provenance, "pv_provenance": pv_provenance,
         "settlement_price_provenance": settlement_provenance,
-        "optimizer_solves": len(solve_data), "summary": summary,
+        "optimizer_solves": len(decision_data), "summary": summary,
         "artifacts": ["prices_da_ida1_ida2.png", "prices_ida3.png",
             "pv_power_allocation.png", "pv_power_allocation.csv", "soc_evolution.png", "pv_forecast_and_realized.png",
             "execution_tracking.png",
@@ -1230,6 +1290,15 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     manifest["artifacts"].extend([
         "csv/perfect_pv_counterfactual_schedule.csv",
         "json/perfect_pv_counterfactual.json"])
+    if frozen_enabled:
+        manifest["artifacts"].append("json/reoptimization_frozen_plan_baselines.json")
+        if not frozen_summary.empty:
+            manifest["artifacts"].extend([
+                "csv/reoptimization_frozen_plan_summary.csv",
+                "csv/reoptimization_frozen_plan_dispatch.csv",
+                "csv/reoptimization_frozen_plan_trades.csv"])
+        if (day_output / "plots/reoptimization_value.png").is_file():
+            manifest["artifacts"].append("plots/reoptimization_value.png")
     if config["experiment_outputs"].get("save_model_files", True):
         manifest["artifacts"].append("models/perfect_pv_counterfactual.lp")
     if include_pv_only:

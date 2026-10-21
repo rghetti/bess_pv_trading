@@ -1,0 +1,71 @@
+# Entire January 2025: each delivery day resets the configured SOC and fee state.
+include: ../standard.yaml
+analysis:
+  start: '2025-10-01T00:00:00Z'
+  end: '2025-10-01T23:45:00Z'
+  output_dir: outputs/analysis/farm1_20251001
+forecast_run:
+  decision_cutoff: '2024-12-31T10:55:00Z'
+  delivery_day: '2025-01-01'
+  output_dir: outputs/pv/gme_oracle_2025-01-01_farm${farm_id}
+pv:
+  direct_exceeds_ghi: clip_and_flag
+gme_oracle_experiment:
+  study_id: gme_nord_oracle_2025-01-01_farm${farm_id}_perfect_pv_comparison_terminal_soc_50_pv_only_baseline
+  delivery_day: '2025-01-01'
+market:
+  valid_from: '2025-01-01'
+  valid_to: '2025-01-01'
+  result_provenance:
+    DA: study_assumption_13:30_for_historical_day
+    IDA1: study_assumption_15:30_for_historical_day
+    IDA2: study_assumption_22:30_for_historical_day
+    IDA3: study_assumption_10:30_for_historical_day
+forecast:
+  initial_decision_cutoff: '2024-12-31T10:55:00Z'
+solver:
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+experiment_outputs:
+  run_id: gme_nord_oracle_2025-01-01_farm${farm_id}_native_ida_pt15_perfect_pv_comparison_terminal_soc_50_pv_only_baseline
+  pv_only_baseline: false
+execution:
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+settlement:
+  enabled: true
+participation_study:
+  delivery_days:
+    - '2025-01-01'
+    - '2025-01-02'
+    - '2025-01-03'
+    - '2025-01-04'
+    - '2025-01-05'
+    - '2025-01-06'
+    - '2025-01-07'
+    - '2025-01-08'
+    - '2025-01-09'
+    - '2025-01-10'
+    - '2025-01-11'
+    - '2025-01-12'
+    - '2025-01-13'
+    - '2025-01-14'
+    - '2025-01-15'
+    - '2025-01-16'
+    - '2025-01-17'
+    - '2025-01-18'
+    - '2025-01-19'
+    - '2025-01-20'
+    - '2025-01-21'
+    - '2025-01-22'
+    - '2025-01-23'
+    - '2025-01-24'
+    - '2025-01-25'
+    - '2025-01-26'
+    - '2025-01-27'
+    - '2025-01-28'
+    - '2025-01-29'
+    - '2025-01-30'
+    - '2025-01-31'
+  run_id: gme_nord_farm${farm_id}_2025-01_all_profiles_previous_plan
+  resume: true

@@ -1,59 +1,65 @@
 # One-day check of both providers. api.end is exclusive in Europe/Rome.
 # Credentials are prompted once per run, invisibly, only on cache misses.
+include: ../standard.yaml
 api:
   start: '2025-10-01'
   end: '2025-10-02'
-  timezone: Europe/Rome
-  # Complete all requested quantities in one month before moving to the next.
-  # Daily cache keys stay unchanged; interrupted downloads resume without refresh.
-  download_order: month_first
-  cache_directory: data/api
-  # Legacy files remain the migration source; new requests live in one database.
-  storage_backend: duckdb
-  database_path: data/api/market.duckdb
-  database_threads: 4
-  output_directory: outputs/api
-  no_data_cache_hours: 24
-  progress_every: 25
-  plots: true
-  credentials:
-    entsoe_token_env: ENTSOE_API_TOKEN
-    terna_client_id_env: TERNA_CLIENT_ID
-    terna_client_secret_env: TERNA_CLIENT_SECRET
   http:
-    attempts: 3
-    connect_timeout: 10
-    read_timeout: 60
     minimum_request_interval_seconds: 0.5
     terna_minimum_request_interval_seconds: 2.0
   requests:
     - provider: entsoe
       dataset: day_ahead_prices
-      options: {zone: NORD, zone_eic: 10Y1001A1001A73I}
+      options:
+        zone: NORD
+        zone_eic: 10Y1001A1001A73I
     - provider: entsoe
       dataset: load_forecast
-      options: {zone: NORD, zone_eic: 10Y1001A1001A73I}
+      options:
+        zone: NORD
+        zone_eic: 10Y1001A1001A73I
     - provider: entsoe
       dataset: generation_forecast
-      options: {zone: NORD, zone_eic: 10Y1001A1001A73I}
+      options:
+        zone: NORD
+        zone_eic: 10Y1001A1001A73I
     - provider: entsoe
       dataset: solar_forecast
-      options: {zone: NORD, zone_eic: 10Y1001A1001A73I}
+      options:
+        zone: NORD
+        zone_eic: 10Y1001A1001A73I
     - provider: entsoe
       dataset: wind_onshore_forecast
-      options: {zone: NORD, zone_eic: 10Y1001A1001A73I}
+      options:
+        zone: NORD
+        zone_eic: 10Y1001A1001A73I
     - provider: terna
       dataset: total_load
-      options: {zone: NORD, bidding_zones: [North]}
+      options:
+        zone: NORD
+        bidding_zones:
+          - North
     - provider: terna
       dataset: total_load_forecast
-      options: {zone: NORD, bidding_zones: [North]}
+      options:
+        zone: NORD
+        bidding_zones:
+          - North
     - provider: terna
       dataset: load_forecast
-      options: {zone: NORD, session_type: MGP}
+      options:
+        zone: NORD
+        session_type: MGP
     - provider: terna
       dataset: wind_forecast
-      options: {zone: NORD, session_type: MSD1}
+      options:
+        zone: NORD
+        session_type: MSD1
     - provider: terna
       dataset: renewable_generation
-      options: {zone: IT, energy_sources: [Photovoltaic, Wind]}
+      options:
+        zone: IT
+        energy_sources:
+          - Photovoltaic
+          - Wind
+farm_id: 1

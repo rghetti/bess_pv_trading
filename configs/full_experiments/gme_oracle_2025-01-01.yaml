@@ -1,122 +1,47 @@
 # One-day perfect-price-foresight benchmark. Equipment values are illustrative.
-include: ../farms_nord_radiation_sensitivity.yaml
-
+include: ../standard.yaml
+farm_id: 1
+farms:
+  '1':
+    poi_import_mw: 1.0
+    poi_export_mw: 1.0
+analysis:
+  start: '2025-10-01T00:00:00Z'
+  end: '2025-10-01T23:45:00Z'
+  output_dir: outputs/analysis/farm${farm_id}_20251001
 forecast_run:
   decision_cutoff: '2024-12-31T10:55:00Z'
   delivery_day: '2025-01-01'
-  delivery_timezone: Europe/Rome
-  earlier_complete_vintage_fallback: false
   output_dir: outputs/pv/gme_oracle_2025-01-01
-
+pv:
+  direct_exceeds_ghi: clip_and_flag
 gme_oracle_experiment:
-  study_id: gme_nord_oracle_2025-01-01_farm1
+  study_id: gme_nord_oracle_2025-01-01_farm${farm_id}
   delivery_day: '2025-01-01'
-  timezone: Europe/Rome
-  price_database: data/api/market.duckdb
-  provider: gme
-  zone: NORD
-  auction_datasets:
-    DA:
-      dataset: day_ahead_prices
-      native_interval_minutes: 60
-    IDA1:
-      dataset: ida1_prices
-      native_interval_minutes: 15
-    IDA2:
-      dataset: ida2_prices
-      native_interval_minutes: 15
-    IDA3:
-      dataset: ida3_prices
-      native_interval_minutes: 15
-  missing_auction_policy: skip_if_no_products_fail_if_partial
-  price_information: perfect_foresight_actual_clearing_curves
-  decision_resolution_minutes: 15
-  price_display_resolution_minutes: 15
-
 market:
-  timezone: Europe/Rome
   valid_from: '2025-01-01'
   valid_to: '2025-01-01'
-  decision_buffer_minutes: 5.0
-  gates: {DA: '12:00', IDA1: '15:00', IDA2: '22:00', IDA3: '10:00'}
-  gate_day_offsets: {DA: -1, IDA1: -1, IDA2: -1, IDA3: 0}
-  result_times: {DA: '13:30', IDA1: '15:30', IDA2: '22:30', IDA3: '10:30'}
-  delivery_start_times: {DA: null, IDA1: null, IDA2: null, IDA3: '12:00'}
   result_provenance:
     DA: study_assumption_13:30_for_historical_day
     IDA1: study_assumption_15:30_for_historical_day
     IDA2: study_assumption_22:30_for_historical_day
     IDA3: study_assumption_10:30_for_historical_day
-  cancelled_auctions: []
-
 forecast:
-  farm_id: 1
   initial_decision_cutoff: '2024-12-31T10:55:00Z'
-  member_policy: one_deterministic_weather_vintage
-  reoptimization_pv_policy: latest_available_forecast_at_each_reoptimization
-  realized_power_policy: use_actual_ac_for_execution_and_boundary_state_when_available
-  realized_power_variable: power
-  realized_power_scale_to_mw: 0.001
-  missing_forecast_policy: zero_only_when_policy_marks_night
-  missing_realized_power_policy: use_frozen_pv_forecast
-  maximum_missing_realized_intervals: 4
-
 plant:
-  farm_id: 1
-  poi_import_mw: 1.0
-  poi_export_mw: 1.0
   assumption_status: illustrative_not_confirmed_plant_rating
-
-battery:
-  capacity_mwh: 5.0
-  max_power_mw: 2.5
-  soc_min_percent: 10.0
-  soc_max_percent: 90.0
-  # Each value covers the entire AC-bus <-> stored-energy path once.
-  # They are study assumptions, not measured cell or converter efficiencies.
-  efficiency_convention: combined
-  combined_charge_efficiency: 0.97
-  combined_discharge_efficiency: 0.97
-  self_discharge_per_hour: 0.0
-  assumption_status: illustrative_not_confirmed_battery_specification
-
-state:
-  initial_soc_percent: 50.0
-  initial_soc_basis: nominal_capacity
-  initial_state_status: study_assumption_not_telemetry
-  terminal_soc_percent: 50.0
-  origin: known_delivery_start_assumption
-
 trading:
-  # Contracted net energy uses the plant POI ratings times interval duration.
-  # Each auction trade and cumulative position use POI-derived bounds.
-  optimize_imbalances: false  # Exact forecast delivery per optimization interval; settle execution errors ex post.
   imbalance_penalty_eur_per_mwh: 100.0
-  grid_import_fee_eur_per_mwh: 0.0
-  imbalance_limit_mwh: null
-  imbalance_price_eur_per_mwh: 0.0
   settlement_status: imbalance_price_not_available_zero_value_assumption
-
 degradation:
   model: xu_segmented
   cost_eur_per_mwh_throughput: 0.0
   replacement_cost_eur: 300000.0
-  stress_coefficient: 0.000524
-  stress_exponent: 2.03
-  segment_count: 8
   assumptions: illustrative Xu Eq.24 stress shape and unverified replacement cost
-
+  replacement_economics: null
+  throughput_lifetime: null
 solver:
-  threads: 10
-  time_limit_seconds: 120.0
-  mip_gap: 0.0001
-  seed: 17
-  output_flag: false
-
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
 experiment_outputs:
-  root: outputs/full_experiments/gme_oracle
-  run_id: gme_nord_oracle_2025-01-01_farm1_report
-  plots: true
-  save_model_files: true
-  save_dispatch_plans: true
-  save_kpis: true
+  run_id: gme_nord_oracle_2025-01-01_farm${farm_id}_report

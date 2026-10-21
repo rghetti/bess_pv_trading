@@ -7,6 +7,7 @@ from dataclasses import asdict
 import json
 from pathlib import Path
 import sys
+import yaml
 
 from .config import load_config
 from .transaction_fees import transaction_fees_from_config
@@ -19,7 +20,7 @@ def _optimization_inputs(config: dict):
     from .optimization.degradation import degradation_settings_from_config
     from .simulation.synthetic import synthetic_inputs
     if "synthetic" not in config:
-        if "forecast_inputs" in config.get("optimization", {}):
+        if "pv_forecast_path" in config.get("optimization", {}).get("forecast_inputs", {}):
             from .optimization.forecast_inputs import load_forecast_inputs
             return load_forecast_inputs(config)
         from .optimization.prepared import load_prepared_inputs
@@ -85,7 +86,9 @@ def dispatch(command: str, config: dict) -> dict:
         if "inputs" in config:
             from .data.adapters import validate_source_config
             validate_source_config(config)
-        if "synthetic" in config or "optimization" in config:
+        optimization = config.get("optimization", {})
+        if ("synthetic" in config or "pv_forecast_path" in optimization
+                or "pv_forecast_path" in optimization.get("forecast_inputs", {})):
             _optimization_inputs(config)
         return {"status":"valid", "sections":list(config)}
     if command == "inspect-data":
@@ -97,6 +100,9 @@ def dispatch(command: str, config: dict) -> dict:
     if command == "forecast-pv":
         from .forecasting.pv import forecast_pv_from_config
         return forecast_pv_from_config(config)
+    if command == "calibrate-pv-output":
+        from .forecasting.pv_calibration import calibrate_pv_output
+        return calibrate_pv_output(config)
     if command == "import-market-data":
         from .data.market_prices import import_market_from_config
         return import_market_from_config(config)
@@ -109,6 +115,10 @@ def dispatch(command: str, config: dict) -> dict:
     if command == "experiment-gme-oracle":
         from .simulation.gme_oracle import run_gme_oracle_experiment
         return run_gme_oracle_experiment(config)
+    if command == "experiment-participation":
+        from .simulation.participation_study import run_participation_study
+        return run_participation_study(config,
+            progress=lambda message: print(message, file=sys.stderr, flush=True))
     if command == "train-price-models":
         from .forecasting.prices import train_price_from_config
         return train_price_from_config(config)
@@ -156,19 +166,25 @@ def dispatch(command: str, config: dict) -> dict:
 def main(argv: list[str] | None = None) -> int:
     """Print serializable results and actionable errors without credential prompts."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command",choices=("inspect-data","prepare-analysis-data","validate-config",
-        "run-synthetic","forecast-pv","import-market-data","train-price-models","optimize",
+    parser.add_argument("command",choices=("inspect-data","prepare-analysis-data","validate-config","resolve-config",
+        "run-synthetic","forecast-pv","calibrate-pv-output","import-market-data","train-price-models","optimize",
         "backtest","report-implementation","download-data","experiment-api-prices","experiment-price-fundamentals",
         "study-linear-prices","calibrate-price-scenarios","check-frozen-prices",
         "api-cache-status","migrate-api-cache","diagnose-terna",
-        "import-gme-workbooks","import-terna-workbooks","experiment-gme-oracle"))
+        "import-gme-workbooks","import-terna-workbooks","experiment-gme-oracle","experiment-participation"))
     parser.add_argument("--config",required=True,type=Path)
+    parser.add_argument("--farm-id",type=int,help="Select farm metadata, PV/weather series and automatic POI limits")
     parser.add_argument("--interactive",action="store_true",help="Prompt invisibly for missing API credentials in a terminal")
     parser.add_argument("--dry-run",action="store_true",help="Plan API requests and inspect cache without authenticating")
     parser.add_argument("--refresh-cache",action="store_true",help="Retrieve API requests again even when cached")
     args = parser.parse_args(argv)
     try:
-        config = load_config(args.config)
+        config = load_config(args.config, overrides={"farm_id": args.farm_id} if args.farm_id is not None else None)
+        if args.command == "resolve-config":
+            if args.interactive or args.dry_run or args.refresh_cache:
+                raise ValueError("API download flags apply only to download-data")
+            print(yaml.safe_dump(config, sort_keys=False), end="")
+            return 0
         if args.command=="download-data":
             from .data.api import download_from_config
             result=download_from_config(config,interactive=args.interactive,dry_run=args.dry_run,

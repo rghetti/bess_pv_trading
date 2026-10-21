@@ -74,7 +74,7 @@
     {
       "farm_id": 1,
       "zone": "NORD",
-      "dc_capacity_kw": 953.280029296875,
+      "ac_capacity_kw": 953.280029296875,
       "tracking_type_id": 0,
       "surface_tilt_deg": 15.0,
       "source_azimuth_deg": 0.0,
@@ -85,7 +85,7 @@
     {
       "farm_id": 345,
       "zone": "NORD",
-      "dc_capacity_kw": 1524.5999755859375,
+      "ac_capacity_kw": 1524.5999755859375,
       "tracking_type_id": 0,
       "surface_tilt_deg": 19.0,
       "source_azimuth_deg": 0.0,
@@ -96,7 +96,7 @@
     {
       "farm_id": 901,
       "zone": "NORD",
-      "dc_capacity_kw": 4160.0,
+      "ac_capacity_kw": 4160.0,
       "tracking_type_id": 3,
       "surface_tilt_deg": 60.0,
       "source_azimuth_deg": 0.0,
@@ -107,7 +107,7 @@
     {
       "farm_id": 910,
       "zone": "NORD",
-      "dc_capacity_kw": 6638.0,
+      "ac_capacity_kw": 6638.0,
       "tracking_type_id": 1,
       "surface_tilt_deg": 30.0,
       "source_azimuth_deg": 0.0,
@@ -348,6 +348,6 @@
     "zarr_metadata_mtime_ns": 1792061790000000000,
     "inspection": "coordinates_and_consolidated_metadata_only",
     "measured_power_basis": "AC_user_confirmed",
-    "capacity_basis": "DC_user_confirmed"
+    "capacity_basis": "AC_user_confirmed"
   }
 }

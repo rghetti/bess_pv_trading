@@ -10,7 +10,7 @@ Read-only inspection on 16 October 2026 used consolidated Zarr metadata, coordin
 
 Observed dimensions are `farm_id=4`, `time=58368`, `cycle_time=2440`, `lead_time=49`. Historical UTC interval starts run from 2025-01-01 00:00 to 2026-08-31 23:45. Cycles run from 2024-12-30 00:00 to 2026-08-31 18:00 UTC. Decoded leads are `timedelta64[ns]`, zero through 48 hours; the stored lead encoding has units `hours` and integer dtype. Stored `valid_time` exactly equals cycle plus lead. There is no ensemble/member axis.
 
-| Farm label | DC nameplate kW from Parquet | Tracking ID | Source tilt | Elevation m |
+| Farm label | AC nameplate kW from Parquet | Tracking ID | Source tilt | Elevation m |
 |---|---:|---:|---:|---:|
 | 1 | 953.280029296875 | 0 | 15 | 25 |
 | 345 | 1524.5999755859375 | 0 | 19 | 111 |
@@ -35,7 +35,7 @@ The small floating-point differences from the user's 953.28 and 1524.60 kW are r
 | wind u/v at 10 m | `wind_u_component_10m`, `wind_v_component_10m` | same | signed m/s, instantaneous |
 | wind u/v at 100 m | `wind_u_component_100m`, `wind_v_component_100m` | same | signed m/s, instantaneous |
 
-Attributes confirm dimensions, timezone, declared units, forecast valid-time construction, instantaneous versus interval average/accumulation, and historical interval labels. Historical satellite GHI/diffuse attributes say `mean of endpoint readings`; this records an attribute rather than independently verifying the satellite retrieval/measurement operator. The following electrical/radiation meanings are supplied by the user, rather than proved by public provider documentation: historical power is already AC, nameplate is DC, shortwave is forecast GHI, direct is a horizontal-direct working interpretation, and the wind/temperature source is not attributed to an inferred NWP provider.
+Attributes confirm dimensions, timezone, declared units, forecast valid-time construction, instantaneous versus interval average/accumulation, and historical interval labels. Historical satellite GHI/diffuse attributes say `mean of endpoint readings`; this records an attribute rather than independently verifying the satellite retrieval/measurement operator. The following electrical/radiation meanings are supplied by the user, rather than proved by public provider documentation: historical power is already AC, `total_power` is AC nameplate, shortwave is forecast GHI, direct is a horizontal-direct working interpretation, and the wind/temperature source is not attributed to an inferred NWP provider.
 
 ## Availability and temporal transformations
 

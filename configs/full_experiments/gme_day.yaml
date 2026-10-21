@@ -1,0 +1,29 @@
+# Reusable single-day study: choose any declared farm here or with --farm-id.
+include: ../standard.yaml
+farm_id: 910
+
+gme_oracle_experiment:
+  delivery_day: '2025-01-01'
+  study_id: gme_nord_farm${farm_id}_${gme_oracle_experiment.delivery_day}
+
+market:
+  valid_from: ${gme_oracle_experiment.delivery_day}
+  valid_to: ${gme_oracle_experiment.delivery_day}
+  result_provenance:
+    DA: study_assumption_13:30_for_historical_day
+    IDA1: study_assumption_15:30_for_historical_day
+    IDA2: study_assumption_22:30_for_historical_day
+    IDA3: study_assumption_10:30_for_historical_day
+
+pv:
+  direct_exceeds_ghi: clip_and_flag
+
+settlement:
+  enabled: true
+
+solver:
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+
+experiment_outputs:
+  run_id: null  # Fresh timestamp; output includes farm_<id>/<delivery_day>.

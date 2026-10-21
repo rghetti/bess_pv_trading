@@ -1,82 +1,34 @@
 # Jan 1: largest farm, four auction decisions, exact planned delivery, ex-post imbalances.
-include: gme_oracle_2025-01-01.yaml
-
-farm_id: 910
-gme_oracle_experiment:
-  study_id: gme_nord_oracle_2025-01-01_farm910_throughput
-forecast:
-  farm_id: 910
+include: ../standard.yaml
+analysis:
+  start: '2025-10-01T00:00:00Z'
+  end: '2025-10-01T23:45:00Z'
+  output_dir: outputs/analysis/farm1_20251001
 forecast_run:
-  output_dir: outputs/pv/gme_oracle_2025-01-01_farm910
-
-plant:
-  farm_id: 910
-  poi_import_mw: 6.638
-  poi_export_mw: 6.638
-  assumption_status: illustrative_symmetric_POI_equal_to_DC_nameplate_not_measured
-
-battery:
-  capacity_mwh: 5.0
-  max_power_mw: 2.5  # Same AC rating for charging and discharging.
-  soc_min_percent: 10.0
-  soc_max_percent: 90.0
-
+  decision_cutoff: '2024-12-31T10:55:00Z'
+  delivery_day: '2025-01-01'
+  output_dir: outputs/pv/gme_oracle_2025-01-01_farm${farm_id}
+pv:
+  direct_exceeds_ghi: clip_and_flag
+gme_oracle_experiment:
+  study_id: gme_nord_oracle_2025-01-01_farm${farm_id}_throughput
+  delivery_day: '2025-01-01'
+market:
+  valid_from: '2025-01-01'
+  valid_to: '2025-01-01'
+  result_provenance:
+    DA: study_assumption_13:30_for_historical_day
+    IDA1: study_assumption_15:30_for_historical_day
+    IDA2: study_assumption_22:30_for_historical_day
+    IDA3: study_assumption_10:30_for_historical_day
+forecast:
+  initial_decision_cutoff: '2024-12-31T10:55:00Z'
 state:
-  initial_soc_percent: 50.0
-  terminal_soc_percent: null  # Do not instantiate a terminal SOC constraint.
-
-execution:
-  dispatch_policy: track_committed_grid
-  reoptimize_physical_controls: false
-  comparison_tolerance_mw: 0.000001
-
-trading:
-  imbalance_penalty_eur_per_mwh: 0.0
-  imbalance_price_eur_per_mwh: 0.0
-  imbalance_limit_mwh: null
-  optimize_imbalances: false
-  planned_delivery_balance_resolution_minutes: null  # Interval equality is mandatory with optimize_imbalances=false.
-  settlement_status: exact_planned_delivery_actual_terna_quarter_hour_settlement_ex_post
-
+  terminal_soc_percent: null
+solver:
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+experiment_outputs:
+  run_id: gme_nord_oracle_2025-01-01_farm${farm_id}_5mwh_grid_feedback
 settlement:
   enabled: true
-  database_path: data/api/market.duckdb
-  provider: terna
-  dataset: imbalance_prices
-  zone: NORD
-  native_interval_minutes: 15
-  price_column: price_eur_mwh
-  missing_price_policy: error
-
-degradation:
-  model: throughput
-  cost_eur_per_mwh_throughput: null  # Computed from replacement cost and lifetime.
-  replacement_cost_eur: null       # Computed from the economics below.
-  replacement_economics:
-    pack_price_usd_per_kwh: 115.0
-    cost_year: 2024
-    price_scope: global_generic_lithium_ion_pack_average_not_installed_BESS
-    price_source: https://about.bnef.com/insights/commodities/lithium-ion-battery-pack-prices-see-largest-drop-since-2017-falling-to-115-per-kilowatt-hour-bloombergnef/
-    price_publication_date: '2024-12-10'
-    usd_per_eur: 1.0389
-    fx_date: '2024-12-31'
-    fx_source: https://www.ecb.europa.eu/stats/exchange/eurofxref/shared/pdf/2024/12/20241231.pdf
-    additional_replacement_eur_per_kwh: 0.0
-    salvage_fraction: 0.0
-    retrieved_on: '2026-10-19'
-  throughput_lifetime:
-    cycle_life: 2500
-    reference_depth_of_discharge: 0.8
-    end_of_life_capacity_fraction: 0.8
-    source: https://www.victronenergy.com/media/pg/Lithium_NG_battery_51%2C2_V/en/technical-data.html
-    scope: illustrative_LFP_reference_life_applied_to_generic_pack_price
-  assumptions: >-
-    Generic 2024 BNEF pack-price replacement proxy converted at the 2024-12-31
-    ECB FX rate; excludes labor, inverter, BOS and salvage. Reference LFP cycle
-    life is 2500 cycles at 80% DoD to 80% residual capacity (Victron Lithium NG).
-    Constant nominal-energy lifetime approximation; no calendar aging or
-    battery-specific lifetime calibration. Cost applies to charge plus discharge
-    AC throughput, normalized using the configured charge/discharge efficiencies.
-
-experiment_outputs:
-  run_id: gme_nord_oracle_2025-01-01_farm910_5mwh_grid_feedback

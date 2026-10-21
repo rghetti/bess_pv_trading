@@ -1,0 +1,454 @@
+# STANDARD CONFIGURATION: every experiment imports this file directly.
+# Edit shared defaults here; experiment YAMLs contain only their overrides.
+# No experiment is launched by loading this file. Dates and source inputs must be set for the chosen command.
+schema_version: 1
+
+# FARM DATA: measured AC power, weather cycles and static plant metadata. Paths are repository-relative.
+inputs:
+  zarr: data/farms/pv_farms_timeseries_20250101_20260831.zarr
+  metadata_parquet: data/farms/pv_farms_timeseries_20250101_20260831.parquet
+source:
+  timezone: UTC
+  historical_dimensions:
+    - time
+    - farm_id
+  forecast_dimensions:
+    - farm_id
+    - cycle_time
+    - lead_time
+  measured_power_basis: AC
+  capacity_basis: AC
+  historical_interval_minutes: 15
+  historical_label: start
+  forecast_radiation_label: end
+  forecast_radiation_interval_hours: 1
+  cycle_cadence_hours: 6
+  availability_lag_hours: 6
+  explicit_availability_variable: null
+  telemetry_latency_minutes: 0
+  numeric_lead_units: hours
+forecast_mapping:
+  forecast_ghi: shortwave_radiation
+  forecast_bhi: direct_radiation
+  temperature_c: temperature_2m
+  dew_point_c: dew_point_2m
+  cloud_total_pct: cloud_cover
+  cloud_low_pct: cloud_cover_low
+  cloud_mid_pct: cloud_cover_mid
+  cloud_high_pct: cloud_cover_high
+  precipitation_mm: precipitation
+  snow_water_equivalent_m: snow_water_equivalent
+  visibility_km: visibility
+  wind_u_10m: wind_u_component_10m
+  wind_v_10m: wind_v_component_10m
+  wind_u_100m: wind_u_component_100m
+  wind_v_100m: wind_v_component_100m
+forecast_semantics:
+  forecast_ghi: hourly_mean
+  forecast_bhi: hourly_mean
+  precipitation_mm: hourly_accumulation
+  default: instantaneous
+policy:
+  version: requested-v1
+  plateau:
+    enabled: true
+    minimum_run: 4
+    atol_kw: 0.01
+    rtol: 0.0001
+    native_minutes: 15
+  night:
+    enabled: true
+    timezone: Europe/Rome
+    start: '21:30'
+    end: 05:00
+  nonnegative_forecasts:
+    - forecast_ghi
+    - forecast_bhi
+    - precipitation_mm
+    - snow_water_equivalent_m
+    - visibility_km
+    - cloud_total_pct
+    - cloud_low_pct
+    - cloud_mid_pct
+    - cloud_high_pct
+  interpolation:
+    enabled: true
+    variables:
+      - power
+      - ghi
+    maximum_gap_hours: null
+  evidence_availability: endpoint_and_mask_evidence
+review:
+  exclusions_csv: null
+  excluded_decisions:
+    - exclude
+    - excluded
+    - reject
+  mode: exploratory
+
+# FARM SELECTION: change this field, or pass --farm-id. IDs below come from the declared farm metadata.
+# ${farm_id} is a typed reference resolved after all overrides. auto POI uses selected AC capacity / 1000,
+# unless farms.<id>.poi_import_mw / poi_export_mw or explicit plant limits override that proxy.
+farm_id: 910
+farms:
+  1:
+    ac_capacity_kw: 953.28
+    tracking_type_id: 0
+  345:
+    ac_capacity_kw: 1524.6
+    tracking_type_id: 0
+  901:
+    ac_capacity_kw: 4160.0
+    tracking_type_id: 3
+  910:
+    ac_capacity_kw: 6638.0
+    tracking_type_id: 1
+
+# PREPARATION AND PV CONVERSION: dates/output IDs belong in the experiment override.
+analysis:
+  policy_context: complete_selected_farm_history
+forecast_run:
+  decision_cutoff: null
+  delivery_day: null
+  delivery_timezone: Europe/Rome
+  earlier_complete_vintage_fallback: false
+  output_dir: outputs/pv
+pv:
+  shortwave_interpretation: ghi
+  shortwave_interpretation_status: user_confirmed
+  direct_radiation_interpretation: horizontal_direct
+  direct_radiation_interpretation_status: user_working_assumption
+  fraction_diffuse_enabled: false
+  source_azimuth_positive: east
+  location:
+    latitude: 45.4642
+    longitude: 9.19
+    location_status: proxy
+    acknowledged: true
+  irradiance_redistribution: uniform
+  direct_exceeds_ghi: invalidate
+  ghi_only_decomposition: null
+  low_sun_zenith_deg: 85.0
+  dni_limit_w_m2: 1400.0
+  dni_limit_action: cap_and_flag
+  tracker:
+    assumptions_acknowledged: true
+    axis_tilt: 0.0
+    axis_azimuth: 0.0
+    max_angle: 60.0
+    backtrack: true
+    gcr: 0.35
+  bifacial_front_side_only_enabled: true
+  albedo: 0.2
+  temperature:
+    model: faiman
+    u0: 25.0
+    u1: 6.84
+    wind_height_m: 10
+    wind_as_module_proxy_acknowledged: true
+  dc:
+    model: pvwatts
+    # Assumed AC-nameplate-to-DC-reference ratio; independent of fitted AC scale.
+    reference_conversion_efficiency: 0.96
+    gamma_pdc_per_c: -0.004
+    reference_temperature_c: 25.0
+  output:
+    method: explicit_efficiency
+    # Used only as the DC-to-AC multiplier in explicit-efficiency mode.
+    pv_output_efficiency: 0.96
+    # Set to the offline fitted coefficient when method is calibrated_scale.
+    calibrated_coefficient: null
+    assumption_status: illustrative_unfitted_pv_output_model
+    transformer_efficiency: 1.0
+    transformer_assumption_status: no_measured_transformer_loss_assumed
+    ac_limit_mw: auto
+pv_calibration:
+  start_day: null
+  end_day_exclusive: null
+  delivery_timezone: Europe/Rome
+  minimum_dc_fraction_of_ac_rating: 0.05
+  minimum_pairs: 100
+  validation_fraction: 0.20
+  exclude_policy_adjusted: true
+  output_root: outputs/pv_calibration
+  run_id: null
+forecast:
+  farm_id: ${farm_id}
+  initial_decision_cutoff: null
+  member_policy: one_deterministic_weather_vintage
+  reoptimization_pv_policy: latest_available_forecast_at_each_reoptimization
+  realized_power_policy: use_actual_ac_for_execution_and_boundary_state_when_available
+  realized_power_variable: power
+  realized_power_scale_to_mw: 0.001
+  missing_forecast_policy: zero_only_when_policy_marks_night
+  missing_realized_power_policy: use_frozen_pv_forecast
+  maximum_missing_realized_intervals: 4
+  initialization_cutoff: null
+
+# MARKET CALENDAR: local Europe/Rome gates; DA hourly / IDA quarter-hour native products are separate.
+market:
+  zone: NORD
+  timezone: Europe/Rome
+  valid_from: '2025-10-01'
+  valid_to: '2026-08-31'
+  decision_buffer_minutes: 5.0
+  gates:
+    DA: '12:00'
+    IDA1: '15:00'
+    IDA2: '22:00'
+    IDA3: '10:00'
+  gate_day_offsets:
+    DA: -1
+    IDA1: -1
+    IDA2: -1
+    IDA3: 0
+  result_times:
+    DA: '13:30'
+    IDA1: '15:30'
+    IDA2: '22:30'
+    IDA3: '10:30'
+  delivery_start_times:
+    DA: null
+    IDA1: null
+    IDA2: null
+    IDA3: '12:00'
+  result_provenance:
+    DA: study_assumption_13:30; GME final results not earlier than 13:05; recorded timestamps preferred
+    IDA1: 'GME DTF03 rev13: results by 15:30 local'
+    IDA2: 'GME DTF03 rev13: results by 22:30 local'
+    IDA3: 'GME DTF03 rev13: results by 10:30 local'
+  cancelled_auctions: []
+
+# PHYSICAL ASSETS: BESS powers are AC bus MW, capacity is internal MWh, SOC settings are percentages.
+# The POI auto rule is an explicit illustrative proxy.
+plant:
+  farm_id: ${farm_id}
+  poi_import_mw: auto
+  poi_export_mw: auto
+  assumption_status: illustrative_symmetric_POI_equal_to_DC_nameplate_not_measured
+battery:
+  capacity_mwh: 5.0
+  max_power_mw: 2.5
+  soc_min_percent: 10.0
+  soc_max_percent: 90.0
+  efficiency_convention: combined
+  combined_charge_efficiency: 0.97
+  combined_discharge_efficiency: 0.97
+  self_discharge_per_hour: 0.0
+  assumption_status: illustrative_not_confirmed_battery_specification
+state:
+  initial_soc_percent: 50.0
+  initial_soc_basis: nominal_capacity
+  initial_state_status: study_assumption_not_telemetry
+  terminal_soc_percent: 50.0
+  origin: known_delivery_start_assumption
+
+# DEGRADATION: current throughput economics. Direct-cost and Xu experiments override this block.
+# Set replacement_economics / throughput_lifetime to null to use direct configured coefficients.
+degradation:
+  model: throughput
+  cost_eur_per_mwh_throughput: null
+  replacement_cost_eur: null
+  stress_coefficient: 0.000524
+  stress_exponent: 2.03
+  segment_count: 8
+  assumptions: Generic 2024 BNEF pack-price replacement proxy converted at the 2024-12-31 ECB FX rate; excludes
+    labor, inverter, BOS and salvage. Reference LFP cycle life is 2500 cycles at 80% DoD to 80% residual capacity
+    (Victron Lithium NG). Constant nominal-energy lifetime approximation; no calendar aging or battery-specific
+    lifetime calibration. Cost applies to charge plus discharge AC throughput, normalized using the configured
+    charge/discharge efficiencies.
+  replacement_economics:
+    pack_price_usd_per_kwh: 115.0
+    cost_year: 2024
+    price_scope: global_generic_lithium_ion_pack_average_not_installed_BESS
+    price_source: https://about.bnef.com/insights/commodities/lithium-ion-battery-pack-prices-see-largest-drop-since-2017-falling-to-115-per-kilowatt-hour-bloombergnef/
+    price_publication_date: '2024-12-10'
+    usd_per_eur: 1.0389
+    fx_date: '2024-12-31'
+    fx_source: https://www.ecb.europa.eu/stats/exchange/eurofxref/shared/pdf/2024/12/20241231.pdf
+    additional_replacement_eur_per_kwh: 0.0
+    salvage_fraction: 0.0
+    retrieved_on: '2026-10-19'
+  throughput_lifetime:
+    cycle_life: 2500
+    reference_depth_of_discharge: 0.8
+    end_of_life_capacity_fraction: 0.8
+    source: https://www.victronenergy.com/media/pg/Lithium_NG_battery_51%2C2_V/en/technical-data.html
+    scope: illustrative_LFP_reference_life_applied_to_generic_pack_price
+
+# TRADING AND EXECUTION: current historical study uses exact planned delivery and grid feedback.
+# Legacy synthetic/prepared examples explicitly retain their earlier execution and imbalance settings.
+trading:
+  optimize_imbalances: false
+  imbalance_penalty_eur_per_mwh: 0.0
+  grid_import_fee_eur_per_mwh: 0.0
+  imbalance_limit_mwh: null
+  imbalance_price_eur_per_mwh: 0.0
+  settlement_status: exact_planned_delivery_actual_terna_quarter_hour_settlement_ex_post
+  planned_delivery_balance_resolution_minutes: null
+transaction_fees:
+  mode: none
+  flat_eur_per_mwh: 0.0
+  timezone: Europe/Rome
+  operator_scope: standalone_plant
+  tariffs: []
+  initial_state:
+    as_of: null
+    monthly_volume_mwh: {}
+    cumulative_fees_eur: 0.0
+    provenance: ''
+execution:
+  dispatch_policy: track_committed_grid
+  reoptimize_physical_controls: false
+  comparison_tolerance_mw: 1.0e-06
+  infeasible_auction_policy: error
+  save_infeasibility_diagnostics: false
+settlement:
+  enabled: false
+  database_path: data/api/market.duckdb
+  provider: terna
+  dataset: imbalance_prices
+  zone: NORD
+  native_interval_minutes: 15
+  price_column: price_eur_mwh
+  missing_price_policy: error
+
+# FULL EXPERIMENTS: required dates remain unset. CLI commands explicitly choose the workflow.
+gme_oracle_experiment:
+  study_id: null
+  delivery_day: null
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA:
+      dataset: day_ahead_prices
+      native_interval_minutes: 60
+    IDA1:
+      dataset: ida1_prices
+      native_interval_minutes: 15
+    IDA2:
+      dataset: ida2_prices
+      native_interval_minutes: 15
+    IDA3:
+      dataset: ida3_prices
+      native_interval_minutes: 15
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions: null
+experiment_outputs:
+  root: outputs/full_experiments/gme_oracle
+  run_id: null
+  plots: true
+  save_model_files: true
+  save_dispatch_plans: true
+  save_kpis: true
+  pv_only_baseline: true
+outputs:
+  root: outputs/trading
+  run_id: null
+  plots: true
+  save_model_files: false
+
+# GUROBI: relative gap only. Null numerical tolerances defer to Gurobi; study overrides pin tighter values.
+solver:
+  threads: 10
+  time_limit_seconds: 120.0
+  mip_gap: 0.0001
+  feasibility_tolerance: null
+  integrality_tolerance: null
+  seed: 17
+  output_flag: false
+
+# OPTIONAL BASELINES AND PARTICIPATION: inherited by historical configs as well as new studies.
+reoptimization_baseline:
+  enabled: false
+  freeze_after_auctions: null
+  plots: true
+participation_study:
+  candidate_auctions:
+    - DA
+    - IDA1
+    - IDA2
+    - IDA3
+  required_auctions: []
+  profiles: null
+  delivery_days: []
+  output_root: outputs/participation_studies
+  run_id: null
+  plots: true
+  perfect_foresight_reference: true
+  per_profile_plots: false
+  save_model_files: false
+  profit_tolerance_eur: 1.0e-06
+  resume: false
+
+# PREPARED FORECAST SAFETY: this flag alone does not select a prepared-input workflow.
+optimization:
+  forecast_inputs:
+    allow_retrospective: false
+
+# API ACQUISITION: DuckDB backend, credential environment names only; request lists are experiment-specific.
+api:
+  start: null
+  end: null
+  timezone: Europe/Rome
+  download_order: month_first
+  cache_directory: data/api
+  storage_backend: duckdb
+  database_path: data/api/market.duckdb
+  database_threads: 4
+  output_directory: outputs/api
+  no_data_cache_hours: 24
+  progress_every: 25
+  plots: true
+  terna_authorization_scheme: bearer
+  gme_token_refresh_seconds: 900
+  credentials:
+    entsoe_token_env: ENTSOE_API_TOKEN
+    terna_client_id_env: TERNA_CLIENT_ID
+    terna_client_secret_env: TERNA_CLIENT_SECRET
+    gme_username_env: GME_USERNAME
+    gme_password_env: GME_PASSWORD
+  http:
+    attempts: 3
+    connect_timeout: 10
+    read_timeout: 60
+    retry_delay_seconds: 1
+    minimum_request_interval_seconds: 0.25
+    terna_minimum_request_interval_seconds: null
+    max_retry_delay_seconds: 10
+  requests: []
+gme_workbook_import:
+  retire_hourly_ida_snapshots: false
+
+# PRICE STUDIES AND REPORTING: enable commands explicitly; no data downloads happen when loading YAML.
+price_experiment:
+  provider: entsoe
+  dataset: day_ahead_prices
+  zone: NORD
+  timezone: Europe/Rome
+  cache_directory: data/api/market.duckdb
+  analysis_directory: data/analysis/api_prices
+  output_directory: outputs/price_experiments
+  alpha: 1.0
+  min_training_days: 30
+  holdout_days: 30
+  native_product_regimes:
+    - start: '2025-01-01'
+      end: '2025-10-01'
+      minutes: 60
+    - start: '2025-10-01'
+      end: null
+      minutes: 15
+linear_price_study:
+  auto_common_end: true
+price_scenarios:
+  enabled: true
+price_forward_check:
+  plots: true
+report:
+  compile: true

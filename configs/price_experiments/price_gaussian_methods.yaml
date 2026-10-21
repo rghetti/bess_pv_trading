@@ -1,4 +1,24 @@
 # Select uncertainty settings only from the method comparison's old calibration.
-include: price_gaussian_adaptive.yaml
+include: ../standard.yaml
 price_scenarios:
   study_manifest: outputs/linear_price_studies/fitting_methods/20261016T135338.628446Z/manifest.json
+  output_directory: outputs/price_uncertainty
+  timezone: Europe/Rome
+  covariance_shrinkage: 0.5
+  minimum_complete_days: 10
+  sample_count: 100
+  seed: 41
+  adaptive:
+    window_days_candidates:
+      - 14
+      - 28
+      - 42
+    covariance_shrinkage_candidates:
+      - 0.1
+      - 0.3
+      - 0.5
+    inner_validation_days: 14
+    minimum_inner_scored_days: 10
+    minimum_complete_days: 10
+    selection_metric: joint_nll
+farm_id: 1

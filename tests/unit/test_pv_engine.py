@@ -4,15 +4,14 @@ from copy import deepcopy
 import numpy as np
 import pandas as pd
 import pytest
-import yaml
+from bess_pv_trading.config import load_config
 
 from bess_pv_trading.data import FarmMetadata, ForecastBundle, ObservationBundle, prepare_observations
 from bess_pv_trading.forecasting.pv import fit_dc_to_ac, forecast_pv, source_azimuth_to_pvlib
 
 
 def settings():
-    with open("configs/farms_nord.yaml") as stream:
-        return yaml.safe_load(stream)["pv"]
+    return load_config("configs/farms_nord.yaml")["pv"]
 
 
 def farm(tracking=0, capacity=1000, pv_type=777):
@@ -42,7 +41,7 @@ def test_pv_dc_scaling_ac_conversion_wind_and_raw_preservation():
     assert first.values.wind_speed_m_s.tolist() == [5.0] * 4
     assert (first.values.cell_temperature_c > 25).all()
     assert second.values.modeled_dc_mw.tolist() == pytest.approx(first.values.modeled_dc_mw * 2)
-    assert first.values.pv_ac_mw.tolist() == pytest.approx(first.values.modeled_dc_mw * 0.96)
+    assert first.values.pv_ac_mw.tolist() == pytest.approx(first.values.modeled_dc_mw * settings()["output"]["pv_output_efficiency"])
     assert not first.provenance["bess_converter_efficiency_applied"]
     assert first.provenance["unknown_pv_type_id"] == "retained_without_inferred_electrical_parameters"
     transformer_loss = settings()
@@ -50,7 +49,27 @@ def test_pv_dc_scaling_ac_conversion_wind_and_raw_preservation():
     transformer_loss["output"]["transformer_assumption_status"] = "test_configured_loss"
     transformed = forecast_pv(source, farm(), transformer_loss, {"enabled": False})
     assert transformed.values.pv_ac_mw.tolist() == pytest.approx(
-        transformed.values.modeled_dc_mw * 0.96 * 0.9)
+        transformed.values.modeled_dc_mw * transformer_loss["output"]["pv_output_efficiency"] * transformer_loss["output"]["transformer_efficiency"])
+
+
+def test_dc_reference_stays_fixed_when_fitted_output_coefficient_changes():
+    explicit = settings()
+    default = forecast_pv(weather(), farm(), explicit, {"enabled": False})
+    calibrated = deepcopy(explicit)
+    calibrated["output"]["method"] = "calibrated_scale"
+    calibrated["output"]["calibrated_coefficient"] = explicit["output"]["pv_output_efficiency"] / 2
+    result = forecast_pv(weather(), farm(), calibrated, {"enabled": False})
+    assert result.values.modeled_dc_mw.tolist() == pytest.approx(default.values.modeled_dc_mw)
+    assert result.values.pv_ac_mw.tolist() == pytest.approx(default.values.pv_ac_mw / 2)
+    assert result.provenance["dc_reference_efficiency"] == explicit["dc"]["reference_conversion_efficiency"]
+
+
+def test_through_origin_mse_fit():
+    from bess_pv_trading.forecasting.pv_calibration import fit_scale
+    reference = settings()["output"]["pv_output_efficiency"]
+    dc = np.array([1.0, 2.0, 3.0])
+    measured = reference * dc
+    assert fit_scale(dc, measured) == pytest.approx(reference)
 
 
 def test_horizontal_direct_is_converted_to_dni_and_low_sun_bounded():
@@ -116,8 +135,8 @@ def test_measured_power_ac_and_fit_cutoff_are_not_bess_conversion():
     assert fit.ac_per_dc == pytest.approx(0.9) and fit.training_samples == 4
     assert bundle.frame.treated_value.iloc[0] == 900
     config = settings()
-    config["output"] = {"method": "calibrated_scale", "transformer_efficiency": 1.0,
-                         "transformer_assumption_status": "unit_test_no_loss"}
+    config["output"]["method"] = "calibrated_scale"
+    config["output"]["transformer_assumption_status"] = "unit_test_no_loss"
     with pytest.raises(ValueError, match="fit available"):
         forecast_pv(weather(), farm(), config, {"enabled": False}, fit)
 

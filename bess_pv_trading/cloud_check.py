@@ -67,8 +67,8 @@ def attach_cloud_context(dataset: xr.Dataset, context: pd.DataFrame, config: dic
     contiguous = grouped["time_utc"].diff().eq(QUARTER)
     result["cycle_changed"] = result["forecast_cycle_time_utc"].ne(grouped["forecast_cycle_time_utc"].shift())
     result["rolling_cloud_change_pct"] = grouped["cloud_cover_midpoint_pct"].diff().where(contiguous)
-    result["power_fraction"] = result["power_dc_kw"] / result["total_power_dc_kw"]
-    result["power_change_fraction"] = grouped["power_dc_kw"].diff().where(contiguous) / result["total_power_dc_kw"]
+    result["power_fraction"] = result["power_ac_kw"] / result["total_power_ac_kw"]
+    result["power_change_fraction"] = grouped["power_ac_kw"].diff().where(contiguous) / result["total_power_ac_kw"]
     result["ghi_change_w_m2"] = grouped["ghi_w_m2"].diff().where(contiguous)
     result["forecast_shortwave_change_w_m2"] = grouped["forecast_shortwave_w_m2"].diff().where(contiguous)
     settings = config["cloud_analysis"]
@@ -85,10 +85,10 @@ def attach_cloud_context(dataset: xr.Dataset, context: pd.DataFrame, config: dic
     result["drop_eligible"] = result["valid_power_pair"] & (result["activity_evidence"] | previous_activity)
     result["previous_power_fraction"] = grouped["power_fraction"].shift().where(contiguous)
     result["power_drop"] = result["drop_eligible"] & result["power_change_fraction"].le(-config["diagnostics"]["thresholds"]["abrupt_power_fraction"])
-    next_change = grouped["power_dc_kw"].shift(-1) - result["power_dc_kw"]
+    next_change = grouped["power_ac_kw"].shift(-1) - result["power_ac_kw"]
     next_contiguous = (grouped["time_utc"].shift(-1) - result["time_utc"]).eq(QUARTER)
     recovery = config["cloud_analysis"]["recovery_fraction_of_drop"]
-    result["quick_recovery"] = next_contiguous & next_change.ge(-result["power_change_fraction"] * result["total_power_dc_kw"] * recovery)
+    result["quick_recovery"] = next_contiguous & next_change.ge(-result["power_change_fraction"] * result["total_power_ac_kw"] * recovery)
     result["next_ghi_change_w_m2"] = (grouped["ghi_w_m2"].shift(-1) - result["ghi_w_m2"]).where(next_contiguous)
     return result
 
@@ -271,7 +271,7 @@ def study_event_catalog(context: pd.DataFrame, portfolio: pd.DataFrame, events: 
     ordered = _prepare_context(context)
     eligible_times = portfolio.loc[portfolio["shared_eligible"], "time_utc"]
     threshold = config["diagnostics"]["thresholds"]["positive_power_fraction"]
-    eligible = ordered["time_utc"].isin(eligible_times) & ordered["ghi_w_m2"].eq(0) & ordered["power_dc_kw"].gt(ordered["total_power_dc_kw"] * threshold)
+    eligible = ordered["time_utc"].isin(eligible_times) & ordered["ghi_w_m2"].eq(0) & ordered["power_ac_kw"].gt(ordered["total_power_ac_kw"] * threshold)
     rows = _shared_ghi_episodes(ordered, eligible, config["diagnostics"]["thresholds"]["min_shared_farms"])
     for row in rows:
         row["category"] = "shared_zero_ghi_candidate"
@@ -311,17 +311,17 @@ def _report(context: pd.DataFrame, portfolio: pd.DataFrame, bins: pd.DataFrame, 
     threshold = config["diagnostics"]["thresholds"]["abrupt_power_fraction"]
     selected_drop = drops.loc[drops["farm_id"].astype(str).eq("all") & drops["drop_capacity_fraction"].eq(threshold)]
     key_drop = selected_drop.iloc[0] if len(selected_drop) else None
-    key_text = (f"There are **{int(key_drop.drop_intervals):,}** power drops of at least **{100 * threshold:g}% of DC capacity** per quarter-hour in the activity-evidence cohort. **{int(key_drop.stable_ghi_drop_intervals):,}** have |ΔGHI| ≤ {config['cloud_analysis']['stable_ghi_change_w_m2']:g} W/m²; **{int(key_drop.stable_ghi_quick_recovery_intervals):,}** also recover at least {100 * config['cloud_analysis']['recovery_fraction_of_drop']:g}% of the lost power in the next interval while GHI remains within that tolerance on both sides. These counts justify review without identifying a cause." if key_drop is not None else "Power-drop thresholds and their sensitivity are reported below.")
+    key_text = (f"There are **{int(key_drop.drop_intervals):,}** power drops of at least **{100 * threshold:g}% of AC nameplate capacity** per quarter-hour in the activity-evidence cohort. **{int(key_drop.stable_ghi_drop_intervals):,}** have |ΔGHI| ≤ {config['cloud_analysis']['stable_ghi_change_w_m2']:g} W/m²; **{int(key_drop.stable_ghi_quick_recovery_intervals):,}** also recover at least {100 * config['cloud_analysis']['recovery_fraction_of_drop']:g}% of the lost power in the next interval while GHI remains within that tolerance on both sides. These counts justify review without identifying a cause." if key_drop is not None else "Power-drop thresholds and their sensitivity are reported below.")
     zero_context = context.loc[context["all_zero"]]
     largest_output = zero_context.sort_values("power_fraction", ascending=False).groupby("farm_id", sort=True).head(1)
-    example_columns = ["farm_id", "time_utc", "power_dc_kw", "power_fraction", "ghi_w_m2", "cloud_cover_midpoint_pct", "forecast_shortwave_w_m2"]
+    example_columns = ["farm_id", "time_utc", "power_ac_kw", "power_fraction", "ghi_w_m2", "cloud_cover_midpoint_pct", "forecast_shortwave_w_m2"]
     lines = ["# Cloud cover, shared GHI zeros and sudden PV drops", "",
              f"Shared zero-GHI patterns occur at **{len(shared):,} unique quarter-hours** out of **{len(eligible):,}** with irradiance/production evidence and at least two observed GHI values. Mean forecast cloud cover is **{shared.cloud_cover_mean_pct.mean():.2f}%** during these periods, versus **{control.cloud_cover_mean_pct.mean():.2f}%** at other eligible times.", "",
              f"All farms report exactly zero GHI at **{len(strict)}** eligible timestamps. Mean cloud cover is **{strict.cloud_cover_mean_pct.mean():.2f}%**, with a minimum of **{strict.cloud_cover_mean_pct.min():.2f}%**. These are counts of timestamps, not independent weather events.", "",
              key_text, "",
              "## Alignment and interpretation", "",
              "Cloud variables in the Zarr are instantaneous forecasts in percent. Each quarter-hour uses its existing latest operationally available cycle (publication lag from YAML). Cloud values are interpolated between hourly targets **within that same cycle** to the historical interval midpoint. This interpolates forecasts, not measurements. The endpoint-cloud columns are retained for sensitivity checks. Both ends of each 15/60-minute cloud tendency also use the same cycle, so a new forecast issue cannot create an artificial cloud movement.", "",
-             f"Historical GHI/power remain the original interval means. The primary comparison includes timestamps with recorded GHI ≥{config['cloud_analysis']['activity_ghi_w_m2']:g} W/m², forecast shortwave ≥{config['cloud_analysis']['activity_forecast_shortwave_w_m2']:g} W/m², or power ≥{100 * config['cloud_analysis']['activity_power_fraction']:g}% of DC capacity in at least one farm. This is an evidence-based reporting cohort, **not a declaration of actual daylight or data validity**. Production-only activation can itself arise from a power defect. Shared-zero patterns require at least two farms with GHI exactly zero and power above the configured positive-power fraction. All-farm patterns require all GHI values observed.", "",
+             f"Historical GHI/power remain the original interval means. The primary comparison includes timestamps with recorded GHI ≥{config['cloud_analysis']['activity_ghi_w_m2']:g} W/m², forecast shortwave ≥{config['cloud_analysis']['activity_forecast_shortwave_w_m2']:g} W/m², or power ≥{100 * config['cloud_analysis']['activity_power_fraction']:g}% of AC nameplate capacity in at least one farm. This is an evidence-based reporting cohort, **not a declaration of actual daylight or data validity**. Production-only activation can itself arise from a power defect. Shared-zero patterns require at least two farms with GHI exactly zero and power above the configured positive-power fraction. All-farm patterns require all GHI values observed.", "",
              "**Milan solar elevation is reference information only.** It does not determine the primary cohort or a cleaning verdict. The sensitivity table shows the effect of using that uncertain proxy as a comparison. Actual farm coordinates are needed before making plant-specific solar geometry claims.", "",
              "Cloud cover measures spatial coverage, and attenuation also depends on cloud water/ice and other properties. See [ECMWF cloud cover](https://codes.ecmwf.int/grib/param-db/164) and [atmospheric physics](https://www.ecmwf.int/en/research/modelling-and-prediction/atmospheric-physics). [Total shortwave](https://codes.ecmwf.int/grib/param-db/169) includes direct and diffuse components. These model forecasts support a weather hypothesis but do not observe the actual cloud over an anonymous farm.", "",
              "## Shared GHI zeros by cloud cover", "", _markdown_table(bins), "",
@@ -334,7 +334,7 @@ def _report(context: pd.DataFrame, portfolio: pd.DataFrame, bins: pd.DataFrame, 
              "Controls are weighted by the number of event timestamps in each matching stratum. This reduces calendar/time-of-day confounding without geographic coordinates; it does not establish causation.", "", _markdown_table(matched), "",
              "A clock hour is counted once if any of its eligible quarters has the event:", "", _markdown_table(hourly), "",
              "## Sudden power drops", "",
-             "Drops are measured in fractions of installed DC capacity per 15 minutes. A contiguous pair enters the primary cohort if either interval has recorded/forecast irradiance or production evidence. The opportunity-adjusted rate restricts the denominator to intervals whose preceding output was large enough for that drop. No solar-position exclusion is applied. Stable GHI and falling-GHI counts describe evidence; they assign no fault verdict.", "",
+             "Drops are measured in fractions of installed AC nameplate capacity per 15 minutes. A contiguous pair enters the primary cohort if either interval has recorded/forecast irradiance or production evidence. The opportunity-adjusted rate restricts the denominator to intervals whose preceding output was large enough for that drop. No solar-position exclusion is applied. Stable GHI and falling-GHI counts describe evidence; they assign no fault verdict.", "",
              _markdown_table(drops), "", "### Cloud bins with feasible preceding output", "",
              _markdown_table(drop_bins.loc[drop_bins["farm_id"].astype(str).eq("all")]), "", "## Correlations", "",
              "A binary event versus cloud correlation is point-biserial (Pearson with a 0/1 event indicator). Cloud level versus production and cloud **changes** versus power **changes** answer different questions. Serial dependence, hourly forecast resolution, forecast error and proxy coordinates limit interpretation; no significance tests or causal claims are made.", "",
@@ -343,8 +343,8 @@ def _report(context: pd.DataFrame, portfolio: pd.DataFrame, bins: pd.DataFrame, 
              _markdown_table(event_summary.sort_values("min_power_change_fraction").head(12), ["event_id", "category", "farm_id", "start_utc", "mean_cloud_cover_pct", "min_power_change_fraction", "mean_ghi_change_w_m2"]), "",
              "Every event and its weather context is in events_with_cloud.csv; plots are grouped by farm and event date. Shared episodes are rebuilt from the primary evidence cohort without a solar filter; their IDs are study-specific. Exact zero GHI under heavy forecast cloud can reflect very low irradiance, satellite retrieval/threshold behavior, or another data process. Power drops under stable GHI merit further review, while coarse cloud forecasts cannot rule out a local transient. No raw values or cleaning decisions were changed.", "",
              "## How to read the plots", "",
-             "Event windows have four panels: recorded DC power (with installed capacity dotted); recorded GHI plus available hourly shortwave forecast; forecast total/low/middle/high cloud cover; and Milan solar elevation **for reference only**. The pink span marks the candidate episode from its first interval start to its exclusive end. It does not mark a confirmed fault. Vertical dotted lines mark changes of forecast vintage. Power/GHI are plotted at historical interval starts; the cloud estimate represents the interval midpoint.", "",
-             "The association figure compares cloud-cover distributions (each group normalized to 100%) and the frequency of zero-GHI patterns within each cloud bin. The scatter figure uses one point per large power-drop interval: horizontal is same-vintage forecast-cloud change; vertical is power change as percent of DC capacity. Blue denotes |ΔGHI| within the configured tolerance, orange falling GHI beyond it, purple rising/missing GHI, and hollow black circles indicate a change of available forecast cycle. These colors describe observed co-movement, not causes or cleaning decisions.", ""]
+             "Event windows have four panels: recorded AC power (with installed capacity dotted); recorded GHI plus available hourly shortwave forecast; forecast total/low/middle/high cloud cover; and Milan solar elevation **for reference only**. The pink span marks the candidate episode from its first interval start to its exclusive end. It does not mark a confirmed fault. Vertical dotted lines mark changes of forecast vintage. Power/GHI are plotted at historical interval starts; the cloud estimate represents the interval midpoint.", "",
+             "The association figure compares cloud-cover distributions (each group normalized to 100%) and the frequency of zero-GHI patterns within each cloud bin. The scatter figure uses one point per large power-drop interval: horizontal is same-vintage forecast-cloud change; vertical is power change as percent of AC nameplate. Blue denotes |ΔGHI| within the configured tolerance, orange falling GHI beyond it, purple rising/missing GHI, and hollow black circles indicate a change of available forecast cycle. These colors describe observed co-movement, not causes or cleaning decisions.", ""]
     return "\n".join(lines)
 
 
