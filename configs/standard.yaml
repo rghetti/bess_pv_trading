@@ -336,6 +336,8 @@ gme_oracle_experiment:
       native_interval_minutes: 15
   missing_auction_policy: skip_if_no_products_fail_if_partial
   price_information: perfect_foresight_actual_clearing_curves
+  # integrated plans all open auctions; current_auction_only omits later trades/revenue.
+  auction_planning_mode: integrated
   decision_resolution_minutes: 15
   price_display_resolution_minutes: 15
   participating_auctions: null
@@ -381,6 +383,8 @@ participation_study:
   run_id: null
   plots: true
   perfect_foresight_reference: true
+  # Add one sequential all-auction baseline alongside the integrated profiles.
+  sequential_all_auctions_baseline: false
   per_profile_plots: false
   save_model_files: false
   profit_tolerance_eur: 1.0e-06

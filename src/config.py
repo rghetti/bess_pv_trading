@@ -166,6 +166,8 @@ def validate_config(config: dict[str, Any]) -> None:
     if not isinstance(execution.get("save_infeasibility_diagnostics", False), bool):
         raise ConfigurationError("execution.save_infeasibility_diagnostics must be a YAML boolean")
     from .participation import auction_subset, participation_profiles
+    if config.get("gme_oracle_experiment", {}).get("auction_planning_mode", "integrated") not in {"integrated", "current_auction_only"}:
+        raise ConfigurationError("gme_oracle_experiment.auction_planning_mode must be integrated or current_auction_only")
     participation = config.get("gme_oracle_experiment", {}).get("participating_auctions")
     if participation is not None:
         auction_subset(participation, "gme_oracle_experiment.participating_auctions")
@@ -176,7 +178,7 @@ def validate_config(config: dict[str, Any]) -> None:
         participation_profiles(study)
         if any(not isinstance(study.get(key, default), bool) for key, default in
                 (("plots", True), ("per_profile_plots", False), ("save_model_files", False),
-                 ("perfect_foresight_reference", True), ("resume", False))):
+                 ("perfect_foresight_reference", True), ("sequential_all_auctions_baseline", False), ("resume", False))):
             raise ConfigurationError("Participation study plot/model switches must be YAML booleans")
     baseline = config.get("reoptimization_baseline", {})
     if not isinstance(baseline, dict) or set(baseline) - {"enabled", "freeze_after_auctions", "plots"}:

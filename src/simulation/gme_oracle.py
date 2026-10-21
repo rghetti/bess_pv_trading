@@ -858,6 +858,8 @@ def _soc_energy_targets(state: Mapping[str, Any], battery: BatteryParameters
 def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     """Run the single-day GME price oracle with causally available PV updates."""
     study = config["gme_oracle_experiment"]
+    if study.get("auction_planning_mode", "integrated") not in {"integrated", "current_auction_only"}:
+        raise ValueError("Unknown auction_planning_mode")
     study["participating_auctions"] = list(auction_subset(study.get("participating_auctions")
         if study.get("participating_auctions") is not None else list(study["auction_datasets"]),
         "gme_oracle_experiment.participating_auctions"))
@@ -914,6 +916,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     fixture = {"calendar": calendar, "grid": grid, "schedule": schedule, "pv": forecast,
         "realized_pv": realized_pv, "base": base_prices, "plant": plant,
         "tree": tree, "scenarios": scenarios, "realized": 0, "actual_prices": actual_prices,
+        "auction_planning_mode": study.get("auction_planning_mode", "integrated"),
         "kwargs": kwargs, "forecast_available_at": pv_bundle.available_at,
         "pv_forecast_vintage": pv_bundle.forecast_vintage, "pv_forecast_policy": pv_policy,
         "execution_pv_assumption": "measured AC generation after each interval closes; frozen forecast fills only configured missing measured intervals"}
@@ -1128,7 +1131,11 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         "pv_installed_ac_mw": pv_provenance["installed_ac_capacity_mw"],
         "pv_tracking_type_id": pv_provenance["farm_metadata"]["tracking_type_id"],
         "market_zone": study["zone"], "strategy": "perfect_price_foresight_oracle_not_executable",
+        "auction_planning_mode": study.get("auction_planning_mode", "integrated"),
         "forecast_member_count": pv_provenance["forecast_member_count"],
+        "auction_model_structure": [{key: item.get(key) for key in
+            ("current_auction", "status", "modeled_auctions", "trade_variable_count", "trade_variable_counts_by_auction")}
+            for item in decision_data],
         "forecast_vintage_utc": pv_provenance["forecast_vintage_utc"],
         "forecast_available_at_utc": pv_provenance["forecast_available_at_utc"],
         "forecast_initial_cutoff_utc": pv_provenance["forecast_cutoff_utc"],
@@ -1275,6 +1282,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     manifest = {"status": "complete", "study_id": study["study_id"], "run_id": run_id,
         "study_date": day, "code_revision": revision, "output_dir": str(day_output),
         "strategy": "perfect_price_foresight_oracle_not_executable", "scenario_count": 1,
+        "auction_planning_mode": study.get("auction_planning_mode", "integrated"),
         "active_auctions": list(actual_prices), "skipped_auctions": skipped,
         "participating_auctions": list(study.get("participating_auctions", actual_prices)),
         "price_provenance": price_provenance, "pv_provenance": pv_provenance,

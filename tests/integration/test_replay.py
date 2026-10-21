@@ -121,6 +121,7 @@ def test_all_four_auction_submissions_clear_once_and_reconcile(tmp_path, monkeyp
         config["decision_resolution_minutes"] = policy["decision_resolution_minutes"]
         config["native_interval_minutes_by_auction"] = policy["native_interval_minutes_by_auction"]
     fixture = synthetic_inputs(config)
+    fixture["auction_planning_mode"] = policy.get("auction_planning_mode", "integrated")
     if "native_interval_minutes_by_auction" in policy:
         from bess_pv_trading.optimization.market_regime import market_product_groups
         # Build native realized curves before reducing the test horizon. The

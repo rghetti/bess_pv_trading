@@ -920,6 +920,35 @@ residual objective when forming an initial whole-day expected profit; the residu
 model objective is separately retained. Actual whole-day profit already includes
 all executed prefix costs through the ordinary financial accounting.
 
+\subsection{Sequential current-auction-only baseline}
+
+At the decision for auction $a$, integrated planning includes the open auctions
+$\mathcal A_a$. The configurable sequential baseline replaces this set by
+$\{a\}$. Let $Q_t^{<a}$ denote all previously submitted, fixed quantities,
+including unpriced commitments. Its only free market quantity is $q_{a,t}$:
+\begin{equation}
+ Q_t=Q_t^{<a}+q_{a,t},\qquad
+ \max\ \sum_t \lambda_{a,t}q_{a,t}
+       -C_{\mathrm{deg}}-C_{\mathrm{import}}-C_{\mathrm{fees}}.
+\end{equation}
+The existing physical balances link $Q_t$ to grid delivery. The full remaining
+delivery horizon retains charge/discharge, curtailment, SOC transitions, native
+product equalities, POI limits and the configured terminal target. No later
+auction trade or revenue appears. Sunk earlier cash flow does not affect the
+choice. Each next gate receives updated PV, actual carried battery state and
+immutable prior submissions. Under the price-oracle convention, the current
+auction's actual clearing curve is supplied to that solve.
+
+\path{gme_oracle_experiment.auction_planning_mode} selects
+\texttt{integrated} (default) or \texttt{current\_auction\_only}.
+\path{participation_study.sequential_all_auctions_baseline} optionally adds
+one all-auction sequential result beside the integrated participation profiles.
+The January study refresh comprises 465 integrated cases and 31 sequential
+cases. Matched daily realized profits, their paired differences, model sizes,
+forecast inputs and fallback decisions are saved. A later infeasible sequential
+solve retains prior physical commands and submits zero new trades; it has no
+previously planned future order to submit.
+
 \subsection{Operational fallback after an infeasible auction decision}
 
 Exact planned delivery does not guarantee feasible recourse after forecast

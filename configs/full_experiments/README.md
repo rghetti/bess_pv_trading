@@ -208,7 +208,7 @@ only. Output CSVs, JSON and summary plots are separate from each profile's
 replay artifacts. No download is triggered by either participation workflow.
 
 `gme_participation_2025-01.yaml` extends the same experiment to all 31 January
-2025 delivery days (465 profile/day cases). Days independently reset configured
+2025 delivery days (465 integrated profile/day cases plus 31 sequential all-auction cases). Days independently reset configured
 initial SOC and fee state; this is not a rolling multi-day simulation. A fully
 cancelled selected profile keeps its day with zero trades/auction solves and the
 zero-position physical feedback policy, including executed costs. Its initial
@@ -225,6 +225,16 @@ are retained, including those cases in each profile's common-date average.
 Monthly `resume: true` verifies the unchanged configuration and saved input/profit
 checkpoints, reuses completed cases, and retains incomplete children under
 `diagnostics/incomplete_runs/` before rerunning them.
+
+The monthly configuration enables `participation_study.sequential_all_auctions_baseline`.
+The default remains false. This baseline uses `gme_oracle_experiment.auction_planning_mode:
+current_auction_only` rather than `integrated`: only the closing auction has free
+trade variables, with earlier commitments fixed and no later auction revenue.
+Battery dispatch is still planned through delivery end. A later infeasibility
+retains prior dispatch commands and submits zero new trades. Sequential results
+and paired profit differences are saved separately, and the comparison chart
+adds an orange row immediately after integrated all-auction planning. The refreshed
+monthly output ID keeps earlier study results intact.
 
 `participation_study.perfect_foresight_reference` defaults to `true` and adds a
 gold reference row above the ranked participation profiles. It uses the mean

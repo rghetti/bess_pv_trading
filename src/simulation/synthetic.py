@@ -93,6 +93,10 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
         raise FileExistsError(f"Replay output exists; choose a fresh destination: {destination}")
     destination.mkdir(parents=True, exist_ok=False)
     schedule, actual_prices = fixture["schedule"], fixture["actual_prices"]
+    planning_mode = fixture.get("auction_planning_mode", "integrated")
+    current_only = planning_mode == "current_auction_only" or strategy == "deterministic_sequential"
+    if planning_mode not in {"integrated", "current_auction_only"}:
+        raise ValueError(f"Unsupported auction planning mode {planning_mode}")
     state = PhysicalState(full_grid.starts[0], config["state"]["initial_energy_mwh"], origin=config["state"]["origin"],
         cycle_segment_energy_mwh=config["state"].get("cycle_segment_energy_mwh"))
     fees = transaction_fees_from_config(config)
@@ -106,6 +110,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
     infeasible_decisions: list[dict[str, Any]] = []
     publications: list[dict[str, Any]] = []
     plan_snapshots: dict[str, list[dict[str, Any]]] = {}
+    forecast_input_snapshots: list[dict[str, Any]] = []
     control_plan: dict[int, tuple[float, float, float]] = {}
     control_plan_details: dict[int, dict] = {}
     execution_details: dict[int, dict] = {}
@@ -191,6 +196,14 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
                     charge_mw=charge, discharge_mw=discharge,
                     origin="projected_boundary_of_committed_command")
         residual = DeliveryGrid(full_grid.interval_ids[first:], full_grid.starts[first:], full_grid.ends[first:])
+        # Save information supplied to every attempt, including failed solves;
+        # a fallback's retained old plan is not the newly available PV input.
+        if trigger == "auction_submission":
+            update_first = int(pd.DatetimeIndex(full_grid.starts).searchsorted(state.timestamp))
+            forecast_input_snapshots.extend({"auction": current_auction, "cutoff_utc": cutoff.isoformat(),
+                "interval_start_utc": pd.Timestamp(full_grid.starts[t]).isoformat(),
+                "pv_ac_forecast_mw": float(current_forecast[t]), **pv_forecast_metadata}
+                for t in range(update_first, len(full_grid.interval_ids)))
         kwargs = dict(fixture["kwargs"])
         kwargs.update(base_prices=fixture["base"][first:],
             known_prices={key: value[first:] for key, value in known.items()}, decision_cutoff=cutoff)
@@ -201,15 +214,21 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             probabilities = scenario_settings.get("branch_probabilities", (1.0,))
             mean_innovation = float(np.dot(values, probabilities))
             kwargs.update(branch_values=(mean_innovation,), branch_probabilities=(1.0,))
-        if strategy == "deterministic_sequential":
+        if current_only:
             selected_schedule = tuple(event for event in schedule if event.auction == current_auction)
         if strategy == "oracle":
             kwargs["branch_values"] = (0.0,)
-            auction_order = [event.auction for event in schedule]
-            first_auction = auction_order[0]
-            kwargs["base_prices"] = actual_prices[first_auction][first:]
-            kwargs["stage_spreads"] = {current: (actual_prices[current]-actual_prices[previous])[first:]
-                       for previous,current in zip(auction_order,auction_order[1:])}
+            if current_only:
+                # Use this auction's absolute oracle curve, independent of all
+                # later curves. Earlier commitments enter through the ledger.
+                kwargs.update(base_prices=actual_prices[current_auction][first:] if current_auction else np.zeros(len(residual.interval_ids)),
+                    stage_spreads={}, known_prices={})
+            else:
+                auction_order = [event.auction for event in schedule]
+                first_auction = auction_order[0]
+                kwargs["base_prices"] = actual_prices[first_auction][first:]
+                kwargs["stage_spreads"] = {current: (actual_prices[current]-actual_prices[previous])[first:]
+                           for previous,current in zip(auction_order,auction_order[1:])}
         bundle, tree = synthetic_price_tree(residual, current_forecast[first:], selected_schedule, **kwargs)
         masks = {a: tuple((t+first) in next(e.eligible_intervals for e in schedule if e.auction==a)
                          for t in range(len(residual.interval_ids))) for a in tree.bid_nodes}
@@ -233,6 +252,11 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
                 if auction in masks}, transaction_fees=fees,
             auction_submission_times={event.auction: event.submission_at for event in schedule})
         built = build_model(inputs)
+        planning_diagnostics = {"auction_planning_mode": "current_auction_only" if current_only else "integrated",
+            "modeled_auctions": list(masks),
+            "trade_variable_counts_by_auction": {auction: sum(key[0] == auction for key in built.variables["trades"])
+                for auction in masks}, "trade_variable_count": len(built.variables["trades"]),
+            "fixed_commitment_auctions": list(submitted)}
         try:
             model_settings = config["solver"]
             model_file = None
@@ -252,7 +276,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
                 raise InfeasibleAuctionPlan(f"{strategy} at {cutoff}: {result.status}: {result.message}",
                     {"cutoff": cutoff.isoformat(), "current_auction": current_auction,
                      "solve_trigger": trigger, "status": result.status,
-                     **pv_forecast_metadata, **result.diagnostics})
+                     **pv_forecast_metadata, **planning_diagnostics, **result.diagnostics})
             raise RuntimeError(f"{strategy} at {cutoff}: {result.status}: {result.message}")
         validation = validate_solution(inputs, result)
         if not validation.valid:
@@ -265,7 +289,8 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             "model_file":str(model_file) if model_file is not None else None,
             "known_auctions":list(known),
             "known_prices_fixed":{auction:bool(np.all(bundle.auction_prices_eur_per_mwh[auction] == curve[first:]))
-                                  for auction,curve in known.items()},
+                                  for auction,curve in known.items() if auction in bundle.auction_prices_eur_per_mwh},
+            **planning_diagnostics,
             "state_origin":boundary.origin,"state_timestamp":str(boundary.timestamp),
             "pending_position_abs_mwh":sum(abs(value) for value in pending_positions),
             "pre_horizon_degradation_eur": boundary.cumulative_degradation_eur,
@@ -307,7 +332,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             products = [full_grid.interval_ids[index] for index in event.payload.eligible_intervals]
             if any(product not in by_product for product in products):
                 raise RuntimeError("Previous-plan fallback is missing eligible auction products") from error
-            submitted[auction] = {product: float(by_product[product][trade_column]) for product in products}
+            submitted[auction] = {product: (0.0 if current_only else float(by_product[product][trade_column])) for product in products}
             next_fee_state, charged, _ = account_trade_fees(fees,
                 market.transaction_fee_state, [{"auction": auction, "submission_time": event.at,
                     "interval_id": product, "quantity_mwh": quantity, "trade_id": f"{auction}:{product}"}
@@ -331,6 +356,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
                 control_plan_details[index] = row
             plan_snapshots[auction] = snapshot
             infeasible_decisions.append({**error.diagnostics, "fallback_policy": "previous_plan",
+                "fallback_order_policy": "zero_new_trades" if current_only else "previous_planned_trades",
                 "plan_source_auction": previous_auction,
                 "submitted_gross_mwh": sum(abs(quantity) for quantity in submitted[auction].values())})
             return
@@ -524,6 +550,9 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
     pd.DataFrame(ledger_rows, columns=None if ledger_rows else ledger_columns).to_csv(destination/"ledger.csv",index=False)
     write_json(destination/"event_trace.json",engine.trace)
     write_json(destination/"solves.json",solves)
+    pd.DataFrame(forecast_input_snapshots, columns=None if forecast_input_snapshots else
+        ["auction", "cutoff_utc", "interval_start_utc", "pv_ac_forecast_mw"]).to_csv(
+        destination/"pv_forecast_inputs.csv", index=False)
     write_json(destination/"price_publications.json",publications)
     write_json(destination/"infeasible_auction_decisions.json",infeasible_decisions)
     auction_cash = {a:sum(trade.cashflow_eur for trade in market.accepted_trades if trade.auction==a)
@@ -537,6 +566,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
     initial_expected_profit = (first_solve["objective_eur"]
         - first_solve["pre_horizon_degradation_eur"] - first_solve["pre_horizon_import_fee_eur"]) if solves else None
     summary = {"strategy":strategy,"executable":strategy!="oracle","components":components,
+        "auction_planning_mode": "current_auction_only" if current_only else "integrated",
         **realized_settlement,
         "transaction_fees": fee_summary,
         "initial_expected_transaction_fees_eur": first_solve.get("expected_transaction_fees_eur", 0.0),

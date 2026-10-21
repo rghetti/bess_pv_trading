@@ -17,6 +17,8 @@ from ..participation import AUCTION_ORDER, auction_subset, participation_profile
 from .gme_oracle import json_load, run_gme_oracle_experiment
 from .synthetic import json_default, write_json
 
+SEQUENTIAL_PROFILE = "Sequential (all auctions)"
+
 
 def profile_input_checksums(output):
     """Fingerprint common time grid, initial weather/PV and actual market curves."""
@@ -32,7 +34,53 @@ def profile_input_checksums(output):
             values = prices[auction].to_numpy(dtype="<f8")
             payload = np.isfinite(values).tobytes() + np.nan_to_num(values).tobytes()
             checksums[f"actual_prices_{auction}"] = hashlib.sha256(payload).hexdigest()
+    forecast_path = output / "csv/oracle/pv_forecast_inputs.csv"
+    if forecast_path.exists():
+        forecasts = pd.read_csv(forecast_path)
+        for auction, frame in forecasts.groupby("auction"):
+            columns = ["cutoff_utc", "interval_start_utc", "pv_ac_forecast_mw",
+                "pv_forecast_vintage_utc", "pv_forecast_available_at_utc"]
+            frame = frame[[name for name in columns if name in frame]].sort_values("interval_start_utc")
+            checksums[f"pv_inputs_{auction}"] = hashlib.sha256(frame.to_csv(index=False).encode()).hexdigest()
+    settlement = output / "csv/imbalance_prices.csv"
+    if settlement.exists():
+        checksums["settlement_inputs"] = hashlib.sha256(settlement.read_bytes()).hexdigest()
+    saved_config = output / "json/study_config.json"
+    if saved_config.exists():
+        configuration = json_load(saved_config)
+        common = {key: configuration.get(key) for key in
+            ("inputs", "source", "pv", "battery", "state", "plant", "degradation", "transaction_fees", "trading", "market", "solver")}
+        checksums["common_settings"] = hashlib.sha256(json.dumps(common, sort_keys=True, default=json_default).encode()).hexdigest()
     return checksums
+
+
+def summarize_sequential_days(sequential, integrated, days, auctions):
+    """Pair the sequential baseline with integrated all-auction results by day."""
+    if sequential.duplicated("study_date").any() or set(sequential.study_date) != set(days):
+        raise ValueError("Sequential baseline requires every identical requested delivery day")
+    if not np.isfinite(sequential.net_profit_eur).all():
+        raise ValueError("Sequential baseline requires fully priced realized profits")
+    full = integrated.loc[integrated.profile == profile_id(auctions)].set_index("study_date")
+    if set(full.index) != set(days):
+        raise ValueError("Sequential baseline requires an integrated all-auction profile on every day")
+    sequential = sequential.copy()
+    sequential["integrated_all_auctions_profit_eur"] = sequential.study_date.map(full.net_profit_eur)
+    sequential["integrated_minus_sequential_profit_eur"] = sequential.integrated_all_auctions_profit_eur - sequential.net_profit_eur
+    sequential["sequential_minus_integrated_profit_eur"] = -sequential.integrated_minus_sequential_profit_eur
+    summary = {"label": SEQUENTIAL_PROFILE, "participating_auctions": list(auctions), "delivery_days": len(sequential),
+        "auction_planning_mode": "current_auction_only",
+        "mean_net_profit_eur": float(sequential.net_profit_eur.mean()),
+        "total_net_profit_eur": float(sequential.net_profit_eur.sum()),
+        "std_daily_profit_eur": float(sequential.net_profit_eur.std(ddof=0)),
+        "mean_final_energy_mwh": float(sequential.final_energy_mwh.mean()),
+        "mean_final_soc_percent": float(sequential.final_soc_percent.mean()),
+        "mean_integrated_minus_sequential_profit_eur": float(sequential.integrated_minus_sequential_profit_eur.mean()),
+        "total_integrated_minus_sequential_profit_eur": float(sequential.integrated_minus_sequential_profit_eur.sum()),
+        "std_integrated_minus_sequential_profit_eur": float(sequential.integrated_minus_sequential_profit_eur.std(ddof=0)),
+        "total_infeasible_auction_decisions": int(sequential.infeasible_auction_decisions.sum())}
+    for column in ("degradation_eur", "curtailment_mwh", "absolute_imbalance_mwh", "transaction_fee_eur", "auction_solves"):
+        summary[f"mean_{column}"] = float(sequential[column].mean())
+    return sequential, summary
 
 
 def summarize_participation_days(daily, profiles, delivery_days, tolerance):
@@ -179,13 +227,17 @@ def collect_perfect_foresight_reference(config, experiments, destination):
     return daily, summary
 
 
-def _plot_participation(ranking, path, perfect_foresight=None):
-    """Compare average cash profit, chosen auctions and ending stored energy."""
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
+def participation_comparison_table(ranking, perfect_foresight=None, sequential=None):
+    """Place the sequential baseline next to integrated all-auction planning."""
     chart = ranking.copy()
+    if sequential is not None:
+        anchor = profile_id(sequential["participating_auctions"])
+        matching = np.flatnonzero(chart.profile.eq(anchor))
+        if not len(matching):
+            raise ValueError("Sequential chart requires its integrated all-auction row")
+        position = int(matching[0]) + 1
+        chart = pd.concat([chart.iloc[:position], pd.DataFrame([{**sequential, "profile": sequential["label"]}]),
+            chart.iloc[position:]], ignore_index=True)
     if perfect_foresight is not None:
         reference_row = {"profile": perfect_foresight["label"],
             "participating_auctions": perfect_foresight["selected_auctions"],
@@ -193,8 +245,18 @@ def _plot_participation(ranking, path, perfect_foresight=None):
             "std_daily_profit_eur": perfect_foresight["std_daily_objective_eur"],
             "mean_final_energy_mwh": perfect_foresight["mean_final_energy_mwh"]}
         chart = pd.concat([pd.DataFrame([reference_row]), chart], ignore_index=True)
-    colors = ["goldenrod" if perfect_foresight is not None and index == 0 else "tab:blue"
-        for index in range(len(chart))]
+    return chart
+
+
+def _plot_participation(ranking, path, perfect_foresight=None, sequential=None):
+    """Compare average cash profit, chosen auctions and ending stored energy."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    chart = participation_comparison_table(ranking, perfect_foresight, sequential)
+    colors = ["goldenrod" if perfect_foresight is not None and index == 0 else
+        "tab:orange" if name == SEQUENTIAL_PROFILE else "tab:blue" for index, name in enumerate(chart.profile)]
     fig, axes = plt.subplots(1, 3, figsize=(15, max(5, len(chart) * 0.43 + 2)),
         sharey=True, gridspec_kw={"width_ratios": [3, 1.5, 2]}, layout="constrained")
     positions = np.arange(len(chart))
@@ -211,7 +273,7 @@ def _plot_participation(ranking, path, perfect_foresight=None):
     axes[1].set_xticks(np.arange(len(AUCTION_ORDER)), AUCTION_ORDER, rotation=45)
     axes[1].set_title("Selected auctions")
     axes[2].barh(positions, chart.mean_final_energy_mwh,
-        color=["goldenrod" if color == "goldenrod" else "tab:purple" for color in colors], alpha=0.8)
+        color=["tab:purple" if color == "tab:blue" else color for color in colors], alpha=0.8)
     axes[2].set_xlabel("Mean final stored energy (MWh), unvalued")
     axes[2].set_title("Terminal inventory context")
     axes[0].set_ylim(len(chart) - 0.5, -0.5)
@@ -232,6 +294,12 @@ def run_participation_study(config, *, progress=None):
     """Run the same assets and initial state for each profile/day, entirely offline."""
     settings = config["participation_study"]
     profiles = participation_profiles(settings)
+    cases = [(profile_id(profile), profile, "integrated") for profile in sorted(profiles, key=len, reverse=True)]
+    all_auctions = auction_subset(list(config["gme_oracle_experiment"]["auction_datasets"]), "sequential baseline auctions")
+    if settings.get("sequential_all_auctions_baseline", False):
+        if all_auctions not in profiles:
+            raise ValueError("Sequential all-auction baseline requires the integrated all-auction participation profile")
+        cases.append((SEQUENTIAL_PROFILE, all_auctions, "current_auction_only"))
     days = settings.get("delivery_days")
     if not isinstance(days, list) or not days or len(days) != len(set(map(str, days))):
         raise ValueError("participation_study.delivery_days must be a nonempty unique list")
@@ -263,7 +331,8 @@ def run_participation_study(config, *, progress=None):
     write_json(destination / "json/study_config.json", config)
     manifest = {"status": "running", "run_id": run_id, "output_dir": str(destination),
         "delivery_days": days, "profiles": [list(profile) for profile in profiles],
-        "profile_count": len(profiles), "requested_experiments": len(days) * len(profiles),
+        "profile_count": len(profiles), "requested_experiments": len(days) * len(cases),
+        "sequential_all_auctions_baseline": settings.get("sequential_all_auctions_baseline", False),
         "initial_state_convention": "Independent delivery days; identical configured initial SOC and initial operator fee state per profile/day, no state carry across days",
         "initial_forecast_convention": "Common initialization cutoff before the earliest candidate gate and delivery start; later updates only at selected auction decisions",
         "ranking_metric": "mean realized full-day profit after actual settlement, executed wear, import and gross transaction fees; no terminal-energy salvage value",
@@ -281,7 +350,7 @@ def run_participation_study(config, *, progress=None):
     write_json(path, manifest)
     rows = list(manifest["experiments"])
     completed = {(row["profile"], row["study_date"]): row for row in rows}
-    expected = {(profile_id(profile), day) for profile in profiles for day in days}
+    expected = {(name, day) for name, _, _ in cases for day in days}
     if len(completed) != len(rows) or set(completed) - expected:
         raise ValueError("Resume checkpoint has duplicate or unexpected profile/day cases")
     try:
@@ -300,8 +369,8 @@ def run_participation_study(config, *, progress=None):
             shared["forecast"]["initial_decision_cutoff"] = initialization.isoformat()
             shared["forecast_run"].update(delivery_day=day, decision_cutoff=initialization.isoformat())
             common_checksums = {}
-            for profile in sorted(profiles, key=len, reverse=True):
-                name = profile_id(profile)
+            for name, profile, mode in cases:
+                output_name = "sequential_all_auctions" if mode == "current_auction_only" else name
                 if (name, day) in completed:
                     row = completed[name, day]
                     output = Path(row["output_dir"])
@@ -317,15 +386,15 @@ def run_participation_study(config, *, progress=None):
                     continue
                 child = deepcopy(shared)
                 child["gme_oracle_experiment"].update(participating_auctions=list(profile),
-                    study_id=f"{run_id}_{name}")
-                child["experiment_outputs"].update(root=str(destination / "runs"), run_id=name,
+                    study_id=f"{run_id}_{output_name}", auction_planning_mode=mode)
+                child["experiment_outputs"].update(root=str(destination / "runs"), run_id=output_name,
                     plots=settings.get("per_profile_plots", False),
                     save_model_files=settings.get("save_model_files", False))
                 if progress:
-                    progress(f"[{len(rows) + 1}/{len(days) * len(profiles)}] {day} {name}")
-                incomplete = destination / "runs" / name / f"farm_{config['plant']['farm_id']}" / day
+                    progress(f"[{len(rows) + 1}/{len(days) * len(cases)}] {day} {name}")
+                incomplete = destination / "runs" / output_name / f"farm_{config['plant']['farm_id']}" / day
                 if resume and incomplete.exists():
-                    retained = destination / "diagnostics/incomplete_runs" / name / f"{day}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
+                    retained = destination / "diagnostics/incomplete_runs" / output_name / f"{day}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
                     retained.parent.mkdir(parents=True, exist_ok=True)
                     incomplete.rename(retained)
                 result = run_gme_oracle_experiment(child)
@@ -339,6 +408,7 @@ def run_participation_study(config, *, progress=None):
                 if kpis["total_gain_eur"] is None:
                     raise ValueError("Participation ranking needs actual imbalance settlement, not an unpriced profit")
                 row = {"profile": name, "study_date": day, "net_profit_eur": kpis["total_gain_eur"],
+                    "auction_planning_mode": mode,
                     "auction_revenue_eur": kpis["auction_revenue_eur"],
                     "degradation_eur": kpis["degradation_cost_eur"],
                     "transaction_fee_eur": kpis["transaction_fee_eur"],
@@ -357,20 +427,32 @@ def run_participation_study(config, *, progress=None):
                 manifest["completed_experiments"] = len(rows)
                 pd.DataFrame(rows).to_csv(destination / "csv/daily_results.csv", index=False)
                 write_json(path, manifest)
-        daily, ranking = summarize_participation_days(pd.DataFrame(rows), profiles, days, tolerance)
-        perfect_daily, perfect_reference = collect_perfect_foresight_reference(config, rows, destination)
+        all_daily = pd.DataFrame(rows)
+        integrated = all_daily.loc[all_daily.auction_planning_mode == "integrated"]
+        daily, ranking = summarize_participation_days(integrated, profiles, days, tolerance)
+        sequential_summary = None
+        if settings.get("sequential_all_auctions_baseline", False):
+            sequential, sequential_summary = summarize_sequential_days(
+                all_daily.loc[all_daily.auction_planning_mode == "current_auction_only"], daily, days, all_auctions)
+            sequential.to_csv(destination / "csv/sequential_daily_results.csv", index=False)
+            write_json(destination / "json/sequential_baseline.json", sequential_summary)
+        perfect_daily, perfect_reference = collect_perfect_foresight_reference(config,
+            [row for row in rows if row["profile"] != SEQUENTIAL_PROFILE], destination)
         if perfect_reference is not None:
             daily["perfect_foresight_objective_eur"] = daily.study_date.map(perfect_daily.set_index("study_date").objective_eur)
             daily["perfect_foresight_minus_profit_eur"] = daily.perfect_foresight_objective_eur - daily.net_profit_eur
             ranking["mean_perfect_foresight_minus_profit_eur"] = perfect_reference["mean_objective_eur"] - ranking.mean_net_profit_eur
         daily.to_csv(destination / "csv/daily_results.csv", index=False)
         ranking.to_csv(destination / "csv/profile_ranking.csv", index=False)
+        participation_comparison_table(ranking, perfect_reference, sequential_summary).to_csv(
+            destination / "csv/participation_comparison.csv", index=False)
         daily.loc[daily.is_daily_best_within_tolerance].to_csv(destination / "csv/daily_best_profiles.csv", index=False)
         if settings.get("plots", True):
-            _plot_participation(ranking, destination / "plots/participation_profiles.png", perfect_reference)
+            _plot_participation(ranking, destination / "plots/participation_profiles.png", perfect_reference, sequential_summary)
         manifest.update(status="complete", ranking_published=True, best_mean_profile=ranking.iloc[0].profile,
             best_mean_net_profit_eur=float(ranking.iloc[0].mean_net_profit_eur),
             perfect_foresight_reference=perfect_reference,
+            sequential_baseline=sequential_summary,
             ranking=ranking.to_dict("records"),
             ranking_scope="Descriptive ranking on the configured common dates; not a selected or validated optimal policy for unseen dates")
         write_json(path, manifest)

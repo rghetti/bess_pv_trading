@@ -356,6 +356,15 @@ full_replay:
       delivery_day: '2025-01-01'
       decision_resolution_minutes: 15
       native_interval_minutes_by_auction: {DA: 60, IDA1: 15, IDA2: 15, IDA3: 15}
+    - name: sequential_hourly_da_quarter_hour_ida_four_auctions
+      physical_refresh: false
+      terminal: free
+      strategy: oracle
+      auction_planning_mode: current_auction_only
+      optimize_imbalances: false
+      delivery_day: '2025-01-01'
+      decision_resolution_minutes: 15
+      native_interval_minutes_by_auction: {DA: 60, IDA1: 15, IDA2: 15, IDA3: 15}
 
 rolling_pv_forecast:
   farm_id: 910

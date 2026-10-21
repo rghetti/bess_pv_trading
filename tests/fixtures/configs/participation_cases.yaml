@@ -5,6 +5,11 @@ expected_nonempty_profiles: 15
 expected_da_required_profiles: 8
 cancelled_auction_day: '2025-01-17'
 infeasible_auction_policies: [error, previous_plan]
+sequential:
+  future_price_multiplier: 2.0
+  publication_delay_minutes: 1
+  invalid_modes: [unknown, true, 1]
+  invalid_baseline_flags: ['true', 1]
 selected_profiles: [[IDA1, IDA2], [IDA3], [DA], [IDA2]]
 invalid_selections: [[], [DA, DA], [UNKNOWN], DA]
 invalid_profile_settings:
