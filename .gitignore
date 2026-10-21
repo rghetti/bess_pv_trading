@@ -226,3 +226,8 @@ outputs/
 # Reproducible LaTeX intermediate files; retain the requested source and PDF.
 docs/generated/latex/
 docs/generated/latex_build_output.txt
+docs/mathematical_model.aux
+docs/mathematical_model.fdb_latexmk
+docs/mathematical_model.fls
+docs/mathematical_model.out
+docs/mathematical_model.toc
