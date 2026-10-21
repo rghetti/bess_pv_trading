@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from bess_pv_trading.markets import AuctionCalendar
+from bess_pv_trading.optimization.market_regime import market_product_groups
 
 
 def test_calendar_dst_products_gates_and_results_are_separate():
@@ -38,3 +39,16 @@ def test_historical_validity_missing_results_cancellation():
     assert boundary[3].rule_version == "GME-DTF03-rev14"
     with pytest.raises(ValueError, match="explicit timezone"):
         calendar.schedule("2025-10-02", recorded_results={"DA": "2025-10-01T13:30:00"})
+
+
+@pytest.mark.parametrize("day,hours", [("2026-03-29", 23), ("2025-10-26", 25)])
+@pytest.mark.parametrize("minutes", [15, 30, 60])
+def test_native_product_groups_keep_both_folds_in_physical_order(day, hours, minutes):
+    calendar = AuctionCalendar()
+    grid = calendar.delivery_grid(day).to_domain()
+    groups = market_product_groups(grid, minutes, calendar.timezone)
+    assert len(groups) == hours*60//minutes
+    assert [index for group in groups for index in group] == list(range(hours*4))
+    np.testing.assert_allclose(grid.delta_hours, .25)
+    assert grid.delta_hours.sum() == hours
+    assert len(calendar.schedule(day)[3].eligible_intervals) == 48

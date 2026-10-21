@@ -68,11 +68,16 @@ def _read_sheet(payload: bytes, sheet_xml: str) -> list[list[str]]:
 
 
 def _period_start(day: pd.Timestamp, period: int, interval_minutes: int,
-                  timezone_name: str) -> pd.Timestamp:
+                  timezone_name: str, grids: dict | None = None) -> pd.Timestamp:
     """Map GME's chronological one-based Period/Hour to the actual local day grid."""
-    local_start = day.tz_localize(timezone_name)
-    local_end = (day + pd.Timedelta(days=1)).tz_localize(timezone_name)
-    starts = pd.date_range(local_start, local_end, freq=f"{interval_minutes}min", inclusive="left")
+    key = (day, interval_minutes, timezone_name)
+    starts = None if grids is None else grids.get(key)
+    if starts is None:
+        local_start = day.tz_localize(timezone_name)
+        local_end = (day + pd.Timedelta(days=1)).tz_localize(timezone_name)
+        starts = pd.date_range(local_start, local_end, freq=f"{interval_minutes}min", inclusive="left")
+        if grids is not None:
+            grids[key] = starts
     if period < 1 or period > len(starts):
         raise GMEWorkbookError(f"Period {period} is outside the {len(starts)}-product local day")
     return starts[period - 1].tz_convert("UTC")
@@ -132,6 +137,7 @@ def _parse_workbook(payload: bytes, source_file: str, dataset: str,
     eligible_start = settings.get("eligible_start_clock")
     missing_tokens = set(map(str, settings.get("missing_price_tokens", ["", "-", "—"])))
     output = []
+    day_grids = {}
     cancelled_days: set[str] = set()
     for row_number, row in enumerate(rows[1:], start=2):
         if len(row) < len(header):
@@ -159,7 +165,7 @@ def _parse_workbook(payload: bytes, source_file: str, dataset: str,
             period = int(raw_period)
         except (ValueError, TypeError, IndexError):
             raise GMEWorkbookError(f"Invalid market period in worksheet row {row_number}") from None
-        start = _period_start(day_value, period, minutes, settings["timezone"])
+        start = _period_start(day_value, period, minutes, settings["timezone"], day_grids)
         source_hour = (period - 1) * minutes // 60 + 1
         if "hour" in columns:
             try:
@@ -186,6 +192,7 @@ def _parse_workbook(payload: bytes, source_file: str, dataset: str,
             "source_flow_date": day_value.date().isoformat(), "source_hour": source_hour,
             "source_period": period, "source_market": metadata["segment"],
             "source_notes": note, "source_file": source_file,
+            "source_row": row_number, "source_price_text": raw_price,
             "interval_provenance": "native chronological GME Period/Hour mapped onto Europe/Rome local-day grid"})
     frame = pd.DataFrame(output)
     if frame.empty:

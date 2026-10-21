@@ -30,7 +30,9 @@ def market_product_groups(grid: DeliveryGrid, interval_minutes: int,
         local = start.astimezone(zone)
         slot = local.minute // interval_minutes
         groups[(local.date(), local.hour, slot, local.fold)].append(index)
-    return tuple(tuple(indices) for _, indices in sorted(groups.items()))
+    # The input grid is chronological. Sorting local clocks would interleave the
+    # two autumn folds for quarter-hour and half-hour products.
+    return tuple(tuple(indices) for indices in groups.values())
 
 
 def configured_dispatch_groups(grid: DeliveryGrid, resolution_minutes: int | None,

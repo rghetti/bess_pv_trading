@@ -410,6 +410,9 @@ api:
   progress_every: 25
   plots: true
   terna_authorization_scheme: bearer
+  # A quota/access HTTP 403 pauses Terna for this run; other providers continue.
+  # Use error to retain immediate failure instead.
+  terna_http_403_policy: continue_other_providers
   gme_token_refresh_seconds: 900
   credentials:
     entsoe_token_env: ENTSOE_API_TOKEN
@@ -428,6 +431,35 @@ api:
   requests: []
 gme_workbook_import:
   retire_hourly_ida_snapshots: false
+terna_workbook_import:
+  # Terna 02:01/16/31/46 labels identify the second 02:00/15/30/45 occurrence.
+  # Decode only within the actual autumn repeated hour; reject nonexistent spring labels.
+  ambiguous_time_policy: second_occurrence_minute_marker
+manual_market_import:
+  source_directory: data
+  stage_directory: data/staging/manual_market
+  stage_path: null
+  target_database: ${api.database_path}
+  duckdb_threads: ${api.database_threads}
+  zone: NORD
+  timezone: Europe/Rome
+  date_start: '2025-01-01'
+  # null freezes tomorrow's local midnight when staging; generated import.yaml records it.
+  date_end_exclusive: null
+  gme_glob: '*_PrezziZonali_Nord.xlsx'
+  terna_glob: Riepilogo_Mensile_Quarto_Orario_*.xlsx
+  gme_schema_config: configs/api_experiments/gme_workbook_import.yaml
+  terna_schema_config: configs/api_experiments/terna_workbook_import.yaml
+  terna_ambiguous_time_policy: ${terna_workbook_import.ambiguous_time_policy}
+  ida3_start_clock: '12:00'
+  audit_delivery_days: ['2025-01-01', '2025-03-30', '2025-03-31', '2025-04-01', '2025-10-01', '2025-10-26', '2026-03-29', '2026-04-01']
+  check_report_path: outputs/data_imports/manual_market/postcheck.json
+  datasets:
+    - {provider: gme, dataset: day_ahead_prices}
+    - {provider: gme, dataset: ida1_prices}
+    - {provider: gme, dataset: ida2_prices}
+    - {provider: gme, dataset: ida3_prices}
+    - {provider: terna, dataset: imbalance_prices}
 
 # PRICE STUDIES AND REPORTING: enable commands explicitly; no data downloads happen when loading YAML.
 price_experiment:

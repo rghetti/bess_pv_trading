@@ -7,6 +7,12 @@ Every shipped configuration imports **[`standard.yaml`](standard.yaml) directly*
 - `full_experiments/`: historical/synthetic optimization and replay, participation studies and prepared-input templates.
 - Root files: data preparation, PV generation, audit and reporting entry points.
 
+`api_experiments/manual_market_workbooks.yaml` stages current GME/Terna Excel
+files into a separate database while API acquisition continues. Its generated
+`import.yaml` is used by `merge-market-workbooks` and `check-market-history` only
+after the downloader stops. All defaults are in `manual_market_import` in the
+standard configuration; the audit includes preexisting January–March IDA history.
+
 Mappings merge recursively. Scalars and lists replace inherited values; explicit `null` is retained (including a free terminal SOC). Includes are relative to the including file. Data/output paths remain repository-relative: run commands from the repository root. Use the shared `load_config()` loader when reading experiment YAML from Python; a raw `yaml.safe_load()` does not apply inheritance.
 
 ## Change farms
@@ -44,3 +50,5 @@ The generic `gme_day.yaml` uses the configured day to set calendar validity, ref
 `gme_oracle_experiment.auction_planning_mode` defaults to `integrated`. Select `current_auction_only` for a single-day sequential replay that plans only the current auction's trades while retaining the full remaining physical horizon. For matched participation comparisons, profiles retain integrated planning and `participation_study.sequential_all_auctions_baseline: true` adds a separate all-auction sequential row. That switch defaults to false and is enabled in the refreshed January monthly YAML.
 
 Saved results retain their original effective configuration. Existing monthly checkpoints are compared after filling new standard defaults; a genuine parameter change still rejects resume. Changing farms changes the farm-labelled run IDs in supplied historical studies, so another farm does not resume the farm-910 checkpoint. Use a new run ID or `resume: false` when changing scientific assumptions. Missing real data remain errors under the selected data-quality policies.
+
+For mixed API downloads, `api.terna_http_403_policy: continue_other_providers` pauses Terna after a quota/access denial and completes the remaining ENTSO-E and other-provider requests. Use `error` for immediate failure. A partial run saves failed/deferred chunks in its manifest and exits with code 2 after finishing the other providers; rerunning the same command retries missing Terna chunks without refreshing completed data.

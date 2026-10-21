@@ -1,0 +1,3 @@
+# Stage all current native Excel exports without opening the live API database.
+# Use the generated import.yaml for the later merge and complete-history audit.
+include: ../standard.yaml

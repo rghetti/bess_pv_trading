@@ -60,6 +60,30 @@ def test_direct_pv_revenue_has_no_bess_converter_loss():
     assert result.arrays["grid_mw"][0, 0] == pytest.approx(1)
 
 
+@pytest.mark.parametrize("day,hours", [("2026-03-29", 23), ("2025-10-26", 25)])
+def test_dst_battery_soc_and_cashflow_use_every_actual_quarter(day, hours):
+    from bess_pv_trading.markets import AuctionCalendar
+    grid = AuctionCalendar().delivery_grid(day).to_domain()
+    count = len(grid.interval_ids)
+    battery = configured_battery("half_power")
+    prices = np.r_[np.zeros(count//2), np.full(count-count//2, 100.)]
+    inputs = example_inputs(prices=prices, pv=np.zeros((1, count)), battery=battery,
+                            hours=.25, start=grid.starts[0].isoformat())
+    initial = battery.capacity_mwh/2
+    inputs = replace(inputs, grid=grid, state=replace(inputs.state, energy_mwh=initial),
+                     terminal_target_mwh=initial, optimize_imbalances=False)
+    result = solve(inputs)
+    delta = grid.delta_hours
+    assert len(result.arrays["energy_mwh"][0]) == hours*4+1
+    assert result.arrays["energy_mwh"][0, -1] == pytest.approx(initial)
+    charge = np.dot(result.arrays["charge_mw"][0], delta)
+    discharge = np.dot(result.arrays["discharge_mw"][0], delta)
+    assert charge > 0 and discharge > 0
+    assert charge*battery.eta_charge == pytest.approx(discharge/battery.eta_discharge)
+    assert result.objective_eur == pytest.approx((battery.maximum_energy-initial)*battery.eta_discharge*100)
+    assert result.arrays["net_position_mwh"][0].sum() == pytest.approx(discharge-charge)
+
+
 def test_grid_charge_discharge_applies_efficiency_once_each_direction():
     inputs, expected = configured_solver_inputs("grid_cycle")
     result = solve(inputs)

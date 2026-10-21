@@ -1,6 +1,7 @@
 """Past-only linear feature groups, complete daily history, and DST alignment."""
 
 from datetime import date
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -81,6 +82,9 @@ def test_incomplete_or_absent_prior_day_prevents_rolling_window_skipping_gap():
 ])
 def test_dst_days_have_complete_summaries_without_folding_repeated_price_slots(start, end, transition, expected_products):
     rows = _native(start, end)
+    # Match nanosecond/ZoneInfo clocks restored from the workbook staging cache.
+    for column in ("product_start", "product_end"):
+        rows[column] = rows[column].dt.tz_convert(ZoneInfo("UTC")).dt.as_unit("ns")
     frame, _ = build_linear_price_features(rows, settings={"rolling_windows": [7]})
     change_day = frame.loc[frame.delivery_day == transition]
     assert len(change_day) == expected_products
@@ -170,6 +174,8 @@ def test_unordered_native_rows_are_sorted_but_overlap_naive_timestamps_and_bad_d
 ])
 def test_future_features_need_no_target_and_match_retrospective_formulas_across_dst(start, end, target, minutes):
     native = _native(start, end, minutes)
+    for column in ("product_start", "product_end"):
+        native[column] = native[column].dt.tz_convert(ZoneInfo("UTC")).dt.as_unit("ns")
     native["load_forecast_mw"] = 1000 + np.arange(len(native)) / 10
     native["solar_forecast_mw"] = 100.
     native["wind_forecast_mw"] = 50.

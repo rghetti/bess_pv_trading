@@ -57,7 +57,7 @@ def _complete_daily_statistics(frame: pd.DataFrame, timezone_name: str,
                                      freq=f"{int(minutes)}min", inclusive="left")
             ordered = day_rows.sort_values("product_start")
             observed = pd.DatetimeIndex(ordered.product_start)
-            complete = (observed.equals(expected)
+            complete = (observed.as_unit("ns").equals(expected.as_unit("ns"))
                         and ordered.product_end.eq(ordered.product_start + pd.Timedelta(minutes=int(minutes))).all())
             values = ordered.price_eur_mwh.to_numpy(float)
             summary = {"day": pd.Timestamp(local_day), "mean": values.mean() if complete else np.nan,
@@ -330,7 +330,7 @@ def build_future_linear_price_features(history_native: pd.DataFrame, future_prod
     following = pd.Timestamp(future_day + timedelta(days=1), tz=timezone_name)
     expected = pd.date_range(midnight.tz_convert("UTC"), following.tz_convert("UTC"),
                              freq=f"{native_minutes}min", inclusive="left")
-    if (not pd.DatetimeIndex(future.product_start).equals(expected)
+    if (not pd.DatetimeIndex(future.product_start).as_unit("ns").equals(expected.as_unit("ns"))
             or not future.product_end.eq(future.product_start + pd.Timedelta(minutes=native_minutes)).all()):
         raise ValueError("Future products must form an exact complete native local delivery-day grid")
     if (history.product_end > future.product_start.iloc[0]).any():

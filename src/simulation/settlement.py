@@ -45,13 +45,14 @@ def load_realized_imbalance_prices(config, grid) -> tuple[pd.DataFrame | None, d
     frame, sources = load_api_cache_records(config_path(config, settings["database_path"]),
         provider=settings["provider"], dataset=settings["dataset"], zone=settings["zone"],
         start=grid.starts[0], end=grid.ends[-1], verify_checksums=True)
-    expected = pd.DatetimeIndex(grid.starts).tz_convert("UTC")
+    # Compare actual instants at one precision across Parquet and Python clocks.
+    expected = pd.DatetimeIndex(grid.starts).tz_convert("UTC").as_unit("ns")
     if frame.empty or frame.product_start.duplicated().any():
         raise ValueError("Actual imbalance settlement requires a nonempty unique price curve")
     frame = frame.set_index("product_start").sort_index()
-    if not pd.DatetimeIndex(frame.index).equals(expected):
+    if not pd.DatetimeIndex(frame.index).as_unit("ns").equals(expected):
         raise ValueError("Actual imbalance price starts do not match the executed quarter-hour grid")
-    if not pd.DatetimeIndex(frame.product_end).equals(pd.DatetimeIndex(grid.ends).tz_convert("UTC")):
+    if not pd.DatetimeIndex(frame.product_end).as_unit("ns").equals(pd.DatetimeIndex(grid.ends).tz_convert("UTC").as_unit("ns")):
         raise ValueError("Actual imbalance price ends do not match the executed quarter-hour grid")
     minutes = settings["native_interval_minutes"]
     durations = (pd.DatetimeIndex(frame.product_end) - expected).total_seconds() / 60

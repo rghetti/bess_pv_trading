@@ -31,6 +31,16 @@ class DataAPIError(ValueError):
     """An API request cannot be completed without inventing or exposing inputs."""
 
 
+class DataAPIHTTPError(DataAPIError):
+    """A sanitized HTTP failure with structured status for provider scheduling."""
+
+    def __init__(self, message: str, *, http_status: int, provider_host: str, provider_hint: str):
+        super().__init__(message)
+        self.http_status = http_status
+        self.provider_host = provider_host
+        self.provider_hint = provider_hint
+
+
 _SECRET_KEYS = {"securitytoken", "token", "access_token", "client_secret", "password", "authorization", "api_key"}
 _OFFICIAL_HOSTS = {"web-api.tp.entsoe.eu", "api.terna.it", "api.mercatoelettrico.org"}
 
@@ -174,7 +184,8 @@ class SecureTransport:
                 suffix = "check provider credentials/subscriptions" if status in {401,403} else "verify dataset/options and provider status"
                 hint=_http_error_hint(response.content)
                 attempts_note=f" after {attempt+1} attempts" if attempt else ""
-                raise DataAPIError(f"{provider} returned HTTP {status}{attempts_note}; {suffix}.{support_reference} provider_hint={hint} (heuristic). Response body and URL queries omitted")
+                raise DataAPIHTTPError(f"{provider} returned HTTP {status}{attempts_note}; {suffix}.{support_reference} provider_hint={hint} (heuristic). Response body and URL queries omitted",
+                    http_status=status, provider_host=provider, provider_hint=hint)
             finally:
                 response.close()
         raise DataAPIError("API retry budget exhausted")
@@ -451,6 +462,8 @@ def plan_downloads(config: Mapping[str,Any]) -> list[dict]:
         raise DataAPIError("api.download_order must be month_first or dataset_first")
     if settings.get("terna_authorization_scheme", "bearer") not in {"bearer", "raw"}:
         raise DataAPIError("api.terna_authorization_scheme must be bearer or raw")
+    if settings.get("terna_http_403_policy", "continue_other_providers") not in {"continue_other_providers", "error"}:
+        raise DataAPIError("api.terna_http_403_policy must be continue_other_providers or error")
     local_timezone = settings.get("timezone","Europe/Rome")
     plans=[]
     for task in settings["requests"]:
@@ -558,6 +571,7 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
         raise DataAPIError("api.gme_token_refresh_seconds must be finite and positive")
     raw_responses={}
     results=[]
+    paused_providers={}
     http_gets,auth_requests=0,0
     progress_every=int(settings.get("progress_every",25))
     if progress_every<1:
@@ -570,6 +584,28 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
             item=results[-1]
             progress(f"[{len(results)}/{len(plans)}] month {group[0]} {item['provider']}/{item['dataset']} {identity['local_day']}: {item['status']}, {item['records']} rows")
         progress_group=group
+
+    def pause_terna_on_403(error, identity, phase):
+        """Pause only Terna on an explicit 403; never cache a denial as no data."""
+        if (settings.get("terna_http_403_policy", "continue_other_providers") != "continue_other_providers"
+                or not isinstance(error, DataAPIHTTPError) or error.http_status != 403
+                or error.provider_host != "api.terna.it"):
+            return False
+        pause={"http_status":error.http_status,"provider_hint":error.provider_hint,
+            "phase":phase,"dataset":identity["dataset"],"local_day":identity["local_day"],
+            "reason":"HTTP 403 may indicate quota exhaustion or an access restriction; retry pending requests on a later run"}
+        paused_providers["terna"]=pause
+        results.append({"provider":"terna","dataset":identity["dataset"],
+            "start":identity["start"],"end":identity["end"],"status":"failed-http",
+            "records":0,"historically_eligible_records":0,"http_status":403,
+            "provider_hint":error.provider_hint,"phase":phase})
+        announce(identity)
+        if progress:
+            progress("[provider paused] Terna returned HTTP 403 (quota/access restriction); "
+                "no further Terna HTTP requests this run. Continuing other providers, including ENTSO-E; "
+                "rerun this command later to retry pending Terna days.")
+        return True
+
     for plan in plans:
         identity,specification=plan["identity"],plan["specification"]
         cached = None if refresh_cache else cache.load(identity)
@@ -589,6 +625,13 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
             status="cached"
         else:
             provider=identity["provider"]
+            if provider in paused_providers:
+                results.append({"provider":provider,"dataset":identity["dataset"],
+                    "start":identity["start"],"end":identity["end"],"status":"deferred-provider",
+                    "records":0,"historically_eligible_records":0,
+                    "http_status":paused_providers[provider]["http_status"]})
+                announce(identity)
+                continue
             raw_key=_json_bytes({"provider":provider,"specification":asdict(specification),
                                  "vintage_revision":identity["vintage_revision"],"schema_version":identity["schema_version"]})
             reused=raw_responses.get(raw_key)
@@ -615,21 +658,25 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
                 if reused is None and (terna_token is None or time.monotonic() >= terna_token_expires):
                     client_id=credential(credentials.get("terna_client_id_env","TERNA_CLIENT_ID"))
                     client_secret=credential(credentials.get("terna_client_secret_env","TERNA_CLIENT_SECRET"))
+                    auth_requests+=1
                     try:
                         token_payload=transport.post_form(TOKEN_URL,{"grant_type":"client_credentials", "client_id":client_id,"client_secret":client_secret})
                     except DataAPIError as error:
+                        if pause_terna_on_403(error,identity,"authentication"):
+                            continue
                         raise DataAPIError(f"Terna authentication/token request failed (application Key and Secret): {error}") from None
-                    auth_requests+=1
                     terna_token,expires_seconds=parse_token(token_payload)
                     terna_token_expires=time.monotonic()+max(0,expires_seconds-30)
                 if reused is None:
+                    http_gets+=1
                     try:
                         auth_options = ({"authorization_scheme": "raw"}
                                         if settings.get("terna_authorization_scheme", "bearer") == "raw" else {})
                         payload=transport.get(specification,bearer_token=terna_token,**auth_options)
                     except DataAPIError as error:
+                        if pause_terna_on_403(error,identity,"data"):
+                            continue
                         raise DataAPIError(f"Terna data request for {identity['dataset']} on {identity['local_day']} failed after obtaining an access token: {error}") from None
-                    http_gets+=1
                     retrieved_at=pd.Timestamp.now(tz="UTC")
                 else:
                     payload,retrieved_at=reused
@@ -713,13 +760,28 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
         _plot_records(pd.concat(frames, ignore_index=True), path, f"{provider} {dataset} {zone} {month}")
         plot_paths.append(str(path))
     gaps=sum(item["status"].startswith("no-data") for item in results)
-    summary={"status":"complete-with-gaps" if gaps else "complete","run_id":run_id,"requested_chunks":len(plans),
+    failed=sum(item["status"]=="failed-http" for item in results)
+    deferred=sum(item["status"]=="deferred-provider" for item in results)
+    provider_summaries={}
+    for provider in sorted({plan["identity"]["provider"] for plan in plans}):
+        items=[item for item in results if item["provider"]==provider]
+        counts={"downloaded_chunks":sum(item["status"]=="downloaded" for item in items),
+            "cached_chunks":sum(item["status"]=="cached" for item in items),
+            "no_data_chunks":sum(item["status"].startswith("no-data") for item in items),
+            "failed_chunks":sum(item["status"]=="failed-http" for item in items),
+            "deferred_chunks":sum(item["status"]=="deferred-provider" for item in items)}
+        provider_summaries[provider]={"requested_chunks":len(items),**counts,
+            "status":"partial" if counts["failed_chunks"] or counts["deferred_chunks"] else
+                "complete-with-gaps" if counts["no_data_chunks"] else "complete"}
+    summary={"status":"partial" if paused_providers else "complete-with-gaps" if gaps else "complete","run_id":run_id,"requested_chunks":len(plans),
         "storage_backend":"duckdb" if consolidated else "files", "cache_location":str(cache.directory),
         "plots":plot_paths,
         "download_order":settings.get("download_order","month_first"),
         "downloaded_chunks":sum(item["status"]=="downloaded" for item in results),
         "cached_chunks":sum(item["status"]=="cached" for item in results),"items":results,
         "no_data_chunks":gaps,
+        "failed_chunks":failed,"deferred_chunks":deferred,"paused_providers":paused_providers,
+        "provider_summaries":provider_summaries,
         "data_http_operations":http_gets,"authentication_operations":auth_requests,
         "http_operation_convention":"Each operation may include bounded retry attempts",
         "publication_policy":"Unverified source creation or retrieval times are not historical publication times",

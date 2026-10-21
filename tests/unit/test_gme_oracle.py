@@ -1,5 +1,6 @@
 """One-day study SOC configuration preserves explicit unconstrained endpoints."""
 import pytest
+from zoneinfo import ZoneInfo
 
 from bess_pv_trading.domain import BatteryParameters
 from bess_pv_trading.simulation.gme_oracle import _soc_energy_targets
@@ -72,7 +73,7 @@ def test_native_auction_loader_separates_hourly_da_from_quarter_hour_ida(monkeyp
             return pd.DataFrame(), [{"cancelled_delivery_days": [study["delivery_day"]]
                                      if ida_status == "canceled" else []}]
         minutes = 60 if dataset == "day_ahead_prices" else 15
-        times = pd.date_range(grid.starts[0], grid.ends[-1], freq=f"{minutes}min", inclusive="left")
+        times = pd.date_range(grid.starts[0], grid.ends[-1], freq=f"{minutes}min", inclusive="left").tz_convert(ZoneInfo("UTC")).as_unit("ns")
         return pd.DataFrame({"product_start": times, "product_end": times+pd.Timedelta(minutes=minutes),
             "native_interval_minutes": minutes, "price_eur_mwh": np.resize(price_pattern, len(times))}), []
     monkeypatch.setattr(gme_oracle, "load_api_cache_records", read_prices)

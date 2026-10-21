@@ -1,0 +1,22 @@
+# A small month boundary exercises provider continuation after January's denial.
+include: ../../../configs/standard.yaml
+api:
+  start: '2025-01-31'
+  end: '2025-02-03'
+  plots: false
+  requests:
+    - provider: entsoe
+      dataset: day_ahead_prices
+      options: {zone: NORD}
+    - provider: terna
+      dataset: total_load
+      options: {zone: NORD, bidding_zones: [North]}
+    - provider: terna
+      dataset: wind_forecast
+      options: {zone: NORD, session_type: MSD1}
+test_case:
+  cached_terna_day: '2025-02-02'
+  retrieved_at: '2026-10-21T00:00:00Z'
+  private_marker: private-test-value-not-for-output
+  non_pause_statuses: [401, 503]
+  invalid_policy: ignore_everything

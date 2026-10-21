@@ -15,3 +15,6 @@ spring_day:
 autumn_day:
   date_start: '2025-10-26'
   date_end_exclusive: '2025-10-27'
+autumn_2026:
+  date_start: '2026-10-25'
+  date_end_exclusive: '2026-10-26'

@@ -78,6 +78,43 @@ def test_executor_rejects_invalid_command_and_uncompensated_self_discharge():
         execute_reference_step(case, plant, state, step)
 
 
+@pytest.mark.solver
+@pytest.mark.parametrize("season,hours", [("spring", 23), ("fall", 25)])
+def test_full_dst_day_auctions_dispatch_and_settlement_reconcile(tmp_path, season, hours):
+    gp = pytest.importorskip("gurobipy")
+    try:
+        with gp.Env(params={"OutputFlag": 0}):
+            pass
+    except gp.GurobiError as error:
+        pytest.skip(str(error))
+    from bess_pv_trading.simulation.synthetic import synthetic_inputs, _replay_strategy
+    config = load_config(Path(__file__).resolve().parents[2] /
+        f"configs/full_experiments/synthetic_dst_{season}.yaml")
+    config["synthetic"].update(branches_per_auction=1, branch_values=[0.], branch_probabilities=[1.])
+    config["execution"]["reoptimize_physical_controls"] = False
+    config["trading"]["optimize_imbalances"] = False
+    config["outputs"]["plots"] = False
+    fixture = synthetic_inputs(config)
+    fixture["pv"] = np.ones(hours*4)
+    fixture["actual_prices"] = {auction: np.full(hours*4, 70.) for auction in fixture["actual_prices"]}
+    fixture["realized_imbalance_prices_eur_per_mwh"] = np.full(hours*4, 60.)
+    summary = _replay_strategy(config, fixture, "oracle", tmp_path/"replay")
+    dispatch = pd.read_csv(tmp_path/"replay/dispatch.csv")
+    ledger = pd.read_csv(tmp_path/"replay/ledger.csv")
+    assert len(dispatch) == hours*4 and dispatch.interval_id.is_unique
+    starts, ends = pd.to_datetime(dispatch.start, utc=True), pd.to_datetime(dispatch.end, utc=True)
+    duration = (ends-starts).dt.total_seconds()/3600
+    np.testing.assert_allclose(duration, .25)
+    assert (dispatch.grid_mw*duration).sum() == pytest.approx(hours)
+    np.testing.assert_allclose(dispatch.imbalance_mwh, 0, atol=1e-8)
+    assert len(ledger) == 3*hours*4 + 48
+    assert ledger.trade_id.is_unique
+    assert summary["solves"] == 4
+    assert summary["terminal_error_mwh"] < 1e-8
+    assert summary["realized_profit_after_imbalance_eur"] == pytest.approx(hours*70)
+    assert summary["components"]["auction_revenue_eur"] == pytest.approx(hours*70)
+
+
 def test_conditional_view_rejects_unpublished_prices():
     from bess_pv_trading.domain import DegradationSettings, OptimizationInput
     from bess_pv_trading.simulation.replay import condition_and_slice

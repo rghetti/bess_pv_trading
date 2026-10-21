@@ -112,6 +112,16 @@ def dispatch(command: str, config: dict) -> dict:
     if command == "import-terna-workbooks":
         from .data.terna_workbooks import import_terna_workbooks
         return import_terna_workbooks(config)
+    if command == "stage-market-workbooks":
+        from .data.manual_market_import import stage_market_workbooks
+        return stage_market_workbooks(config,
+            progress=lambda message: print(message, file=sys.stderr, flush=True))
+    if command == "merge-market-workbooks":
+        from .data.manual_market_import import merge_market_workbooks
+        return merge_market_workbooks(config)
+    if command == "check-market-history":
+        from .data.manual_market_import import check_market_history
+        return check_market_history(config)
     if command == "experiment-gme-oracle":
         from .simulation.gme_oracle import run_gme_oracle_experiment
         return run_gme_oracle_experiment(config)
@@ -171,7 +181,8 @@ def main(argv: list[str] | None = None) -> int:
         "backtest","report-implementation","download-data","experiment-api-prices","experiment-price-fundamentals",
         "study-linear-prices","calibrate-price-scenarios","check-frozen-prices",
         "api-cache-status","migrate-api-cache","diagnose-terna",
-        "import-gme-workbooks","import-terna-workbooks","experiment-gme-oracle","experiment-participation"))
+        "import-gme-workbooks","import-terna-workbooks","stage-market-workbooks",
+        "merge-market-workbooks","check-market-history","experiment-gme-oracle","experiment-participation"))
     parser.add_argument("--config",required=True,type=Path)
     parser.add_argument("--farm-id",type=int,help="Select farm metadata, PV/weather series and automatic POI limits")
     parser.add_argument("--interactive",action="store_true",help="Prompt invisibly for missing API credentials in a terminal")
@@ -198,7 +209,10 @@ def main(argv: list[str] | None = None) -> int:
             if args.interactive or args.dry_run or args.refresh_cache:
                 raise ValueError("API download flags apply only to download-data")
             result = dispatch(args.command,config)
-        if args.command in {"run-synthetic", "backtest"}:
+        if args.command == "stage-market-workbooks":
+            result = {key: result[key] for key in ("status", "database", "target_database", "live_database_opened",
+                "import_config", "workbooks", "records", "identical_duplicate_rows_removed", "quarantined_rows", "datasets", "report")}
+        elif args.command in {"run-synthetic", "backtest"}:
             result = {"run_id":result["run_id"],"kind":result["kind"],
                 "intervals":result["intervals"],"scenario_count":result["scenario_count"],
                 "output_dir":result["output_dir"],"strategies":[
@@ -236,6 +250,10 @@ def main(argv: list[str] | None = None) -> int:
                       "point_metrics", "adaptive_metrics", "static_metrics", "operational_eligible")
             result = {key: result[key] for key in fields if key in result}
         print(json.dumps(result,indent=2,default=json_default,allow_nan=False))
+        if args.command == "download-data" and result.get("status") == "partial":
+            return 2
+        if args.command == "check-market-history" and result.get("status") != "passed":
+            return 2
         return 0
     except (ValueError,KeyError,FileNotFoundError,FileExistsError,RuntimeError) as error:
         print(f"{args.command}: {error}",file=sys.stderr)

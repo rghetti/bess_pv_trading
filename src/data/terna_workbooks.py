@@ -13,17 +13,36 @@ from .duckdb_store import DuckDBCache
 from .gme_workbooks import _read_sheet
 
 
+def _decode_second_occurrence(local: pd.DatetimeIndex, timezone: str,
+                              minutes: int) -> tuple[pd.DatetimeIndex, pd.DatetimeIndex, np.ndarray]:
+    """Decode Terna's user-confirmed +1 minute markers only in the repeated hour."""
+    markers = local.minute % minutes == 1
+    if ((local.minute % minutes != 0) & ~markers).any() or (local.second != 0).any():
+        raise ValueError("Terna labels must be quarter-hour starts or repeated-hour +1 minute markers")
+    corrected = local - pd.to_timedelta(markers.astype(int), unit="min")
+    daylight = corrected.tz_localize(timezone, ambiguous=True, nonexistent="raise")
+    standard = corrected.tz_localize(timezone, ambiguous=False, nonexistent="raise")
+    ambiguous = daylight.asi8 != standard.asi8
+    if (markers & ~ambiguous).any():
+        raise ValueError("Terna +1 minute marker outside the repeated autumn hour")
+    # Ordinary quarter labels select the first fold; marked labels select the second.
+    starts = corrected.tz_localize(timezone, ambiguous=~markers, nonexistent="raise").tz_convert("UTC")
+    return corrected, starts, markers
+
+
 def parse_terna_workbook(payload: bytes, settings: Mapping[str, Any],
                          workbook: Mapping[str, Any]) -> pd.DataFrame:
     """Keep the selected macrozone and reject ambiguous, missing or shifted intervals.
 
     The value-only XLSX reader is shared with GME imports. Date labels denote
     local interval starts by explicit configuration; prices are never interpolated.
-    Ambiguous autumn timestamps require a source with an explicit offset before
-    this parser can accept them. Spring nonexistent labels are always rejected.
+    The explicit second_occurrence_minute_marker policy decodes the confirmed
+    Terna export convention. Spring nonexistent labels are always rejected.
     """
-    if settings["timestamp_label"] != "start" or settings["ambiguous_time_policy"] != "reject":
-        raise ValueError("Terna workbook requires explicit start labels and ambiguous_time_policy=reject")
+    policy = settings["ambiguous_time_policy"]
+    if settings["timestamp_label"] != "start" or policy not in {
+            "reject", "quarantine_day", "second_occurrence_minute_marker"}:
+        raise ValueError("Terna workbook requires start labels and a supported ambiguous_time_policy")
     minutes = settings["native_interval_minutes"]
     if isinstance(minutes, bool) or minutes != 15:
         raise ValueError("Terna settlement workbooks must use native 15-minute intervals")
@@ -45,10 +64,34 @@ def parse_terna_workbook(payload: bytes, settings: Mapping[str, Any],
         raise ValueError("Terna workbook has no records for the configured macrozone")
     local = pd.DatetimeIndex(pd.to_datetime(frame[columns["timestamp"]],
         format=settings["date_format"], errors="raise"))
-    starts = local.tz_localize(settings["timezone"], ambiguous="raise", nonexistent="raise").tz_convert("UTC")
     first = pd.Timestamp(workbook["date_start"]).tz_localize(settings["timezone"]).tz_convert("UTC")
     stop = pd.Timestamp(workbook["date_end_exclusive"]).tz_localize(settings["timezone"]).tz_convert("UTC")
     expected = pd.date_range(first, stop, freq=f"{minutes}min", inclusive="left")
+    quarantined = []
+    quarantined_days = []
+    selected_zone_rows = len(frame)
+    if policy == "quarantine_day":
+        # Reject uncertain autumn labels as a whole day, retaining the exact rows.
+        # Export labels such as 02:01 are never rounded into guessed UTC intervals.
+        daylight = local.tz_localize(settings["timezone"], ambiguous=True, nonexistent="raise")
+        standard = local.tz_localize(settings["timezone"], ambiguous=False, nonexistent="raise")
+        uncertain = (daylight.asi8 != standard.asi8) | (local.minute % minutes != 0) | (local.second != 0)
+        quarantined_days = sorted(set(local[uncertain].strftime("%Y-%m-%d")))
+        for day in quarantined_days:
+            left = pd.Timestamp(day, tz=settings["timezone"])
+            right = (pd.Timestamp(day) + pd.Timedelta(days=1)).tz_localize(settings["timezone"])
+            if right - left <= pd.Timedelta(days=1):
+                raise ValueError("Off-grid Terna labels outside an autumn clock-change day")
+        keep = ~local.strftime("%Y-%m-%d").isin(quarantined_days)
+        quarantined = frame.loc[~keep].to_dict("records")
+        frame = frame.loc[keep].copy()
+        local = local[keep]
+        expected = expected[~expected.tz_convert(settings["timezone"]).strftime("%Y-%m-%d").isin(quarantined_days)]
+    markers = np.zeros(len(local), dtype=bool)
+    if policy == "second_occurrence_minute_marker":
+        local, starts, markers = _decode_second_occurrence(local, settings["timezone"], minutes)
+    else:
+        starts = local.tz_localize(settings["timezone"], ambiguous="raise", nonexistent="raise").tz_convert("UTC")
     if starts.duplicated().any() or not starts.sort_values().equals(expected):
         raise ValueError("Terna workbook does not cover every expected quarter-hour exactly once")
     numbers = {}
@@ -72,17 +115,27 @@ def parse_terna_workbook(payload: bytes, settings: Mapping[str, Any],
         "macrozone": settings["zone"], "product_start": starts,
         "product_end": starts + pd.Timedelta(minutes=minutes), "reference_time": starts,
         "reference_time_local": local.astype(str), "source_date_tz": settings["timezone"],
+        "source_timestamp_text": frame[columns["timestamp"]].to_numpy(),
+        "local_time_fold": np.asarray([stamp.fold for stamp in starts.tz_convert(settings["timezone"])], dtype=np.int8),
         **numbers, "value": numbers["price_eur_mwh"], "unit": "EUR/MWh",
         "aggregate_sign": signs, "native_interval_minutes": minutes, "resolution": "PT15M",
         "source_file": Path(workbook["path"]).name, "source_row": frame.source_row.to_numpy(),
+        "source_price_text": frame[columns["price_eur_mwh"]].to_numpy(),
         "source_kind": "manual_terna_xlsx", "revision": "workbook_sha256:" + digest,
         "retrieved_at": pd.Timestamp.now(tz="UTC"), "published_at": pd.NaT,
         "historical_available_at": pd.NaT, "historical_feature_eligible": False,
         "availability_provenance": "manual monthly export; historical publication time not supplied",
-        "interval_provenance": "explicit local-start labels localized in configured timezone; native quarter-hour grid verified"})
+        "interval_provenance": (
+            "local-start labels; user-confirmed Terna +1 minute marker identifies second autumn occurrence; native UTC grid verified"
+            if policy == "second_occurrence_minute_marker" else
+            "explicit local-start labels localized in configured timezone; native quarter-hour grid verified")})
     result = result.sort_values("product_start").reset_index(drop=True)
-    result.attrs.update(excluded_other_zone_records=original_rows-len(result),
-                        price_component_max_residual_eur_mwh=float(residual.max()))
+    result.attrs.update(excluded_other_zone_records=original_rows-selected_zone_rows,
+                        quarantined_delivery_days=quarantined_days,
+                        quarantined_source_rows=quarantined,
+                        ambiguous_time_policy=policy,
+                        decoded_second_occurrence_records=int(markers.sum()),
+                        price_component_max_residual_eur_mwh=float(residual.max()) if len(residual) else None)
     return result
 
 

@@ -460,7 +460,7 @@ def _common_end(native: pd.DataFrame, columns: Sequence[str], timezone_name: str
         start = _stamp(str(day), timezone_name)
         stop = _stamp((date.fromisoformat(str(day)) + timedelta(days=1)).isoformat(), timezone_name)
         expected = pd.date_range(start, stop, freq=f"{minutes}min", inclusive="left")
-        if pd.DatetimeIndex(portion.product_start).equals(expected) and np.isfinite(portion[list(columns)].to_numpy(float)).all():
+        if pd.DatetimeIndex(portion.product_start).as_unit("ns").equals(expected.as_unit("ns")) and np.isfinite(portion[list(columns)].to_numpy(float)).all():
             complete.append(str(day))
     if not complete:
         raise ValueError("No complete local delivery day has all configured regional forecast features")

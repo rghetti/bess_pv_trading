@@ -1,5 +1,100 @@
 # Downloading reusable API data
 
+## Stage manual GME and Terna Excel exports while acquisition continues
+
+The manual workbook workflow prepares a separate DuckDB dataset and never opens
+`data/api/market.duckdb` during staging:
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading stage-market-workbooks \
+  --config configs/api_experiments/manual_market_workbooks.yaml
+```
+
+The generated `data/staging/manual_market/<run>/` contains a self-contained
+`market.duckdb`, `manifest.json`, `daily_coverage.csv`, `monthly_coverage.png`,
+`duplicates.json`, `quarantine.json`, and an `import.yaml` for that exact staged package. Raw Excel
+bytes and SHA-256 checksums remain in the snapshots. Every normalized record
+retains its original filename, source row, textual price, and explicit UTC start
+and exclusive end. The local calendar is Europe/Rome. No Excel dependency is
+installed: the existing value-only XLSX reader is reused.
+
+- MGP prices remain native hourly products before delivery on 1 October 2025,
+  and native quarter-hour products thereafter. Headers and the market regime
+  must agree.
+  The transition is documented in [GME's go-live notice](https://www.mercatoelettrico.org/en-us/Home/NoticesandAnnouncements/NoticesandAnnouncementsME?id=7101).
+- IDA1/2 retain their whole-day quarter-hour products; IDA3 starts at local noon.
+  Chronological one-based GME periods map onto actual 23-, 24- or 25-hour days.
+- Terna normalized rows select the NORD macrozone and the final imbalance-price
+  column. Base/incentive components and auxiliary quantities retain their own
+  fields and units. SUD rows stay in the raw source archive, outside the selected
+  normalized price dataset.
+- Exact overlapping products are compared by provider, dataset, zone, UTC start
+  and UTC end. Equal values and quantities are deduplicated; conflicting values
+  or overlapping intervals of different duration stop the merge. No averaging,
+  interpolation, hourly splitting, zero filling or automatic revision overwrite
+  occurs. Valid negative and zero prices are retained.
+- Explicit cancelled-auction notes remain cancellation metadata; they do not
+  become observations. Missing files and missing price cells remain gaps.
+- Terna's user-confirmed autumn export convention uses `02:01/16/31/46` to
+  identify the second occurrence of `02:00/15/30/45`. The shared
+  `terna_workbook_import.ambiguous_time_policy: second_occurrence_minute_marker`
+  decodes those markers only within the actual repeated autumn hour. Both
+  occurrences retain their prices and are sorted by UTC: the four first-fold
+  quarters precede the four second-fold quarters. `source_timestamp_text`,
+  `source_row`, and `local_time_fold` retain the mapping evidence. The same policy
+  applies to direct Terna imports and every workbook in manual staging, across
+  years. Duplicate/missing quarters and markers outside the repeated hour fail
+  validation. Optional `reject` and `quarantine_day` policies remain available.
+- Spring days contain 92 quarter-hours: local `01:45` is followed by `03:00`.
+  No synthetic prices or intervals fill the missing hour. Nonexistent source
+  labels are rejected, as supported by [pandas timezone localization](https://pandas.pydata.org/docs/reference/api/pandas.DatetimeIndex.tz_localize.html).
+  Ordinary days contain 96 quarters and autumn days 100; native hourly MGP
+  before October 2025 contains 23/24/25 products instead. IDA3 remains the 48
+  quarters from local noon to midnight.
+
+After the downloader has finished and released the live database, use the
+generated configuration for an explicit transactional merge and full audit:
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading merge-market-workbooks \
+  --config data/staging/manual_market/<run>/import.yaml
+PYTHONPATH=src python -m bess_pv_trading check-market-history \
+  --config data/staging/manual_market/<run>/import.yaml
+```
+
+These commands are prepared for later use; staging never invokes them. The merge
+verifies staged checksums/native SQL parity, compares every product against the
+existing selected-provider history, adds only new products, and preserves raw
+source evidence even for entirely duplicate workbooks. A price/boundary conflict
+rolls back the transaction. Repeating the same merge is idempotent. ENTSO-E and
+other unselected snapshot pointers must remain unchanged.
+
+The audit covers every requested delivery day from January 2025, including the
+January–March IDA history already present in the main database. It checks native
+durations and aligned boundaries, NORD/EUR-per-MWh semantics, missing/duplicate
+products, cancellation notes, stored checksums, SQL-vs-Parquet parity, and exact
+staged-value/interval parity. It writes `postcheck.json` and daily coverage beside
+the package. Gaps produce an explicit non-passing status and exit code 2. Focus
+day summaries explicitly cover the Q1/April boundary, October resolution change,
+and both spring and autumn DST dates. The requested window
+is frozen in generated YAML; rerun staging when adding new exports. Available
+day-ahead products beyond that window remain preserved and are reported by their
+actual end date.
+
+Historical publication remains unknown unless supplied by independent evidence;
+import time is never substituted for historical availability.
+
+The optimizer and executor use timezone-aware UTC boundaries and each interval's
+elapsed duration for energy, SOC, revenue and settlement. Native product groups
+retain chronological order across the two autumn folds. Regression tests cover
+92/100-quarter solver horizons, battery efficiency/SOC accounting, all four
+auctions, full-day dispatch and ex-post cash reconciliation. Forecast residual
+vectors are a separate requirement: calibration needs enough complete days with
+the requested product count and rejects insufficient matching DST history.
+Price-grid comparisons normalize timestamp precision so identical cached
+nanosecond timestamps and calendar/Python timestamps align without shifting any
+interval boundary or price.
+
 ## Consolidated DuckDB workflow
 
 The combined and provider-specific acquisition configurations use
@@ -77,8 +172,27 @@ The history configuration uses eight attempts for transient 429/5xx/network
 failures with two-second exponential backoff capped at 30 seconds per wait.
 The CLI prints each retry. HTTP 503 is service unavailability before parsing;
 it is not evidence of a schema mismatch. A failure after the bounded retry
-budget retains all earlier daily caches. Authentication/permission failures
-remain immediate errors. Terna has separate two-second request pacing.
+budget retains all earlier daily caches. Terna has separate two-second request pacing.
+
+`api.terna_http_403_policy: continue_other_providers` is the shared default.
+The first HTTP 403 from a Terna data or token request pauses Terna network
+requests for the remainder of that run. Cached complete Terna chunks and
+cached no-data receipts can still be reused. All other configured providers,
+including ENTSO-E requests in later months, continue with their existing pacing
+and retry settings. This handles a quota-related 403 without claiming that
+every 403 proves quota exhaustion; other access restrictions can return it too.
+
+The denied chunk is recorded as `failed-http`, and remaining uncached Terna
+chunks as `deferred-provider`. Neither status creates a no-data receipt or a
+completed cache entry. The saved manifest reports `status: partial`, failed and
+deferred counts, the sanitized provider pause reason and per-provider completion
+totals. The CLI returns exit code 2 only after finishing the other providers.
+Rerun the same command when access is available again: completed ENTSO-E chunks
+are reused and pending Terna requests are attempted again. Pause state is local
+to the process and does not change credentials or persist a provider block.
+Set the policy to `error` to retain immediate failure on HTTP 403. Other errors
+keep their existing behavior; this policy does not bypass ENTSO-E's own limits
+or retries. Restart an already-running downloader to use the updated code.
 
 All provider configurations now share `data/api/market.duckdb`. The legacy
 migration source is `data/api`. The original five Terna smoke caches were copied

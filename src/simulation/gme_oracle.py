@@ -507,7 +507,7 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
         observed_starts = pd.DatetimeIndex(frame.product_start).sort_values()
         if not len(observed_starts):
             raise ValueError(f"{auction} has no native prices contained in {delivery_day}; check product alignment")
-        if not observed_starts.equals(expected.sort_values()):
+        if not observed_starts.as_unit("ns").equals(expected.sort_values().as_unit("ns")):
             absent = expected.difference(observed_starts)
             extra = observed_starts.difference(expected)
             raise ValueError(f"{auction} price curve is partial or misaligned: missing={len(absent)}, unexpected={len(extra)}; no interpolation is allowed")

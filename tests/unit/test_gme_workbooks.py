@@ -37,15 +37,8 @@ def workbook_case(dataset="ida1_prices", day="regular"):
     return effective, rows
 
 
-@pytest.mark.parametrize("dataset,day", [
-    ("day_ahead_prices", "regular"),
-    ("day_ahead_prices", "spring"),
-    ("day_ahead_prices", "autumn"),
-    ("ida1_prices", "regular"),
-    ("ida1_prices", "spring"),
-    ("ida2_prices", "autumn"),
-    ("ida3_prices", "autumn"),
-])
+@pytest.mark.parametrize("dataset", ["day_ahead_prices", "ida1_prices", "ida2_prices", "ida3_prices"])
+@pytest.mark.parametrize("day", ["regular", "spring", "autumn"])
 def test_native_periods_keep_dst_and_da_ida_resolutions_separate(dataset, day):
     settings, rows = workbook_case(dataset, day)
     frame = _parse_workbook(xlsx_bytes(rows), "prices.xlsx", dataset, settings)
@@ -56,6 +49,7 @@ def test_native_periods_keep_dst_and_da_ida_resolutions_separate(dataset, day):
     if dataset == "ida3_prices":
         assert frame.product_start.iloc[0].tz_convert(settings["timezone"]).hour == 12
     assert frame.price_eur_mwh.iloc[0] == float(str(rows[1][3]).replace(",", "."))
+    assert frame.price_eur_mwh.tolist() == [float(str(row[3]).replace(",", ".")) for row in rows[1:]]
 
 
 def test_partial_price_curve_is_rejected():

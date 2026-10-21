@@ -311,6 +311,8 @@ python -m bess_pv_trading download-data --config configs/api_experiments/api_his
 
 The history config currently requests 1 January 2025 through 31 August 2026 (`api.end` is exclusive) and completes requested datasets month by month using daily request keys. Rerunning resumes cached completed chunks; transient failures have bounded retry/backoff. `--refresh-cache` requests new snapshots while retaining prior revisions. No data is downloaded by an offline experiment command.
 
+If Terna returns HTTP 403, the default `api.terna_http_403_policy: continue_other_providers` pauses further Terna network requests for that run and continues ENTSO-E across all remaining months. Valid cached Terna chunks remain usable. The final manifest reports `status: partial`, the failed/deferred Terna chunks and per-provider completion totals; the CLI exits with code 2 after finishing the remaining providers. HTTP 403 may indicate quota exhaustion or another access restriction. Rerun the same command later without `--refresh-cache` to retry pending Terna chunks and reuse completed ENTSO-E data. Set the policy to `error` for immediate failure instead. A running process must be restarted to pick up this change.
+
 | Provider | Configuration examples | Credentials / scope |
 | --- | --- | --- |
 | ENTSO-E | `entsoe_api.yaml`, `api_history.yaml` | `ENTSOE_API_TOKEN`; day-ahead prices and regional forecasts |
@@ -339,6 +341,8 @@ Native `Periodo` indices and local delivery dates identify MI products, includin
 ## Time, data quality, and PV forecasting
 
 All internal event/product timestamps are timezone-aware and use UTC. Market days, gates and figures use `Europe/Rome`. Local midnight-to-midnight grids produce 92, 96 or 100 quarter-hours on spring-DST, ordinary and autumn-DST days. Repeated local hours retain their UTC offsets/folds.
+
+The shared Terna workbook parser decodes `02:01/16/31/46` as the second occurrence of `02:00/15/30/45` on the autumn transition day, retains the original labels and prices, and orders both hours by UTC. Spring skips the nonexistent 02:00 hour without creating prices. See the [manual workbook workflow](docs/api_pipeline.md#stage-manual-gme-and-terna-excel-exports-while-acquisition-continues) for staging and post-download checks.
 
 | Quantity | Representation |
 | --- | --- |
