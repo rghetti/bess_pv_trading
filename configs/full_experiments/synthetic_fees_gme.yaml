@@ -61,21 +61,6 @@ transaction_fees:
     monthly_volume_mwh:
       2025-10: 19999.0
     provenance: Synthetic known operator volume near the first band; not observed portfolio data.
-  tariffs:
-    - version: gme_mpe_published_structure_assumed_2024_2026
-      valid_from: '2024-12-01'
-      valid_to: '2026-12-31'
-      applicability: assumed_unchanged
-      source: https://gme.mercatoelettrico.org/it-it/Home/Accesso-ai-Mercati/Elettricita/MercatiElettrici/CorrispettiviSettlement/CorrispettiviElettricita
-      thresholds_mwh:
-        - 20000.0
-        - 1000000.0
-        - 10000000.0
-      marginal_eur_per_mwh:
-        - 0.0
-        - 0.04
-        - 0.03
-        - 0.02
 execution:
   dispatch_policy: follow_battery_plan
 farm_id: 1

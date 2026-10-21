@@ -17,7 +17,7 @@
 \DeclareMathOperator{\clip}{clip}
 \title{PV and Battery Trading in MGP and MI Auctions\\Current Mathematical Model and Execution Workflow}
 \author{\texttt{bess\_pv\_trading} repository}
-\date{Implementation reviewed on 20 October 2026}
+\date{Implementation reviewed on 21 October 2026}
 \begin{document}
 \maketitle
 \begin{abstract}
@@ -27,7 +27,9 @@ interconnection. It distinguishes auction plans, immutable market commitments,
 physical feedback execution, and ex-post settlement. The shared Gurobi formulation
 supports a risk-neutral scenario tree. The current historical January experiment
 instead uses one deterministic rolling weather forecast and perfect auction-price
-information, followed by execution against measured AC production. Separate
+information, followed by execution against measured AC production. A separate
+continuous experiment applies daily planning chronologically while carrying
+actual battery state, outstanding orders and operator fee history across days. Separate
 full-information PV+BESS and PV-only optimizations quantify an ex-post operating
 value of storage. Equations below follow the current source code; they are not a
 proposal or a claim of a fully causal historical trading strategy.
@@ -67,6 +69,8 @@ separately from the optimization objective.
 \path{src/simulation/synthetic.py} & Shared event replay and auction submission/publication accounting.\\
 \path{src/simulation/replay.py} & Residual scenario conditioning and bounded physical execution.\\
 \path{src/simulation/gme_oracle.py} & Manual-data historical price oracle, rolling PV and full-information asset comparisons.\\
+\path{src/simulation/continuous.py} & Consecutive delivery-day books, shadow boundary projections and uninterrupted execution.\\
+\path{src/reporting/continuous_outputs.py} & Continuous trajectory accounting, paired comparisons and native solve timing.\\
 \path{src/simulation/settlement.py} & Exact-grid actual settlement and expected/realized KPI reconciliation.\\
 \path{src/forecasting/pv.py} & Weather-to-AC PV conversion.\\
 \path{src/markets.py} & Configurable local auction gates, publication events and DST-aware delivery grids.\\
@@ -405,8 +409,9 @@ The implementation uses an exact import-power linearization with a direction
 binary only when $f$ is nonzero. The farm-910 study sets $f=0$.
 
 \subsection{Market transaction fees and operator monthly volume}
-The optional \texttt{transaction\_fees.mode} is \texttt{none} (default),
-\texttt{flat}, or \texttt{gme\_real}. Let $m(a)$ be the calendar month of auction
+The \texttt{transaction\_fees.mode} is \texttt{none},
+\texttt{flat}, or \texttt{gme\_real} (the shared YAML default). Legacy programmatic
+inputs without a fee section remain fee-free. Let $m(a)$ be the calendar month of auction
 submission in market local time, $V_m$ known already executed operator volume,
 and $G_{m,s}=\sum_{a:m(a)=m,t}|q_{a,n_a(s),t}|$ new gross MWh. Purchases and
 sales count separately even when final delivery is zero. Quarter-hour energy
@@ -444,8 +449,14 @@ source, thresholds, marginal rates and an applicability status. The current
 \href{https://gme.mercatoelettrico.org/it-it/Home/Accesso-ai-Mercati/Elettricita/MercatiElettrici/CorrispettiviSettlement/CorrispettiviElettricita}{GME tariff}
 and the \href{https://gme.mercatoelettrico.org/Portals/0/Documents/it-IT/20070502Bilancio2006.pdf}{2006 annual report}
 show the same structure, the latter effective in 2007. A dated confirmation of
-2025 applicability was not established; the supplied historical example marks
+2025 applicability was not established; the shared December 2024--December 2026 tariff marks
 this explicitly as \texttt{assumed\_unchanged}. Unsupported dates fail.
+The shared initial state assumes a standalone simulated operator at local
+midnight on 1 December 2024, with zero December volume, zero earlier fees and
+no external portfolio activity. Subsequent months begin at zero and continuous
+execution carries actual submitted volume. Known operator-level volume should
+replace this assumption when the plant belongs to a larger portfolio. Enabling
+this tariff can still produce zero variable fees below the monthly exemption.
 Example YAMLs are
 \path{configs/full_experiments/synthetic_fees_none.yaml},
 \path{configs/full_experiments/synthetic_fees_flat.yaml}, and
@@ -486,8 +497,31 @@ nonanticipativity, product rules and terminal condition. Executed past intervals
 are absent from the residual grid. Future-auction quantities are plans until
 their own submission. Only the current auction order is committed from that
 solve. Before noon, IDA3 cannot change orders for the morning; physical control
-replanning of remaining earlier intervals must respect their already fixed
-market positions.
+commands from the previous plan also remain in force. All IDA3 decision
+variables cover only the 48 quarter-hours from 12:00 to midnight: charge,
+discharge, mode, curtailment, grid power and trades, with 49 SOC boundaries.
+Gate closure determines the information cutoff, not the delivery horizon.
+
+More generally, let $c_k$ be the submission cutoff and $j_k$ the first grid
+boundary no earlier than both $c_k$ and the current auction's first eligible
+delivery. The solver starts at $j_k$. From the latest observed physical state,
+the replay projects the locked prefix using the previously requested commands
+$\bar u_i$, fixed contracted grid targets $Q_i/\Delta_i$, and the latest
+cutoff-available PV forecast $\widehat P^{(c_k)}_i$ through the same physical
+controller $\Phi$ used for delivery:
+\begin{equation}
+ \widehat x_{i+1\mid c_k}
+ =\Phi\!\left(\widehat x_{i\mid c_k},\bar u_i,
+              Q_i/\Delta_i,\widehat P^{(c_k)}_i\right),\qquad i<j_k.
+\end{equation}
+Here $x$ includes energy and degradation state. The resulting
+$\widehat E_{j_k\mid c_k}$ is the fixed initial energy of the residual MILP.
+Forecast publication eligibility is still checked at $c_k$; projecting to noon
+does not permit a forecast released after the 10:00 gate. No future measured PV
+is used in this projection. Actual delivery continues with the retained commands
+and realized PV, so its noon state may differ from the projected state. Grid
+feedback and protection enforce the actual SOC and power bounds. If IDA3 is the
+first participating auction, zero-position feedback continues until noon.
 
 \section{Battery degradation models}
 
@@ -952,11 +986,12 @@ previously planned future order to submit.
 \subsection{Operational fallback after an infeasible auction decision}
 
 Exact planned delivery does not guarantee feasible recourse after forecast
-updates. For example, the IDA3 decision cannot change products before noon:
-already committed exports can exceed the revised PV forecast plus usable
-stored energy in that closed window. The resulting MILP can be infeasible even
-though the physical controller can continue within SOC/power limits by accepting
-an imbalance. The terminal constraint need not be the conflicting constraint.
+updates. Limited remaining energy, power and trading capacity may conflict with
+the configured terminal state or remaining delivery obligations. The physical
+controller can continue within SOC/power limits by accepting an imbalance even
+when the planning model is infeasible. A pre-noon delivery shortfall is executed
+and settled under the retained policy; those closed intervals are excluded from
+the IDA3 MILP and cannot make it infeasible.
 
 The configurable policy \path{execution.infeasible_auction_policy} defaults to
 \texttt{error}. The full-January study uses \texttt{previous\_plan}. When and only
@@ -1051,6 +1086,167 @@ before reusing checkpoints. Incomplete children are retained separately and
 rerun; changed configurations are rejected. After independent solution
 validation, tolerated negative floating-point command roundoff is floored to
 zero before the physical controller's strict nonnegative-input checks.
+
+\section{Continuous operation with daily optimization horizons}
+
+\subsection{Delivery books and the chronological event sequence}
+The separate \texttt{experiment-continuous} workflow selects inclusive local
+delivery dates $d\in\mathcal D=\{d_0,\ldots,d_F\}$ through
+\path{continuous_optimization.start_date} and \path{end_date}. Each day has its
+own physical grid $\mathcal T_d$, native auction products, actual price curves
+and auction calendar. Commitments and revisable plans are keyed by delivery
+day as well as auction and interval, for example $(d,a,t)$; the same auction
+name on another delivery day is a different market book.
+
+All events are merged into one chronological sequence. On an ordinary operating
+day $d$, the replay submits IDA3 orders for $d$, then DA, IDA1 and IDA2 orders
+for $d+1$ while executing delivery $d$. Submissions use the configured decision
+buffer before the local gate; price publications book already submitted orders
+without triggering another optimization. IDA3 variables remain restricted to
+noon--midnight of their delivery day. Native DA-hour equalities and quarter-hour
+IDA/physical controls are unchanged. Cancelled auctions produce no order,
+variables or solve, and unexplained missing inputs fail preflight.
+
+This is a chronological sequence of \emph{daily} MILPs, not a simultaneous
+month-long or two-day trading MILP. An optimization for $d+1$ cannot change
+current-day dispatch or commitments for $d$. Conversely, current-day IDA3
+cannot reopen submitted next-day DA quantities. The current-day commands and
+book enter next-day planning through the projected boundary state below.
+
+\subsection{Forecast-based projection of the next initial state}
+At a decision cutoff $c_k$, let $x_k^{\rm obs}$ be the most recent observed
+physical state at boundary $\tau_{i_k}\le c_k$. This state includes energy,
+cumulative executed throughput/degradation and, when relevant, depth-model
+segment history. The current continuous controller requires zero configured
+telemetry latency, treating an interval's actual state as observable at its
+end; preflight rejects a nonzero \path{source.telemetry_latency_minutes}.
+This restriction is independent of the weather forecast's availability lag.
+An unfinished interval's already issued command is retained.
+Let $\bar u_i$ be the retained current-day charge, discharge and PV-curtailment
+commands and $Q_i^{\rm sub}$ the cumulative submitted grid position. For a
+pre-delivery DA, IDA1 or IDA2 solve for $d$, the planning boundary $b(d,a)$ is
+midnight at the start of $d$; for IDA3 it is noon on $d$. Define a shadow state
+using only the weather/PV vintage available at $c_k$:
+\begin{align}
+ \widehat x_{i_k\mid k}&=x_k^{\rm obs},\\
+ \widehat x_{i+1\mid k}
+ &=\Phi\!\left(\widehat x_{i\mid k},\bar u_i,
+        Q_i^{\rm sub}/\Delta_i,\widehat P_{i\mid c_k}\right),
+       &&i_k\le i<b(d,a). \label{eq:continuous-shadow}
+\end{align}
+$\Phi$ is the same grid-tracking and physical-protection controller used for
+actual execution. Thus the forecast projection respects SOC, battery power and
+POI limits while preserving the old commands and submitted grid target. It
+uses no new optimization for the locked prefix and no future measured PV.
+Forecast eligibility uses the UTC publication/availability clock at $c_k$,
+including the configured six-hour lag, independently of the later projected
+delivery boundary.
+
+The daily MILP fixes its initial state to
+$x_{d,b}=\widehat x_{b(d,a)\mid k}$. At a later gate this projection is recomputed
+from the newer actual state and latest eligible forecast. Meanwhile actual
+execution advances separately:
+\begin{equation}
+ x^{\rm real}_{i+1}=\Phi\!\left(x^{\rm real}_i,\bar u_i,
+       Q_i^{\rm sub}/\Delta_i,P_i^{\rm real}\right).
+\end{equation}
+Neither solving nor revising a shadow projection overwrites actual energy or
+aging state. The realized midnight state may differ from the previously
+projected state; later solves carry the actual state as it becomes available.
+Saved boundary records retain prediction, actual state and signed error
+$E_b^{\rm real}-\widehat E_{b\mid k}$. Midnight projections are distinguished
+from IDA3 noon projections in diagnostics and plots.
+
+\subsection{Daily free decisions, initial condition and final target}
+For integrated planning, the free trade quantities are those of the current
+and remaining active auctions \emph{for that delivery day}. For sequential
+\texttt{current\_auction\_only} planning, only the current auction has free
+trade variables and expected trading revenue. Previously submitted quantities
+for the target book, including unpublished pending orders, remain fixed in
+$Q^{\rm fix}_{d,t}$ in both modes. Their cash values remain external to the
+new decision objective. Physical controls and SOC over the target day's
+remaining eligible delivery horizon remain free under the existing balances,
+costs and asset constraints. Trades in other delivery books are not decision
+variables in this MILP. Its objective is the daily residual
+objective~\eqref{eq:objective}; projected costs already locked before its
+planning boundary are not new trading opportunities.
+
+For the supplied January configuration, $d_0=$ 1 January 2025 and $d_F=$
+31 January 2025. The supplied boundary is
+\begin{equation}
+ E^{\rm real}_{d_0,0}=0.90\,E^{\rm nominal}.
+\end{equation}
+Trading starts with the 31 December DA/IDA1/IDA2 events for delivery on
+1 January. Their initial midnight state is this supplied assumption; it is
+not inferred from unavailable 31 December physical operation. Eligible
+31 December forecasts and the actual 1 January delivery-price curves are
+still required. After the first midnight, there is no daily SOC reset.
+
+The configured terminal constraint is applied only when planning the final
+delivery day and only when the target is non-null:
+\begin{equation}
+ e_{d_F,|\mathcal T_{d_F}|}
+   =E^{\rm nominal}\,s_F/100,\qquad s_F=50
+       \quad\hbox{(SOC percentage in the January example)}.
+\end{equation}
+Intermediate midnight states are free within their SOC box; there is no
+intermediate target or energy salvage price. Actual terminal energy remains
+an output of feedback execution and need not equal the planned target. The
+last delivery interval ends at local midnight on 1 February. No orders for
+1 February delivery are submitted by the January study.
+
+\subsection{Independent trajectories, accounting and restart}
+The default experiment executes three independent chronologies: integrated
+planning, sequential current-auction-only planning and an integrated
+perfect-PV reference with the same daily horizons. All start from the same
+supplied state and use matched actual price, settlement, effective measured
+PV and asset inputs, but each carries its own decisions and realized state.
+The reference replaces forecast PV by effective realized PV, including in
+shadow projections. It does not introduce future delivery-day trade variables.
+Its reported performance is continuous settled operating profit, not the sum
+of overlapping auction objective values. The two trading modes and this
+reference are independently configurable.
+
+Monthly operating profit is additive over delivery products:
+\begin{equation}
+ J_{\mathcal D}^{\rm real}=\sum_{d\in\mathcal D}\left[
+   \sum_{a,t}\pi^{\rm real}_{d,a,t}q^{\rm sub}_{d,a,t}
+   +\sum_{t\in\mathcal T_d}S_t
+   -D_d^{\rm executed}-C_d^{\rm import}-C_d^{\rm trading,real}\right].
+\end{equation}
+The trade ledger preserves submission/publication clocks; daily profit is
+attributed to delivery date. Fees and auction revenues reconcile both by day
+and over the complete ledger. Operator fee volume still uses the submission
+month: the first day's 31 December orders belong to December, even though
+their revenue appears in 1 January delivery profit. Actual fee mode therefore
+requires an applicable December tariff and a timestamped initial operator
+volume state; January volume starts according to the fee calendar, without a
+daily reset. Wear is charged only on actual executed throughput/history.
+Per-day initial expectations and realized-minus-expected differences are
+reported separately; no objective values across overlapping gate solves are
+added to obtain profit.
+
+With the configured infeasibility policy, a later failed solve can retain the
+previous physical plan and its already planned current order in integrated
+mode; the sequential mode retains dispatch and submits zero new trades. No
+prior plan means the existing failure behavior applies. Actual feedback still
+enforces physical limits and settles remaining deviations. Failed attempts
+and fallback choices remain explicit diagnostics.
+
+Resume checks the effective configuration, code/policy and common input
+fingerprints before restoring an atomic completed-midnight checkpoint. The
+checkpoint contains actual physical/aging state, outstanding priced and
+unpriced commitments for both relevant books, retained commands, fee state,
+publication status and the event cursor. Work after that boundary is replayed
+without double-booking cash or fees. Business decisions rolled back for resume
+do not survive as submitted history; every actual Gurobi attempt, including
+discarded work, survives in a separate attempt log with its rollback marker.
+Native \texttt{Model.Runtime} statistics include these attempts, keep reference
+solves identifiable, and report totals plus mean/minimum/maximum/population
+standard deviation by strategy and delivery day. Model-build and Python wall
+times remain separate. Resolved configurations, common-input provenance,
+daily/monthly KPIs, state projections and comparisons are saved by file type
+under \path{outputs/continuous_optimization/<run_id>/}.
 
 \section{Forecast prices and the general stochastic route}
 
@@ -1159,7 +1355,7 @@ SOC percentages remain independent of farm selection. The reusable
 The current 50\% study is configured by
 \path{configs/full_experiments/gme_oracle_2025-01-01_farm910_perfect_pv_comparison_terminal_soc_50.yaml}.
 Its inherited assumptions include a 5 MWh battery, 2.5 MW symmetric power,
-10--90\% SOC box, 0.97 combined efficiencies and a 6.638 MW directional POI.
+a configured SOC box, 0.97 combined efficiencies and a 6.638 MW directional POI.
 These are reproducible study settings, not confirmed anonymous-farm hardware.
 
 Each historical run is grouped under
@@ -1195,8 +1391,9 @@ vintages.
 
 \section{Current limitations and extension boundaries}
 
-The current empirical workflow is a single-day perfect-price benchmark with one
-weather member, approximate geometry and an idealized interval-average controller.
+The current empirical workflows use daily perfect-price planning with one
+weather member, either as independent days or consecutive continuous operation,
+with approximate geometry and an idealized interval-average controller.
 Measured AC is effective observed production, not an independently estimated
 unconstrained irradiance-to-generation potential; hidden plant curtailment/faults
 in source production are not identified automatically. Configured cleaning and
@@ -1207,7 +1404,8 @@ multiple-farm network coupling, ancillary services, intrainterval dynamics,
 ramping/startup constraints, dynamic capacity loss, calendar aging, thermal
 battery dynamics, fixed operating costs and investment cash-flow optimization.
 The generic \texttt{backtest} CLI remains synthetic-only; the separate historical
-\texttt{experiment-gme-oracle} workflow is the implemented manual-data replay.
+\texttt{experiment-gme-oracle}, \texttt{experiment-participation} and
+\texttt{experiment-continuous} workflows are the implemented manual-data replays.
 Future uncertain-price evaluations need their own causal inputs and comparison
 protocol rather than relabeling the current oracle results.
 

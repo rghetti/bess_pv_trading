@@ -10,8 +10,68 @@ Use `optimize` for the initial plan or `run-synthetic` for the executed ledger.
 The GME example declares a synthetic starting operator volume and explicitly
 assumes the published tariff applied historically. See
 [fee formulas, state and reporting](../../docs/formulation.md#market-transaction-fees).
+The shared default now enables the GME variable tariff; the `none` example
+explicitly disables it. Its standalone zero-volume default retains the first
+20,000 MWh monthly exemption. Set known operator portfolio volume in
+`transaction_fees.initial_state` when that assumption does not apply.
 
 Small synthetic solver examples remain here for software validation. Add real-data studies as separate files with names that describe the study and period.
+
+## Continuous optimization
+
+`continuous_optimization_2025-01.yaml` is a separate consecutive-delivery
+experiment. From the repository root, run:
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading experiment-continuous --config configs/full_experiments/continuous_optimization_2025-01.yaml
+```
+
+Change only `continuous_optimization.start_date` and `end_date` to choose the
+inclusive delivery-date range. The January example assumes 90% SOC at the
+first midnight and starts trading its first delivery day in the preceding
+31 December DA/IDA1/IDA2 auctions. It requires those prices and eligible
+weather forecasts, but no 31 December realized PV. Actual operation ends at
+midnight after the configured final date; no outside-range orders are created.
+
+This runs integrated and `current_auction_only` planning as separate continuous
+trajectories, plus a perfect-PV reference with the same daily planning horizon.
+`planning_modes` selects either or both trading modes;
+`perfect_pv_reference: false` skips the reference. Each trajectory carries its
+own realized SOC, degradation, fees and commitments. DA/IDA1/IDA2 use the
+current state and forecast/controller projection of retained current-day
+commands to initialize next-day plans. They never use future realized midnight
+SOC. Current-day IDA3 stays restricted to noon–midnight delivery. Forecast
+selection uses each gate's submission cutoff and the shared six-hour UTC
+availability lag.
+
+The shared `state.terminal_soc_percent` applies only to the final optimization
+boundary, with 50% in this example. Intermediate days have no terminal target
+and no inventory salvage; realized terminal SOC may differ through feedback.
+All battery, POI, conversion, solver and settlement settings retain their usual
+shared YAML sections. `experiment_outputs.plots` and `save_model_files` control
+plots and model exports. Farm selection works with root `farm_id` or
+`--farm-id` as in the single-day workflow.
+
+Outputs under `outputs/continuous_optimization/<run_id>/` include per-strategy
+interval/daily KPI CSVs, submitted trade ledgers, state projections and raw solve
+diagnostics, with JSON and figures in their own folders. Comparison tables
+report paired daily and total settled-profit differences, inventory and
+operating costs. Perfect-PV profit comes from its continuous execution;
+overlapping per-gate objective values remain diagnostics and are not summed.
+Midnight and IDA3-noon projection plots are separate for each solved strategy:
+`midnight_soc_prediction_errors_<strategy>.png` and
+`ida3_noon_soc_prediction_errors_<strategy>.png`.
+`json/optimization_timing.json` records native Gurobi runtimes, mean/min/max/std
+and strategy/day summaries, keeping reference solves separately identifiable.
+
+The example enables `continuous_optimization.resume: true`. Resume verifies
+configuration and input fingerprints, restores the latest completed midnight
+checkpoint and replays work after it, including existing next-day orders and
+fee/aging history. Rolled-back solver attempts remain saved in
+`json/optimization_attempts.json` and counted in actual runtime statistics;
+business decisions are saved separately in `json/solves.json`. Use a fresh
+`run_id` when changing study settings. The workflow uses local data without
+API requests and does not change the independent participation study.
 
 The corrected January studies use native hourly DA prices/orders and native
 15-minute IDA1/2/3 prices/orders. `decision_resolution_minutes: 15` permits battery

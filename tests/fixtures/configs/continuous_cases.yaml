@@ -1,0 +1,76 @@
+# Deterministic synthetic inputs for causal continuous-operation acceptance tests.
+include: ../../../configs/standard.yaml
+farm_id: 1
+continuous_optimization:
+  start_date: '2025-01-01'
+  end_date: '2025-01-03'
+market:
+  valid_from: '2025-01-01'
+  valid_to: '2025-01-03'
+synthetic:
+  delivery_day: '2025-01-01'
+  seed: 17
+  branches_per_auction: 1
+  branch_values: [0.0]
+  branch_probabilities: [1.0]
+  pv_peak_mw: 0.4
+  sunrise_hour: 7.0
+  sunset_hour: 19.0
+  base_price_eur_per_mwh: 70.0
+  daily_price_amplitude: 15.0
+  residual_scale: {DA: 0.0, IDA1: 0.0, IDA2: 0.0, IDA3: 0.0}
+  stage_spreads: {IDA1: -3.0, IDA2: 2.0, IDA3: 4.0}
+  imbalance_price_eur_per_mwh: 60.0
+  strategies: [oracle]
+battery:
+  capacity_mwh: 1.0
+  max_power_mw: 0.5
+state:
+  initial_soc_percent: 90.0
+  terminal_soc_percent: 50.0
+degradation:
+  cost_eur_per_mwh_throughput: 5.0
+  replacement_economics: null
+  throughput_lifetime: null
+transaction_fees:
+  mode: flat
+  flat_eur_per_mwh: 0.01
+execution:
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: false
+experiment_outputs:
+  plots: false
+  save_model_files: false
+outputs:
+  plots: false
+  save_model_files: false
+solver:
+  threads: 1
+  time_limit_seconds: 30.0
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+farms:
+  '1':
+    poi_import_mw: 1.0
+    poi_export_mw: 1.0
+test_case:
+  realized_pv_factor: 1.2
+  future_realized_pv_factor: 0.25
+  settlement_price_eur_per_mwh: 100.0
+  factors_by_auction: {DA: 1.0, IDA1: 1.05, IDA2: 1.1, IDA3: 1.15}
+  cancelled_day_index: 1
+  cancelled_auction: IDA3
+  fallback_day_index: 1
+  fallback_auction: IDA3
+  expected_ida3_intervals: 48
+  comparison_atol: 1.0e-06
+  future_price_multiplier: 9.0
+  dst_cases:
+    - delivery_day: '2025-03-30'
+      expected_physical_intervals: 92
+      native_da_minutes: 60
+      expected_da_products: 23
+    - delivery_day: '2025-10-26'
+      expected_physical_intervals: 100
+      native_da_minutes: 15
+      expected_da_products: 100

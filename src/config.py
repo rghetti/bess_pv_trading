@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from datetime import date
 from typing import Any
 from copy import deepcopy
 import math
@@ -138,6 +139,48 @@ def merge_mapping(base: dict[str, Any], overrides: dict[str, Any]) -> dict[str, 
     return result
 
 
+def validate_continuous_optimization(config: dict[str, Any], *, require_dates: bool = False) -> None:
+    """Validate continuous delivery dates and carried-state settings when selected."""
+    section = config.get("continuous_optimization", {})
+    if not isinstance(section, dict):
+        raise ConfigurationError("continuous_optimization must be a YAML mapping")
+    start, end = (section.get(key) for key in ("start_date", "end_date"))
+    # Shared templates leave the workflow inactive until both dates are supplied.
+    if not require_dates and start is None and end is None:
+        return
+    if start is None or end is None:
+        raise ConfigurationError("continuous_optimization requires both start_date and end_date (inclusive delivery dates)")
+    try:
+        first, last = (date.fromisoformat(str(value)) for value in (start, end))
+    except (TypeError, ValueError):
+        raise ConfigurationError("continuous_optimization dates must be ISO delivery dates (YYYY-MM-DD)") from None
+    if first > last:
+        raise ConfigurationError("continuous_optimization.end_date must not precede start_date")
+    modes = section.get("planning_modes")
+    allowed_modes = {"integrated", "current_auction_only"}
+    if (not isinstance(modes, list) or not modes
+            or any(not isinstance(mode, str) or mode not in allowed_modes for mode in modes)
+            or len(modes) != len(set(modes))):
+        raise ConfigurationError("continuous_optimization.planning_modes must be a nonempty unique list of integrated/current_auction_only")
+    for key in ("perfect_pv_reference", "resume"):
+        if not isinstance(section.get(key), bool):
+            raise ConfigurationError(f"continuous_optimization.{key} must be a YAML boolean")
+    state, battery = config.get("state", {}), config.get("battery", {})
+    lower, upper = (float(battery.get(key, default)) for key, default in
+                    (("soc_min_percent", 0.0), ("soc_max_percent", 100.0)))
+    for key in ("initial_soc_percent", "terminal_soc_percent"):
+        value = state.get(key)
+        if key == "terminal_soc_percent" and value is None:
+            continue
+        try:
+            valid = (not isinstance(value, bool) and math.isfinite(float(value))
+                     and 0 <= float(value) <= 100 and lower <= float(value) <= upper)
+        except (TypeError, ValueError):
+            valid = False
+        if not valid:
+            raise ConfigurationError(f"Continuous optimization state.{key} must lie within battery SOC percentage bounds")
+
+
 def validate_config(config: dict[str, Any]) -> None:
     """Check common settings; specialized adapters validate their own inputs."""
     from .transaction_fees import transaction_fees_from_config
@@ -180,6 +223,7 @@ def validate_config(config: dict[str, Any]) -> None:
                 (("plots", True), ("per_profile_plots", False), ("save_model_files", False),
                  ("perfect_foresight_reference", True), ("sequential_all_auctions_baseline", False), ("resume", False))):
             raise ConfigurationError("Participation study plot/model switches must be YAML booleans")
+    validate_continuous_optimization(config)
     baseline = config.get("reoptimization_baseline", {})
     if not isinstance(baseline, dict) or set(baseline) - {"enabled", "freeze_after_auctions", "plots"}:
         raise ConfigurationError("reoptimization_baseline accepts enabled, freeze_after_auctions and plots")

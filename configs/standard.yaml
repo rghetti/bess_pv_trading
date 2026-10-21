@@ -208,6 +208,8 @@ market:
     IDA2: '22:30'
     IDA3: '10:30'
   delivery_start_times:
+    # Earliest tradable delivery and earliest dispatch replaced by that auction.
+    # Gate/submission times determine forecast availability, not this boundary.
     DA: null
     IDA1: null
     IDA2: null
@@ -229,8 +231,8 @@ plant:
 battery:
   capacity_mwh: 5.0
   max_power_mw: 2.5
-  soc_min_percent: 10.0
-  soc_max_percent: 90.0
+  soc_min_percent: 7.0
+  soc_max_percent: 93.0
   efficiency_convention: combined
   combined_charge_efficiency: 0.97
   combined_discharge_efficiency: 0.97
@@ -287,16 +289,35 @@ trading:
   settlement_status: exact_planned_delivery_actual_terna_quarter_hour_settlement_ex_post
   planned_delivery_balance_resolution_minutes: null
 transaction_fees:
-  mode: none
+  # Progressive GME MPE variable fees on gross purchases plus sales, by submission month.
+  # The first 20,000 MWh/month are exempt. none and flat remain explicit overrides.
+  mode: gme_real
   flat_eur_per_mwh: 0.0
   timezone: Europe/Rome
   operator_scope: standalone_plant
-  tariffs: []
+  # The published structure is assumed unchanged over this historical study window;
+  # unsupported dates fail. Fixed membership/annual/ACER charges are not included.
+  tariffs:
+    - version: gme_mpe_published_structure_assumed_2024_2026
+      valid_from: '2024-12-01'
+      valid_to: '2026-12-31'
+      applicability: assumed_unchanged
+      source: https://gme.mercatoelettrico.org/it-it/Home/Accesso-ai-Mercati/Elettricita/MercatiElettrici/CorrispettiviSettlement/CorrispettiviElettricita
+      thresholds_mwh:
+        - 20000.0
+        - 1000000.0
+        - 10000000.0
+      marginal_eur_per_mwh:
+        - 0.0
+        - 0.04
+        - 0.03
+        - 0.02
   initial_state:
-    as_of: null
-    monthly_volume_mwh: {}
+    as_of: '2024-12-01T00:00:00+01:00'
+    monthly_volume_mwh:
+      2024-12: 0.0
     cumulative_fees_eur: 0.0
-    provenance: ''
+    provenance: Standalone simulated operator starts with zero December 2024 traded volume and no external portfolio activity. Subsequent months start at zero and continuous execution carries actual submitted volume. Replace this assumption with known operator-level volume when applicable.
 execution:
   dispatch_policy: track_committed_grid
   reoptimize_physical_controls: false
@@ -342,6 +363,7 @@ gme_oracle_experiment:
   price_display_resolution_minutes: 15
   participating_auctions: null
 experiment_outputs:
+  # Native Gurobi per-solve and aggregate timings are always saved in json/optimization_timing.json.
   root: outputs/full_experiments/gme_oracle
   run_id: null
   plots: true
@@ -388,6 +410,21 @@ participation_study:
   per_profile_plots: false
   save_model_files: false
   profit_tolerance_eur: 1.0e-06
+  resume: false
+
+# CONTINUOUS OPTIMIZATION: dates are inclusive local delivery dates in market.timezone.
+# First-day DA/IDA1/IDA2 occur on the previous date; physical execution starts at midnight.
+# Carry actual SOC/history across days; state.terminal_soc_percent applies only at study end.
+# Plot/model switches are inherited from experiment_outputs.
+continuous_optimization:
+  start_date: null
+  end_date: null
+  planning_modes:
+    - integrated
+    - current_auction_only
+  perfect_pv_reference: true
+  output_root: outputs/continuous_optimization
+  run_id: null
   resume: false
 
 # PREPARED FORECAST SAFETY: this flag alone does not select a prepared-input workflow.

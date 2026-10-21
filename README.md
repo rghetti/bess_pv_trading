@@ -2,7 +2,7 @@
 
 This repository studies one photovoltaic farm and an AC-coupled battery sharing a point of interconnection (POI). It prepares farm and market data, converts rolling weather forecasts into PV power with pvlib, optimizes energy positions in MGP and MI-A1/2/3 with Gurobi, executes the plans against realized PV through a feedback controller, and settles delivery deviations afterwards.
 
-The current historical experiment is **one delivery day in the NORD zone, with perfect auction-price information and one deterministic weather-forecast member**. It refreshes the PV forecast before each active auction and makes four auction decisions when all auctions take place. Separate hindsight optimizations use realized PV to compare the feedback trajectory with a perfect-information schedule and to measure the incremental operating value of a battery against a PV-only plant. The general optimizer also supports scenario trees and probabilistic prepared forecasts; the current historical study does not use learned uncertain price forecasts.
+The historical workflows use **one-day planning horizons in the NORD zone, with perfect auction-price information and one deterministic weather-forecast member**. Single-day and independent-day participation studies refresh the PV forecast before each active auction and make four auction decisions when all auctions take place. A separate continuous optimization experiment carries physical state and commitments across consecutive delivery days. Separate hindsight optimizations use realized PV to compare the feedback trajectory with a perfect-information schedule and to measure the incremental operating value of a battery against a PV-only plant. The general optimizer also supports scenario trees and probabilistic prepared forecasts; the current historical study does not use learned uncertain price forecasts.
 
 The full equations, information structure, execution policy, and economic comparisons are in **[the mathematical model](docs/mathematical_model.pdf)**, with editable **[LaTeX source](docs/mathematical_model.tex)**. This document replaces the retired implementation-status LaTeX/PDF. Numerical results belong to each run's saved configuration and KPIs, rather than a fixed result in this README.
 
@@ -79,7 +79,17 @@ Existing run directories cannot be overwritten. Change `experiment_outputs.run_i
 7. Solve a full-day perfect-information PV+BESS problem using the same effective realized PV and actual auction prices. If enabled, solve the same asset counterfactual with zero battery capacity and power. Save schedules, comparisons, KPIs, model diagnostics, and plots by file type.
 8. If enabled, simulate the remaining day with each pre-final auction plan frozen, using its future orders and the same physical feedback. Save full-day profit differences, terminal-energy differences and per-baseline ledgers without additional optimization solves.
 
+IDA3 closes at 10:00 Italian time and plans only the 48 quarters from 12:00 to midnight. Its forecast is selected at the configured submission cutoff (09:55 with the standard five-minute buffer). Previously submitted morning quantities and the earlier dispatch commands remain in force until noon. The planner projects noon SOC and degradation from the latest observed state using those retained commands, the configured controller and cutoff-available PV forecasts. Actual execution continues with realized PV; its noon SOC can differ from this projection. Each solve records the delivery boundary and the projected locked prefix.
+
+The shared default is `transaction_fees.mode: gme_real`: the progressive GME MPE variable tariff applies to gross purchases plus sales, using the submission month. The first 20,000 MWh/month are exempt; subsequent marginal rates are €0.04/MWh through 1,000,000 MWh, €0.03 through 10,000,000 MWh and €0.02 thereafter. The configured December 2024–December 2026 window is marked `assumed_unchanged`, with the [GME source](https://gme.mercatoelettrico.org/it-it/Home/Accesso-ai-Mercati/Elettricita/MercatiElettrici/CorrispettiviSettlement/CorrispettiviElettricita) retained. The default represents a standalone simulated operator with no earlier/external volume, starting on 1 December 2024; continuous runs carry submitted monthly volume. For a larger operator portfolio, set `operator_scope: operator_with_exogenous_volume` and supply its known `initial_state`. Fixed membership/annual/ACER charges remain outside this variable tariff. Set `mode: none` explicitly for a fee-free comparison. Saved runs retain their recorded fee configuration; use a new run ID when changing fee assumptions.
+
 With all four auctions active, this means **four auction-decision solves, one perfect-information PV+BESS solve, and one optional PV-only solve**. The replay's `optimizer_solves`/`reoptimization_solves` counts describe the auction replay; counterfactual diagnostics are saved separately. This is different from synthetic configurations that optionally replan physical controls every interval.
+
+Every experiment saves `json/optimization_timing.json`. It records Gurobi's native `Runtime` in seconds for each solve, with count, total, mean, minimum, maximum and population standard deviation (`std_ddof: 0`). Unsuccessful solves are included; a repeated Gurobi optimize call contributes its own runtime. `by_category.replay` covers the auction/control solves, while perfect-information PV+BESS and PV-only models have separate categories. Python solve wall time and model-build time have their own statistics. The aggregate is also included in `json/kpis.json` for full GME experiments. Frozen-plan simulations contribute no optimization time.
+
+Participation studies save the same report at the study's `json/optimization_timing.json`, with pooled solve statistics, `experiment_total_runtime_seconds` across daily profile cases, and `experiment_replay_runtime_seconds` for comparing trading strategies without their benchmark costs. `by_profile` reports the same experiment statistics for every integrated profile and the sequential baseline. Each case appears once after resuming; existing raw timing diagnostics can supply older cases. Missing timing data remain explicit and are excluded from statistics. Partial studies report their completed cases.
+
+To refresh timing reports for an existing study (including a process started before timing aggregation was added), run `python -m bess_pv_trading report-optimization-timing --config configs/full_experiments/gme_participation_2025-01.yaml` from the repository root. It reads saved diagnostics and writes JSON without running optimizations or downloading data. A running study reports its completed checkpoint; rerun the reporting command after the study finishes for the full aggregate. A single GME experiment config is also supported when it has an explicit run ID.
 
 ## Auction participation and average performance
 
@@ -94,7 +104,7 @@ Omitting this field (or using `null`) selects all configured auction datasets. C
 
 If every selected auction is documented or configured as cancelled on a day, the profile still contributes that full day to the comparison. There are no trades, auction/control solves or auction fees; zero-position grid feedback charges available PV within the SOC box and curtails the remainder. Executed wear and actual imbalance settlement still enter profit. No initial auction objective exists, so expected-profit KPIs are null. A configured terminal target is not enforced by this controller. Missing or partial price data without cancellation evidence remain errors.
 
-If participation starts after delivery begins, the prefix uses zero contracted delivery and grid feedback with zero planned battery commands: PV can charge the battery within its SOC box, and remaining surplus is curtailed. It earns no uncontracted export revenue in this prefix. Its executed SOC and wear carry into the first auction solve. No additional auction optimization is inserted before the first selected gate. The initial expected daily profit includes the already executed/projected prefix costs; the first solve's residual objective is retained separately in the strategy summary.
+If participation starts after delivery begins, the prefix through the first auction's delivery start uses zero contracted delivery and grid feedback with zero planned battery commands: PV can charge the battery within its SOC box, and remaining surplus is curtailed. For IDA3 alone, this continues until noon. It earns no uncontracted export revenue in this prefix. Its executed/projected SOC and wear carry into the first auction solve. No additional auction optimization is inserted before the first selected gate. The initial expected daily profit includes the already executed/projected prefix costs; the first solve's residual objective is retained separately in the strategy summary.
 
 For a matched-day comparison, configure a `participation_study` and run:
 
@@ -110,7 +120,7 @@ For all 31 independent delivery days of January 2025, use `configs/full_experime
 
 That monthly configuration enables `execution.infeasible_auction_policy: previous_plan`. An updated forecast can make exact delivery infeasible for already committed products before the next auction's first tradable interval. On a solver-confirmed infeasible auction decision, this policy submits that auction's quantities from the last feasible deterministic snapshot and retains its dispatch commands. Earlier commitments stay fixed; the ordinary physical controller executes against realized PV and settles unavoidable imbalances. The failed forecast attempt and reused plan source are recorded separately, without claiming a new feasible objective. It adds no recovery optimization. The default policy is `error`; missing previous plans, ambiguous stochastic snapshots and other solver failures still stop. `execution.save_infeasibility_diagnostics: true` saves IIS conflict reports. Per-run KPIs retain decision failures and attempt counts; the comparison tables include fallback-day and failed-decision counts.
 
-`participation_study.resume: true` (enabled in the monthly YAML) verifies the same saved configuration, completed child manifests, input fingerprints and recorded profits before reusing profile/day checkpoints. Incomplete child directories are retained under `diagnostics/incomplete_runs/` and rerun; changed configurations are rejected. Successful completed cases are preserved after interruption. The numerical execution handoff floors solver-tolerated negative command roundoff to zero only after independent solution validation.
+`participation_study.resume: true` (enabled in the monthly YAML) verifies the same saved configuration, auction dispatch scope, completed child manifests, input fingerprints and recorded profits before reusing profile/day checkpoints. Results from before the IDA3 noon-scope correction require a fresh run ID; the supplied January YAML selects a new directory. Incomplete child directories are retained under `diagnostics/incomplete_runs/` and rerun; changed configurations are rejected. Successful completed cases are preserved after interruption. The numerical execution handoff floors solver-tolerated negative command roundoff to zero only after independent solution validation.
 
 ```yaml
 participation_study:
@@ -135,6 +145,73 @@ Every profile starts each delivery day with the same configured battery and oper
 Results live under `outputs/participation_studies/<run_id>/`: `csv/daily_results.csv`, `csv/profile_ranking.csv`, `csv/daily_best_profiles.csv`, `json/manifest.json`, the effective config, and `plots/participation_profiles.png`. Individual replay artifacts remain under `runs/<profile>/farm_<id>/<day>/`. Ranking uses **mean realized full-day net profit** after settlement, executed wear, import and transaction fees. It also records total/minimum/maximum profit, median, 10th/90th percentiles, daily standard deviation, negative-profit and zero-active-auction day counts, wins including tolerance ties, paired differences to the largest selected profile, and mean final SOC/energy. Chart whiskers are descriptive daily standard deviations. The mean of daily winners is not a fixed participation strategy, and the best mean on these dates is not an established optimum on unseen dates. Ending inventory remains unvalued and must be examined alongside cash profit.
 
 The comparison adds a gold **Perfect foresight (all auctions)** reference above the ranked profiles by default. It averages full-day perfect-information `ObjVal` values on the identical dates and effective realized PV, participating in all configured auctions that remain available, with the same assets, costs and configured terminal SOC. The existing all-auction profile's benchmark is reused; if that profile is absent, one additional perfect-information solve per day supplies the reference without another auction replay. `participation_study.perfect_foresight_reference: false` disables it. Its daily objectives and summary are saved in `csv/perfect_foresight_daily.csv` and `json/perfect_foresight_reference.json`; profile tables also report objective-minus-realized-profit differences. The reference is displayed separately from profile ranks: the feedback profits include actual imbalance settlement and may finish at different SOC values, so the reference objective is not a guaranteed ceiling on those cash profits.
+
+## Continuous optimization across delivery days
+
+Run the separate January workflow from the repository root:
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading experiment-continuous --config configs/full_experiments/continuous_optimization_2025-01.yaml
+```
+
+`continuous_optimization.start_date` and `end_date` are inclusive local delivery
+dates. The January config covers 1–31 January 2025, supplies **90% SOC at
+1 January midnight**, and begins with the DA/IDA1/IDA2 auctions on 31 December
+for that first delivery day. December realized production is unnecessary:
+the first midnight state is an initial condition. The study stops after the
+last quarter on 31 January, at local midnight on 1 February, and submits no
+orders for delivery outside its configured dates.
+
+The horizon of each optimization remains one delivery day. At next-day DA,
+IDA1 and IDA2, the planner takes the latest observed battery state and projects
+the retained current-day commands through midnight using the forecast available
+at that submission cutoff and the same grid-tracking controller. This projected
+midnight state initializes the next-day solve; future realized SOC is never an
+input. Submitted orders remain fixed. Current-day IDA3 only replaces dispatch
+from noon onward and cannot change the next day's submitted DA position. Actual
+SOC, executed degradation history and operator transaction-volume state carry
+continuously across midnight. Fresh forecasts remain subject to the configured
+UTC availability lag, currently six hours.
+
+There are **three independent continuous trajectories** by default: integrated
+all-auction planning, sequential `current_auction_only` planning, and an
+integrated perfect-PV reference using the same daily horizon and actual prices.
+Select trading models with `continuous_optimization.planning_modes` and disable
+the additional reference with `perfect_pv_reference: false`. Each trajectory
+starts from the same configured initial state and thereafter uses its own
+execution state. `state.terminal_soc_percent: 50` constrains planned SOC only
+at the final study boundary; intermediate days have no terminal target or
+inventory salvage. `null` disables that final constraint. Realized final SOC
+is reported separately, since feedback execution can differ from the plan.
+
+Results are saved under `outputs/continuous_optimization/<run_id>/` with per
+strategy `csv/`, `json/` and `plots/` folders. They include interval execution,
+daily/monthly settled profit, accepted trades, forecasts and dispatch plans,
+projected-versus-realized starting states, degradation, imbalances, final
+inventory and paired strategy differences. Study-level comparison tables and
+plots keep perfect-PV continuous profit separate from the objectives of
+overlapping auction solves. Native Gurobi timing reports include individual
+attempts, mean/min/max/std, strategy/day summaries and separate reference costs;
+objective values are never summed across overlapping horizons.
+
+Study-level SOC prediction figures are separated by solved strategy:
+`plots/midnight_soc_prediction_errors_<strategy>.png` and
+`plots/ida3_noon_soc_prediction_errors_<strategy>.png`. Only strategies present
+in that run are plotted. Each strategy's own `plots/` folder retains the same
+figures without the filename suffix.
+
+The January YAML enables `continuous_optimization.resume`. A resumed run checks
+its saved configuration and input fingerprints, restores a completed midnight
+checkpoint and replays any work after that boundary. Restored state includes
+submitted and pending commitments, physical/aging history and fee state.
+Discarded solver attempts remain in `json/optimization_attempts.json`, marked
+as rolled back, and remain included in actual runtime statistics. Change the
+run ID for a new study. All historical inputs are local; this command makes no
+API calls. Plot/model switches come from `experiment_outputs`, and farm and
+asset parameters use the same shared configuration as other experiments.
+The continuous controller currently requires interval-end telemetry
+(`source.telemetry_latency_minutes: 0`); preflight rejects a nonzero telemetry
+delay. This is separate from the forecast availability lag.
 
 ## Files and configuration
 
@@ -166,6 +243,7 @@ Useful full-study entry points:
 | Configuration | Purpose |
 | --- | --- |
 | `gme_day.yaml` | Reusable single-day study for any selected farm; dates and parameters are YAML-controlled |
+| `continuous_optimization_2025-01.yaml` | Consecutive January delivery with 90% initial SOC, continuous state/commitments, and a 50% planned final SOC |
 | `gme_oracle_2025-01-01_farm910_perfect_pv_comparison_terminal_soc_50.yaml` | Current January study with a 50% planned terminal SOC, perfect-PV comparison, and optional PV-only baseline |
 | `gme_oracle_2025-01-01_farm910_reoptimization_value.yaml` | Isolated January 1 study of full-day profit with plans frozen after each pre-final auction |
 | `gme_oracle_2025-01-01_farm910_perfect_pv_comparison.yaml` | Same comparisons with the inherited free terminal SOC |

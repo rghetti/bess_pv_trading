@@ -1,0 +1,24 @@
+# One continuous January trajectory per planning mode, starting from Dec 31 DA.
+# Initial SOC is the supplied Jan 1 midnight assumption; terminal SOC applies Jan 31 only.
+include: ../standard.yaml
+continuous_optimization:
+  start_date: '2025-01-01'
+  end_date: '2025-01-31'
+  run_id: continuous_nord_farm${farm_id}_2025-01_soc90
+  resume: true
+state:
+  initial_soc_percent: 90.0
+  terminal_soc_percent: 50.0
+market:
+  valid_from: '2025-01-01'
+  valid_to: '2025-01-31'
+pv:
+  direct_exceeds_ghi: clip_and_flag
+solver:
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+execution:
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+settlement:
+  enabled: true

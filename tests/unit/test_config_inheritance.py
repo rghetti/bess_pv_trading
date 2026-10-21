@@ -55,6 +55,32 @@ def test_null_terminal_target_and_list_overrides_are_retained():
     assert config["gme_oracle_experiment"]["participating_auctions"] == ["IDA1"]
 
 
+def test_shared_gme_fee_default_covers_first_delivery_submission_and_keeps_free_example():
+    """Shared tariffs apply to Dec-31 submissions without changing explicit fee modes."""
+    from bess_pv_trading.markets import AuctionCalendar
+    from bess_pv_trading.transaction_fees import transaction_fees_from_config
+
+    config = load_config(ROOT / "configs/full_experiments/continuous_optimization_2025-01.yaml")
+    fees = transaction_fees_from_config(config)
+    assert fees.mode == "gme_real"
+    assert fees.operator_scope == "standalone_plant"
+    first_submission = min(event.submission_at for event in AuctionCalendar.from_config(config).schedule(
+        config["continuous_optimization"]["start_date"]))
+    assert fees.initial_state.as_of <= first_submission
+    month = fees.month(first_submission)
+    assert fees.starting_volume(fees.initial_state, month) == 0
+    tariff = fees.tariff(month)
+    free_volume = tariff.thresholds_mwh[0]
+    probe_volume = config["battery"]["capacity_mwh"]
+    assert fees.increment(month, 0, free_volume) == 0
+    assert fees.increment(month, free_volume, probe_volume) == pytest.approx(
+        probe_volume * tariff.marginal_eur_per_mwh[1])
+    for mode in ("none", "flat", "gme"):
+        example = load_config(ROOT / f"configs/full_experiments/synthetic_fees_{mode}.yaml")
+        expected = "gme_real" if mode == "gme" else mode
+        assert transaction_fees_from_config(example).mode == expected
+
+
 def test_include_merges_before_reference_resolution(tmp_path):
     (tmp_path / "base.yaml").write_text("selected: 1\nvalue: ${selected}\nitems: [1, 2]\nnested: {keep: true}\n")
     path = tmp_path / "child.yaml"

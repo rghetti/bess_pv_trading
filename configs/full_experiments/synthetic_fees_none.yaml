@@ -52,6 +52,8 @@ solver:
   time_limit_seconds: 30.0
 outputs:
   root: outputs/transaction_fee_checks
+transaction_fees:
+  mode: none
 execution:
   dispatch_policy: follow_battery_plan
 farm_id: 1

@@ -220,8 +220,9 @@ Named components are retained for extraction and independent accounting.
 
 ## Market transaction fees
 
-`transaction_fees.mode` selects `none` (the backward-compatible default), `flat`,
-or `gme_real`. These are market transaction charges, separate from physical
+`transaction_fees.mode` selects `none`, `flat`, or `gme_real` (the shared YAML
+default). Legacy programmatic inputs without this section remain fee-free.
+These are market transaction charges, separate from physical
 grid import fees, degradation, settlement, membership fees, taxes and aggregator
 commissions. Gross traded volume is `sum(abs(trade_mwh))` across auctions:
 a 5 MWh sale followed by a 5 MWh purchase costs fees on 10 MWh. The variables
@@ -243,7 +244,7 @@ the first 20,000 MWh, then 0.04 through 1,000,000, 0.03 through 10,000,000 and
 [GME's tariff page](https://gme.mercatoelettrico.org/it-it/Home/Accesso-ai-Mercati/Elettricita/MercatiElettrici/CorrispettiviSettlement/CorrispettiviElettricita)
 and its [2006 annual report](https://gme.mercatoelettrico.org/Portals/0/Documents/it-IT/20070502Bilancio2006.pdf)
 show this structure, the latter effective in 2007. A dated 2025 tariff confirmation
-was not established. The example explicitly marks 2024–2026 applicability
+was not established. The shared default explicitly marks December 2024–December 2026 applicability
 `assumed_unchanged`; this is not a verified historical tariff assertion.
 Tariff versions require nonoverlapping complete-month `valid_from`/`valid_to`
 windows, source, applicability, thresholds and marginal rates. Unsupported dates
@@ -268,6 +269,13 @@ ledger and pending quantities; it must not be added to those quantities again.
 It may include documented or explicitly assumed external portfolio activity.
 Missing current/earlier monthly volume fails; a new month begins at zero.
 Nonzero future monthly volume and states unavailable at the solve cutoff fail.
+The shared standalone assumption starts at local midnight on 1 December 2024,
+with zero December volume, zero earlier fees and no external portfolio activity.
+Continuous execution carries its own monthly volume thereafter. The first
+20,000 MWh exemption can therefore legitimately keep fees at zero; enabling
+the tariff does not impose a flat positive rate below that threshold. Use a new
+run ID after changing fees: saved run configurations and resume fingerprints
+retain the assumptions under which their decisions were solved.
 
 Guaranteed execution incurs fees at submission. Publication only books MCP cash
 once; prior fees are sunk and their volume remains in the monthly state. Each

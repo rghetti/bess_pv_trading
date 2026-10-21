@@ -1,0 +1,29 @@
+include: ../../../configs/standard.yaml
+continuous_optimization:
+  start_date: '2025-01-01'
+  end_date: '2025-01-02'
+  planning_modes: [integrated, current_auction_only]
+  perfect_pv_reference: true
+  resume: false
+market:
+  valid_from: '2025-01-01'
+  valid_to: '2026-08-31'
+state:
+  initial_soc_percent: 90.0
+  terminal_soc_percent: 50.0
+test_case:
+  forecast_mw: 1.0
+  realized_mw: 1.25
+  settlement_eur_mwh: 70.0
+  auction_price_eur_mwh: 85.0
+  changed_forecast_mw: 1.1
+  cycle_age_hours: 6
+  cancelled_auction: IDA3
+  alternate_day: '2025-10-01'
+  dst_day: '2025-03-30'
+  expected_da_hourly_minutes: 60
+  expected_da_quarter_minutes: 15
+  marker_column: weather_probe
+  marker_value: 3.0
+  changed_marker_value: 4.0
+  unsupported_telemetry_latency_minutes: 5.0

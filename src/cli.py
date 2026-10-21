@@ -54,22 +54,27 @@ def _solve_optimization(inputs, config: dict) -> dict:
     """Keep solver extraction and output identical for both input routes."""
     from .domain import SolverSettings
     from .optimization import build_model, solve_model, validate_solution
+    from .reporting.optimization_timing import optimization_timing_report, solve_timing
+    from datetime import datetime, timezone
+    output = Path(config["outputs"]["root"])/(config["outputs"].get("run_id") or datetime.now(timezone.utc).strftime("optimize_%Y%m%dT%H%M%S%fZ"))
+    output.mkdir(parents=True,exist_ok=False)
     built = build_model(inputs)
     try:
         result = solve_model(built,SolverSettings(**config["solver"]))
     finally:
         built.model.dispose()
+    timing = optimization_timing_report([solve_timing(result.diagnostics,
+        category="optimization", status=result.status)])
+    write_json(output / "json/optimization_timing.json", timing)
     if not result.has_incumbent:
         raise RuntimeError(f"Solver {result.status}: {result.message}")
     validation = validate_solution(inputs,result)
     report = {"status":result.status,"objective_eur":result.objective_eur,
+              "optimization_timing": timing,
               "validation":asdict(validation),"diagnostics":result.diagnostics,
               "components":result.components,"config":config,
               "scenario_provenance":inputs.scenarios.provenance}
     import numpy as np
-    from datetime import datetime, timezone
-    output = Path(config["outputs"]["root"])/(config["outputs"].get("run_id") or datetime.now(timezone.utc).strftime("optimize_%Y%m%dT%H%M%S%fZ"))
-    output.mkdir(parents=True,exist_ok=False)
     np.savez_compressed(output/"solution.npz",**result.arrays)
     write_json(output/"result.json",report)
     report["output_dir"] = str(output)
@@ -91,6 +96,9 @@ def dispatch(command: str, config: dict) -> dict:
                 or "pv_forecast_path" in optimization.get("forecast_inputs", {})):
             _optimization_inputs(config)
         return {"status":"valid", "sections":list(config)}
+    if command == "report-optimization-timing":
+        from .reporting.optimization_timing import report_saved_optimization_timing
+        return report_saved_optimization_timing(config)
     if command == "inspect-data":
         from .data import inspect_data
         return inspect_data(config)
@@ -128,6 +136,12 @@ def dispatch(command: str, config: dict) -> dict:
     if command == "experiment-participation":
         from .simulation.participation_study import run_participation_study
         return run_participation_study(config,
+            progress=lambda message: print(message, file=sys.stderr, flush=True))
+    if command == "experiment-continuous":
+        from .config import validate_continuous_optimization
+        validate_continuous_optimization(config, require_dates=True)
+        from .simulation.continuous import run_continuous_experiment
+        return run_continuous_experiment(config,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
     if command == "train-price-models":
         from .forecasting.prices import train_price_from_config
@@ -182,7 +196,9 @@ def main(argv: list[str] | None = None) -> int:
         "study-linear-prices","calibrate-price-scenarios","check-frozen-prices",
         "api-cache-status","migrate-api-cache","diagnose-terna",
         "import-gme-workbooks","import-terna-workbooks","stage-market-workbooks",
-        "merge-market-workbooks","check-market-history","experiment-gme-oracle","experiment-participation"))
+        "merge-market-workbooks","check-market-history","experiment-gme-oracle","experiment-participation",
+        "experiment-continuous",
+        "report-optimization-timing"))
     parser.add_argument("--config",required=True,type=Path)
     parser.add_argument("--farm-id",type=int,help="Select farm metadata, PV/weather series and automatic POI limits")
     parser.add_argument("--interactive",action="store_true",help="Prompt invisibly for missing API credentials in a terminal")
