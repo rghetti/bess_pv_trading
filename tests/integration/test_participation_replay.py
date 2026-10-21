@@ -28,7 +28,9 @@ def test_oracle_replays_selected_profiles_and_carries_pre_participation_feedback
     assert set(ledger.auction) == set(selection)
     assert summary["auction_decision_solves"] == len(selection)
     assert summary["physical_control_solves"] == 0
-    before = pd.to_datetime(dispatch.start, utc=True) < fixture["schedule"][0].submission_at
+    first = fixture["schedule"][0]
+    first_delivery = max(first.submission_at, pd.Timestamp(fixture["grid"].starts[min(first.eligible_intervals)]))
+    before = pd.to_datetime(dispatch.start, utc=True) < first_delivery
     assert summary["pre_participation_intervals"] == int(before.sum())
     np.testing.assert_allclose(dispatch.loc[before, "grid_mw"], 0, atol=1e-9)
     np.testing.assert_allclose(dispatch.loc[before, "net_position_mwh"], 0)

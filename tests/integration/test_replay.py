@@ -211,16 +211,6 @@ def test_all_four_auction_submissions_clear_once_and_reconcile(tmp_path, monkeyp
         product_constraints.append(built.variables["product_resolution_constraints"])
         return built
     monkeypatch.setattr(synthetic, "build_model", capture_plan)
-    if policy.get("expected_infeasible", False):
-        # A persistent production deficit can exhaust the real battery. Strict
-        # delivery may then become infeasible; never reset SOC or invent slack.
-        with pytest.raises(RuntimeError, match="infeasible"):
-            _replay_strategy(config,fixture,"stochastic_integrated",tmp_path/"replay")
-        final = planned[-1]
-        assert final.state.energy_mwh >= final.plant.battery.energy_min_mwh
-        first = fixture["grid"].interval_ids.index(final.grid.interval_ids[0])
-        np.testing.assert_allclose(final.scenarios.pv_ac_mw[0],fixture["pv"][first:])
-        return
     summary = _replay_strategy(config,fixture,policy.get("strategy", "stochastic_integrated"),tmp_path/"replay")
     ledger = pd.read_csv(tmp_path/"replay/ledger.csv")
     dispatch = pd.read_csv(tmp_path/"replay/dispatch.csv")
@@ -291,7 +281,8 @@ def test_all_four_auction_submissions_clear_once_and_reconcile(tmp_path, monkeyp
             assert pd.Timestamp(item["pv_forecast_available_at_utc"]) <= pd.Timestamp(item["cutoff"])
             assert pd.Timestamp(item["planning_start_utc"]) >= pd.Timestamp(item["cutoff"])
         # Later forecasts cannot rewrite earlier dispatch provenance or battery state.
-        ida3_start = next(event.submission_at for event in fixture["schedule"] if event.auction == "IDA3")
+        ida3_event = next(event for event in fixture["schedule"] if event.auction == "IDA3")
+        ida3_start = pd.Timestamp(fixture["grid"].starts[min(ida3_event.eligible_intervals)])
         before = pd.to_datetime(dispatch.start, utc=True) < ida3_start
         assert dispatch.loc[before, "active_plan_auction"].ne("IDA3").all()
         assert dispatch.loc[~before, "active_plan_auction"].eq("IDA3").all()
@@ -328,20 +319,33 @@ def test_all_four_auction_submissions_clear_once_and_reconcile(tmp_path, monkeyp
     submission_index = next(index for index,item in enumerate(solves)
                             if item["solve_trigger"] == "auction_submission" and item["current_auction"] == ida3.auction)
     projected=planned[submission_index]
-    prior=fixture["grid"].interval_ids.index(projected.grid.interval_ids[0])-1
+    assert projected.grid.starts[0] == fixture["grid"].starts[min(ida3.eligible_intervals)]
+    if policy.get("locked_prefix_has_imbalances", False):
+        # Closed morning obligations can fail in execution without introducing
+        # morning slack or making the afternoon-only optimization infeasible.
+        before = pd.to_datetime(dispatch.start, utc=True) < projected.grid.starts[0]
+        assert dispatch.loc[before, "imbalance_mwh"].abs().sum() > 0
+    prefix = solves[submission_index]["locked_prefix_projection"]
+    assert prefix and prefix[-1]["end"] == str(projected.grid.starts[0])
+    assert solves[submission_index]["locked_prefix_intervals"] == len(prefix)
+    # Start with the last observed state, then project retained commands using
+    # only the PV forecast at this cutoff, including the whole locked prefix.
+    first_projected = fixture["grid"].interval_ids.index(prefix[0]["interval_id"])
+    expected = dispatch.iloc[first_projected].energy_start_mwh
+    battery = fixture["plant"].battery
+    for step in prefix:
+        index = fixture["grid"].interval_ids.index(step["interval_id"])
+        factor = (reference["rolling_pv"]["factors_by_auction"][ida3.auction]
+                  if policy.get("rolling_forecast", False) else 1.0)
+        assert step["pv_ac_mw"] == pytest.approx(fixture["pv"][index] * factor)
+        duration = fixture["grid"].delta_hours[index]
+        expected = expected*(1-battery.self_discharge_per_hour)**duration
+        expected += duration*(battery.eta_charge*step["charge_mw"]-step["discharge_mw"]/battery.eta_discharge)
+        assert step["energy_end_mwh"] == pytest.approx(expected, abs=1e-8)
+    assert projected.state.energy_mwh == pytest.approx(expected, abs=1e-8)
     if policy.get("dispatch_policy") == "track_committed_grid":
         assert solves[submission_index]["state_origin"] == "forecast_projected_boundary_under_feedback"
-        # The unfinished interval's final PV is unavailable at the auction cutoff.
-        battery = fixture["plant"].battery
-        row = dispatch.iloc[prior]
-        duration = fixture["grid"].delta_hours[prior]
-        expected = row.energy_start_mwh*(1-battery.self_discharge_per_hour)**duration
-        charge = min(row.requested_charge_mw, max(0,battery.maximum_energy-expected)/(duration*battery.eta_charge))
-        discharge = min(row.requested_discharge_mw, max(0,expected-battery.energy_min_mwh)*battery.eta_discharge/duration)
-        expected += duration*(battery.eta_charge*charge-discharge/battery.eta_discharge)
-        assert projected.state.energy_mwh == pytest.approx(expected, abs=1e-8)
     else:
         assert solves[submission_index]["state_origin"] == "projected_boundary_of_committed_command"
-        assert projected.state.energy_mwh==pytest.approx(dispatch.energy_end_mwh.iloc[prior],abs=1e-8)
     np.testing.assert_allclose(dispatch.net_position_mwh,
         ledger.groupby("interval_id",sort=False).quantity_mwh.sum().to_numpy(),atol=1e-8)

@@ -258,14 +258,27 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
         Path(settings.export_path).parent.mkdir(parents=True, exist_ok=True)
         model.write(settings.export_path)
     started = perf_counter()
+    optimize_runtimes = []
+
+    def optimize_once():
+        """Retain every native Runtime, including the ambiguity-resolution retry."""
+        try:
+            model.optimize()
+        except Exception:
+            optimize_runtimes.append(None)
+            raise
+        optimize_runtimes.append(float(model.Runtime))
+
     try:
-        model.optimize()
+        optimize_once()
         if model.Status == 4:
             model.setParam("DualReductions", 0)
-            model.optimize()
+            optimize_once()
     except Exception as error:
-        return OptimizationResult("solver_error", False, diagnostics={"build_seconds": built.build_seconds, "solve_seconds": perf_counter() - started}, message=str(error))
-    diagnostics = {"status_code": model.Status, "solution_count": model.SolCount, "build_seconds": built.build_seconds, "solve_seconds": perf_counter() - started, "runtime_seconds": model.Runtime, "variables": model.NumVars, "binary_variables": model.NumBinVars, "constraints": model.NumConstrs, "nodes": len(inputs.tree.nodes), "leaves": len(inputs.scenarios.scenario_ids), "accepted_contractual_cashflow_eur": inputs.market.cashflow_eur, "pending_contractual_cashflow_in_objective": False, "pending_contractual_cashflow_status": "Unpublished-price contractual constant excluded; submitted quantities remain fixed positions"}
+        return OptimizationResult("solver_error", False, diagnostics={"build_seconds": built.build_seconds,
+            "solve_seconds": perf_counter() - started, "runtime_seconds": None,
+            "optimize_call_runtimes_seconds": optimize_runtimes}, message=str(error))
+    diagnostics = {"status_code": model.Status, "solution_count": model.SolCount, "build_seconds": built.build_seconds, "solve_seconds": perf_counter() - started, "runtime_seconds": sum(optimize_runtimes), "optimize_call_runtimes_seconds": optimize_runtimes, "variables": model.NumVars, "binary_variables": model.NumBinVars, "constraints": model.NumConstrs, "nodes": len(inputs.tree.nodes), "leaves": len(inputs.scenarios.scenario_ids), "accepted_contractual_cashflow_eur": inputs.market.cashflow_eur, "pending_contractual_cashflow_in_objective": False, "pending_contractual_cashflow_status": "Unpublished-price contractual constant excluded; submitted quantities remain fixed positions"}
     diagnostics["relative_mip_gap_tolerance"] = settings.mip_gap
     diagnostics["feasibility_tolerance"] = model.Params.FeasibilityTol
     diagnostics["integrality_tolerance"] = model.Params.IntFeasTol

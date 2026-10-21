@@ -346,7 +346,7 @@ full_replay:
     - {name: physical_refresh_terminal, physical_refresh: true, terminal: configured}
     - {name: four_auctions_no_planned_imbalances, physical_refresh: false, terminal: free, optimize_imbalances: false}
     - {name: four_auctions_grid_feedback, physical_refresh: false, terminal: free, optimize_imbalances: false, dispatch_policy: track_committed_grid, realized_pv_scale: 1.5}
-    - {name: depleted_feedback_exposes_infeasible_commitments, physical_refresh: false, terminal: free, optimize_imbalances: false, dispatch_policy: track_committed_grid, realized_pv_scale: 0.5, expected_infeasible: true}
+    - {name: depleted_feedback_settles_locked_prefix, physical_refresh: false, terminal: free, optimize_imbalances: false, dispatch_policy: track_committed_grid, realized_pv_scale: 0.5, locked_prefix_has_imbalances: true}
     - {name: rolling_forecasts_four_auctions, physical_refresh: false, terminal: free, rolling_forecast: true}
     - name: hourly_da_quarter_hour_ida_four_auctions
       physical_refresh: false

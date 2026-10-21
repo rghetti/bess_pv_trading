@@ -1,5 +1,6 @@
 """Matched-day sequential comparisons, chart placement and configuration contracts."""
 from copy import deepcopy
+import json
 
 import numpy as np
 import pandas as pd
@@ -75,6 +76,7 @@ def test_batch_runs_separate_sequential_cases_and_resumes_verified_outputs(tmp_p
     seen = []
 
     def run(child):
+        from bess_pv_trading.reporting.optimization_timing import optimization_timing_report
         mode = child["gme_oracle_experiment"]["auction_planning_mode"]
         day = child["gme_oracle_experiment"]["delivery_day"]
         seen.append((day, mode))
@@ -89,6 +91,9 @@ def test_batch_runs_separate_sequential_cases_and_resumes_verified_outputs(tmp_p
             **{key: metrics[key] for key in ("transaction_fee_eur", "curtailment_mwh", "absolute_imbalance_mwh", "final_energy_mwh", "final_soc_percent")},
             "auction_decision_solves": len(auctions), "active_auctions": auctions, "skipped_auctions": []})
         write_json(output / "json/manifest.json", {"status": "complete"})
+        times_by_mode = load_config("tests/fixtures/configs/optimization_timing_cases.yaml")["timing_cases"]["mode_runtimes"]
+        write_json(output / "json/optimization_timing.json", optimization_timing_report([
+            {"category": "replay", "runtime_seconds": value} for value in times_by_mode[mode]]))
         values = case["realized_pv_mw"]
         times = pd.date_range(day, periods=len(values), freq="15min", tz="UTC").astype(str)
         pd.DataFrame({"interval_id": times, "pv_realized_execution_ac_mw": values,
@@ -105,6 +110,18 @@ def test_batch_runs_separate_sequential_cases_and_resumes_verified_outputs(tmp_p
     assert set(baseline.study_date) == set(case["delivery_days"])
     chart = pd.read_csv(tmp_path / "matched/csv/participation_comparison.csv")
     assert chart.profile.tolist() == [profile_id(auctions), SEQUENTIAL_PROFILE]
+    timings = json.loads((tmp_path / "matched/json/optimization_timing.json").read_text())
+    assert timings["experiment_count"] == result["completed_experiments"]
+    assert set(timings["by_profile"]) == set(chart.profile)
     config["participation_study"]["resume"] = True
     monkeypatch.setattr(module, "run_gme_oracle_experiment", lambda child: pytest.fail("Completed baseline must resume without solving"))
     assert module.run_participation_study(config)["completed_experiments"] == result["completed_experiments"]
+    assert json.loads((tmp_path / "matched/json/optimization_timing.json").read_text()) == timings
+    # Results computed before the delivery-scope correction must not be mixed
+    # into a refreshed comparison, even if their YAML settings are identical.
+    manifest_path = tmp_path / "matched/json/manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest.pop("auction_dispatch_scope")
+    write_json(manifest_path, manifest)
+    with pytest.raises(ValueError, match="fresh participation_study.run_id"):
+        module.run_participation_study(config)

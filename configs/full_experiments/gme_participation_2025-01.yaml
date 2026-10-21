@@ -27,7 +27,7 @@ solver:
   feasibility_tolerance: 1.0e-08
   integrality_tolerance: 1.0e-08
 experiment_outputs:
-  run_id: gme_nord_oracle_2025-01-01_farm${farm_id}_native_ida_pt15_perfect_pv_comparison_terminal_soc_50_pv_only_baseline
+  run_id: farm${farm_id}_all_auctions_comparisons_january_2025
   pv_only_baseline: false
 execution:
   infeasible_auction_policy: previous_plan
@@ -68,5 +68,5 @@ participation_study:
     - '2025-01-30'
     - '2025-01-31'
   sequential_all_auctions_baseline: true
-  run_id: gme_nord_farm${farm_id}_2025-01_current_settings_sequential
+  run_id: gme_nord_farm${farm_id}_2025-01_current_settings_sequential_ida3_noon
   resume: true

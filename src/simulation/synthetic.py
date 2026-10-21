@@ -16,10 +16,11 @@ import pandas as pd
 from ..domain import (AcceptedTrade, BatteryParameters,
     DeliveryGrid, MarketState, OptimizationInput, PhysicalState, PlantParameters,
     SolverSettings, battery_parameters_from_config)
-from ..markets import AuctionCalendar
+from ..markets import AUCTION_DISPATCH_SCOPE, AuctionCalendar
 from ..optimization import build_model, solve_model, validate_solution
-from ..optimization.degradation import advance_degradation_state, degradation_settings_from_config
+from ..optimization.degradation import degradation_settings_from_config
 from ..reporting.artifacts import organize_run_outputs
+from ..reporting.optimization_timing import optimization_timing_report, solve_timing
 from ..scenarios import synthetic_price_tree
 from ..transaction_fees import account_trade_fees, transaction_fees_from_config
 from .events import Event, EventEngine, EventKind
@@ -107,6 +108,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
     pending: dict[int, tuple[float, float, float]] = {}
     records: dict[int, dict[str, Any]] = {}
     solves: list[dict[str, Any]] = []
+    timing_records: list[dict[str, Any]] = []
     infeasible_decisions: list[dict[str, Any]] = []
     publications: list[dict[str, Any]] = []
     plan_snapshots: dict[str, list[dict[str, Any]]] = {}
@@ -127,6 +129,11 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
     settings = SolverSettings(**config["solver"])
     trading = config["trading"]
     dispatch_policy = config.get("execution", {}).get("dispatch_policy", "follow_battery_plan")
+    # An auction decision can replace commands only from its first delivery
+    # product onward. Before first participation, execute zero-position feedback.
+    first_participation_interval = (max(min(schedule[0].eligible_intervals),
+        int(pd.DatetimeIndex(full_grid.starts).searchsorted(schedule[0].submission_at)))
+        if schedule else len(full_grid.interval_ids))
 
     def plan(cutoff: pd.Timestamp, current_auction: str | None = None, *,
              trigger: str = "physical_control", published_auction: str | None = None):
@@ -164,37 +171,50 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
         first = int(pd.DatetimeIndex(full_grid.starts).searchsorted(cutoff))
         if cutoff < pd.Timestamp(full_grid.starts[0]):
             first = 0
+        auction_delivery_start = None
+        if current_auction is not None:
+            auction_event = next(event for event in schedule if event.auction == current_auction)
+            delivery_first = min(auction_event.eligible_intervals)
+            auction_delivery_start = pd.Timestamp(full_grid.starts[delivery_first]).isoformat()
+            first = max(first, delivery_first)
         if first >= len(full_grid.interval_ids):
             raise ValueError("No remaining delivery intervals")
         boundary = state
         projected_import_fee = 0.0
-        # Between grid points project the next boundary without final PV telemetry.
-        # Feedback uses forecast PV, while fixed commands have a known trajectory.
-        if state.timestamp != full_grid.starts[first]:
-            prior = first - 1
-            charge, discharge, _ = pending[prior]
-            duration = full_grid.delta_hours[prior]
-            battery = plant.battery
-            projection_policy = ("track_committed_grid" if execution_details.get(prior, {}).get("auction")
-                == "pre_participation" else dispatch_policy)
-            if projection_policy == "track_committed_grid":
-                # Forecast the unfinished interval through the same controller;
-                # its final measured PV is not available at this auction cutoff.
-                boundary, projected = execute_interval(state=state, start=state.timestamp,
-                    end=full_grid.starts[first], pv_ac_mw=float(current_forecast[prior]),
-                    requested_charge_mw=charge, requested_discharge_mw=discharge,
-                    requested_curtailment_mw=pending[prior][2], plant=plant,
-                    degradation_settings=aging, dispatch_policy=projection_policy,
-                    grid_target_mw=grid_targets[prior])
-                projected_import_fee = max(0.0, -projected["grid_mw"]) * duration * trading["grid_import_fee_eur_per_mwh"]
-                boundary = replace(boundary, origin="forecast_projected_boundary_under_feedback")
+        locked_prefix_projection = []
+        # Project to the first tradable delivery boundary using retained commands
+        # and cutoff-available PV. IDA3 cannot replace the pre-noon dispatch plan;
+        # neither its noon SOC nor its wear may use future realized telemetry.
+        projection_first = int(pd.DatetimeIndex(full_grid.starts).searchsorted(state.timestamp))
+        for prior in range(projection_first, first):
+            if prior in pending:
+                commands = pending[prior]
+                detail = execution_details[prior]
+                target = grid_targets[prior]
+            elif prior in control_plan:
+                commands = control_plan[prior]
+                detail = control_plan_details[prior]
+                target = sum(offer.get(full_grid.interval_ids[prior], 0.0)
+                    for offer in submitted.values()) / full_grid.delta_hours[prior]
+            elif prior < first_participation_interval:
+                commands = (0.0, 0.0, 0.0)
+                detail = {"auction": "pre_participation"}
+                target = 0.0
             else:
-                energy = state.energy_mwh * (1-battery.self_discharge_per_hour)**duration
-                energy += duration*(battery.eta_charge*charge-discharge/battery.eta_discharge)
-                boundary, _ = advance_degradation_state(state=state, battery=battery,
-                    settings=aging, end=full_grid.starts[first], energy_mwh=energy,
-                    charge_mw=charge, discharge_mw=discharge,
-                    origin="projected_boundary_of_committed_command")
+                raise ValueError("No retained dispatch plan covers the locked delivery prefix")
+            projection_policy = ("track_committed_grid" if detail.get("auction")
+                == "pre_participation" else dispatch_policy)
+            boundary, projected = execute_interval(state=boundary, start=full_grid.starts[prior],
+                end=full_grid.ends[prior], pv_ac_mw=float(current_forecast[prior]),
+                requested_charge_mw=commands[0], requested_discharge_mw=commands[1],
+                requested_curtailment_mw=commands[2], plant=plant,
+                degradation_settings=aging, dispatch_policy=projection_policy, grid_target_mw=target)
+            projected_import_fee += max(0.0, -projected["grid_mw"]) * full_grid.delta_hours[prior] * trading["grid_import_fee_eur_per_mwh"]
+            locked_prefix_projection.append({"interval_id": full_grid.interval_ids[prior],
+                "start": str(full_grid.starts[prior]), "end": str(full_grid.ends[prior]),
+                "plan_source_auction": detail.get("auction"), **projected})
+            boundary = replace(boundary, origin=("forecast_projected_boundary_under_feedback"
+                if projection_policy == "track_committed_grid" else "projected_boundary_of_committed_command"))
         residual = DeliveryGrid(full_grid.interval_ids[first:], full_grid.starts[first:], full_grid.ends[first:])
         # Save information supplied to every attempt, including failed solves;
         # a fallback's retained old plan is not the newly available PV input.
@@ -253,6 +273,12 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             auction_submission_times={event.auction: event.submission_at for event in schedule})
         built = build_model(inputs)
         planning_diagnostics = {"auction_planning_mode": "current_auction_only" if current_only else "integrated",
+            "auction_dispatch_scope": AUCTION_DISPATCH_SCOPE,
+            "auction_delivery_start_utc": auction_delivery_start,
+            "physical_planning_intervals": len(residual.interval_ids),
+            "locked_prefix_intervals": len(locked_prefix_projection),
+            "locked_prefix_projection": locked_prefix_projection,
+            "projected_boundary_energy_mwh": boundary.energy_mwh,
             "modeled_auctions": list(masks),
             "trade_variable_counts_by_auction": {auction: sum(key[0] == auction for key in built.variables["trades"])
                 for auction in masks}, "trade_variable_count": len(built.variables["trades"]),
@@ -271,6 +297,12 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             result = solve_model(built, SolverSettings(**model_settings))
         finally:
             built.model.dispose()
+        # Save native solver time for every attempt, including infeasible solves
+        # that retain an earlier plan. Simulation wall time is a separate metric.
+        timing_records.append(solve_timing(result.diagnostics, category="replay",
+            strategy=strategy, auction=current_auction, cutoff_utc=cutoff.isoformat(),
+            trigger=trigger, status=result.status))
+        write_json(destination / "optimization_timing.json", optimization_timing_report(timing_records))
         if not result.has_incumbent:
             if result.status == "infeasible":
                 raise InfeasibleAuctionPlan(f"{strategy} at {cutoff}: {result.status}: {result.message}",
@@ -342,7 +374,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             snapshot = []
             for prior in previous:
                 index = full_grid.interval_ids.index(prior["interval_id"])
-                if full_grid.starts[index] < event.at:
+                if full_grid.starts[index] < event.at or index < min(event.payload.eligible_intervals):
                     continue
                 quantity = submitted[auction].get(prior["interval_id"], 0.0)
                 row = {**prior, "auction": auction, "optimizer_cutoff_utc": event.at.isoformat(),
@@ -447,7 +479,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
                             for name in ("charge_mw","discharge_mw","curtailment_mw"))
         elif t in control_plan:
             pending[t] = control_plan[t]
-        elif not schedule or event.at < schedule[0].submission_at:
+        elif t < first_participation_interval:
             # No market position exists yet. Physical grid feedback stores PV
             # within the SOC box and curtails the rest, with zero net delivery.
             pending[t] = (0.0, 0.0, 0.0)
@@ -566,6 +598,8 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
     initial_expected_profit = (first_solve["objective_eur"]
         - first_solve["pre_horizon_degradation_eur"] - first_solve["pre_horizon_import_fee_eur"]) if solves else None
     summary = {"strategy":strategy,"executable":strategy!="oracle","components":components,
+        "optimization_timing": optimization_timing_report(timing_records),
+        "auction_dispatch_scope": AUCTION_DISPATCH_SCOPE,
         "auction_planning_mode": "current_auction_only" if current_only else "integrated",
         **realized_settlement,
         "transaction_fees": fee_summary,
@@ -597,13 +631,14 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
         "first_solve":first_solve or None,"artifacts":str(destination),
         "execution_assumptions":["pre-interval commands; final AC averages revealed at interval end",
             "idealized interval-average safety response", fixture.get("execution_pv_assumption", "optimization PV forecast reused as execution"),
-            "committed commands project battery state to next boundary for intrainterval auction cutoffs",
+            "retained commands and cutoff-available PV project battery state to the auction delivery boundary; no earlier commands are replaced",
             "independent delivery-day study with known delivery-start energy"]}
     summary.update(expected_realized_kpis(
         initial_expected_profit_eur=initial_expected_profit,
         initial_expected_auction_revenue_eur=first_solve.get("expected_auction_revenue_eur", 0.0),
         realized_profit_after_imbalance_eur=summary["realized_profit_after_imbalance_eur"],
         auction_revenue_eur=market.cashflow_eur))
+    write_json(destination / "optimization_timing.json", summary["optimization_timing"])
     write_json(destination/"summary.json",summary)
     if config["outputs"].get("plots",True):
         from ..reporting.plots import plot_dispatch
@@ -621,6 +656,9 @@ def run_synthetic(config: dict[str, Any]) -> dict[str, Any]:
         raise FileExistsError(f"Output exists; choose a fresh run_id: {destination}")
     summaries = [_replay_strategy(config,fixture,strategy,destination/strategy)
                  for strategy in config["synthetic"]["strategies"]]
+    timing = optimization_timing_report(row for summary in summaries
+        for row in summary["optimization_timing"]["solves"])
+    write_json(destination / "optimization_timing.json", timing)
     revision = subprocess.run(["git","rev-parse","HEAD"],capture_output=True,text=True,check=False).stdout.strip()
     kind=("synthetic stochastic-price / deterministic-PV" if len(fixture["scenarios"].scenario_ids)>1
           else "synthetic point-price / deterministic-PV")

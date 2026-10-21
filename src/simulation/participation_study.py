@@ -12,7 +12,8 @@ import pandas as pd
 
 from ..data import config_path
 from ..data.gme import native_price_resolution_minutes
-from ..markets import AuctionCalendar
+from ..markets import AUCTION_DISPATCH_SCOPE, AuctionCalendar
+from ..reporting.optimization_timing import participation_timing_report
 from ..participation import AUCTION_ORDER, auction_subset, participation_profiles, profile_id
 from .gme_oracle import json_load, run_gme_oracle_experiment
 from .synthetic import json_default, write_json
@@ -322,6 +323,8 @@ def run_participation_study(config, *, progress=None):
         if json.loads(json.dumps(previous_config, default=json_default)) != json.loads(json.dumps(comparable, default=json_default)):
             raise ValueError("Cannot resume a participation study with different configuration")
         previous_manifest = json_load(destination / "json/manifest.json")
+        if previous_manifest.get("auction_dispatch_scope") != AUCTION_DISPATCH_SCOPE:
+            raise ValueError("Cannot resume results with the earlier auction dispatch scope; choose a fresh participation_study.run_id")
     else:
         destination.mkdir(parents=True, exist_ok=False)
     for kind in ("json", "csv"):
@@ -330,6 +333,7 @@ def run_participation_study(config, *, progress=None):
         (destination / "plots").mkdir(exist_ok=resume)
     write_json(destination / "json/study_config.json", config)
     manifest = {"status": "running", "run_id": run_id, "output_dir": str(destination),
+        "auction_dispatch_scope": AUCTION_DISPATCH_SCOPE,
         "delivery_days": days, "profiles": [list(profile) for profile in profiles],
         "profile_count": len(profiles), "requested_experiments": len(days) * len(cases),
         "sequential_all_auctions_baseline": settings.get("sequential_all_auctions_baseline", False),
@@ -455,10 +459,18 @@ def run_participation_study(config, *, progress=None):
             sequential_baseline=sequential_summary,
             ranking=ranking.to_dict("records"),
             ranking_scope="Descriptive ranking on the configured common dates; not a selected or validated optimal policy for unseen dates")
+        timing = {**participation_timing_report(rows), "status": "complete",
+            "requested_experiments": len(days) * len(cases)}
+        write_json(destination / "json/optimization_timing.json", timing)
+        manifest["optimization_timing_report"] = "json/optimization_timing.json"
         write_json(path, manifest)
     except Exception as error:
         manifest.update(status="failed", error=str(error), ranking_published=False)
         write_json(path, manifest)
+        # Completed cases remain comparable after interruption and on resume.
+        timing = {**participation_timing_report(rows), "status": "partial",
+            "requested_experiments": len(days) * len(cases)}
+        write_json(destination / "json/optimization_timing.json", timing)
         raise
     return {key: manifest[key] for key in ("status", "run_id", "output_dir", "profile_count",
         "delivery_days", "completed_experiments", "best_mean_profile", "best_mean_net_profit_eur")}

@@ -12,6 +12,7 @@ import pandas as pd
 GME_TIMING_SOURCE = "https://www.mercatoelettrico.org/Portals/0/Documents/en-US/20250930DTF03rev13MPE_En.pdf"
 GME_TIMING_SOURCE_REV14 = "https://gme.mercatoelettrico.org/Portals/0/Documents/en-US/20260113DTF03rev14MPE_en.pdf"
 QH_SOURCE = "https://www.mercatoelettrico.org/en-us/Home/NoticesandAnnouncements/NoticesandAnnouncementsME?id=7101"
+AUCTION_DISPATCH_SCOPE = "eligible_delivery_suffix"
 
 
 @dataclass(frozen=True)

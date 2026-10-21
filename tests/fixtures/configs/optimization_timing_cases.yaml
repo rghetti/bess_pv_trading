@@ -1,0 +1,19 @@
+include: ../../../configs/standard.yaml
+timing_cases:
+  solves:
+    - {category: replay, auction: DA, status: optimal, runtime_seconds: 1.0, solve_seconds: 1.2, build_seconds: 0.4}
+    - {category: replay, auction: IDA3, status: infeasible, runtime_seconds: 3.0, solve_seconds: 3.2, build_seconds: 0.5}
+    - {category: perfect_pv_counterfactual, status: optimal, runtime_seconds: 8.0, solve_seconds: 8.2, build_seconds: 0.6}
+  profiles: [DA, Sequential]
+  days: ['2025-01-01', '2025-01-02']
+  experiments:
+    - {profile_index: 0, day_index: 0, replay: [1.0, 3.0], benchmark: 10.0}
+    - {profile_index: 0, day_index: 1, replay: [4.0], benchmark: 20.0}
+    - {profile_index: 1, day_index: 0, replay: [2.0, 6.0], benchmark: 12.0}
+  mode_runtimes:
+    integrated: [1.0, 3.0]
+    current_auction_only: [2.0, 6.0]
+  retry:
+    statuses: [4, 3]
+    runtimes: [1.5, 2.5]
+    build_seconds: 0.5

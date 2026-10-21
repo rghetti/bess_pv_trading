@@ -29,6 +29,7 @@ from ..scenarios import synthetic_price_tree
 from ..transaction_fees import transaction_fees_from_config
 from ..participation import auction_subset, profile_id
 from .synthetic import _replay_strategy, write_json
+from ..reporting.optimization_timing import optimization_timing_report, solve_timing
 from .replay import execute_interval
 from .frozen_plans import plot_frozen_plan_comparison, simulate_frozen_auction_plans
 from .settlement import expected_realized_kpis, load_realized_imbalance_prices, settle_realized_dispatch
@@ -161,7 +162,7 @@ def _counterfactual_reoptimization_settlement(plans, dispatch, realized_pv,
 def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_prices,
                                         effective_pv, initial_energy, destination,
                                         *, artifact_name="perfect_pv_counterfactual",
-                                        degradation_settings=None):
+                                        degradation_settings=None, timing_records=None):
     """Solve the ex-post market MILP with effective PV and clearing prices known.
 
     The single deterministic scenario is intentionally clairvoyant. It retains
@@ -233,6 +234,9 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
         result = solve_model(built, settings)
     finally:
         built.model.dispose()
+    if timing_records is not None:
+        timing_records.append(solve_timing(result.diagnostics, category=artifact_name, status=result.status))
+        write_json(destination / "json/optimization_timing.json", optimization_timing_report(timing_records))
     if not result.has_incumbent:
         raise RuntimeError(f"Perfect-information PV benchmark failed: {result.status}: {result.message}")
     validation = validate_solution(inputs, result)
@@ -944,6 +948,8 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         (day_output / "models").mkdir()
     oracle_dir = day_output / "oracle"
     summary = _replay_strategy(config, fixture, "oracle", oracle_dir)
+    timing_records = list(summary["optimization_timing"]["solves"])
+    write_json(day_output / "json/optimization_timing.json", optimization_timing_report(timing_records))
     dispatch = pd.read_csv(oracle_dir / "dispatch.csv")
     # Source actual imbalance prices only once the entire physical replay is over.
     dispatch, summary, settlement_provenance = _apply_actual_settlement(
@@ -989,7 +995,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
             day_output / "reoptimization_imbalance_intervals.csv", index=False)
     perfect_schedule, perfect_diagnostics = _solve_perfect_information_schedule(
         config, grid, plant, schedule, actual_prices, realized_pv,
-        initial_energy, day_output)
+        initial_energy, day_output, timing_records=timing_records)
     include_pv_only = bool(config["experiment_outputs"].get("pv_only_baseline", True))
     pv_only_schedule = None
     pv_only_diagnostics = None
@@ -1003,7 +1009,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         pv_only_schedule, pv_only_diagnostics = _solve_perfect_information_schedule(
             no_bess_config, grid, no_bess_plant, schedule, actual_prices, realized_pv,
             0.0, day_output, artifact_name="perfect_pv_only_counterfactual",
-            degradation_settings=DegradationSettings(0.0))
+            degradation_settings=DegradationSettings(0.0), timing_records=timing_records)
         pv_only_objective = float(pv_only_diagnostics["objective_eur"])
         battery_incremental_value = float(perfect_diagnostics["objective_eur"]) - pv_only_objective
         perfect_schedule = perfect_schedule.merge(
@@ -1101,6 +1107,8 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     decision_data = sorted(solve_data + summary["infeasible_auction_decisions"], key=lambda row: row["cutoff"])
     forecast_updates = [{key: row.get(key) for key in (
         "current_auction", "cutoff", "planning_start_utc", "planning_end_utc",
+        "auction_delivery_start_utc", "physical_planning_intervals", "locked_prefix_intervals",
+        "projected_boundary_energy_mwh",
         "pv_forecast_vintage_utc", "pv_forecast_available_at_utc",
         "pv_forecast_updated_from_utc", "pv_forecast_updated_intervals")}
         for row in solve_data if row["solve_trigger"] == "auction_submission"]
@@ -1127,14 +1135,21 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     command_error = ((dispatch.discharge_mw-dispatch.charge_mw)
                      -(dispatch.requested_discharge_mw-dispatch.requested_charge_mw))
     soc_error = dispatch.energy_end_mwh-dispatch.planned_energy_end_mwh
+    timing_report = {**optimization_timing_report(timing_records), "study_date": day,
+        "farm_id": plant.farm_id, "solver_parameters": config["solver"]}
+    write_json(day_output / "json/optimization_timing.json", timing_report)
     kpis = {"study_id": study["study_id"], "study_date": day, "farm_id": plant.farm_id,
+        "optimization_timing": {key: value for key, value in timing_report.items() if key != "solves"},
         "pv_installed_ac_mw": pv_provenance["installed_ac_capacity_mw"],
         "pv_tracking_type_id": pv_provenance["farm_metadata"]["tracking_type_id"],
         "market_zone": study["zone"], "strategy": "perfect_price_foresight_oracle_not_executable",
         "auction_planning_mode": study.get("auction_planning_mode", "integrated"),
+        "auction_dispatch_scope": summary["auction_dispatch_scope"],
         "forecast_member_count": pv_provenance["forecast_member_count"],
         "auction_model_structure": [{key: item.get(key) for key in
-            ("current_auction", "status", "modeled_auctions", "trade_variable_count", "trade_variable_counts_by_auction")}
+            ("current_auction", "status", "modeled_auctions", "trade_variable_count", "trade_variable_counts_by_auction",
+             "auction_delivery_start_utc", "physical_planning_intervals", "locked_prefix_intervals",
+             "projected_boundary_energy_mwh")}
             for item in decision_data],
         "forecast_vintage_utc": pv_provenance["forecast_vintage_utc"],
         "forecast_available_at_utc": pv_provenance["forecast_available_at_utc"],
@@ -1280,6 +1295,8 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     revision = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
                              text=True, check=False).stdout.strip()
     manifest = {"status": "complete", "study_id": study["study_id"], "run_id": run_id,
+        "optimization_timing": kpis["optimization_timing"],
+        "auction_dispatch_scope": summary["auction_dispatch_scope"],
         "study_date": day, "code_revision": revision, "output_dir": str(day_output),
         "strategy": "perfect_price_foresight_oracle_not_executable", "scenario_count": 1,
         "auction_planning_mode": study.get("auction_planning_mode", "integrated"),
@@ -1297,7 +1314,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
             "oracle/solves.json", "oracle/price_publications.json"]}
     manifest["artifacts"].extend([
         "csv/perfect_pv_counterfactual_schedule.csv",
-        "json/perfect_pv_counterfactual.json"])
+        "json/perfect_pv_counterfactual.json", "json/optimization_timing.json"])
     if frozen_enabled:
         manifest["artifacts"].append("json/reoptimization_frozen_plan_baselines.json")
         if not frozen_summary.empty:

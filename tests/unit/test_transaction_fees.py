@@ -1,6 +1,7 @@
 """Fee economics, exact tariff bands, monthly state and scenario consistency."""
 from dataclasses import replace
 from datetime import timedelta
+import json
 
 import numpy as np
 import pytest
@@ -234,8 +235,13 @@ def test_gme_perfect_information_and_zero_battery_route_include_fees(solve, tmp_
     config["gme_oracle_experiment"] = {"decision_resolution_minutes": 15, "timezone": "Europe/Rome",
         "auction_datasets": {"DA": {"native_interval_minutes": 60}, "IDA1": {"native_interval_minutes": 15}}}
     plant = arbitrage_inputs("none").plant
+    timing_records = []
     _, diagnostics = _solve_perfect_information_schedule(config, grid, plant, schedule,
-        {"DA": np.full(96, 100), "IDA1": np.full(96, 100.05)}, np.zeros(96), 0, tmp_path)
+        {"DA": np.full(96, 100), "IDA1": np.full(96, 100.05)}, np.zeros(96), 0, tmp_path,
+        timing_records=timing_records)
+    timing = json.loads((tmp_path / "json/optimization_timing.json").read_text())
+    assert timing["solves"] == timing_records
+    assert timing["gurobi_runtime_seconds"]["total"] == diagnostics["runtime_seconds"]
     assert diagnostics["objective_eur"] == pytest.approx(0.72)
     assert diagnostics["components"]["transaction_fees"] == pytest.approx(0.48)
     assert diagnostics["transaction_fee_formulation"]["absolute_volume_variables"] == 24 + 96
