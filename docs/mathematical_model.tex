@@ -17,7 +17,7 @@
 \DeclareMathOperator{\clip}{clip}
 \title{PV and Battery Trading in MGP and MI Auctions\\Current Mathematical Model and Execution Workflow}
 \author{\texttt{bess\_pv\_trading} repository}
-\date{Implementation reviewed on 21 October 2026}
+\date{Implementation reviewed on 22 October 2026}
 \begin{document}
 \maketitle
 \begin{abstract}
@@ -1096,7 +1096,9 @@ delivery dates $d\in\mathcal D=\{d_0,\ldots,d_F\}$ through
 own physical grid $\mathcal T_d$, native auction products, actual price curves
 and auction calendar. Commitments and revisable plans are keyed by delivery
 day as well as auction and interval, for example $(d,a,t)$; the same auction
-name on another delivery day is a different market book.
+name on another delivery day is a different market book. This is continuous
+chronological execution with daily planning horizons; it is not a single
+multi-day MILP, and a later-day solve cannot revise an earlier delivery book.
 
 All events are merged into one chronological sequence. On an ordinary operating
 day $d$, the replay submits IDA3 orders for $d$, then DA, IDA1 and IDA2 orders

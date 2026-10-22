@@ -2,7 +2,7 @@
 
 This repository studies one photovoltaic farm and an AC-coupled battery sharing a point of interconnection (POI). It prepares farm and market data, converts rolling weather forecasts into PV power with pvlib, optimizes energy positions in MGP and MI-A1/2/3 with Gurobi, executes the plans against realized PV through a feedback controller, and settles delivery deviations afterwards.
 
-The historical workflows use **one-day planning horizons in the NORD zone, with perfect auction-price information and one deterministic weather-forecast member**. Single-day and independent-day participation studies refresh the PV forecast before each active auction and make four auction decisions when all auctions take place. A separate continuous optimization experiment carries physical state and commitments across consecutive delivery days. Separate hindsight optimizations use realized PV to compare the feedback trajectory with a perfect-information schedule and to measure the incremental operating value of a battery against a PV-only plant. Price-forecast experiments and their optional stochastic optimizer-input adapter are archived; new causal price forecasting is future work.
+The historical workflows use **one-day planning horizons in the NORD zone, with perfect auction-price information and one deterministic weather-forecast member**. Single-day and independent-day participation studies refresh the PV forecast before each active auction and make four auction decisions when all auctions take place. A separate continuous-operation replay runs consecutive delivery days in chronological order: each solve plans one delivery day, while actual battery state, submitted commitments, degradation history and monthly fee volume carry between days. It does not combine multiple delivery days into one MILP. Separate hindsight optimizations use realized PV to compare the feedback trajectory with a perfect-information schedule and to measure the incremental operating value of a battery against a PV-only plant. Price-forecast experiments and their optional stochastic optimizer-input adapter are archived; new causal price forecasting is future work.
 
 The full equations, information structure, execution policy, and economic comparisons are in **[the mathematical model](docs/mathematical_model.pdf)**, with editable **[LaTeX source](docs/mathematical_model.tex)**. This document replaces the retired implementation-status LaTeX/PDF. Numerical results belong to each run's saved configuration and KPIs, rather than a fixed result in this README.
 
@@ -162,8 +162,10 @@ the first midnight state is an initial condition. The study stops after the
 last quarter on 31 January, at local midnight on 1 February, and submits no
 orders for delivery outside its configured dates.
 
-The horizon of each optimization remains one delivery day. At next-day DA,
-IDA1 and IDA2, the planner takes the latest observed battery state and projects
+The horizon of each optimization remains one delivery day. During delivery day
+`d`, the event replay can submit IDA3 orders for `d` and next-day DA, IDA1 and
+IDA2 orders for `d+1`. At each next-day gate, the planner takes the latest
+observed battery state and projects
 the retained current-day commands through midnight using the forecast available
 at that submission cutoff and the same grid-tracking controller. This projected
 midnight state initializes the next-day solve; future realized SOC is never an
@@ -199,6 +201,14 @@ plots keep perfect-PV continuous profit separate from the objectives of
 overlapping auction solves. Native Gurobi timing reports include individual
 attempts, mean/min/max/std, strategy/day summaries and separate reference costs;
 objective values are never summed across overlapping horizons.
+
+If a later solve is confirmed infeasible and
+`execution.infeasible_auction_policy: previous_plan` is enabled, integrated
+planning retains the last feasible delivery-day plan and submits its saved
+quantity for the current auction. `current_auction_only` retains its physical
+commands and submits zero new quantity. Earlier submissions remain fixed in
+both modes. The failed solve and fallback source are recorded; no recovery
+optimization is added. With the default `error` policy, the experiment stops.
 
 Study-level SOC prediction figures are separated by solved strategy:
 `plots/midnight_soc_prediction_errors_<strategy>.png` and
@@ -442,7 +452,7 @@ The shared Terna workbook parser decodes `02:01/16/31/46` as the second occurren
 | Historical satellite GHI | Observed irradiance, not an available future weather forecast |
 | Weather radiation | End-labelled hourly means; redistributed over their contained quarters |
 | Other weather fields | Interpolated only under their declared semantics and coverage |
-| Forecast vintages | Separate cycle and availability times; default publication lag is four hours |
+| Forecast vintages | Separate cycle and availability times; default availability lag is six hours |
 | Optimization powers / stored energy | AC MW / internal MWh |
 | Auction quantities / prices | Signed interval MWh / EUR per MWh |
 
