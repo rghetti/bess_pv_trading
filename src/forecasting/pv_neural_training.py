@@ -22,7 +22,8 @@ def configure_cpu(section: dict):
 
 def tensor_pack(packed):
     """Keep small full-farm tensors in CPU memory to avoid loader/process overhead."""
-    return {name: torch.from_numpy(packed[name]) for name in ("x", "y", "mask", "daylight", "month", "auction")}
+    return {name: torch.from_numpy(np.array(packed[name], copy=True))
+            for name in ("x", "y", "mask", "daylight", "month", "auction")}
 
 
 def view_mse(prediction, target, mask):
@@ -75,8 +76,9 @@ def fit_network(packed: dict, candidate: dict, section: dict, *, seed: int, prog
     rng = np.random.default_rng(seed)
     tensors = tensor_pack(packed)
     model = PVNetwork(packed["x"].shape[-1], candidate, section)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=float(section["learning_rate"]),
-                                   weight_decay=float(section["weight_decay"]))
+    optimizer = torch.optim.AdamW(model.parameters(),
+        lr=float(candidate.get("learning_rate", section["learning_rate"])),
+        weight_decay=float(candidate.get("weight_decay", section["weight_decay"])))
     train = np.flatnonzero((packed["split"] == "train") & packed["mask"].any(axis=1))
     validation = np.flatnonzero((packed["split"] == "validation") & packed["mask"].any(axis=1))
     best, best_epoch, best_state, stale = float("inf"), 0, None, 0
@@ -85,14 +87,16 @@ def fit_network(packed: dict, candidate: dict, section: dict, *, seed: int, prog
         model.train()
         order = rng.permutation(train)
         total_loss, batches = 0., 0
-        for start in range(0, len(order), int(section["batch_size"])):
-            positions = order[start:start+int(section["batch_size"])]
+        batch_size = int(candidate.get("batch_size", section["batch_size"]))
+        for start in range(0, len(order), batch_size):
+            positions = order[start:start+batch_size]
             target, mask = tensors["y"][positions], tensors["mask"][positions]
             prediction = _forward(model, tensors, positions)
             residual = prediction-target
             error = residual**2
-            if section["loss"] == "huber":
-                delta = float(section["huber_delta"])
+            loss_name = candidate.get("loss", section["loss"])
+            if loss_name == "huber":
+                delta = float(candidate.get("huber_delta", section["huber_delta"]))
                 error = torch.where(abs(residual) <= delta, error, 2*delta*abs(residual)-delta**2)
             loss = ((error*mask).sum(dim=1)/mask.sum(dim=1).clamp(min=1)).mean()
             optimizer.zero_grad(set_to_none=True)
@@ -122,7 +126,11 @@ def fit_network(packed: dict, candidate: dict, section: dict, *, seed: int, prog
         "parameter_count": sum(p.numel() for p in model.parameters()), "device": "cpu",
         "torch_version": str(torch.__version__), "history": history,
         "selection": "prior_validation_daylight_day_auction_balanced_nrmse",
-        "test_targets_used_for_training_or_selection": False}
+        "test_targets_used_for_training_or_selection": False,
+        "hyperparameters": {name: candidate[name] for name in (
+            "width", "depth", "kernel_size", "dropout", "learning_rate", "weight_decay",
+            "batch_size", "loss", "huber_delta", "month_embedding_dim", "auction_embedding_dim")
+            if name in candidate}}
 
 
 def save_network(model, path: Path, metadata: dict):

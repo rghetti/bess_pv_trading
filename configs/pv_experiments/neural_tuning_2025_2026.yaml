@@ -1,0 +1,21 @@
+include: ../standard.yaml
+pv_neural:
+  start_day: '2025-01-01'
+  train_end_day_exclusive: '2026-01-01'
+  validation_end_day_exclusive: '2026-05-01'
+  end_day_exclusive: '2026-09-01'
+  output_root: outputs/pv_neural
+  split_embargo_days: 1
+  max_epochs: 100
+  patience: 15
+  bootstrap_repetitions: 1000
+pv_neural_tuning:
+  run_id: neural_hpo_2025_to_2026_08_42cpu
+  source_corpus_run_id: neural_pv_2025_to_2026_08
+  workers: 42
+  reserved_cpu_cores: 6
+  trials_per_architecture_feature: 8
+  resume: true
+market:
+  valid_from: '2025-01-01'
+  valid_to: '2026-08-31'

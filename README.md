@@ -532,6 +532,19 @@ Outputs live in `outputs/pv_neural/<run_id>/`, with study-level comparisons and 
 
 `forecasting.pv_neural_predict.predict_neural_frame(frame, artifact, farm_id=...)` loads a saved model on CPU and predicts without requiring measured targets. It checks farm identity, feature order and the weights checksum. The standard trading forecast remains pvlib; choosing a neural model for trading is a subsequent experiment. For a short four-farm execution check use `configs/pv_experiments/neural_validation.yaml`.
 
+### Neural PV hyperparameter search
+
+Run a separate, resumable CPU-parallel search with:
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading tune-pv-neural \
+  --config configs/pv_experiments/neural_tuning_2025_2026.yaml
+```
+
+The search keeps the benchmark's 2025 training period, January–April 2026 validation period, one-day availability embargo, and May–August 2026 untouched test period. It samples eight settings for each of the MLP, residual, and temporal convolution architectures with both core and extended weather inputs, including the existing default in each group. Width, depth, dropout, learning rate, weight decay, batch size, loss, embedding sizes, and temporal kernel are configurable. Independent farm/model trials run in separate CPU processes with one thread each. The standard setting leaves six logical CPUs idle for other cluster users; an experiment may set a lower worker cap. This study caps at 42 workers on the 48-CPU cluster. It also compares validation-selected weighted OLS, Ridge, Lasso, and Elastic Net models using both feature sets. No additional Python package is needed.
+
+Each candidate is fit using measured AC power normalized by the farm rating. The predictions are clipped to the farm's AC range for validation and test scoring, matching the neural output constraint and calibrated pvlib's AC cap; measured AC targets remain unmodified. Hyperparameters and model families are selected only on the earlier validation period. The test period reports the resulting selected neural models, best neural model per architecture, best setting in each regression family, and the unchanged calibrated pvlib baseline. Outputs include every validation trial, selected model coefficients and weights, paired per-farm test metrics, plots, resolved configuration, source fingerprints, and a completion manifest under `outputs/pv_neural_tuning/<run_id>/`.
+
 The completed `neural_pv_2025_to_2026_08` run fits 24 neural candidates across the four farms and evaluates all 123 test delivery days. There are 204,276 aligned auction/quarter-hour rows per farm over 608 days. With equal day/auction daylight weighting, validation-selected neural performance is:
 
 | Farm | Selected neural model | pvlib test RMSE (MW) | Neural test RMSE (MW) | RMSE reduction |

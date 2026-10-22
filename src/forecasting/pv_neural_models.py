@@ -41,10 +41,12 @@ class PVNetwork(nn.Module):
     def __init__(self, input_features: int, candidate: dict, section: dict):
         super().__init__()
         self.architecture = candidate["architecture"]
-        month_dim, auction_dim = section["month_embedding_dim"], section["auction_embedding_dim"]
+        month_dim = int(candidate.get("month_embedding_dim", section["month_embedding_dim"]))
+        auction_dim = int(candidate.get("auction_embedding_dim", section["auction_embedding_dim"]))
+        width, depth = candidate["width"], candidate["depth"]
+        dropout = float(candidate.get("dropout", section["dropout"]))
         self.month_embedding = nn.Embedding(12, month_dim)
         self.auction_embedding = nn.Embedding(4, auction_dim)
-        width, depth, dropout = candidate["width"], candidate["depth"], section["dropout"]
         self.stem = nn.Sequential(nn.Linear(input_features+month_dim+auction_dim, width), nn.GELU())
         if self.architecture == "mlp":
             self.body = nn.Sequential(*[layer for _ in range(depth-1) for layer in

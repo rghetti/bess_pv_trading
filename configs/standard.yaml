@@ -338,6 +338,40 @@ pv_neural:
     - {name: residual_weather, architecture: residual, features: weather, width: 64, depth: 2}
     - {name: tcn_core, architecture: tcn, features: core, width: 32, depth: 3, kernel_size: 3}
     - {name: tcn_weather, architecture: tcn, features: weather, width: 48, depth: 3, kernel_size: 3}
+# Separate, validation-selected hyperparameter search for the research branch.
+pv_neural_tuning:
+  run_id: null
+  output_root: outputs/pv_neural_tuning
+  source_corpus_run_id: null  # Optional aligned-corpus run to validate and reuse before training.
+  resume: true
+  workers: null  # null uses all logical CPUs after the configured reserve.
+  reserved_cpu_cores: 6  # Leave these logical CPUs available for other cluster users.
+  threads_per_worker: 1
+  interop_threads_per_worker: 1
+  seed: 73021
+  trials_per_architecture_feature: 8  # Includes the current default plus seven seeded random trials.
+  search_space:
+    widths: [32, 48, 64, 96]
+    mlp_depths: [2, 3, 4]
+    residual_depths: [1, 2, 3]
+    tcn_depths: [2, 3, 4]
+    tcn_kernel_sizes: [3, 5, 7]
+    dropout: [0.0, 0.05, 0.15]
+    learning_rates: [0.0003, 0.001, 0.003]
+    weight_decays: [0.00001, 0.0001, 0.001]
+    batch_sizes: [16, 32, 64]
+    losses: [mse, huber]
+    huber_deltas: [0.025, 0.05, 0.1]
+    month_embedding_dims: [2, 4, 8]
+    auction_embedding_dims: [2, 4]
+  regression:
+    ridge_alphas: [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0, 10.0]
+    lasso_alphas: [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.05]
+    elastic_net_alphas: [0.000001, 0.00001, 0.0001, 0.001, 0.01]
+    elastic_net_l1_ratios: [0.1, 0.5, 0.9]
+    coordinate_descent_max_iterations: 5000
+    coordinate_descent_tolerance: 0.0000001
+  include_core_and_extended_features: true
 forecast:
   farm_id: ${farm_id}
   initial_decision_cutoff: null
