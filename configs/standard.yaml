@@ -445,6 +445,9 @@ api:
   progress_every: 25
   plots: true
   terna_authorization_scheme: bearer
+  # HTTP range only: daily cache identities and original timestamps are preserved.
+  # day is available for endpoints that cannot serve a full calendar month.
+  terna_request_period: month
   # A quota/access HTTP 403 pauses Terna for this run; other providers continue.
   # Use error to retain immediate failure instead.
   terna_http_403_policy: continue_other_providers

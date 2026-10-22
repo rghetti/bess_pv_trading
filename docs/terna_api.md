@@ -125,7 +125,44 @@ This is a precaution during acquisition, not proof that rate limiting caused
 the earlier intermittent 403 responses.
 
 Queries use inclusive `dateFrom` / `dateTo` in `dd/mm/yyyy`, built from explicit
-Italian calendar dates. The caller slices by day for cache reuse. `biddingZone`
+Italian calendar dates. `api.terna_request_period: month` is the default: missing
+days are fetched together within each calendar month, clipped to the configured
+start and exclusive end. Set `day` to use single-day HTTP calls if an endpoint
+cannot serve a larger range. HTTP failures do not trigger automatic daily
+fan-out, which could consume the remaining quota. ENTSO-E and GME request ranges
+are unchanged.
+
+Daily cache identities remain unchanged. The monthly response is parsed once
+per requested dataset/options, then split by the original `reference_time` in
+`Europe/Rome`, never by UTC calendar date or row position. Original timestamps,
+offsets, values, sessions and forecast publication clocks are preserved. No
+averaging, interpolation or invented intervals occur. The parser rejects
+references outside the transport date range; empty days remain explicit gaps.
+Both occurrences of autumn's repeated hour stay distinct in UTC, and the spring
+day has fewer intervals. Source reference labels remain distinct from any
+explicitly configured product start/end convention.
+
+`total_load` and `total_load_forecast` share one HTTP response when their request
+filters and revision agree. Different forecast sessions remain separate requests.
+Both normalized series are retained: the redundancy removed is the network call,
+not either field. Existing daily caches are reused; a batch can include their
+dates but does not overwrite them without `--refresh-cache`. Each new daily
+snapshot records the actual `transport_request` and its first/last source-local
+dates in metadata, retaining the full original monthly payload and checksum.
+A restart can reuse that monthly response to populate a missing day or sibling load field without
+HTTP. Legacy retained single-day responses remain reparsable.
+
+Dry runs expose each daily identity's `transport_request` and a deduplicated
+`data_http_operations_upper_bound` for pending data calls; authentication and
+transport retries are additional, and reusable raw responses may reduce calls
+further. Run manifests report actual `data_http_operations`. With all five
+example datasets missing for a month, the upper bound is four data calls rather
+than one call per dataset/day. This is not a verified statement about Terna's
+quota accounting. Provider range support and truncation behavior still need a
+live check after the user's quota resets. Missing-day checks do not establish
+that every expected observation or forecast vintage was returned within a day.
+
+`biddingZone`
 and `type` are repeated parameters when multiple values are requested. The
 documented total-load bidding-zone spelling is English (`North`, not `NORD`);
 misspellings may otherwise return an empty body. `zone` in configuration is a

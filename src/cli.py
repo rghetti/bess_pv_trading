@@ -226,6 +226,8 @@ def main(argv: list[str] | None = None) -> int:
                 groups=Counter((item["request"]["provider"],item["request"]["dataset"]) for item in result["items"])
                 result={"status":result["status"],"requests":result["requests"],
                     "download_order":result["download_order"],
+                    "terna_request_period":result["terna_request_period"],
+                    "data_http_operations_upper_bound":result["data_http_operations_upper_bound"],
                     "start":config["api"]["start"],"end_exclusive":config["api"]["end"],
                     "cached_chunks":sum(item["cached"] for item in result["items"]),
                     "cached_no_data_chunks":sum(item["no_data_cached"] for item in result["items"]),

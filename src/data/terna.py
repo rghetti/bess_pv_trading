@@ -130,7 +130,8 @@ def parse_token(payload: bytes | str) -> tuple[str, int]:
 
 # Retain the provider's source labels, dimensions, and provenance on every row.
 def parse_terna_json(payload: bytes | str, dataset: str, options: Mapping[str, Any] | None = None,
-                     retrieved_at: Any = None, *, requested_day: str | None = None) -> pd.DataFrame:
+                     retrieved_at: Any = None, *, requested_day: str | None = None,
+                     requested_end_day: str | None = None) -> pd.DataFrame:
     """Normalize documented responses; missing publication clocks remain unknown.
 
     Explicit interval options are study declarations, not facts established by
@@ -176,7 +177,8 @@ def parse_terna_json(payload: bytes | str, dataset: str, options: Mapping[str, A
             except ValueError:
                 raise MarketDataError("Terna no-results response contains invalid dates") from None
             if first > last or (requested_day is not None and
-                                (first != date.fromisoformat(requested_day) or last != first)):
+                                (first != date.fromisoformat(requested_day) or
+                                 last != date.fromisoformat(requested_end_day or requested_day))):
                 raise MarketDataError("Terna no-results dates differ from the requested day")
             records = []
     if not isinstance(records, list):
@@ -235,6 +237,12 @@ def parse_terna_json(payload: bytes | str, dataset: str, options: Mapping[str, A
     frame = pd.DataFrame(rows, columns=_COLUMNS)
     for name in ("reference_time", "product_start", "product_end", "retrieved_at", "source_document_time", "historical_available_at"):
         frame[name] = pd.to_datetime(frame[name], utc=True)
+    if requested_end_day is not None and not frame.empty:
+        # Validate the whole transport range before splitting on source-local days.
+        first, last = date.fromisoformat(requested_day), date.fromisoformat(requested_end_day)
+        source_days = frame.reference_time.dt.tz_convert("Europe/Rome").dt.date
+        if first > last or ((source_days < first) | (source_days > last)).any():
+            raise MarketDataError("Terna reference timestamps fall outside the requested date range")
     identity = ["dataset", "zone", "reference_time", "session_type", "energy_source", "source_document_time", "source_publication_date"]
     if frame.duplicated(identity).any():
         raise MarketDataError("Duplicate Terna reference/zone/session/source/vintage records; no undocumented correction was applied")

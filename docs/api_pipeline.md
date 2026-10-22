@@ -171,6 +171,14 @@ PYTHONPATH=src python -m bess_pv_trading download-data \
 
 `api.download_order: month_first` is the default: retrieve all January days for prices, then January load, generation, solar, wind and the configured Terna datasets, before starting February. Daily cache keys are unchanged. Progress identifies the current month and dataset, with updates every 25 chunks and on dataset/month transitions. Set `dataset_first` to retain the older ordering.
 
+Terna uses `api.terna_request_period: month` for HTTP batching independently of
+that processing order. One monthly total-load response supplies both actual and
+forecast load; different sessions and filters stay separate. Daily normalized
+snapshots retain source-local date alignment and the actual monthly request in
+metadata. See [Terna batching and alignment](terna_api.md). Dry-run `requests`
+counts logical daily snapshots; `data_http_operations_upper_bound` counts unique
+pending transport requests before raw-cache reuse, authentication and retries.
+
 A process that was already running before this change retains its original request order. To adopt monthly scheduling, press Ctrl-C in that terminal and rerun the same command above **without `--refresh-cache`**. Completed prices and load days will be reused. An interrupted in-flight request can be fetched again; completed daily caches remain available.
 
 The history configuration uses eight attempts for transient 429/5xx/network

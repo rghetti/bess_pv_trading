@@ -462,6 +462,8 @@ def plan_downloads(config: Mapping[str,Any], *, providers: Iterable[str] | None 
         raise DataAPIError("api.download_order must be month_first or dataset_first")
     if settings.get("terna_authorization_scheme", "bearer") not in {"bearer", "raw"}:
         raise DataAPIError("api.terna_authorization_scheme must be bearer or raw")
+    if settings.get("terna_request_period", "month") not in {"month", "day"}:
+        raise DataAPIError("api.terna_request_period must be month or day")
     if settings.get("terna_http_403_policy", "continue_other_providers") not in {"continue_other_providers", "error"}:
         raise DataAPIError("api.terna_http_403_policy must be continue_other_providers or error")
     selected = None if providers is None else {str(provider).strip().lower() for provider in providers}
@@ -524,7 +526,41 @@ def plan_downloads(config: Mapping[str,Any], *, providers: Iterable[str] | None 
     # Scheduling is deliberately outside the identity so existing daily caches reuse.
     if download_order=="month_first":
         plans.sort(key=lambda plan:plan["identity"]["local_day"][:7])
+    _terna_transport_plans(plans, settings.get("terna_request_period", "month"))
     return plans
+
+
+def _terna_transport_plans(plans, period):
+    """Group Terna HTTP work independently of stable daily cache identities.
+
+    The shared total-load route supplies actuals and forecasts in one response.
+    Group by the actual provider request, retaining session and source filters.
+    Month bounds are clipped to the configured days; native rows stay unchanged.
+    """
+    groups = {}
+    for plan in plans:
+        identity = plan["identity"]
+        if identity["provider"] != "terna":
+            continue
+        specification = plan["specification"]
+        filters = {key: value for key, value in specification.params.items()
+                   if key not in {"dateFrom", "dateTo"}}
+        key = _json_bytes({"url": specification.url, "filters": filters,
+            "headers": specification.headers, "vintage_revision": identity["vintage_revision"],
+            "schema_version": identity["schema_version"],
+            "period": identity["local_day"][:7] if period == "month" else identity["local_day"]})
+        groups.setdefault(key, []).append(plan)
+    for members in groups.values():
+        first = min(item["identity"]["local_day"] for item in members)
+        last = max(item["identity"]["local_day"] for item in members)
+        original = members[0]["specification"]
+        specification = ApiRequest(original.url, {**original.params,
+            "dateFrom": pd.Timestamp(first).strftime("%d/%m/%Y"),
+            "dateTo": pd.Timestamp(last).strftime("%d/%m/%Y")}, original.headers)
+        for plan in members:
+            plan["transport_specification"] = specification
+            plan["transport_first_day"] = first
+            plan["transport_last_day"] = last
 
 
 def _plot_records(frame: pd.DataFrame, path: Path, title: str) -> None:
@@ -553,7 +589,7 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
                          providers: Iterable[str] | None = None,
                          transport: SecureTransport | None = None,
                          progress: Callable[[str],None] | None = None) -> dict:
-    """Fetch only missing daily requests and export normalized source/provenance."""
+    """Fetch missing daily snapshots, batching Terna HTTP calls by local month."""
     plans = plan_downloads(config, providers=providers)
     settings = config["api"]
     cache = cache_from_settings(settings)
@@ -564,11 +600,18 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
         raise DataAPIError("api.no_data_cache_hours must be finite and nonnegative")
     if dry_run:
         with cache.read_session() if consolidated else nullcontext():
-            return {"status":"planned","requests":len(plans),
-                "download_order":settings.get("download_order","month_first"),"items":[
+            items = [
                 {"request":item["identity"],"cached":cache.load(item["identity"]) is not None,
                  "no_data_cached":cache.load_no_data(item["identity"],no_data_hours) is not None,
-                 "dataset_metadata":item["metadata"]} for item in plans]}
+                 "transport_request":asdict(item.get("transport_specification", item["specification"])),
+                 "dataset_metadata":item["metadata"]} for item in plans]
+            pending = {_json_bytes({"provider": item["request"]["provider"],
+                "request": item["transport_request"], "vintage_revision": item["request"]["vintage_revision"]})
+                for item in items if refresh_cache or not (item["cached"] or item["no_data_cached"])}
+            return {"status":"planned","requests":len(plans),
+                "download_order":settings.get("download_order","month_first"),
+                "terna_request_period":settings.get("terna_request_period", "month"),
+                "data_http_operations_upper_bound":len(pending), "items":items}
     transport = transport or SecureTransport(**{**settings.get("http",{}),"retry_callback":progress})
     credentials = settings.get("credentials",{})
     secret_values={}
@@ -584,6 +627,7 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
     if isinstance(gme_refresh_seconds,bool) or not np.isfinite(float(gme_refresh_seconds)) or float(gme_refresh_seconds)<=0:
         raise DataAPIError("api.gme_token_refresh_seconds must be finite and positive")
     raw_responses={}
+    parsed_terna_responses={}
     results=[]
     paused_providers={}
     http_gets,auth_requests=0,0
@@ -622,6 +666,12 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
 
     for plan in plans:
         identity,specification=plan["identity"],plan["specification"]
+        transport_specification = plan.get("transport_specification", specification)
+        transport_metadata = ({"transport_request": asdict(transport_specification),
+            "transport_first_day": plan["transport_first_day"],
+            "transport_last_day": plan["transport_last_day"]} if identity["provider"] == "terna" else {})
+        raw_key=_json_bytes({"provider":identity["provider"],"specification":asdict(transport_specification),
+            "vintage_revision":identity["vintage_revision"],"schema_version":identity["schema_version"]})
         cached = None if refresh_cache else cache.load(identity)
         no_data = None if refresh_cache or cached is not None else cache.load_no_data(identity,no_data_hours)
         if no_data is not None:
@@ -632,10 +682,11 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
             continue
         if cached is not None:
             frame,manifest=cached
-            raw_key=_json_bytes({"provider":identity["provider"],"specification":asdict(specification),
-                                 "vintage_revision":identity["vintage_revision"],"schema_version":identity["schema_version"]})
-            raw_responses[raw_key]=(cache.load_raw(identity),
-                                    pd.Timestamp(manifest["metadata"]["retrieved_at"]))
+            # Only seed a monthly request from a payload proven to cover it.
+            if (identity["provider"] != "terna" or
+                    manifest["metadata"].get("transport_request", identity["request"]) == asdict(transport_specification)):
+                raw_responses[raw_key]=(cache.load_raw(identity),
+                                        pd.Timestamp(manifest["metadata"]["retrieved_at"]))
             status="cached"
         else:
             provider=identity["provider"]
@@ -646,11 +697,30 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
                     "http_status":paused_providers[provider]["http_status"]})
                 announce(identity)
                 continue
-            raw_key=_json_bytes({"provider":provider,"specification":asdict(specification),
-                                 "vintage_revision":identity["vintage_revision"],"schema_version":identity["schema_version"]})
             reused=raw_responses.get(raw_key)
+            if provider == "terna" and reused is None and not refresh_cache:
+                # A sibling dataset or later day can already own this batch.
+                with cache.read_session() if consolidated else nullcontext():
+                    for candidate in plans:
+                        if candidate.get("transport_specification") != transport_specification or candidate["identity"]["vintage_revision"] != identity["vintage_revision"]:
+                            continue
+                        source = cache.load(candidate["identity"])
+                        if source is not None and source[1]["metadata"].get("transport_request", candidate["identity"]["request"]) == asdict(transport_specification):
+                            reused=(cache.load_raw(candidate["identity"]), pd.Timestamp(source[1]["metadata"]["retrieved_at"]))
+                            break
+            retained_identity = {**identity, **transport_metadata} if provider == "terna" else identity
             if provider in {"terna", "gme"} and reused is None and not refresh_cache:
-                retained=cache.load_unparsed(identity)
+                retained=cache.load_unparsed(retained_identity)
+                if retained is None:
+                    retained=cache.load_unparsed(identity)
+                    if retained is not None and provider == "terna":
+                        # Legacy retained responses cover only the original day.
+                        transport_specification = specification
+                        transport_metadata = {"transport_request":asdict(specification),
+                            "transport_first_day":identity["local_day"], "transport_last_day":identity["local_day"]}
+                        retained_identity = identity
+                        raw_key=_json_bytes({"provider":provider,"specification":asdict(specification),
+                            "vintage_revision":identity["vintage_revision"],"schema_version":identity["schema_version"]})
                 if retained is not None:
                     reused=(retained[0],pd.Timestamp(retained[1]["retrieved_at"]))
             if provider=="entsoe":
@@ -684,9 +754,12 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
                 if reused is None:
                     http_gets+=1
                     try:
+                        if progress:
+                            progress(f"[Terna HTTP] {transport_specification.url.rsplit('/', 1)[-1]} "
+                                f"{transport_metadata['transport_first_day']} through {transport_metadata['transport_last_day']}")
                         auth_options = ({"authorization_scheme": "raw"}
                                         if settings.get("terna_authorization_scheme", "bearer") == "raw" else {})
-                        payload=transport.get(specification,bearer_token=terna_token,**auth_options)
+                        payload=transport.get(transport_specification,bearer_token=terna_token,**auth_options)
                     except DataAPIError as error:
                         if pause_terna_on_403(error,identity,"data"):
                             continue
@@ -695,10 +768,18 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
                 else:
                     payload,retrieved_at=reused
                 try:
-                    frame=parse_terna_json(payload,dataset=identity["dataset"],options=identity["options"],retrieved_at=retrieved_at,
-                        requested_day=identity["local_day"])
+                    parsed_key = (raw_key, identity["dataset"], _json_bytes(identity["options"]))
+                    if parsed_key not in parsed_terna_responses:
+                        parsed_terna_responses[parsed_key]=parse_terna_json(payload,
+                            dataset=identity["dataset"],options=identity["options"],retrieved_at=retrieved_at,
+                            requested_day=transport_metadata["transport_first_day"],
+                            requested_end_day=transport_metadata["transport_last_day"])
+                    frame = parsed_terna_responses[parsed_key]
+                    if not frame.empty:
+                        local_days = frame.reference_time.dt.tz_convert("Europe/Rome").dt.strftime("%Y-%m-%d")
+                        frame = frame.loc[local_days == identity["local_day"]].copy().reset_index(drop=True)
                 except ValueError as error:
-                    retained_path=cache.save_unparsed(identity,payload,retrieved_at,
+                    retained_path=cache.save_unparsed(retained_identity,payload,retrieved_at,
                         sensitive_values=[*secret_values.values(),terna_token])
                     raise DataAPIError(f"Terna {identity['dataset']} on {identity['local_day']}: {error}. Unparsed data retained at {retained_path}; a parser fix can reuse it without downloading again") from None
             else:
@@ -747,6 +828,7 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
                 announce(identity)
                 continue
             manifest=cache.save(identity,payload,frame,{**plan["metadata"],"frame_provenance":frame.attrs,
+                **transport_metadata,
                 "acquisition":"reused_verified_raw_snapshot" if reused is not None else "http",
                 "retrieved_at":retrieved_at.isoformat()})
             status="downloaded"

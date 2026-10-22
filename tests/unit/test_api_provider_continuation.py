@@ -43,11 +43,13 @@ class FakeTransport:
 def setup_download(tmp_path, monkeypatch):
     config = load_config("tests/fixtures/configs/api_pause_cases.yaml")
     config["api"].update(database_path=str(tmp_path / "market.duckdb"),
-        cache_directory=str(tmp_path / "legacy"), output_directory=str(tmp_path / "reports"))
+        cache_directory=str(tmp_path / "legacy"), output_directory=str(tmp_path / "reports"),
+        terna_request_period="day")
     private = config["test_case"]["private_marker"]
     monkeypatch.setattr(api, "_secret", lambda *args, **kwargs: private)
     monkeypatch.setattr(entsoe, "parse_entsoe_xml", lambda *args, **kwargs: pd.DataFrame({"value": [1.0]}))
-    monkeypatch.setattr(terna, "parse_terna_json", lambda *args, **kwargs: pd.DataFrame({"value": [1.0]}))
+    monkeypatch.setattr(terna, "parse_terna_json", lambda *args, **kwargs: pd.DataFrame({"value": [1.0],
+        "reference_time": [pd.Timestamp(kwargs["requested_day"], tz="Europe/Rome").tz_convert("UTC")]}))
     monkeypatch.setattr(terna, "parse_token", lambda payload: (private, 3600))
     return config
 
