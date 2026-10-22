@@ -43,6 +43,9 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
         model.addConstr(energy[s, 0] == inputs.state.energy_mwh, name=f"initial_energy[s{scenario}]")
         if inputs.terminal_target_mwh is not None:
             model.addConstr(energy[s, intervals] == inputs.terminal_target_mwh, name=f"terminal_energy[s{scenario}]")
+        if inputs.terminal_minimum_mwh is not None:
+            model.addConstr(energy[s, intervals] >= inputs.terminal_minimum_mwh,
+                name=f"terminal_minimum_energy[s{scenario}]")
         for t, duration in enumerate(inputs.grid.delta_hours):
             suffix = f"s{scenario},t{inputs.grid.interval_ids[t]}"
             owner = owners[s][t]

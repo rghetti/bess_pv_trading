@@ -424,6 +424,7 @@ class OptimizationInput:
     optimize_imbalances: bool = True
     transaction_fees: TransactionFeeSettings = field(default_factory=TransactionFeeSettings)
     auction_submission_times: Mapping[str, datetime] = field(default_factory=dict)
+    terminal_minimum_mwh: float | None = None
 
     def __post_init__(self) -> None:
         if self.transaction_fees.mode != "none":
@@ -560,6 +561,18 @@ class OptimizationInput:
                 upper = min(battery.maximum_energy, upper * retention + battery.max_power_mw * duration * battery.eta_charge)
             if not lower - 1e-9 <= target <= upper + 1e-9:
                 raise ValueError("Terminal target is unreachable within battery power/energy limits")
+        if self.terminal_minimum_mwh is not None:
+            finite_nonnegative(self.terminal_minimum_mwh, "terminal minimum energy")
+            minimum = float(self.terminal_minimum_mwh)
+            if not battery.energy_min_mwh <= minimum <= battery.maximum_energy:
+                raise ValueError("Terminal minimum outside battery bounds")
+            reachable_upper = self.state.energy_mwh
+            for duration in self.grid.delta_hours:
+                retention = (1 - battery.self_discharge_per_hour) ** duration
+                reachable_upper = min(battery.maximum_energy,
+                    reachable_upper * retention + battery.max_power_mw * duration * battery.eta_charge)
+            if minimum > reachable_upper + 1e-9:
+                raise ValueError("Terminal minimum is unreachable within battery power/energy limits")
 
 
 @dataclass

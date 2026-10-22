@@ -18,6 +18,7 @@ def _optimization_inputs(config: dict):
     """Construct validated inputs without creating a solver model."""
     from .domain import MarketState, OptimizationInput, PhysicalState
     from .optimization.degradation import degradation_settings_from_config
+    from .optimization.prepared import terminal_minimum_energy_mwh
     from .simulation.synthetic import synthetic_inputs
     if "synthetic" not in config:
         if "pv_forecast_path" in config.get("optimization", {}).get("forecast_inputs", {}):
@@ -40,7 +41,8 @@ def _optimization_inputs(config: dict):
         optimize_imbalances=trading.get("optimize_imbalances", True),
         planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
         transaction_fees=fees,
-        auction_submission_times={event.auction: event.submission_at for event in fixture["schedule"]})
+        auction_submission_times={event.auction: event.submission_at for event in fixture["schedule"]},
+        terminal_minimum_mwh=terminal_minimum_energy_mwh(config["state"], fixture["plant"].battery))
     return inputs
 
 

@@ -89,3 +89,40 @@ def test_native_auction_loader_separates_hourly_da_from_quarter_hour_ida(monkeyp
         assert skipped[0]["reason"] == "documented_cancelled_auction"
     else:
         np.testing.assert_allclose(actual["IDA1"][:len(price_pattern)], price_pattern)
+
+
+def test_native_auction_loader_uses_quarter_hour_da_after_transition(monkeypatch):
+    import numpy as np
+    import pandas as pd
+    from datetime import date
+    from pathlib import Path
+    from bess_pv_trading.config import load_config
+    from bess_pv_trading.data.gme import native_price_resolution_minutes
+    from bess_pv_trading.markets import AuctionCalendar
+    from bess_pv_trading.simulation import gme_oracle
+    root = Path(__file__).resolve().parents[2]
+    config = load_config(root / "configs/full_experiments/gme_oracle_2025-01-01.yaml")
+    study = config["gme_oracle_experiment"]
+    day = date(2026, 1, 1)
+    study["delivery_day"] = day.isoformat()
+    config["market"].update(valid_from="2025-10-01", valid_to=day.isoformat())
+    study["auction_datasets"] = {name: spec for name, spec in study["auction_datasets"].items()
+                                 if name in ("DA", "IDA1")}
+    calendar = AuctionCalendar.from_config(config)
+    grid = calendar.delivery_grid(day).to_domain()
+    case = load_config(root / "tests/fixtures/configs/gme_workbook_cases.yaml")
+    price_pattern = np.asarray(case["prices_eur_mwh"])
+
+    def read_prices(database, *, dataset, **kwargs):
+        minutes = native_price_resolution_minutes(dataset, day)
+        times = pd.date_range(grid.starts[0], grid.ends[-1], freq=f"{minutes}min", inclusive="left")
+        return pd.DataFrame({"product_start": times, "product_end": times+pd.Timedelta(minutes=minutes),
+            "native_interval_minutes": minutes, "price_eur_mwh": np.resize(price_pattern, len(times))}), []
+
+    monkeypatch.setattr(gme_oracle, "load_api_cache_records", read_prices)
+    actual, provenance, _ = gme_oracle._load_auction_prices(
+        config, calendar, grid, calendar.schedule(day))
+    expected_resolution = native_price_resolution_minutes("day_ahead_prices", day)
+    assert provenance["DA"]["native_interval_minutes"] == expected_resolution
+    assert provenance["DA"]["eligible_products"] == len(grid.starts) // (expected_resolution // 15)
+    assert len(actual["DA"]) == len(grid.starts)

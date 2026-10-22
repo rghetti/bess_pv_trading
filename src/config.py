@@ -178,9 +178,9 @@ def validate_continuous_optimization(config: dict[str, Any], *, require_dates: b
     state, battery = config.get("state", {}), config.get("battery", {})
     lower, upper = (float(battery.get(key, default)) for key, default in
                     (("soc_min_percent", 0.0), ("soc_max_percent", 100.0)))
-    for key in ("initial_soc_percent", "terminal_soc_percent"):
+    for key in ("initial_soc_percent", "terminal_soc_percent", "terminal_soc_min_percent"):
         value = state.get(key)
-        if key == "terminal_soc_percent" and value is None:
+        if key in {"terminal_soc_percent", "terminal_soc_min_percent"} and value is None:
             continue
         try:
             valid = (not isinstance(value, bool) and math.isfinite(float(value))

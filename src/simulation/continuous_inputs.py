@@ -16,6 +16,7 @@ from ..data import config_path
 from ..data.gme import native_price_resolution_minutes
 from ..domain import DeliveryGrid, PlantParameters, battery_parameters_from_config
 from ..markets import AuctionCalendar
+from ..optimization.prepared import terminal_minimum_energy_mwh
 from .gme_oracle import _load_auction_prices, _load_pv, _load_pv_forecast, _soc_energy_targets
 from .settlement import load_realized_imbalance_prices
 
@@ -147,6 +148,7 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     if plant.farm_id != int(config["forecast"]["farm_id"]):
         raise ValueError("Plant and PV forecast must identify the same farm")
     initial_energy, terminal_energy = _soc_energy_targets(config["state"], battery)
+    terminal_minimum = terminal_minimum_energy_mwh(config["state"], battery)
     days_data: dict[str, dict[str, Any]] = {}
     all_grids = [calendar.delivery_grid(day).to_domain() for day in days]
     full_grid = DeliveryGrid(tuple(item for grid in all_grids for item in grid.interval_ids),
@@ -238,6 +240,7 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     fingerprint = _fingerprint(provenance)
     return {"calendar": calendar, "days": days, "days_data": days_data,
         "plant": plant, "initial_energy_mwh": initial_energy, "terminal_energy_mwh": terminal_energy,
+        "terminal_minimum_energy_mwh": terminal_minimum,
         "full_grid": full_grid, "full_realized_pv": full_actual,
         "forecast_provider": forecasts, "imbalance_prices_eur_per_mwh": settlement_values,
         "settlement_frame": settlement, "input_fingerprint": fingerprint, "provenance": provenance}

@@ -79,6 +79,23 @@ def _terminal_target(settings: Mapping[str, Any]) -> float | None:
     return None if target is None else float(target)
 
 
+def terminal_minimum_energy_mwh(settings: Mapping[str, Any], battery: BatteryParameters) -> float | None:
+    """Convert an optional terminal SOC floor percentage to stored energy."""
+    percentage = settings.get("terminal_soc_min_percent")
+    if percentage is None:
+        return None
+    try:
+        value = float(percentage)
+    except (TypeError, ValueError):
+        raise PreparedInputError("state.terminal_soc_min_percent must be a finite percentage or null") from None
+    if not np.isfinite(value) or not 0 <= value <= 100:
+        raise PreparedInputError("state.terminal_soc_min_percent must be a finite percentage between 0 and 100")
+    energy = battery.capacity_mwh * value / 100.0
+    if not battery.energy_min_mwh <= energy <= battery.maximum_energy:
+        raise PreparedInputError("state.terminal_soc_min_percent lies outside battery SOC bounds")
+    return energy
+
+
 def _boolean(series: pd.Series, label: str) -> np.ndarray:
     values = series.astype(str).str.lower().str.strip()
     if not values.isin(["true", "false", "1", "0"]).all():
@@ -238,6 +255,7 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
     from .degradation import degradation_settings_from_config
     _require(degradation, ("assumptions",), "degradation assumptions")
     fees = transaction_fees_from_config(config)
+    terminal_minimum = terminal_minimum_energy_mwh(state_config, battery)
     return OptimizationInput(grid, plant,
         PhysicalState(grid.starts[0], float(state_config["initial_energy_mwh"]), origin=state_config["origin"],
                       cycle_segment_energy_mwh=state_config.get("cycle_segment_energy_mwh")),
@@ -246,5 +264,6 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
         degradation_settings_from_config(config),
         float(trading["grid_import_fee_eur_per_mwh"]), imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
         transaction_fees=fees, auction_submission_times={event.auction: event.submission_at for event in schedule},
+        terminal_minimum_mwh=terminal_minimum,
         planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
         optimize_imbalances=trading.get("optimize_imbalances", True))

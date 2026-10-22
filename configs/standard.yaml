@@ -192,6 +192,11 @@ forecast_run:
 pv:
   # Optional immutable, farm-specific registry; only artifacts issued by the cutoff are used.
   parameter_registry: null
+  forecast_replacement:
+    enabled: false
+    fallback: pvlib
+    allow_retrospective_artifacts: false
+    models_by_farm: {}
   transposition_model: isotropic
   bifacial:
     enabled: false
@@ -443,6 +448,8 @@ state:
   initial_soc_basis: nominal_capacity
   initial_state_status: study_assumption_not_telemetry
   terminal_soc_percent: 50.0
+  # Optional minimum target enforced at every optimization horizon end.
+  terminal_soc_min_percent: null
   origin: known_delivery_start_assumption
 
 # DEGRADATION: current throughput economics. Direct-cost and Xu experiments override this block.
@@ -545,7 +552,8 @@ gme_oracle_experiment:
   auction_datasets:
     DA:
       dataset: day_ahead_prices
-      native_interval_minutes: 60
+      # Null means use the GME native resolution for this delivery date.
+      native_interval_minutes: null
     IDA1:
       dataset: ida1_prices
       native_interval_minutes: 15
@@ -614,7 +622,8 @@ participation_study:
 
 # CONTINUOUS OPTIMIZATION: dates are inclusive local delivery dates in market.timezone.
 # First-day DA/IDA1/IDA2 occur on the previous date; physical execution starts at midnight.
-# Carry actual SOC/history across days; state.terminal_soc_percent applies only at study end.
+# Carry actual SOC/history across days; terminal_soc_percent applies at study end,
+# while terminal_soc_min_percent (when set) constrains each solve's horizon end.
 # Plot/model switches are inherited from experiment_outputs.
 continuous_optimization:
   start_date: null

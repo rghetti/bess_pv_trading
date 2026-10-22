@@ -19,6 +19,7 @@ from ..domain import (AcceptedTrade, BatteryParameters,
 from ..markets import AUCTION_DISPATCH_SCOPE, AuctionCalendar
 from ..optimization import build_model, solve_model, validate_solution
 from ..optimization.degradation import degradation_settings_from_config
+from ..optimization.prepared import terminal_minimum_energy_mwh
 from ..reporting.artifacts import organize_run_outputs
 from ..reporting.optimization_timing import optimization_timing_report, solve_timing
 from ..scenarios import synthetic_price_tree
@@ -270,7 +271,8 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             native_interval_minutes_by_auction={auction: minutes for auction, minutes
                 in config.get("native_interval_minutes_by_auction", {}).items()
                 if auction in masks}, transaction_fees=fees,
-            auction_submission_times={event.auction: event.submission_at for event in schedule})
+            auction_submission_times={event.auction: event.submission_at for event in schedule},
+            terminal_minimum_mwh=terminal_minimum_energy_mwh(config["state"], plant.battery))
         built = build_model(inputs)
         planning_diagnostics = {"auction_planning_mode": "current_auction_only" if current_only else "integrated",
             "auction_dispatch_scope": AUCTION_DISPATCH_SCOPE,

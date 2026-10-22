@@ -30,6 +30,7 @@ optimizer_defaults:
   imbalance_penalty_eur_per_mwh: 1000.0
   initial_energy_mwh: 0.0
   terminal_target_mwh: 0.0
+  terminal_floor_percent: 40.0
 
 poi_trading:
   poi_import_mw: 3.0

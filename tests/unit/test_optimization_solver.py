@@ -102,6 +102,25 @@ def test_null_terminal_target_omits_constraint_and_allows_initial_energy_sale():
     np.testing.assert_allclose(result.arrays["grid_mw"][0], expected["discharge_mw"])
 
 
+def test_configured_terminal_minimum_soc_is_enforced_and_validated():
+    battery = configured_battery("unit")
+    inputs = example_inputs(prices=np.zeros((1, 1)), pv=np.zeros((1, 1)),
+                            battery=battery, hours=1.0)
+    floor = battery.capacity_mwh * case_config("optimizer_defaults")["terminal_floor_percent"] / 100.0
+    inputs = replace(inputs, state=replace(inputs.state, energy_mwh=battery.energy_min_mwh),
+                     terminal_target_mwh=None, terminal_minimum_mwh=floor,
+                     optimize_imbalances=False)
+    result = solve(inputs)
+    assert result.arrays["energy_mwh"][0, -1] >= floor - 1e-8
+    assert validate_solution(inputs, result).valid
+    built = build_model(inputs)
+    try:
+        assert any(c.ConstrName.startswith("terminal_minimum_energy[")
+                   for c in built.model.getConstrs())
+    finally:
+        built.model.dispose()
+
+
 def test_free_imbalances_remove_battery_value_despite_free_terminal_soc():
     inputs, expected = configured_solver_inputs("free_imbalances")
     result = solve(inputs)

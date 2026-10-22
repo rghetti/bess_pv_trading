@@ -80,6 +80,7 @@ def _financial_dispatch(config, dispatch):
 def _daily_kpis(config, strategy, frame, solves, initial_expected):
     """Attribute market cash and physical costs to delivery dates, without resets."""
     capacity = float(config["battery"]["capacity_mwh"])
+    minimum_soc = config.get("state", {}).get("terminal_soc_min_percent")
     rows = []
     for day, daily in frame.groupby("delivery_day", sort=True):
         duration = daily.duration_hours.to_numpy(float)
@@ -91,6 +92,9 @@ def _daily_kpis(config, strategy, frame, solves, initial_expected):
             "initial_energy_mwh": initial, "final_energy_mwh": final,
             "initial_soc_percent": initial / capacity * 100,
             "final_soc_percent": final / capacity * 100,
+            "terminal_soc_min_percent": minimum_soc,
+            "terminal_soc_minimum_shortfall_percent": (None if minimum_soc is None else
+                max(0.0, float(minimum_soc) - final / capacity * 100)),
             "inventory_change_mwh": final - initial,
             "net_profit_eur": profit, "total_gain_eur": profit,
             "auction_solves": len(solved),

@@ -195,7 +195,7 @@ class ContinuousReplay:
         policy = "track_committed_grid" if row["auction"] == "pre_participation" else self.dispatch_policy
         return commands, row, policy, self._position(product) / self.grid.delta_hours[index]
 
-    def _forecast(self, cutoff, starts):
+    def _forecast(self, cutoff, starts, auction):
         """Operational trajectories never inspect future measured production."""
         if self.perfect:
             indices = self.starts.get_indexer(starts)
@@ -212,9 +212,68 @@ class ContinuousReplay:
         values = bundle.values["pv_ac_mw"].to_numpy(dtype=float)
         if not np.isfinite(values).all() or (values < 0).any():
             raise ValueError("Continuous PV forecast must be finite nonnegative AC power")
+        model_settings = self.config["pv"].get("forecast_replacement", {})
+        model = model_settings.get("models_by_farm", {}).get(str(self.plant.farm_id),
+            model_settings.get("models_by_farm", {}).get(self.plant.farm_id))
+        model_provenance = {"pv_forecast_model": "pvlib", "pv_forecast_model_status": "baseline"}
+        if model_settings.get("enabled") and model is not None:
+            artifact = config_path(self.config, model["artifact_path"])
+            available_at = pd.Timestamp(model["available_at_utc"])
+            if available_at.tzinfo is None:
+                raise ValueError("PV replacement artifact availability must be timezone-aware")
+            retrospective = available_at.tz_convert("UTC") > pd.Timestamp(cutoff).tz_convert("UTC")
+            if not artifact.is_file():
+                model_provenance["pv_forecast_model_status"] = "fallback_artifact_missing"
+            elif retrospective and not model_settings.get("allow_retrospective_artifacts", False):
+                model_provenance["pv_forecast_model_status"] = "fallback_artifact_not_yet_available"
+            else:
+                from ..forecasting.pv_neural_data import feature_frame, transform_features
+                model_frame = bundle.values.copy(deep=True)
+                model_frame["interval_start_utc"] = starts
+                local = starts.tz_convert(self.prepared["calendar"].timezone)
+                model_frame["delivery_day"] = local.strftime("%Y-%m-%d")
+                model_frame["auction"] = str(auction)
+                model_frame["forecast_cycle_utc"] = pd.Timestamp(bundle.forecast_vintage)
+                model_frame["lead_hours"] = ((starts.floor("h") + pd.Timedelta(hours=1)
+                    - pd.Timestamp(bundle.forecast_vintage)).total_seconds() / 3600)
+                model_frame["daylight"] = (~model_frame.get("nighttime_zero", pd.Series(
+                    model_frame["solar_zenith_deg"].to_numpy() >= 90, index=model_frame.index)).astype(bool))
+                model_frame["measured_ac_mw"] = np.nan
+                model_frame["eligible"] = False
+                model_frame["split"] = "prediction"
+                if model["kind"] == "neural":
+                    from ..forecasting.pv_neural_predict import predict_neural_frame
+                    replacement = predict_neural_frame(model_frame, artifact, farm_id=self.plant.farm_id)
+                elif model["kind"] == "linear":
+                    details = json.loads(artifact.read_text())
+                    selected = details["selected"][model["family"]]
+                    preprocessor_path = config_path(self.config, model["preprocessors_path"])
+                    preprocessors = json.loads(preprocessor_path.read_text())
+                    features = feature_frame(model_frame, selected["features"],
+                        self.config["pv_neural"]["delivery_timezone"])
+                    x = transform_features(features, preprocessors[selected["features"]])
+                    rating = float(model["ac_capacity_mw"])
+                    if rating <= 0:
+                        raise ValueError("Linear PV replacement requires a positive configured AC rating")
+                    replacement = np.clip(x @ np.asarray(selected["coefficients"]) +
+                        float(selected["intercept"]), 0, 1) * rating
+                else:
+                    raise ValueError(f"Unknown PV forecast replacement kind: {model['kind']}")
+                replacement = np.asarray(replacement, dtype=float)
+                if replacement.shape != values.shape or not np.isfinite(replacement).all() or (replacement < 0).any():
+                    raise ValueError("PV replacement must return finite nonnegative AC power on the requested grid")
+                if "nighttime_zero" in model_frame:
+                    replacement[model_frame["nighttime_zero"].to_numpy(dtype=bool)] = 0.0
+                bundle.values.loc[:, "pv_ac_mw"] = replacement
+                values = replacement
+                model_provenance = {"pv_forecast_model": model["name"],
+                    "pv_forecast_model_status": "retrospective_artifact" if retrospective else "artifact",
+                    "pv_forecast_model_kind": model["kind"], "pv_forecast_model_artifact": str(artifact),
+                    "pv_forecast_model_available_at_utc": available_at.isoformat(),
+                    "pv_forecast_model_retrospective": bool(retrospective)}
         return values, {"pv_forecast_policy": "latest_available_forecast_at_each_reoptimization",
             "pv_forecast_vintage_utc": bundle.forecast_vintage.isoformat(),
-            "pv_forecast_available_at_utc": bundle.available_at.isoformat()}
+            "pv_forecast_available_at_utc": bundle.available_at.isoformat(), **model_provenance}
 
     def _planning_inputs(self, instance, cutoff):
         """Project retained operation, then construct only the target day's MILP."""
@@ -227,7 +286,7 @@ class ContinuousReplay:
         if self.state.timestamp > cutoff and not (day == self.days[0] and cutoff < pd.Timestamp(self.grid.starts[0])):
             raise ValueError("Actual state lies beyond the auction information cutoff")
         update_starts = self.starts[update_first:stop_global]
-        forecast, provenance = self._forecast(cutoff, update_starts)
+        forecast, provenance = self._forecast(cutoff, update_starts, event.auction)
         by_product = dict(zip(self.grid.interval_ids[update_first:stop_global], map(float, forecast)))
         self.forecast_inputs.extend({"delivery_day": day, "auction": event.auction,
             "cutoff_utc": cutoff.isoformat(), "interval_start_utc": str(start),
@@ -279,13 +338,18 @@ class ContinuousReplay:
         pending_positions = tuple(sum(offer.get(product, 0.0) for auction, offer in self.submitted[day].items()
             if auction not in self.known[day]) for product in grid.interval_ids)
         terminal = self.prepared["terminal_energy_mwh"] if day == self.days[-1] else None
-        native = daily.get("native_interval_minutes_by_auction", {
-            auction: int(self.config["gme_oracle_experiment"]["auction_datasets"][auction]["native_interval_minutes"])
-            for auction in masks})
+        terminal_minimum = self.prepared["terminal_minimum_energy_mwh"]
+        native = daily.get("native_interval_minutes_by_auction")
+        if native is None:
+            from ..data.gme import native_price_resolution_minutes
+            native = {auction: native_price_resolution_minutes(
+                self.config["gme_oracle_experiment"]["auction_datasets"][auction]["dataset"],
+                pd.Timestamp(day).date()) for auction in masks}
         inputs = OptimizationInput(grid=grid, plant=self.plant, state=boundary, market=market,
             scenarios=bundle, tree=tree, auction_eligibility=masks,
             imbalance_penalty_eur_per_mwh=self.trading["imbalance_penalty_eur_per_mwh"],
-            terminal_target_mwh=terminal, degradation=self.aging,
+            terminal_target_mwh=terminal, terminal_minimum_mwh=terminal_minimum,
+            degradation=self.aging,
             grid_import_fee_eur_per_mwh=self.trading["grid_import_fee_eur_per_mwh"],
             optimize_imbalances=self.trading.get("optimize_imbalances", True),
             imbalance_limit_mwh=self.trading.get("imbalance_limit_mwh"),
@@ -304,6 +368,7 @@ class ContinuousReplay:
             "initial_state_is_supplied_boundary": bool(self.state.timestamp > cutoff),
             "planning_start_utc": str(grid.starts[0]), "planning_end_utc": str(grid.ends[-1]),
             "physical_planning_intervals": len(grid.interval_ids), "terminal_target_mwh": terminal,
+            "terminal_minimum_mwh": terminal_minimum,
             "projected_boundary_energy_mwh": boundary.energy_mwh, "locked_prefix_projection": projection,
             "locked_prefix_intervals": len(projection), "modeled_auctions": list(masks),
             "known_auctions": list(self.known[day]), "fixed_commitment_auctions": list(self.submitted[day]),
@@ -399,7 +464,17 @@ class ContinuousReplay:
             self.solves.append(diagnostic)
             self._save_attempts()
             return
-        validation = validate_solution(inputs, result)
+        # Gurobi may return numerical residuals at its configured tolerances.
+        # Keep model bounds intact, while checking continuous and binary
+        # residuals against their distinct solver tolerances.
+        solver_feasibility_tolerance = float(result.diagnostics.get("feasibility_tolerance") or 1e-6)
+        solver_integrality_tolerance = float(result.diagnostics.get("integrality_tolerance") or 1e-5)
+        validation_tolerance = max(1e-6, 2.0 * solver_feasibility_tolerance)
+        validation_integrality_tolerance = solver_integrality_tolerance
+        validation = validate_solution(inputs, result, tolerance=validation_tolerance,
+            integrality_tolerance=validation_integrality_tolerance)
+        diagnostic["solution_validation_tolerance"] = validation_tolerance
+        diagnostic["solution_validation_integrality_tolerance"] = validation_integrality_tolerance
         if not validation.valid:
             raise RuntimeError(f"Continuous solution validation failed: {validation.violations}")
         diagnostic["validation"] = asdict(validation)
@@ -610,6 +685,7 @@ class ContinuousReplay:
                 "policy_version": CONTINUOUS_POLICY_VERSION, "input_fingerprint": self.prepared["input_fingerprint"],
                 "final_state": asdict(self.state), "final_fee_state": asdict(self.market.transaction_fee_state),
                 "terminal_target_mwh": self.prepared["terminal_energy_mwh"],
+                "terminal_minimum_mwh": self.prepared["terminal_minimum_energy_mwh"],
                 "terminal_error_mwh": (None if self.prepared["terminal_energy_mwh"] is None else
                     self.state.energy_mwh - self.prepared["terminal_energy_mwh"]),
                 "replay_wall_seconds_this_invocation": perf_counter() - started,
@@ -660,7 +736,9 @@ def run_continuous_experiment(config, *, progress=None):
             "delivery_days": list(prepared["days"]), "code_revision": revision,
             "completed_strategies": [], "initial_soc_percent": config["state"]["initial_soc_percent"],
             "final_planned_soc_percent": config["state"]["terminal_soc_percent"],
-            "terminal_target_policy": "study_end_only", "delivery_timezone": prepared["calendar"].timezone}
+            "terminal_soc_min_percent": config["state"].get("terminal_soc_min_percent"),
+            "terminal_target_policy": "study_end_only_with_daily_minimum_floor",
+            "delivery_timezone": prepared["calendar"].timezone}
         _atomic_json(manifest_path, manifest)
         strategies = list(settings["planning_modes"])
         if settings.get("perfect_pv_reference", True):

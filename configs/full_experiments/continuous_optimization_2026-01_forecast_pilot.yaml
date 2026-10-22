@@ -1,0 +1,53 @@
+# January 2026 retrospective trading pilot using PV models fitted to 2025 data.
+# Candidate/model selection used Jan-Apr 2026 validation scores; provenance marks
+# the resulting strategy as retrospective even though fit targets end in 2025.
+include: ../standard.yaml
+continuous_optimization:
+  start_date: '2026-01-01'
+  end_date: '2026-01-31'
+  planning_modes: [integrated]
+  perfect_pv_reference: true
+  perfect_pv_reoptimize_at_each_auction: false
+  run_id: continuous_nord_farm${farm_id}_2026-01_soc40_neural_gme_real_v1
+  resume: false
+state:
+  initial_soc_percent: 90.0
+  terminal_soc_percent: 50.0
+  terminal_soc_min_percent: 40.0
+pv:
+  direct_exceeds_ghi: clip_and_flag
+  forecast_replacement:
+    enabled: true
+    fallback: pvlib
+    allow_retrospective_artifacts: true
+    models_by_farm:
+      '1':
+        name: farm1_tcn_weather_05
+        kind: neural
+        artifact_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_1/models/trials/tcn_weather_05.pt
+        available_at_utc: '2026-10-22T14:23:58Z'
+      '345':
+        name: farm345_ols_weather
+        kind: linear
+        family: ols
+        ac_capacity_mw: 1.5246
+        artifact_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_345/json/regression_selection.json
+        preprocessors_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_345/json/preprocessors.json
+        available_at_utc: '2026-10-22T14:24:25Z'
+      '901':
+        name: farm901_tcn_core_07
+        kind: neural
+        artifact_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_901/models/trials/tcn_core_07.pt
+        available_at_utc: '2026-10-22T14:24:51Z'
+      '910':
+        name: farm910_mlp_core_05
+        kind: neural
+        artifact_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_910/models/trials/mlp_core_05.pt
+        available_at_utc: '2026-10-22T14:23:31Z'
+transaction_fees:
+  mode: gme_real
+execution:
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+settlement:
+  enabled: true

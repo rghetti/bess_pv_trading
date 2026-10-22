@@ -137,6 +137,7 @@ def _solve_all_auction_reference(config, source_output, destination):
     from ..domain import PlantParameters, battery_parameters_from_config
     from .gme_oracle import (_load_auction_prices, _soc_energy_targets,
                              _solve_perfect_information_schedule)
+    from ..optimization.prepared import terminal_minimum_energy_mwh
 
     reference = deepcopy(config)
     study = reference["gme_oracle_experiment"]
@@ -156,7 +157,8 @@ def _solve_all_auction_reference(config, source_output, destination):
     plant = PlantParameters(**{key: reference["plant"][key] for key in
         ("farm_id", "poi_import_mw", "poi_export_mw")}, battery=battery)
     initial, terminal = _soc_energy_targets(reference["state"], battery)
-    reference["state"].update(initial_energy_mwh=initial, terminal_target_mwh=terminal)
+    reference["state"].update(initial_energy_mwh=initial, terminal_target_mwh=terminal,
+        terminal_minimum_mwh=terminal_minimum_energy_mwh(reference["state"], battery))
     for kind in ("csv", "json"):
         (destination / kind).mkdir(parents=True, exist_ok=True)
     if reference["experiment_outputs"].get("save_model_files", False):

@@ -40,8 +40,14 @@ def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray]
     return {"auction_revenue": revenue, "imbalance_cashflow": settlement, "imbalance_penalty": penalty, "battery_degradation_cost": aging, "other_costs": fees, "transaction_fees": transaction_fees, "operating_profit": revenue + settlement - penalty - aging - fees - transaction_fees, "cumulative_throughput_mwh": inputs.state.cumulative_throughput_mwh + throughput, "cumulative_degradation_eur": inputs.state.cumulative_degradation_eur + aging}
 
 
-def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tolerance: float = 1e-6) -> ValidationReport:
+def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tolerance: float = 1e-6,
+                      integrality_tolerance: float | None = None) -> ValidationReport:
     """Recompute balances, signs, sharing and accounting independently of Gurobi."""
+    if integrality_tolerance is None:
+        integrality_tolerance = tolerance
+    if (not np.isfinite(tolerance) or tolerance <= 0
+            or not np.isfinite(integrality_tolerance) or integrality_tolerance <= 0):
+        raise ValueError("Validation tolerances must be finite and positive")
     if not result.has_incumbent:
         return ValidationReport(False, {}, None, (f"No incumbent: {result.status}",))
     count, intervals = np.shape(inputs.scenarios.pv_ac_mw)
@@ -83,6 +89,8 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     equality("initial_energy_mwh", energy[:, 0] - inputs.state.energy_mwh)
     if inputs.terminal_target_mwh is not None:
         equality("terminal_energy_mwh", energy[:, -1] - inputs.terminal_target_mwh)
+    if inputs.terminal_minimum_mwh is not None:
+        upper("terminal_minimum_energy_mwh", inputs.terminal_minimum_mwh - energy[:, -1])
     upper("energy_upper_mwh", energy - battery.maximum_energy)
     upper("energy_lower_mwh", battery.energy_min_mwh - energy)
     upper("charge_lower_mw", -charge)
@@ -202,5 +210,13 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
             equality(f"component_{name}_eur", np.asarray(values) - components[name])
     objective = float(np.dot(inputs.scenarios.probabilities, components["operating_profit"]))
     equality("expected_objective_eur", np.inf if result.objective_eur is None else result.objective_eur - objective)
-    violations = tuple(f"{name}: {error:.6g}" for name, error in errors.items() if error > tolerance)
+    def allowed_error(name):
+        """Use the solver's distinct binary tolerance only on discrete residuals."""
+        discrete = (name == "mode_integrality" or name in {"mode_lower", "mode_upper"}
+            or "configured_dispatch_mode_" in name
+            or "nonanticipativity_mode_charge" in name)
+        return integrality_tolerance if discrete else tolerance
+
+    violations = tuple(f"{name}: {error:.6g}" for name, error in errors.items()
+        if error > allowed_error(name))
     return ValidationReport(not violations, errors, objective, violations)

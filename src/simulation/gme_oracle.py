@@ -22,6 +22,7 @@ from ..forecasting.pv import forecast_pv
 from ..markets import AuctionCalendar
 from ..optimization.degradation import degradation_settings_from_config
 from ..optimization.model import build_model, solve_model
+from ..optimization.prepared import terminal_minimum_energy_mwh
 from ..optimization.validation import validate_solution
 from ..reporting.artifacts import organize_run_outputs
 from ..reporting.plots import plot_boundary_series, plot_interval_series, plot_pv_allocation
@@ -207,11 +208,15 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
     study = config["gme_oracle_experiment"]
     trade = config["trading"]
     fees = transaction_fees_from_config(config)
+    terminal_minimum = config["state"].get("terminal_minimum_mwh")
+    if "terminal_minimum_mwh" not in config["state"]:
+        terminal_minimum = terminal_minimum_energy_mwh(config["state"], plant.battery)
     inputs = OptimizationInput(
         grid=grid, plant=plant, state=state, market=MarketState(transaction_fee_state=fees.initial_state),
         scenarios=scenario, tree=tree, auction_eligibility=eligibility,
         imbalance_penalty_eur_per_mwh=float(trade["imbalance_penalty_eur_per_mwh"]),
         terminal_target_mwh=config["state"]["terminal_target_mwh"],
+        terminal_minimum_mwh=terminal_minimum,
         degradation=(degradation_settings if degradation_settings is not None
                      else degradation_settings_from_config(config)),
         grid_import_fee_eur_per_mwh=float(trade["grid_import_fee_eur_per_mwh"]),
@@ -478,10 +483,11 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
         if auction not in event_by_name:
             raise ValueError(f"No market schedule exists for configured auction {auction}")
         event = event_by_name[auction]
-        expected_resolution = int(item["native_interval_minutes"])
         native_resolution = native_price_resolution_minutes(item["dataset"], delivery_day)
-        if expected_resolution != native_resolution:
+        configured_resolution = item.get("native_interval_minutes")
+        if configured_resolution is not None and int(configured_resolution) != native_resolution:
             raise ValueError(f"{auction} requires native {native_resolution}-minute prices on {delivery_day}; update the experiment YAML")
+        expected_resolution = native_resolution
         if auction in canceled:
             skipped.append({"auction": auction, "reason": "configured_cancelled_auction"})
             continue
@@ -895,14 +901,16 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Plant and PV forecast must identify the same farm")
     study_state = config["state"]
     initial_energy, terminal_energy = _soc_energy_targets(study_state, battery)
+    terminal_minimum = terminal_minimum_energy_mwh(study_state, battery)
     config["state"] = {**study_state, "initial_energy_mwh": initial_energy,
         "terminal_target_mwh": terminal_energy,
+        "terminal_minimum_mwh": terminal_minimum,
         "origin": study_state.get("origin", "known_delivery_start_assumption")}
     trade = config["trading"]
     config["decision_resolution_minutes"] = int(study["decision_resolution_minutes"])
     config["native_interval_minutes_by_auction"] = {
-        auction: int(item["native_interval_minutes"])
-        for auction, item in study["auction_datasets"].items() if auction in actual_prices}
+        auction: int(price_provenance[auction]["native_interval_minutes"])
+        for auction in actual_prices}
     config["execution"] = {**config.get("execution", {}), "reoptimize_physical_controls": False}
     config["outputs"] = {"plots": bool(config["experiment_outputs"].get("plots", True)),
         "save_model_files": bool(config["experiment_outputs"].get("save_model_files", True))}
@@ -1005,7 +1013,8 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         no_bess = replace(battery, capacity_mwh=0.0, max_power_mw=0.0,
                           energy_min_mwh=0.0, energy_max_mwh=0.0)
         no_bess_plant = replace(plant, battery=no_bess)
-        no_bess_config = {**config, "state": {**config["state"], "terminal_target_mwh": 0.0}}
+        no_bess_config = {**config, "state": {**config["state"],
+            "terminal_target_mwh": 0.0, "terminal_minimum_mwh": None}}
         pv_only_schedule, pv_only_diagnostics = _solve_perfect_information_schedule(
             no_bess_config, grid, no_bess_plant, schedule, actual_prices, realized_pv,
             0.0, day_output, artifact_name="perfect_pv_only_counterfactual",

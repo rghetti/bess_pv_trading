@@ -123,7 +123,9 @@ def test_market_reader_only_requests_selected_auction_prices(monkeypatch, select
         assert dataset in allowed
         auction = next(name for name, item in datasets.items() if item["dataset"] == dataset)
         event = next(item for item in calendar.schedule(day) if item.auction == auction)
-        minutes = datasets[auction]["native_interval_minutes"]
+        from bess_pv_trading.data.gme import native_price_resolution_minutes
+        minutes = native_price_resolution_minutes(datasets[auction]["dataset"],
+            pd.Timestamp(day).date())
         start = grid.starts[event.eligible_intervals[0]]
         times = pd.date_range(start, grid.ends[-1], freq=f"{minutes}min", inclusive="left")
         return pd.DataFrame({"product_start": times, "product_end": times + pd.Timedelta(minutes=minutes),
