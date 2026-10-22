@@ -21,8 +21,7 @@ def _optimization_inputs(config: dict):
     from .simulation.synthetic import synthetic_inputs
     if "synthetic" not in config:
         if "pv_forecast_path" in config.get("optimization", {}).get("forecast_inputs", {}):
-            from .optimization.forecast_inputs import load_forecast_inputs
-            return load_forecast_inputs(config)
+            raise ValueError("The experimental price-forecast optimization input workflow was archived; use explicit prepared mean-price inputs or the GME oracle experiment")
         from .optimization.prepared import load_prepared_inputs
         return load_prepared_inputs(config)
     fixture = synthetic_inputs(config)
@@ -143,27 +142,6 @@ def dispatch(command: str, config: dict) -> dict:
         from .simulation.continuous import run_continuous_experiment
         return run_continuous_experiment(config,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
-    if command == "train-price-models":
-        from .forecasting.prices import train_price_from_config
-        return train_price_from_config(config)
-    if command == "experiment-api-prices":
-        from .forecasting.price_experiment import run_price_experiment
-        return run_price_experiment(config)
-    if command == "experiment-price-fundamentals":
-        from .forecasting.fundamental_experiment import run_fundamental_experiment
-        return run_fundamental_experiment(config)
-    if command == "study-linear-prices":
-        from .forecasting.price_pipeline import run_linear_price_pipeline
-        return run_linear_price_pipeline(config,
-            progress=lambda message: print(message, file=sys.stderr, flush=True))
-    if command == "calibrate-price-scenarios":
-        from .forecasting.gaussian_study import run_gaussian_study
-        return run_gaussian_study(config,
-            progress=lambda message: print(message, file=sys.stderr, flush=True))
-    if command == "check-frozen-prices":
-        from .forecasting.price_forward_check import run_frozen_price_check
-        return run_frozen_price_check(config,
-            progress=lambda message: print(message, file=sys.stderr, flush=True))
     if command == "api-cache-status":
         from .data.api_catalog import summarize_api_cache
         return summarize_api_cache(config)
@@ -191,9 +169,8 @@ def main(argv: list[str] | None = None) -> int:
     """Print serializable results and actionable errors without credential prompts."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command",choices=("inspect-data","prepare-analysis-data","validate-config","resolve-config",
-        "run-synthetic","forecast-pv","calibrate-pv-output","import-market-data","train-price-models","optimize",
-        "backtest","report-implementation","download-data","experiment-api-prices","experiment-price-fundamentals",
-        "study-linear-prices","calibrate-price-scenarios","check-frozen-prices",
+        "run-synthetic","forecast-pv","calibrate-pv-output","import-market-data","optimize",
+        "backtest","report-implementation","download-data",
         "api-cache-status","migrate-api-cache","diagnose-terna",
         "import-gme-workbooks","import-terna-workbooks","stage-market-workbooks",
         "merge-market-workbooks","check-market-history","experiment-gme-oracle","experiment-participation",
@@ -204,25 +181,28 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--interactive",action="store_true",help="Prompt invisibly for missing API credentials in a terminal")
     parser.add_argument("--dry-run",action="store_true",help="Plan API requests and inspect cache without authenticating")
     parser.add_argument("--refresh-cache",action="store_true",help="Retrieve API requests again even when cached")
+    parser.add_argument("--provider",action="append",choices=("entsoe", "terna", "gme"),
+        help="Limit download-data to this provider; repeat to select multiple providers")
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config, overrides={"farm_id": args.farm_id} if args.farm_id is not None else None)
         if args.command == "resolve-config":
-            if args.interactive or args.dry_run or args.refresh_cache:
+            if args.interactive or args.dry_run or args.refresh_cache or args.provider:
                 raise ValueError("API download flags apply only to download-data")
             print(yaml.safe_dump(config, sort_keys=False), end="")
             return 0
         if args.command=="download-data":
             from .data.api import download_from_config
             result=download_from_config(config,interactive=args.interactive,dry_run=args.dry_run,
-                refresh_cache=args.refresh_cache,progress=lambda message:print(message,file=sys.stderr,flush=True))
+                refresh_cache=args.refresh_cache,providers=args.provider,
+                progress=lambda message:print(message,file=sys.stderr,flush=True))
         elif args.command == "diagnose-terna":
-            if args.dry_run or args.refresh_cache:
+            if args.dry_run or args.refresh_cache or args.provider:
                 raise ValueError("diagnose-terna does not support cache flags")
             from .data.terna_diagnostics import diagnose_terna
             result = diagnose_terna(config, interactive=args.interactive)
         else:
-            if args.interactive or args.dry_run or args.refresh_cache:
+            if args.interactive or args.dry_run or args.refresh_cache or args.provider:
                 raise ValueError("API download flags apply only to download-data")
             result = dispatch(args.command,config)
         if args.command == "stage-market-workbooks":
@@ -260,11 +240,6 @@ def main(argv: list[str] | None = None) -> int:
             result = {key: result[key] for key in
                       ("status", "study_id", "run_id", "study_date", "output_dir",
                        "active_auctions", "skipped_auctions", "optimizer_solves")}
-        elif args.command == "check-frozen-prices":
-            fields = ("status", "manifest", "database", "new_test_start", "new_test_end_exclusive",
-                      "fresh_days", "fresh_rows", "missing_days", "reason", "overlap_verification",
-                      "point_metrics", "adaptive_metrics", "static_metrics", "operational_eligible")
-            result = {key: result[key] for key in fields if key in result}
         print(json.dumps(result,indent=2,default=json_default,allow_nan=False))
         if args.command == "download-data" and result.get("status") == "partial":
             return 2

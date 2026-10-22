@@ -44,6 +44,16 @@ SOC. Current-day IDA3 stays restricted to noon–midnight delivery. Forecast
 selection uses each gate's submission cutoff and the shared six-hour UTC
 availability lag.
 
+By default, `continuous_optimization.perfect_pv_reoptimize_at_each_auction: false`
+solves the perfect-PV reference once per day at DA, or at the first active
+auction if DA is cancelled. Its dispatch remains fixed and its planned later
+orders are submitted and settled at their actual gates. Set this switch to
+`true` to reoptimize the reference at every active auction. Retained submissions
+are identified in `json/event_trace.json` and contribute no solver runtime.
+Daily battery plots compare realized power with the active scheduled command;
+their symmetric axis uses the battery power rating, avoiding magnification of
+floating-point noise around zero.
+
 The shared `state.terminal_soc_percent` applies only to the final optimization
 boundary, with 50% in this example. Intermediate days have no terminal target
 and no inventory salvage; realized terminal SOC may differ through feedback.

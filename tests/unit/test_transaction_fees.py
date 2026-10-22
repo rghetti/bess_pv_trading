@@ -206,21 +206,6 @@ def test_residual_solve_keeps_executed_volume_and_excludes_sunk_fees(solve, publ
     assert result.objective_eur - 100 - booked["transaction_fee_eur"] == pytest.approx(-0.07)
 
 
-@pytest.mark.parametrize("mode", ["flat", "gme"])
-def test_prepared_forecast_route_carries_fee_settings_into_the_milp(solve, mode):
-    from test_forecast_inputs import prepared_case
-    from bess_pv_trading.optimization.forecast_inputs import build_forecast_inputs
-    config, pv, specs = prepared_case(["DA"])
-    config["transaction_fees"] = load_config(f"configs/full_experiments/synthetic_fees_{mode}.yaml")["transaction_fees"]
-    specs["DA"]["mean_curve"]["mean_price_eur_mwh"] = 100
-    inputs = build_forecast_inputs(config, pv, specs)
-    result = solve(inputs)
-    gross = sum(abs(value) for value in result.trades.values())
-    assert gross > 1
-    expected = 0.04 * (gross if mode == "flat" else gross - 1)
-    np.testing.assert_allclose(result.components["transaction_fees"], expected)
-
-
 def test_gme_perfect_information_and_zero_battery_route_include_fees(solve, tmp_path):
     from bess_pv_trading.markets import AuctionCalendar
     from bess_pv_trading.simulation.gme_oracle import _solve_perfect_information_schedule

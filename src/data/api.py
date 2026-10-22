@@ -18,7 +18,7 @@ import sys
 import tempfile
 import time
 import xml.etree.ElementTree as ET
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -452,7 +452,7 @@ def _token_refresh_age(token: str, maximum_age_seconds: float) -> float:
         return maximum_age_seconds
 
 
-def plan_downloads(config: Mapping[str,Any]) -> list[dict]:
+def plan_downloads(config: Mapping[str,Any], *, providers: Iterable[str] | None = None) -> list[dict]:
     """Resolve daily requests, completing every dataset in each local month first."""
     settings = config.get("api",{})
     if not all(name in settings for name in ("start","end","requests")):
@@ -464,10 +464,23 @@ def plan_downloads(config: Mapping[str,Any]) -> list[dict]:
         raise DataAPIError("api.terna_authorization_scheme must be bearer or raw")
     if settings.get("terna_http_403_policy", "continue_other_providers") not in {"continue_other_providers", "error"}:
         raise DataAPIError("api.terna_http_403_policy must be continue_other_providers or error")
+    selected = None if providers is None else {str(provider).strip().lower() for provider in providers}
+    if selected is not None:
+        if not selected or "" in selected:
+            raise DataAPIError("Select at least one non-empty API provider")
+        unsupported = selected - {"entsoe", "terna", "gme"}
+        if unsupported:
+            raise DataAPIError(f"Unsupported API provider filter(s): {', '.join(sorted(unsupported))}")
+        configured = {str(task.get("provider", "")).lower() for task in settings["requests"]}
+        absent = selected - configured
+        if absent:
+            raise DataAPIError(f"Provider filter(s) are not configured: {', '.join(sorted(absent))}")
     local_timezone = settings.get("timezone","Europe/Rome")
     plans=[]
     for task in settings["requests"]:
         provider,dataset = task["provider"],task["dataset"]
+        if selected is not None and provider not in selected:
+            continue
         options = dict(task.get("options",{}))
         _check_nonsecret(options)
         zone = str(options.get("zone","NORD"))
@@ -537,10 +550,11 @@ def _plot_records(frame: pd.DataFrame, path: Path, title: str) -> None:
 
 def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
                          dry_run: bool = False, refresh_cache: bool = False,
+                         providers: Iterable[str] | None = None,
                          transport: SecureTransport | None = None,
                          progress: Callable[[str],None] | None = None) -> dict:
     """Fetch only missing daily requests and export normalized source/provenance."""
-    plans = plan_downloads(config)
+    plans = plan_downloads(config, providers=providers)
     settings = config["api"]
     cache = cache_from_settings(settings)
     consolidated = cache.directory.suffix.lower() == ".duckdb"

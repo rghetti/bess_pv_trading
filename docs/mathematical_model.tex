@@ -1207,6 +1207,19 @@ Its reported performance is continuous settled operating profit, not the sum
 of overlapping auction objective values. The two trading modes and this
 reference are independently configurable.
 
+The reference defaults to one optimization per delivery day, at DA (or the
+first active auction if DA is cancelled). The flag
+\path{continuous_optimization.perfect_pv_reoptimize_at_each_auction} defaults
+to \texttt{false}; setting it to \texttt{true} restores optimization at every
+active gate. With the default, all later auction quantities are read from
+the initial integrated plan and submitted only at their own gates, while its
+physical commands remain in force throughout delivery. Publication, fees,
+actual state carryover and settlement follow the same chronological rules.
+The event trace identifies each retained submission separately from solver
+attempts. Perfect information preserves the initial plan's attainable value;
+repeated solves can select different schedules when several optima exist,
+and finite MIP tolerance can permit small objective improvements.
+
 Monthly operating profit is additive over delivery products:
 \begin{equation}
  J_{\mathcal D}^{\rm real}=\sum_{d\in\mathcal D}\left[
@@ -1248,55 +1261,18 @@ times remain separate. Resolved configurations, common-input provenance,
 daily/monthly KPIs, state projections and comparisons are saved by file type
 under \path{outputs/continuous_optimization/<run_id>/}.
 
-\section{Forecast prices and the general stochastic route}
+\section{Price Forecasting Status}
 
-The historical GME study described above has no price noise and uses actual
-prices in every auction decision. The repository separately implements
-chronological point-price studies and an artifact-to-optimization route for
-uncertain prices and probabilistic PV members.
-
-A generic selected linear model is $\widehat\pi=x^\top\widehat\beta$, possibly
-modeling a change from yesterday's price rather than the absolute level.
-Calendar, lagged prices, daily profiles and configured regional load/renewable
-forecasts form features. OLS, ridge, weighted ridge, lasso, elastic net and Huber
-estimators share training-only preprocessing and portable fitted artifacts.
-Validation selects specifications before later calibration and evaluation.
-
-For an auction's native delivery vector, Gaussian calibration uses out-of-sample
-errors to estimate a bias $b_a$ and temporal covariance $\Sigma_a$. Paths are
-\begin{equation}
- \pi_a=\mu_a(\mathcal H_a)+b_a+\varepsilon_a,
- \qquad\varepsilon_a\sim\mathcal N(0,\Sigma_a).
-\end{equation}
-An example covariance policy is
-\begin{equation}
- \Sigma_a=(1-\gamma)S_a+\gamma\operatorname{diag}(S_a)+\epsilon I,
-\end{equation}
-with saved shrinkage and variance-floor settings. Bias and zero-mean innovations
-are distinct; finite Monte Carlo samples need not have exactly zero sample mean.
-IDA conditional means may be reconstructed from a predecessor-price curve plus
-a learned spread, using only ancestor sampled/known clearing curves at their
-information nodes. Innovations are temporally correlated within an auction
-equation and independent across auction equations; their conditional means
-propagate inter-auction dependence. Negative simulated prices are not clipped.
-
-For $B$ branches at each of $K$ unknown auction results there are up to $B^K$
-price paths per supplied PV member, before history merging and configured limits.
-Two branches at four unknown auctions give up to 16 price paths per member.
-Known results are fixed, not sampled. The prepared route forms joint scenario
-mass from PV-member and price-path masses; price draws shared across members
-represent the declared independent product-measure assumption rather than
-estimated PV/price dependence. Member identity remains latent until observations
-distinguish histories. The actual-price oracle repeats a common price curve
-across members and adds no artificial price noise.
-
-Hourly and quarter-hour price regimes and DST templates remain distinct.
-Historical retrieved revisions lacking publication evidence are marked
-retrospective. A model fit cutoff, static feature availability, forecast cycle,
-and source timestamp must satisfy the selected decision cutoff policy.
-Explicit retrospective opt-in does not establish an operationally causal
-backtest. The prepared examples need their complete supplied tables/artifacts;
-they are not a fully populated alternative historical strategy by default.
+The active GME and continuous historical experiments use realized auction
+clearing curves as an oracle input. They do not use predicted prices or model
+price uncertainty. The former retrospective regression, fundamentals, Gaussian
+calibration, and prepared stochastic-price input implementations are archived
+outside the repository in
+\path{/home/rghetti/price_prediction_archive}; they are not part of the active
+optimization pipeline and should not be interpreted as a validated forecasting
+method. The current work needed is to define price forecasts and uncertainty
+scenarios from information demonstrably available by each auction gate, then
+integrate those causal distributions into the market decisions.
 
 \section{Optional optimized-imbalance formulation}
 

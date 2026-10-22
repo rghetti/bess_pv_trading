@@ -315,8 +315,10 @@ def test_first_target_day_failure_cannot_borrow_another_days_plan(continuous_con
         _run(continuous_config, prepared, "current_auction_only", tmp_path / "failure")
 
 
-def test_perfect_pv_reference_preserves_daily_horizon_and_chronology(continuous_config, tmp_path, monkeypatch):
-    prepared, _ = _prepared(continuous_config)
+@pytest.mark.parametrize("reoptimize", [False, True])
+def test_perfect_pv_reference_preserves_daily_horizon_and_chronology(continuous_config, tmp_path, monkeypatch, reoptimize):
+    continuous_config["continuous_optimization"]["perfect_pv_reoptimize_at_each_auction"] = reoptimize
+    prepared, _ = _prepared(continuous_config, cancel=True)
     module, build, captured = _module(), _module().build_model, []
 
     def no_operational_forecast(*args):
@@ -329,6 +331,12 @@ def test_perfect_pv_reference_preserves_daily_horizon_and_chronology(continuous_
     prepared["forecast_provider"] = no_operational_forecast
     monkeypatch.setattr(module, "build_model", capture)
     replay, summary = _run(continuous_config, prepared, "perfect_pv", tmp_path / "perfect")
+    expected_events = [(day, event) for day in prepared["days"]
+        for event in (prepared["days_data"][day]["schedule"] if reoptimize
+            else prepared["days_data"][day]["schedule"][:1])]
+    assert [(row["delivery_day"], row["current_auction"]) for row in replay.solves] == [
+        (day, event.auction) for day, event in expected_events]
+    assert len(captured) == len(expected_events)
     for inputs in captured:
         indices = pd.DatetimeIndex(prepared["full_grid"].starts).get_indexer(inputs.grid.starts)
         np.testing.assert_allclose(inputs.scenarios.pv_ac_mw[0], prepared["full_realized_pv"][indices])
@@ -337,13 +345,42 @@ def test_perfect_pv_reference_preserves_daily_horizon_and_chronology(continuous_
     assert replay.state.energy_mwh == pytest.approx(prepared["terminal_energy_mwh"],
         abs=continuous_config["test_case"]["comparison_atol"])
     assert summary["absolute_imbalance_mwh"] <= continuous_config["test_case"]["comparison_atol"]
+    dispatch = pd.read_csv(tmp_path / "perfect/csv/realized_dispatch.csv")
+    tolerance = continuous_config["test_case"]["comparison_atol"]
+    np.testing.assert_allclose(dispatch.discharge_mw - dispatch.charge_mw,
+        dispatch.requested_discharge_mw - dispatch.requested_charge_mw, atol=tolerance, rtol=0)
+    trace = _read(tmp_path / "perfect", "event_trace.json")
+    retained = [row for row in trace if row.get("optimization_performed") is False]
+    assert summary["retained_auction_submission_count"] == len(retained)
+    assert summary["perfect_pv_reoptimize_at_each_auction"] == reoptimize
+    if reoptimize:
+        assert not retained
+        return
+    assert len(retained) == sum(len(item["schedule"]) - 1 for item in prepared["days_data"].values())
+    for day, daily in prepared["days_data"].items():
+        initial = daily["schedule"][0].auction
+        assert list(replay.plan_snapshots[day]) == [initial]
+        by_product = {row["interval_id"]: row for row in replay.plan_snapshots[day][initial]}
+        for product, row in by_product.items():
+            assert replay.control_plan[product] == row
+        for event in daily["schedule"]:
+            products = [daily["grid"].interval_ids[index] for index in event.eligible_intervals]
+            assert set(replay.submitted[day][event.auction]) == set(products)
+            for product in products:
+                assert replay.submitted[day][event.auction][product] == pytest.approx(
+                    by_product[product][f"planned_trade_{event.auction}_mwh"], abs=tolerance)
+        selected = dispatch.loc[dispatch.delivery_day.eq(day)]
+        assert selected.active_plan_auction.eq(initial).all()
+    daily_kpis = pd.read_csv(tmp_path / "perfect/csv/daily_kpis.csv")
+    np.testing.assert_allclose(daily_kpis.realized_minus_expected_profit_eur, 0, atol=tolerance, rtol=0)
 
 
-def test_checkpoint_resume_matches_uninterrupted_execution(continuous_config, tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", ["current_auction_only", "perfect_pv"])
+def test_checkpoint_resume_matches_uninterrupted_execution(continuous_config, tmp_path, monkeypatch, mode):
     prepared, _ = _prepared(continuous_config)
     module = _module()
     uninterrupted = tmp_path / "uninterrupted"
-    _run(continuous_config, prepared, "current_auction_only", uninterrupted)
+    _run(continuous_config, prepared, mode, uninterrupted)
     resumed = tmp_path / "resumed"
     save = module.ContinuousReplay.save_checkpoint
 
@@ -353,7 +390,7 @@ def test_checkpoint_resume_matches_uninterrupted_execution(continuous_config, tm
 
     monkeypatch.setattr(module.ContinuousReplay, "save_checkpoint", interrupt_after_midnight)
     with pytest.raises(RuntimeError, match="synthetic interruption"):
-        _run(continuous_config, prepared, "current_auction_only", resumed)
+        _run(continuous_config, prepared, mode, resumed)
     assert (resumed / "json/checkpoint.json").is_file()
     checkpoint = _read(resumed, "checkpoint.json")
     following_day = prepared["days"][1]
@@ -361,7 +398,7 @@ def test_checkpoint_resume_matches_uninterrupted_execution(continuous_config, tm
                     if event.submission_at < prepared["days_data"][following_day]["grid"].starts[0]}
     assert set(checkpoint["submitted"][following_day]) == pre_delivery
     monkeypatch.setattr(module.ContinuousReplay, "save_checkpoint", save)
-    _run(continuous_config, prepared, "current_auction_only", resumed, resume=True)
+    _run(continuous_config, prepared, mode, resumed, resume=True)
     expected = pd.read_csv(uninterrupted / "csv/realized_dispatch.csv")
     actual = pd.read_csv(resumed / "csv/realized_dispatch.csv")
     pd.testing.assert_frame_equal(expected, actual, check_exact=False,
@@ -369,6 +406,7 @@ def test_checkpoint_resume_matches_uninterrupted_execution(continuous_config, tm
     for name in ("accepted_trades.csv",):
         pd.testing.assert_frame_equal(pd.read_csv(uninterrupted / "csv" / name),
                                       pd.read_csv(resumed / "csv" / name))
+    assert _read(resumed, "event_trace.json") == _read(uninterrupted, "event_trace.json")
 
 
 @pytest.mark.parametrize("case", load_config(CASES)["test_case"]["dst_cases"])

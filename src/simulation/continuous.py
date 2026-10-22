@@ -27,7 +27,7 @@ from .replay import execute_interval
 from .synthetic import json_default, write_json
 
 
-CONTINUOUS_POLICY_VERSION = "continuous-retained-plan-v1"
+CONTINUOUS_POLICY_VERSION = "continuous-retained-plan-v2"
 
 
 @dataclass(frozen=True)
@@ -81,6 +81,8 @@ class ContinuousReplay:
         self.destination = Path(destination)
         self.current_only = strategy == "current_auction_only"
         self.perfect = strategy == "perfect_pv"
+        self.perfect_reoptimizes = config["continuous_optimization"].get(
+            "perfect_pv_reoptimize_at_each_auction", False)
         self.grid, self.plant = prepared["full_grid"], prepared["plant"]
         self.days, self.daily = tuple(prepared["days"]), prepared["days_data"]
         self.starts = pd.DatetimeIndex(self.grid.starts)
@@ -328,6 +330,23 @@ class ContinuousReplay:
         day, auction = instance.delivery_day, instance.event.auction
         if auction in self.submitted[day]:
             raise RuntimeError(f"Duplicate continuous submission {day}/{auction}")
+        # Perfect information needs only the first solve of this delivery day.
+        # Later gates submit its saved orders without replacing physical commands.
+        if self.perfect and not self.perfect_reoptimizes and self.plan_snapshots[day]:
+            source, snapshot = next(iter(self.plan_snapshots[day].items()))
+            by_product = {row["interval_id"]: row for row in snapshot}
+            products = [self.daily[day]["grid"].interval_ids[index]
+                for index in instance.event.eligible_intervals]
+            column = f"planned_trade_{auction}_mwh"
+            if any(product not in by_product or column not in by_product[product] for product in products):
+                raise RuntimeError("Perfect-PV initial plan has no complete retained auction order")
+            quantities = {product: float(by_product[product][column]) for product in products}
+            self._commit_quantities(day, auction, cutoff, quantities)
+            return {"optimization_performed": False,
+                "order_policy": "retained_initial_perfect_pv_plan", "plan_source_auction": source,
+                "plan_source_delivery_day": day,
+                "plan_source_cutoff_utc": snapshot[0]["optimizer_cutoff_utc"],
+                "submitted_product_count": len(quantities)}
         inputs, diagnostic = self._planning_inputs(instance, cutoff)
         built = build_model(inputs)
         diagnostic.update(trade_variable_count=len(built.variables["trades"]),
@@ -520,10 +539,13 @@ class ContinuousReplay:
         handlers = {EventKind.AUCTION_SUBMISSION: self._submit, EventKind.AUCTION_RESULTS: self._publish,
             EventKind.PHYSICAL_CONTROL: self._control, EventKind.OBSERVATION_AVAILABLE: self._observe,
             EventKind.SETTLEMENT: self._settle}
-        handlers[event.kind](event)
+        detail = handlers[event.kind](event)
+        if event.kind == EventKind.AUCTION_SUBMISSION:
+            detail = {"auction": event.payload.event.auction,
+                "optimization_performed": True, **(detail or {})}
         self.event_trace.append({"at": event.at.isoformat(), "kind": event.kind.name, "sequence": event.sequence,
             "delivery_day": event.payload.delivery_day if isinstance(event.payload, ContinuousAuction)
-                else self.day_for_product[self.grid.interval_ids[event.payload]]})
+                else self.day_for_product[self.grid.interval_ids[event.payload]], **(detail or {})})
         if event.kind == EventKind.SETTLEMENT and event.at.tz_convert(self.prepared["calendar"].timezone).time().isoformat() == "00:00:00":
             self.save_checkpoint(event)
             if self.progress:
@@ -582,6 +604,9 @@ class ContinuousReplay:
                 "initial_expected_auction_revenue_by_day": self.initial_revenues,
                 "optimization_attempts": self.attempts, "transaction_fees": fees,
                 "auction_planning_mode": "current_auction_only" if self.current_only else "integrated",
+                "perfect_pv_reoptimize_at_each_auction": self.perfect_reoptimizes if self.perfect else None,
+                "retained_auction_submission_count": sum(row.get("optimization_performed") is False
+                    for row in self.event_trace),
                 "policy_version": CONTINUOUS_POLICY_VERSION, "input_fingerprint": self.prepared["input_fingerprint"],
                 "final_state": asdict(self.state), "final_fee_state": asdict(self.market.transaction_fee_state),
                 "terminal_target_mwh": self.prepared["terminal_energy_mwh"],

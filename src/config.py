@@ -162,7 +162,7 @@ def validate_continuous_optimization(config: dict[str, Any], *, require_dates: b
             or any(not isinstance(mode, str) or mode not in allowed_modes for mode in modes)
             or len(modes) != len(set(modes))):
         raise ConfigurationError("continuous_optimization.planning_modes must be a nonempty unique list of integrated/current_auction_only")
-    for key in ("perfect_pv_reference", "resume"):
+    for key in ("perfect_pv_reference", "perfect_pv_reoptimize_at_each_auction", "resume"):
         if not isinstance(section.get(key), bool):
             raise ConfigurationError(f"continuous_optimization.{key} must be a YAML boolean")
     state, battery = config.get("state", {}), config.get("battery", {})

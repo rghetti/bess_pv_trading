@@ -1,5 +1,0 @@
-# Credential-free analysis of completed cached DA prices; raw responses stay intact.
-# This is a retrospective study of latest retrieved revisions. Historical
-# publication/revision availability is unverified, so it is not a trading backtest.
-include: ../standard.yaml
-farm_id: 1

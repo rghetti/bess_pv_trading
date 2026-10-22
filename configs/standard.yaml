@@ -423,14 +423,12 @@ continuous_optimization:
     - integrated
     - current_auction_only
   perfect_pv_reference: true
+  # Solve perfect PV once at DA (or the first available auction) and retain its
+  # dispatch and later orders. true restores reoptimization at every active gate.
+  perfect_pv_reoptimize_at_each_auction: false
   output_root: outputs/continuous_optimization
   run_id: null
   resume: false
-
-# PREPARED FORECAST SAFETY: this flag alone does not select a prepared-input workflow.
-optimization:
-  forecast_inputs:
-    allow_retrospective: false
 
 # API ACQUISITION: DuckDB backend, credential environment names only; request lists are experiment-specific.
 api:
@@ -498,30 +496,5 @@ manual_market_import:
     - {provider: gme, dataset: ida3_prices}
     - {provider: terna, dataset: imbalance_prices}
 
-# PRICE STUDIES AND REPORTING: enable commands explicitly; no data downloads happen when loading YAML.
-price_experiment:
-  provider: entsoe
-  dataset: day_ahead_prices
-  zone: NORD
-  timezone: Europe/Rome
-  cache_directory: data/api/market.duckdb
-  analysis_directory: data/analysis/api_prices
-  output_directory: outputs/price_experiments
-  alpha: 1.0
-  min_training_days: 30
-  holdout_days: 30
-  native_product_regimes:
-    - start: '2025-01-01'
-      end: '2025-10-01'
-      minutes: 60
-    - start: '2025-10-01'
-      end: null
-      minutes: 15
-linear_price_study:
-  auto_common_end: true
-price_scenarios:
-  enabled: true
-price_forward_check:
-  plots: true
 report:
   compile: true

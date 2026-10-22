@@ -2,7 +2,7 @@
 
 This repository studies one photovoltaic farm and an AC-coupled battery sharing a point of interconnection (POI). It prepares farm and market data, converts rolling weather forecasts into PV power with pvlib, optimizes energy positions in MGP and MI-A1/2/3 with Gurobi, executes the plans against realized PV through a feedback controller, and settles delivery deviations afterwards.
 
-The historical workflows use **one-day planning horizons in the NORD zone, with perfect auction-price information and one deterministic weather-forecast member**. Single-day and independent-day participation studies refresh the PV forecast before each active auction and make four auction decisions when all auctions take place. A separate continuous optimization experiment carries physical state and commitments across consecutive delivery days. Separate hindsight optimizations use realized PV to compare the feedback trajectory with a perfect-information schedule and to measure the incremental operating value of a battery against a PV-only plant. The general optimizer also supports scenario trees and probabilistic prepared forecasts; the current historical study does not use learned uncertain price forecasts.
+The historical workflows use **one-day planning horizons in the NORD zone, with perfect auction-price information and one deterministic weather-forecast member**. Single-day and independent-day participation studies refresh the PV forecast before each active auction and make four auction decisions when all auctions take place. A separate continuous optimization experiment carries physical state and commitments across consecutive delivery days. Separate hindsight optimizations use realized PV to compare the feedback trajectory with a perfect-information schedule and to measure the incremental operating value of a battery against a PV-only plant. Price-forecast experiments and their optional stochastic optimizer-input adapter are archived; new causal price forecasting is future work.
 
 The full equations, information structure, execution policy, and economic comparisons are in **[the mathematical model](docs/mathematical_model.pdf)**, with editable **[LaTeX source](docs/mathematical_model.tex)**. This document replaces the retired implementation-status LaTeX/PDF. Numerical results belong to each run's saved configuration and KPIs, rather than a fixed result in this README.
 
@@ -177,7 +177,13 @@ There are **three independent continuous trajectories** by default: integrated
 all-auction planning, sequential `current_auction_only` planning, and an
 integrated perfect-PV reference using the same daily horizon and actual prices.
 Select trading models with `continuous_optimization.planning_modes` and disable
-the additional reference with `perfect_pv_reference: false`. Each trajectory
+the additional reference with `perfect_pv_reference: false`. By default,
+`perfect_pv_reoptimize_at_each_auction: false` solves the reference only at DA
+for each delivery day (or the first available auction if DA is cancelled).
+It retains that day's dispatch and submits the saved intraday orders at their
+actual gates, with ordinary publication, fees and settlement. Set the flag to
+`true` to solve the perfect-PV reference again at each active auction.
+Each trajectory
 starts from the same configured initial state and thereafter uses its own
 execution state. `state.terminal_soc_percent: 50` constrains planned SOC only
 at the final study boundary; intermediate days have no terminal target or
@@ -199,6 +205,14 @@ Study-level SOC prediction figures are separated by solved strategy:
 `plots/ida3_noon_soc_prediction_errors_<strategy>.png`. Only strategies present
 in that run are plotted. Each strategy's own `plots/` folder retains the same
 figures without the filename suffix.
+In daily figures, "Scheduled battery (active plan)" is the command actually
+in force in each interval: normally IDA2 before noon and IDA3 afterwards for
+reoptimized trajectories, or the retained DA plan for the default perfect-PV
+reference. Battery panels use the configured symmetric power rating as their
+axis range so numerical roundoff around zero remains visually negligible.
+`plots/daily_imbalances_by_strategy.png` compares integrated and current-auction-only
+planning in separate panels, with daily surplus and shortfall energy in MWh
+aggregated from the quarter-hour realized imbalances on the same vertical scale.
 
 The January YAML enables `continuous_optimization.resume`. A resumed run checks
 its saved configuration and input fingerprints, restores a completed midnight
@@ -218,13 +232,13 @@ delay. This is separate from the forecast availability lag.
 ```text
 src/
   data/             DuckDB catalog, providers, workbook imports, farm adapters, data policy
-  forecasting/      pvlib conversion, linear/conditional price models, Gaussian calibration
+  forecasting/      pvlib conversion and PV-output calibration
   optimization/     shared MILP builder, prepared-input adapters, degradation, validation
   simulation/       auction events, immutable commitments, feedback execution, settlement
   reporting/        figures, output organization, legacy evidence reporting
 configs/
   api_experiments/   acquisition, provider diagnostics, workbook imports
-  price_experiments/ forecasting, calibration, and chronological evaluation studies
+  price_experiments/ retained market-import example; prior price studies are archived
   full_experiments/  complete historical/synthetic studies and prepared-input examples
   standard.yaml    common parameters and feature flags for every workflow
   data_schema.yaml  data-schema entry point importing the standard
@@ -252,7 +266,6 @@ Useful full-study entry points:
 | `synthetic_xu.yaml` | Synthetic segmented depth-dependent aging example |
 | `synthetic_dst_spring.yaml`, `synthetic_dst_fall.yaml` | Synthetic 23-hour and 25-hour delivery days |
 | `prepared_optimization.example.yaml` | Initial point-price planning from complete prepared CSV forecasts |
-| `stochastic_prepared.example.yaml` | Initial/residual planning from PV members, saved price models, calibrations, and commitments |
 
 These files are under `configs/full_experiments/`. The prepared examples deliberately contain `null` inputs that must be supplied. Earlier experimental YAMLs remain reproducibility settings; their filenames do not establish which data or assumptions were used in an old saved run.
 
@@ -485,28 +498,21 @@ Single `optimize` runs save `json/result.json` and `arrays/solution.npz`. Synthe
 | Inspect farm schemas | `inspect-data --config configs/farms_nord.yaml` |
 | Prepare policy-treated data | `prepare-analysis-data --config configs/farms_nord.yaml` |
 | Convert a selected weather vintage to PV | `forecast-pv --config configs/farms_nord_radiation_sensitivity.yaml` |
-| Initial/residual prepared optimization | `optimize --config configs/full_experiments/stochastic_prepared.example.yaml` after filling its inputs |
 | Single synthetic optimization | `optimize --config configs/full_experiments/synthetic_small.yaml` |
 | Synthetic strategy replay | `run-synthetic --config configs/full_experiments/synthetic_small.yaml` |
-| Baseline DA price experiment | `experiment-api-prices --config configs/price_experiments/price_experiment.yaml` |
-| Load/wind/solar feature study | `experiment-price-fundamentals --config configs/price_experiments/price_fundamentals_january.yaml` |
-| Rolling point-price model selection | `study-linear-prices --config configs/price_experiments/price_linear_methods.yaml` |
-| Gaussian calibration study | `calibrate-price-scenarios --config configs/price_experiments/price_gaussian_adaptive.yaml` |
-| Frozen later-period evaluation | `check-frozen-prices --config configs/price_experiments/price_forward_check.yaml` |
 | Canonical CSV/XML market imports | `import-market-data --config configs/price_experiments/italy_nord.example.yaml` after supplying files |
-| Portable level/spread model training | `train-price-models --config configs/price_experiments/synthetic_prices.yaml` for the synthetic fixture |
 
 Prefix each command with `python -m bess_pv_trading`. `backtest` currently routes synthetic configurations through their replay and rejects an unsupported generic historical backtest; use `experiment-gme-oracle` for the implemented manual-data historical experiment. `report-implementation` is a retained legacy evidence renderer, not the source of the current mathematical document; the old JSON evidence and bibliography are historical records.
 
-Price studies use chronological training, earlier validation for model selection, separate out-of-sample errors for calibration, and later evaluation periods. Features include lagged prices, calendar/seasonal terms, daily profiles, and configured regional load/wind/solar forecasts. Available estimators include OLS, ridge, recency-weighted ridge, lasso, elastic net and Huber. Gaussian scenarios add separately estimated bias and zero-mean temporally correlated innovations to a point prediction; covariance settings are saved rather than an unexplained fixed noise level. Native hourly/quarter-hour and DST grids remain distinct.
+Earlier price-prediction research code, dedicated tests, derived training tables, and study configs have been moved to `/home/rghetti/price_prediction_archive` so a new forecasting model can start from a clean slate. The active historical market-import example remains in `configs/price_experiments/italy_nord.example.yaml`; raw market data in DuckDB is untouched. Archived model-training commands are no longer part of the current CLI.
 
-In the prepared multiauction route, `branches` is the number at each unknown auction result: two branches at four auctions give up to 16 price paths per PV member, capped by the configured joint-leaf limit. Sampled/known predecessor prices enter conditional IDA means; innovations are independent between auction equations and correlated over delivery products within an equation. Shared-history decisions remain nonanticipative. The actual-price benchmark repeats the same clearing curve across PV members and adds no noise. Retrieved historical revisions with unknown publication vintages remain explicitly retrospective; a timestamped download alone does not establish causal forecast eligibility. See [prepared forecast contracts](docs/forecast_optimization_inputs.md) and [price study notes](docs/market_price_notes.md).
+Historical price-prediction research and its derived training tables are preserved outside the repository at `/home/rghetti/price_prediction_archive`. Current GME experiments use actual auction curves as an oracle benchmark; they do not claim a causal price forecast. Raw market observations remain in DuckDB.
 
 The original farm audit and cloud comparison tools remain available through `python -m bess_pv_trading.audit --config configs/audit.yaml` and `python -m bess_pv_trading.cloud_check --help`. Audit outputs are review candidates and raw-data diagnostics; they are distinct from the policy-treated optimization data.
 
 ## Validation and maintaining the documentation
 
-The optimizer independently validates extracted energy/power balances, SOC/power/POI limits, product equalities, information sharing, degradation and objective components before a schedule is accepted. The executor also enforces physical limits and carries realized stored energy and wear. Tests cover farm data semantics, provider/workbook parsing, DuckDB provenance, price forecasts, market calendars, optimization, feedback, settlement and output organization.
+The optimizer independently validates extracted energy/power balances, SOC/power/POI limits, product equalities, information sharing, degradation and objective components before a schedule is accepted. The executor also enforces physical limits and carries realized stored energy and wear. Tests cover farm data semantics, provider/workbook parsing, DuckDB provenance, market calendars, optimization, feedback, settlement and output organization.
 
 To run the suite explicitly in the existing environment:
 

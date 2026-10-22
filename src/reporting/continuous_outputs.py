@@ -181,7 +181,12 @@ def _plot_strategy(config, destination, strategy, frame, plans):
             color="C2", label="Realized battery (+ discharge)")
         if {"requested_charge_mw", "requested_discharge_mw"}.issubset(daily):
             plot_interval_series(axes[1], starts, ends, daily.requested_discharge_mw - daily.requested_charge_mw,
-                linestyle="--", color="C1", label="Scheduled battery")
+                linestyle="--", color="C1", label="Scheduled battery (active plan)")
+        # Use the physical battery scale so floating-point roundoff around zero
+        # cannot become an apparently substantial trajectory on an autoscaled axis.
+        power = float(config["battery"]["max_power_mw"])
+        if power > 0:
+            axes[1].set_ylim(-power, power)
         for axis in axes:
             axis.set_ylabel("Power (MW AC)")
             axis.grid(alpha=0.2)
@@ -380,6 +385,46 @@ def save_continuous_strategy_outputs(config, destination, strategy, dispatch, pl
     return summary
 
 
+def save_daily_imbalance_comparison(config, destination, daily):
+    """Plot daily surplus and shortfall energy for each trading strategy."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
+
+    daily = pd.DataFrame(daily)
+    strategies = [(key, label) for key, label in (
+        ("integrated", "Integrated"), ("current_auction_only", "Current auction only"))
+        if key in set(daily.strategy)]
+    if not strategies:
+        return None
+    destination = Path(destination) / "plots"
+    destination.mkdir(parents=True, exist_ok=True)
+    fig, axes = plt.subplots(len(strategies), 1, sharex=True, sharey=True,
+        figsize=(13, 4 * len(strategies)), layout="constrained", squeeze=False)
+    for axis, (strategy, label) in zip(axes[:, 0], strategies):
+        selected = daily.loc[daily.strategy.eq(strategy)].sort_values("delivery_day")
+        days = pd.to_datetime(selected.delivery_day)
+        axis.bar(days, selected.positive_imbalance_mwh, width=0.75,
+            color="teal", label="Surplus delivered")
+        axis.bar(days, -selected.negative_imbalance_mwh, width=0.75,
+            color="indianred", label="Delivery shortfall")
+        axis.axhline(0, color="gray", linewidth=0.7)
+        axis.set(ylabel="Daily imbalance (MWh)", axisbelow=True)
+        axis.set_title(label, loc="left")
+        axis.grid(axis="y", alpha=0.2)
+        axis.legend(ncol=2, loc="lower right", bbox_to_anchor=(1, 1.01), frameon=False)
+    locator = mdates.AutoDateLocator(minticks=5, maxticks=12)
+    axes[-1, 0].xaxis.set_major_locator(locator)
+    axes[-1, 0].xaxis.set_major_formatter(mdates.ConciseDateFormatter(locator))
+    axes[-1, 0].set_xlabel(f"Delivery date ({config.get('market', {}).get('timezone', 'Europe/Rome')})")
+    fig.suptitle("Daily realized imbalances\nSurplus and shortfall summed separately over quarter-hour deliveries")
+    path = destination / "daily_imbalances_by_strategy.png"
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+    return path
+
+
 def save_continuous_comparison(config, destination, summaries):
     """Compare matched continuous trajectories and preserve each strategy's timing."""
     destination = Path(destination)
@@ -476,4 +521,5 @@ def save_continuous_comparison(config, destination, summaries):
         fig.savefig(destination / "plots/continuous_comparison.png", dpi=140)
         plt.close(fig)
         save_continuous_projection_plots(config, destination, by_strategy)
+        save_daily_imbalance_comparison(config, destination, daily)
     return report

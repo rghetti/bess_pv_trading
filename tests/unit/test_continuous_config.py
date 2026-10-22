@@ -34,6 +34,7 @@ def test_january_inherits_shared_settings_and_declares_only_overrides():
     section = config["continuous_optimization"]
     assert section["planning_modes"] == defaults["continuous_optimization"]["planning_modes"]
     assert section["perfect_pv_reference"] == defaults["continuous_optimization"]["perfect_pv_reference"]
+    assert section["perfect_pv_reoptimize_at_each_auction"] is False
     assert config["state"]["initial_soc_percent"] == raw["state"]["initial_soc_percent"]
     assert config["state"]["terminal_soc_percent"] == raw["state"]["terminal_soc_percent"]
     assert config["solver"]["mip_gap"] == defaults["solver"]["mip_gap"]
@@ -88,7 +89,7 @@ def test_duplicate_planning_mode_fails_and_one_mode_is_allowed():
         resolve_config(config)
 
 
-@pytest.mark.parametrize("field", ["resume", "perfect_pv_reference"])
+@pytest.mark.parametrize("field", ["resume", "perfect_pv_reference", "perfect_pv_reoptimize_at_each_auction"])
 def test_continuous_switches_require_yaml_booleans(field):
     config = load_config(JANUARY)
     config["continuous_optimization"][field] = str(config["continuous_optimization"][field])

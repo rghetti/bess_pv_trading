@@ -181,8 +181,21 @@ def test_resume_preserves_discarded_solver_attempts_without_counting_them_as_dec
 
 
 def test_continuous_plots_use_shared_market_time_and_save_daily_views(report_inputs, tmp_path, monkeypatch):
+    from matplotlib.figure import Figure
+
     config, frame, solves, _ = report_inputs
     config["experiment_outputs"]["plots"] = True
+    frame["discharge_mw"] = np.finfo(float).eps * config["battery"]["max_power_mw"]
+    frame["requested_charge_mw"] = frame["requested_discharge_mw"] = 0.0
+    daily_axes = []
+    original_save = Figure.savefig
+
+    def capture_daily(figure, filename, *args, **kwargs):
+        if filename.parent.name == "daily":
+            daily_axes.append((figure.axes[1].get_ylim(), figure.axes[1].get_legend_handles_labels()[1]))
+        return original_save(figure, filename, *args, **kwargs)
+
+    monkeypatch.setattr(Figure, "savefig", capture_daily)
     projections = []
     for day, daily in frame.groupby("delivery_day", sort=True):
         noon = pd.Timestamp(f"{day} {config['market']['delivery_start_times']['IDA3']}",
@@ -199,6 +212,9 @@ def test_continuous_plots_use_shared_market_time_and_save_daily_views(report_inp
     for name in ("continuous_soc.png", "continuous_dispatch.png", "cumulative_profit.png"):
         assert (tmp_path / "plots" / name).stat().st_size > 0
     assert sorted(path.stem for path in (tmp_path / "plots/daily").glob("*.png")) == config["timing_cases"]["days"]
+    for limits, labels in daily_axes:
+        assert limits == (-config["battery"]["max_power_mw"], config["battery"]["max_power_mw"])
+        assert "Scheduled battery (active plan)" in labels
     midnight = _projection_plot_rows(config, projections, "delivery_midnight")
     noon = _projection_plot_rows(config, projections, "ida3_noon")
     assert midnight.auction.eq("DA").all()

@@ -155,11 +155,16 @@ PYTHONPATH=src python -m bess_pv_trading download-data \
   --config configs/api_experiments/api_download.yaml --interactive
 ```
 
-Then download the full farm-record window, **1 January 2025 through 31 August 2026**:
+Then download the full farm-record window, **1 January 2025 through 31 August 2026**. To download only selected providers from the configured request list, use repeatable `--provider` flags. For example, `--provider terna` skips ENTSO-E and GME requests; completed Terna days are still reused from cache:
 
 ```bash
 PYTHONPATH=src python -m bess_pv_trading download-data \
   --config configs/api_experiments/api_history.yaml --interactive
+```
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading download-data \
+  --config configs/api_experiments/api_history.yaml --provider terna --interactive
 ```
 
 `api.end` is exclusive and date-only bounds use `Europe/Rome`. The historical configuration ends at `2026-09-01`. It plans 6,080 logical dataset/day chunks across ten datasets; actual HTTP calls can be fewer because Terna's observed and forecast total load share one response. Availability and provider access are checked from responses, not assumed from the requested window. An interrupted run resumes from verified daily caches when the command is rerun.
@@ -318,44 +323,9 @@ Common columns include `provider`, `dataset`, `zone`, `value`, `unit`, `product_
 
 **Retrieval today is not historical publication.** ENTSO-E document creation and Terna forecast-reference labels do not, by themselves, establish availability before a historical auction. Such rows retain unknown historical availability and are ineligible for causal historical features. Exact publication records or an explicitly justified policy are needed before historical feature/backtest use. Timestamped snapshots collected now can provide availability evidence for subsequent operational decisions; they do not reconstruct absent old vintages.
 
-## Start price experiments with an incomplete download window
+## Price-prediction research archive
 
-The price-only experiment reads completed DA caches and needs no credentials or other datasets:
-
-```bash
-PYTHONPATH=src python -m bess_pv_trading experiment-api-prices \
-  --config configs/price_experiments/price_experiment.yaml
-```
-
-It compares a ridge regression using calendar cycles and same-local-clock price lags of one and seven days against previous-day and previous-week baselines. The final configured delivery days are held out chronologically; feature scaling and coefficient fitting use the training period only. Hourly and quarter-hour delivery regimes are fitted and evaluated separately. Missing lag clocks, including unmatched DST folds, are excluded without filling prices.
-
-The source may encode pre-October hourly prices as constant blocks on a 15-minute transport grid. The configured market-regime policy reconstructs hourly observations only from complete, equal within-hour source values; it retains every quarter-hour price from 1 October 2025. A03 compression block length alone does not identify the commercial product duration. [GME's go-live notice](https://www.mercatoelettrico.org/en-us/Home/NoticesandAnnouncements/NoticesandAnnouncementsME?id=7101) establishes the transition date.
-
-Derived monthly price tables are stored under `data/analysis/api_prices/`; experiment predictions, metrics, models, figures, configuration and source-checksum provenance are grouped under `outputs/price_experiments/<run>/`. Raw API files are read only. These are **retrospective experiments using retrieved revisions**, not validated historical trading backtests: historical publication and revision availability are not reconstructed. IDA regressions still need their actual labels and timing evidence.
-
-The regional-forecast prototype runs on the complete January ENTSO-E caches:
-
-```bash
-PYTHONPATH=src python -m bess_pv_trading experiment-price-fundamentals \
-  --config configs/price_experiments/price_fundamentals_january.yaml
-```
-
-It compares calendar/price lags, added regional load, and added load/solar/wind
-forecasts. Every model uses the same complete training and evaluation products.
-Quarter-hour MW forecasts are duration-averaged inside native hourly price
-products only when coverage is complete; gaps stay missing, overlaps fail and
-coarser forecasts are not split into finer products. Hourly prices are not
-interpolated. Train-only scaling/fitting uses 8–24 January (408 products), after
-seven days of lag history; 25–31 January is held out (168 products). Earlier
-holdout days may supply subsequent days' observed price lags. No noise is added.
-
-The frozen source-checksum provenance and joined inputs are under
-`outputs/price_fundamentals/<run>/`; convenient monthly CSV/Parquet views are under
-`data/analysis/price_fundamentals/NORD/year=2025/month=01/`. Forecast publication
-and revision availability remain unverified. This short study validates the
-comparison pipeline; it cannot establish broad forecasting skill or trading
-profitability. Forecast-source columns identify ENTSO-E day-ahead forecasts,
-not Terna national actual generation or its later MSD-session wind forecasts.
+The prior retrospective price-regression, fundamentals, and Gaussian calibration studies are archived outside the repository at `/home/rghetti/price_prediction_archive`. Their old CLI commands and configs are no longer part of the active pipeline. They used retrieved revisions whose historical publication times were unverified, so they did not establish causal price forecasts or executable trading performance. The current GME oracle experiment continues to consume market-price records in DuckDB; a new causal forecast and scenario workflow will be designed separately.
 
 ## Offline verification
 
