@@ -63,7 +63,7 @@ def _source_fingerprint(dataset, config, farm, settings) -> str:
     return hasher.hexdigest()
 
 
-def prepare_corpus(config: dict, farm_id: int, destination: Path, progress=None):
+def prepare_corpus(config: dict, farm_id: int, destination: Path, progress=None, *, retain_weather=False):
     """Cache one fixed set of forecast/measurement pairs, preserving all missing rows."""
     section = config["pv_calibration"]
     timezone = section["delivery_timezone"]
@@ -85,6 +85,8 @@ def prepare_corpus(config: dict, farm_id: int, destination: Path, progress=None)
         cached = pd.read_parquet(corpus_path)
         if frame_fingerprint(cached) != manifest["aligned_fingerprint"]:
             raise ValueError("PV calibration corpus checksum mismatch")
+        if retain_weather and not set(config["forecast_mapping"]).issubset(cached.columns):
+            raise ValueError("Cached corpus lacks requested weather features; choose a fresh run ID")
         dataset.close()
         return cached, farm, settings, manifest
     # The calendar supplies DST-aware quarter-hours and auction-specific suffixes.
@@ -153,6 +155,8 @@ def prepare_corpus(config: dict, farm_id: int, destination: Path, progress=None)
         "temperature_c", "wind_speed_m_s", "pv_input_valid", "bhi_exceeds_ghi", "dni_limited",
         "baseline_mw", "measured_ac_mw", "satellite_ghi_w_m2", "daylight", "plateau_flag",
         "suspected_outage", "review_excluded", "eligible"]
+    if retain_weather:
+        keep += [name for name in mapping if name not in keep]
     result = result[keep]
     manifest = {"source_fingerprint": fingerprint, "aligned_fingerprint": frame_fingerprint(result),
         "farm_metadata": asdict(farm), "rows": len(result), "eligible_rows": int(result.eligible.sum()),

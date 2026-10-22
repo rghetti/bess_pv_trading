@@ -509,6 +509,42 @@ PYTHONPATH=src python -c 'from bess_pv_trading.forecasting.pv_global_plots impor
 
 Before 1 October 2025, **DA energy orders are hourly**, represented as equal quarter-hour shares. **IDA orders and physical battery controls remain quarter-hourly**, including in January 2025. Repeating a native hourly DA price into four objective coefficients does not create four independent DA prices or require hourly-flat battery dispatch. IDA3's configured gate is 10:00 local, its decision cutoff is five minutes earlier, and its eligible deliveries begin at 12:00 local. Other gates/results and their historical validity are YAML settings. Figures include the final delivery boundary when available.
 
+## CPU neural PV benchmark
+
+The `feature/neural-pv-benchmark` branch adds a separate model-comparison workflow:
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading study-pv-neural \
+  --config configs/pv_experiments/neural_2025_2026.yaml
+```
+
+It uses all available delivery dates from January 2025 through August 2026. Training uses 2025, validation uses January–April 2026, and the untouched test uses May–August 2026. A configured one-day embargo excludes late training/validation targets at split boundaries so all fitted observations precede the next split's first DA cutoff. Imputation and standardization use training observations only. Early stopping, architecture selection and ridge regularization use validation only. The test is used to report every frozen candidate and the previously selected winner; its scores never choose the deployed artifact. The test period also measures seasonal generalization beyond the winter/spring validation months.
+
+Each farm independently trains six candidates: dense MLP, residual MLP, and temporal convolution, each with core and extended weather inputs. Core inputs are forecast GHI/horizontal-direct radiation, air temperature, 10 m wind components/speed, deterministic solar position, cyclic delivery hour/year/month and forecast cycle hour, and forecast lead time. The extension adds dew point, cloud layers, precipitation, snow, visibility and 100 m wind. Month and auction embeddings are learned. Missing optional features use persisted training medians and missingness indicators. Separate per-farm weights learn the plant response; fitted DC reference/output coefficients, GCR, maximum rotation, cell temperature and POA are **not neural inputs**. Measured AC and satellite GHI are never input features. Actual source tracking/orientation metadata is retained in the model contract; constant farm attributes need not be estimated from redundant columns within a farm-specific model.
+
+The output is a sigmoid AC-nameplate fraction, zeroed outside the deterministic daylight/night policy. The target is unmodified measured quarter-hour AC divided by known installed AC for normalization; no efficiency loss or forecast substitution is applied. All candidates and the calibrated pvlib reference share one eligibility mask, including genuine zero production, operating anomalies and coverage gaps. Models are fitted with configurable MSE/Huber and AdamW; each day/auction view has equal aggregate loss weight. IDA3 uses only its local-noon delivery suffix. Every input view uses the newest weather cycle available at that auction's buffered cutoff, with the six-hour UTC lag and DST-aware native grid.
+
+The temporal convolution uses neighboring values of the **same already available forecast curve**, including its later leads. Its symmetric context is valid forecast information; it does not use later measured power, another weather cycle, or an adjacent delivery day's targets. Sequences never cross date/auction/vintage boundaries. The calibrated pvlib baseline remains exactly the global 2025 settings in `standard.yaml`, without further tuning on 2026. A validation-selected ridge weather model is an additional sanity baseline.
+
+All controls inherit `pv_neural` in `configs/standard.yaml`: split dates, embargo, farm selection, feature/architecture candidates, widths/depths, embeddings, loss, learning rate, training budget, seeds, CPU workers/threads and outputs. PyTorch is optional for other commands and this workflow explicitly uses CPU. The benchmark uses four independent farm workers with two CPU threads each by default; it does not allocate GPU memory. Add dependencies through the `bess` environment only after permission; prefer conda (`conda install -n bess -c conda-forge pytorch-cpu`).
+
+Outputs live in `outputs/pv_neural/<run_id>/`, with study-level comparisons and per-farm `csv`, `json`, `parquet`, `plots`, and `models` folders. They include raw aligned targets and forecasts, separate train/validation/test metrics, mean/minimum/maximum absolute errors, RMSE, signed bias, per-auction/month/hour and daily energy errors, paired seven-day block uncertainty intervals, learning curves, representative test trajectories with the installed AC threshold, input/source fingerprints and resolved configurations. Overlapping auction views are kept separate in energy reporting. `models/selected.pt` and `selected.json` identify each farm's validation-selected neural model, including preprocessing, metadata, architecture, training history and a weight checksum. Other candidates remain reusable. Completed fits resume only with matching configuration, source and training-code fingerprints.
+
+`forecasting.pv_neural_predict.predict_neural_frame(frame, artifact, farm_id=...)` loads a saved model on CPU and predicts without requiring measured targets. It checks farm identity, feature order and the weights checksum. The standard trading forecast remains pvlib; choosing a neural model for trading is a subsequent experiment. For a short four-farm execution check use `configs/pv_experiments/neural_validation.yaml`.
+
+The completed `neural_pv_2025_to_2026_08` run fits 24 neural candidates across the four farms and evaluates all 123 test delivery days. There are 204,276 aligned auction/quarter-hour rows per farm over 608 days. With equal day/auction daylight weighting, validation-selected neural performance is:
+
+| Farm | Selected neural model | pvlib test RMSE (MW) | Neural test RMSE (MW) | RMSE reduction |
+| --- | --- | --- | --- | --- |
+| 1 | Temporal convolution, core | 0.06998 | 0.06119 | 12.6% |
+| 345 | Dense MLP, core | 0.27046 | 0.25209 | 6.8% |
+| 901 | Temporal convolution, core | 0.58712 | 0.54140 | 7.8% |
+| 910 | Residual MLP, core | 1.22336 | 1.29883 | −6.2% |
+
+The neural model does not improve every farm or metric: farm 910 worsens, and farm 345's MAE increases despite its smaller RMSE. Ridge achieves 0.20050 MW RMSE on farm 345. The candidate chosen by earlier validation need not have the lowest test error; no test ranking was used to change that choice. Core configurations were selected for all four farms, but widths also differ between core and extended candidates, so this comparison does not isolate a causal effect of individual weather features. The test months and validation months cover different seasons; one seed and one chronological split limit broader conclusions. No neural model is promoted automatically into trading defaults.
+
+`plots/farm_model_comparison.png` shows every frozen candidate and baseline. Each farm has learning curves and three representative test-day plots, with separate DA/IDA panels, measured AC and the rating threshold. The independent `json/validation_audit.json` verifies all 24 model checksums/CPU states, unchanged targets and pvlib curves, split embargo, shared evaluation masks and validation selection, and target-free selected-artifact replay on first/middle/last test days. A completed-run resume also checks that weights and full prediction tables remain unchanged.
+
 ## Outputs and how to read them
 
 Historical studies are organized under:

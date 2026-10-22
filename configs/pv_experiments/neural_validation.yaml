@@ -1,0 +1,14 @@
+include: ../standard.yaml
+pv_neural:
+  run_id: neural_pv_validation_v2
+  start_day: '2025-01-01'
+  train_end_day_exclusive: '2025-02-01'
+  validation_end_day_exclusive: '2025-02-08'
+  end_day_exclusive: '2025-02-15'
+  max_epochs: 3
+  patience: 2
+  minimum_training_days: 14
+  minimum_validation_days: 5
+market:
+  valid_from: '2025-01-01'
+  valid_to: '2025-02-14'

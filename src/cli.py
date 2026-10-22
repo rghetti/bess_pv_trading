@@ -114,6 +114,10 @@ def dispatch(command: str, config: dict) -> dict:
         from .forecasting.pv_study import run_pv_calibration_study
         return run_pv_calibration_study(config, retrain=command == "retrain-pv-calibration",
             progress=lambda message: print(message, file=sys.stderr, flush=True))
+    if command == "study-pv-neural":
+        from .forecasting.pv_neural_study import run_neural_study
+        return run_neural_study(config,
+            progress=lambda message: print(message, file=sys.stderr, flush=True))
     if command == "import-market-data":
         from .data.market_prices import import_market_from_config
         return import_market_from_config(config)
@@ -173,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
     """Print serializable results and actionable errors without credential prompts."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command",choices=("inspect-data","prepare-analysis-data","validate-config","resolve-config",
-        "run-synthetic","forecast-pv","calibrate-pv-output","study-pv-calibration","retrain-pv-calibration","import-market-data","optimize",
+        "run-synthetic","forecast-pv","calibrate-pv-output","study-pv-calibration","retrain-pv-calibration","study-pv-neural","import-market-data","optimize",
         "backtest","report-implementation","download-data",
         "api-cache-status","migrate-api-cache","diagnose-terna",
         "import-gme-workbooks","import-terna-workbooks","stage-market-workbooks",

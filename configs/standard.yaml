@@ -290,6 +290,54 @@ pv_calibration:
     bifaciality: [0.65, 0.9]
     height_to_pitch_ratio: [0.35, 0.5]
     albedo: [0.15, 0.25]
+# CPU neural PV benchmark: separate research branch; operational PV remains pvlib.
+pv_neural:
+  farm_ids: [910, 1, 345, 901]
+  start_day: '2025-01-01'
+  train_end_day_exclusive: '2026-01-01'
+  validation_end_day_exclusive: '2026-05-01'
+  end_day_exclusive: '2026-09-01'
+  delivery_timezone: Europe/Rome
+  output_root: outputs/pv_neural
+  split_embargo_days: 1  # Fit/selection targets must be available before the next split's first DA.
+  run_id: null
+  resume: true
+  workers: 4
+  threads_per_worker: 2
+  interop_threads_per_worker: 1
+  seed: 2025
+  deterministic: true
+  device: cpu
+  max_epochs: 100
+  patience: 15
+  minimum_improvement: 1.0e-6
+  batch_size: 32  # Whole day/auction views; no sequence crosses a delivery day or vintage.
+  prediction_batch_size: 128
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  gradient_clip_norm: 1.0
+  loss: mse  # mse or huber, on AC-nameplate-normalized power.
+  huber_delta: 0.05
+  dropout: 0.05
+  month_embedding_dim: 4
+  auction_embedding_dim: 2
+  standardization_floor: 1.0e-6
+  input_clip_standard_deviations: 12.0
+  include_ridge_baseline: true
+  ridge_alphas: [0.0001, 0.01, 1.0]
+  minimum_training_days: 30
+  minimum_validation_days: 7
+  minimum_test_days: 7
+  bootstrap_repetitions: 1000
+  bootstrap_block_days: 7
+  representative_days: 3
+  candidates:
+    - {name: mlp_core, architecture: mlp, features: core, width: 48, depth: 2}
+    - {name: mlp_weather, architecture: mlp, features: weather, width: 64, depth: 2}
+    - {name: residual_core, architecture: residual, features: core, width: 48, depth: 2}
+    - {name: residual_weather, architecture: residual, features: weather, width: 64, depth: 2}
+    - {name: tcn_core, architecture: tcn, features: core, width: 32, depth: 3, kernel_size: 3}
+    - {name: tcn_weather, architecture: tcn, features: weather, width: 48, depth: 3, kernel_size: 3}
 forecast:
   farm_id: ${farm_id}
   initial_decision_cutoff: null

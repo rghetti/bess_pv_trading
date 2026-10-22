@@ -1,0 +1,6 @@
+include: ../standard.yaml
+pv_neural:
+  run_id: neural_pv_2025_to_2026_08
+market:
+  valid_from: '2025-01-01'
+  valid_to: '2026-08-31'

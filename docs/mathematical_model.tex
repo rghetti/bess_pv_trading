@@ -480,6 +480,106 @@ a bounded fallback for missing realized-power intervals. Both the number and
 identity of substituted intervals are recorded. All counterfactuals use the same
 \emph{effective} realized PV series, including these substitutions.
 
+\subsection{Independent neural PV benchmark}
+
+The research branch \texttt{feature/neural-pv-benchmark} adds
+\texttt{study-pv-neural}. It fits a distinct neural model for each farm and
+compares it with the calibrated physical predictor on the same auction-time
+weather and raw measured AC targets. The default chronology is 2025 training,
+January--April 2026 validation, and May--August 2026 test. One configured
+embargo day at each split boundary ensures fitting/selection observations
+are available before the next split's first day-ahead submission. Validation
+chooses epochs and candidates; test observations choose neither.
+
+Let $X_{dat}$ contain the selected forecast weather, deterministic solar
+geometry, cyclic calendar features, forecast lead and missingness indicators.
+Its imputation and standardization statistics use training data only.
+Learned month and auction embeddings $e_{\theta}(m,a)$ augment those numeric
+features. Each farm predicts
+\begin{equation}
+ \widehat P_{dat}^{\rm NN}=P_{\rm AC,rated}\,D_{dt}\,\sigma\!\left(
+ g_{\theta_f}(X_{da,\cdot},e_\theta(m,a))_t\right),
+\end{equation}
+where $D_{dt}$ is the deterministic daylight/night-policy indicator and
+$\sigma(z)=(1+e^{-z})^{-1}$. This enforces nonnegative production within the
+known AC rating. Capacity normalization is not an electrical conversion loss.
+Targets remain unchanged measured AC; genuine daylight zeros are retained.
+
+The core features use forecast global/horizontal-direct irradiance, air
+temperature, wind and solar position, plus hour/year/month, cycle hour and
+lead encodings. An extended view adds dew point, cloud layers, precipitation,
+snow, visibility and higher-level wind. Neither view includes fitted output,
+DC, thermal or tracker parameters, physical POA/cell-temperature intermediates,
+satellite measurements, or past/future measured production. Constant farm
+hardware characteristics are represented implicitly by the separate fitted
+weights, with known capacity/tracking/orientation retained as provenance.
+
+The comparison uses a dense MLP, residual MLP and temporal convolution, each
+with core and extended weather. Dense layers act independently at each time;
+residual blocks retain a direct hidden path; the temporal model convolves
+within a complete day/auction forecast view using increasing dilations.
+Its symmetric receptive field can use later forecast leads because those
+weather predictions are already available at the common cutoff. It never
+crosses a date, auction or weather-vintage boundary and never sees later
+measurements. IDA3 retains its noon-onward eligibility and native quarter-hour
+grid, including both daylight-saving transitions.
+
+Training minimizes balanced day/auction MSE or Huber loss on AC-normalized
+power using AdamW. Early stopping and candidate selection minimize prior
+validation daylight RMSE. The default run trains six candidates per farm,
+with deterministic seeds and CPU workers/threads controlled in
+\path{pv_neural}. An optional validation-selected ridge weather model is
+reported as an additional sanity baseline. Every frozen candidate and the
+validation-selected neural model are compared with the unchanged calibrated
+pvlib reference on the untouched test set. Eligibility masks and target
+treatment are identical; overlapping auction energies are not added.
+
+Saved artifacts include CPU tensors, train-only feature statistics, farm
+identity, resolved configuration, source/code checksums, validation history
+and selection criteria. Target-free artifact inference reproduces benchmark
+predictions. This research workflow does not change the standard trading
+forecaster; deploying the selected neural models is a separate evaluation.
+
+The completed \texttt{neural\_pv\_2025\_to\_2026\_08} study contains 608 delivery
+days and 204,276 aligned auction/quarter-hour forecast rows per farm, including
+123 untouched test days. It fits six neural candidates independently per farm.
+The table uses balanced day/auction daylight test errors, in MW AC.
+
+\begin{table}[htbp]
+\centering\small
+\begin{tabular}{rlrrrr}
+\toprule
+Farm & Validation-selected network & pvlib RMSE & Neural RMSE & pvlib MAE & Neural MAE \\
+\midrule
+1 & Temporal convolution, core & 0.069977 & 0.061189 & 0.051559 & 0.039808 \\
+345 & Dense MLP, core & 0.270464 & 0.252086 & 0.214777 & 0.220126 \\
+901 & Temporal convolution, core & 0.587125 & 0.541403 & 0.400647 & 0.326536 \\
+910 & Residual MLP, core & 1.223355 & 1.298831 & 0.814214 & 0.954421 \\
+\bottomrule
+\end{tabular}
+\caption{Untouched May--August 2026 comparison with the fixed calibrated
+pvlib reference. Candidate choice uses January--April validation only.}
+\end{table}
+
+RMSE decreases by 12.6\%, 6.8\% and 7.8\% for farms 1, 345 and 901,
+respectively, and increases by 6.2\% for farm 910. Farm 345's ridge baseline
+achieves RMSE 0.200501 MW, while its selected neural model slightly increases
+MAE despite reducing RMSE. The independently validation-selected network need
+not be the best model in a test-only ranking. Core configurations were selected
+for all four farms; their widths also differ from extended candidates, so these
+results do not isolate a feature's causal contribution. The single seed,
+single chronological split and seasonal difference between validation/test
+limit broader performance claims. The study does not automatically replace
+the operational pvlib forecaster.
+
+An independent saved-output audit checks all 24 neural artifacts, their CPU
+weights/checksums, unchanged targets and reference forecasts, finite shared
+evaluation masks, AC bounds, chronological embargo and validation selection.
+Target-free artifact inference is replayed on the first, middle and last test
+day for every farm. Completed-run resumption preserves both model weights
+and full prediction tables. Per-model fitting time, epoch counts, parameter
+counts, configuration and source/code fingerprints are saved with the artifacts.
+
 \section{Optimization at an auction decision}
 
 Each residual solve uses only the remaining suffix of the delivery grid. In the
