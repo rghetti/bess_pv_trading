@@ -64,6 +64,11 @@ def fit_dc_to_ac(modeled_dc_mw: pd.Series, observations: ObservationBundle, farm
 # Irradiance diagnostics retain original horizontal means after redistribution.
 def forecast_pv(bundle: ForecastBundle, farm: FarmMetadata, settings: dict[str, Any], night_policy: dict[str, Any], calibration: PVCalibration | None = None) -> ForecastBundle:
     """Run pvlib at interval midpoint, returning modeled DC and predicted AC MW."""
+    from .pv_artifacts import resolve_parameters
+    if calibration is not None and settings.get("parameter_registry"):
+        raise ValueError("Select either a PV parameter registry or an explicit calibration object")
+    settings, artifact_provenance = resolve_parameters(settings, farm, night_policy,
+        bundle.provenance.get("decision_cutoff_utc", bundle.available_at))
     if settings.get("fraction_diffuse_enabled", False):
         raise ValueError("fraction_diffuse is not enabled: independent definition/validation is required")
     if settings.get("shortwave_interpretation") != "ghi":
@@ -131,109 +136,70 @@ def forecast_pv(bundle: ForecastBundle, farm: FarmMetadata, settings: dict[str, 
         valid &= ~dni_limited
     else:
         raise ValueError("dni_limit_action must be cap_and_flag or invalidate")
-    if farm.tracking_type_id == 0:
-        surface_tilt = np.full(len(frame), farm.surface_tilt_deg)
-        surface_azimuth = np.full(len(frame), source_azimuth_to_pvlib(farm.source_azimuth_deg, settings.get("source_azimuth_positive", "unconfirmed")))
-        orientation = "fixed_source_surface_orientation"
-    elif farm.tracking_type_id in {1, 3}:
-        tracker = settings.get("tracker", {})
-        if not tracker.get("assumptions_acknowledged", False):
-            raise ValueError("Unresolved tracker axis geometry requires acknowledged configured assumptions")
-        for key in ("axis_tilt", "axis_azimuth", "max_angle", "backtrack", "gcr"):
-            if key not in tracker:
-                raise ValueError(f"Tracker geometry requires {key}")
-        if farm.tracking_type_id == 3 and not settings.get("bifacial_front_side_only_enabled", False):
-            raise ValueError("Farm 901 requires explicit front-side-only approximation; rear-side model is unavailable")
-        tracking = pvlib.tracking.singleaxis(zenith, azimuth, axis_tilt=float(tracker["axis_tilt"]), axis_azimuth=float(tracker["axis_azimuth"]), max_angle=float(tracker["max_angle"]), backtrack=bool(tracker["backtrack"]), gcr=float(tracker["gcr"]))
-        surface_tilt, surface_azimuth = np.asarray(tracking["surface_tilt"]), np.asarray(tracking["surface_azimuth"])
-        # Nighttime tracker orientations are undefined in pvlib; horizontal stow
-        # permits zero-radiation night fixtures while retaining irradiance gaps.
-        surface_tilt = np.where(zenith >= 90, 0, surface_tilt)
-        surface_azimuth = np.where(zenith >= 90, float(tracker["axis_azimuth"]), surface_azimuth)
-        orientation = "configured_tracker_axis_distinct_from_source_module_orientation"
-    else:
-        raise ValueError(f"Unsupported tracking ID {farm.tracking_type_id}")
-    poa = pvlib.irradiance.get_total_irradiance(surface_tilt=surface_tilt, surface_azimuth=surface_azimuth, solar_zenith=zenith, solar_azimuth=azimuth, dni=dni, ghi=ghi, dhi=dhi, albedo=float(settings.get("albedo", 0.2)), model="isotropic")
-    poa_global = np.asarray(poa["poa_global"], dtype=float)
-    temperature = settings.get("temperature", {})
-    if temperature.get("model", "faiman") != "faiman":
-        raise ValueError("Only the configured Faiman temperature model is supported")
-    if not temperature.get("wind_as_module_proxy_acknowledged", False):
-        raise ValueError("Using supplied wind as a module-level proxy must be acknowledged")
+    from .pv_physical import PhysicalPVModel
+    temperature = settings["temperature"]
     height = int(temperature.get("wind_height_m", 10))
     if height not in {10, 100}:
         raise ValueError("Wind source height must be 10 or 100 m")
     wind = np.hypot(frame[f"wind_u_{height}m"].to_numpy(), frame[f"wind_v_{height}m"].to_numpy())
-    air = frame.temperature_c.to_numpy(dtype=float)
-    cell = pvlib.temperature.faiman(poa_global, air, wind, u0=float(temperature.get("u0", 25)), u1=float(temperature.get("u1", 6.84)))
-    output = settings.get("output", {})
-    method = output.get("method")
-    # Farm metadata is AC. The DC reference is a fixed equipment assumption;
-    # the separately fitted output coefficient can therefore change predictions.
-    dc_settings = settings.get("dc", {})
-    if dc_settings.get("model", "pvwatts") != "pvwatts":
-        raise ValueError("Only PVWatts DC is supported")
-    dc_reference_efficiency = float(dc_settings.get("reference_conversion_efficiency", np.nan))
-    if not np.isfinite(dc_reference_efficiency) or not 0 < dc_reference_efficiency <= 1:
-        raise ValueError("PV DC reference conversion efficiency requires 0<eta<=1")
+    output, dc_settings = settings["output"], settings["dc"]
+    method = output["method"]
     if method == "explicit_efficiency":
-        output_efficiency = float(output.get("pv_output_efficiency", np.nan))
-        if not np.isfinite(output_efficiency) or not 0 < output_efficiency <= 1 or not output.get("assumption_status"):
+        output_efficiency = float(output["pv_output_efficiency"])
+        if not 0 < output_efficiency <= 1 or not output.get("assumption_status"):
             raise ValueError("PV-output efficiency requires 0<eta<=1 and assumption provenance")
     elif method == "calibrated_scale":
-        if calibration is None:
-            configured_coefficient = output.get("calibrated_coefficient")
-            if configured_coefficient is None:
-                raise ValueError("Calibrated PV output requires a fitted coefficient")
-            output_efficiency = float(configured_coefficient)
-        else:
+        if calibration is not None:
             if calibration.fit_cutoff > utc_timestamp(bundle.provenance.get("decision_cutoff_utc", bundle.available_at)):
                 raise ValueError("Calibrated PV output requires a fit available by decision cutoff")
-            output_efficiency = float(calibration.ac_per_dc)
-        if not np.isfinite(output_efficiency) or output_efficiency <= 0:
-            raise ValueError("Calibrated PV output coefficient must be positive and finite")
+            output_efficiency = calibration.ac_per_dc
+        elif output.get("calibrated_coefficient") is not None:
+            output_efficiency = float(output["calibrated_coefficient"])
+        else:
+            raise ValueError("Calibrated PV output requires a fitted coefficient")
     else:
         raise ValueError("PV output requires explicit_efficiency or calibrated_scale")
-    dc_reference_capacity_kw = farm.ac_capacity_kw / dc_reference_efficiency
-    dc_watts = pvlib.pvsystem.pvwatts_dc(poa_global, cell, pdc0=dc_reference_capacity_kw * 1000, gamma_pdc=float(dc_settings["gamma_pdc_per_c"]), temp_ref=float(dc_settings.get("reference_temperature_c", 25)))
-    dc = np.maximum(np.asarray(dc_watts) / 1e6, 0)
-    valid &= np.isfinite(air) & np.isfinite(wind) & np.isfinite(dc)
-    dc = np.where(valid, dc, np.nan)
-    transformer_efficiency = float(output["transformer_efficiency"])
-    if (not 0 < transformer_efficiency <= 1
-            or not output.get("transformer_assumption_status")):
-        raise ValueError("PV transformer efficiency requires 0<eta<=1 and assumption provenance")
-    if method == "explicit_efficiency":
-        scale = output_efficiency * transformer_efficiency
-        conversion_status = {"dc_to_ac_efficiency": output_efficiency,
-                             "transformer_efficiency": transformer_efficiency,
-                             "overall_dc_to_poi_efficiency": scale,
-                             "dc_to_ac_assumption": output["assumption_status"],
-                             "transformer_assumption": output["transformer_assumption_status"]}
-    elif method == "calibrated_scale":
-        scale = output_efficiency * transformer_efficiency
-        conversion_status = {"calibrated_dc_to_ac_scale": output_efficiency,
-                             "calibration_source": "configured_static_metadata" if calibration is None else "causal_fitted_object",
-                             "dc_reference_conversion_efficiency": dc_reference_efficiency,
-                             "transformer_efficiency": transformer_efficiency,
-                             "overall_dc_to_poi_efficiency": scale,
-                             "transformer_assumption": output["transformer_assumption_status"]}
-    else:
-        raise ValueError("PV output requires explicit_efficiency or calibrated_scale")
-    ac_unmasked = dc * scale
-    configured_ac_limit = output.get("ac_limit_mw")
-    if configured_ac_limit is not None and float(configured_ac_limit) <= 0:
-        raise ValueError("Configured AC limit must be positive")
-    # The farm AC nameplate is always binding; an optional configured limit may
-    # impose a tighter cap but can never raise the physical forecast ceiling.
-    ac_limit = min(float(configured_ac_limit), farm.ac_capacity_mw) if configured_ac_limit is not None else farm.ac_capacity_mw
-    clipped = ac_unmasked > ac_limit
-    ac = np.minimum(ac_unmasked, ac_limit)
-    night = night_window_mask(frame.index, night_policy) & (ac > 0)
-    ac[night] = 0.0
-    for name, values in {"solar_zenith_deg": zenith, "surface_tilt_deg": surface_tilt, "surface_azimuth_deg": surface_azimuth, "ghi_w_m2": ghi, "bhi_w_m2": bhi, "dhi_w_m2": dhi, "dni_w_m2": dni, "wind_speed_m_s": wind, "cell_temperature_c": cell, "poa_w_m2": poa_global, "modeled_dc_mw": dc, "pv_ac_before_night_mask_mw": np.minimum(ac_unmasked, ac_limit), "pv_ac_mw": ac, "bhi_exceeds_ghi": contradiction, "low_sun_direct_limited": low_sun, "dni_limited": dni_limited, "ghi_decomposition_used": decomposition_used, "ac_limit_clipped": clipped, "nighttime_zero": night, "pv_input_valid": valid}.items():
+    if not np.isfinite(output_efficiency) or output_efficiency <= 0:
+        raise ValueError("Calibrated PV output coefficient must be positive and finite")
+    # These target-independent inputs are also saved for efficient fitting.
+    for name, values in {"solar_zenith_deg": zenith, "solar_azimuth_deg": azimuth,
+        "ghi_w_m2": ghi, "bhi_w_m2": bhi, "dhi_w_m2": dhi, "dni_w_m2": dni,
+        "wind_speed_m_s": wind, "pv_input_valid": valid,
+        "bhi_exceeds_ghi": contradiction, "low_sun_direct_limited": low_sun,
+        "dni_limited": dni_limited, "ghi_decomposition_used": decomposition_used}.items():
         frame[name] = values
-    provenance = {**bundle.provenance, "pvlib_version": pvlib.__version__, "pv_target": "farm_AC_at_POI_MW", "farm_ac_capacity_mw": farm.ac_capacity_mw, "dc_reference_capacity_kw": dc_reference_capacity_kw, "dc_reference_efficiency": dc_reference_efficiency, "modeled_dc_unit": "MW", "pv_output_model": conversion_status, "pv_output_scale": scale, "ac_limit_mw": ac_limit, "geometry_location": location, "orientation": orientation, "rear_side_gain": "omitted_front_side_only" if farm.tracking_type_id == 3 else "not_bifacial", "unknown_pv_type_id": "retained_without_inferred_electrical_parameters", "bhi_to_dni": "pvlib.irradiance.dni;uniform_hourly_means_at_quarter_hour_midpoint;low_sun_and_cap_flagged", "temperature_model": "pvlib.temperature.faiman", "wind_height_proxy_m": height, "settings": settings, "night_policy": night_policy, "bess_converter_efficiency_applied": False}
+    from .pv_physical import parameter_defaults
+    model = PhysicalPVModel(frame, farm, settings, night_policy)
+    parameters = parameter_defaults(settings)
+    parameters["coefficient"] = output_efficiency
+    for name, values in model.evaluate(parameters, diagnostics=True).items():
+        frame[name] = values
+    reference = float(dc_settings["reference_conversion_efficiency"])
+    transformer = float(output["transformer_efficiency"])
+    scale = output_efficiency * transformer
+    conversion_status = {"transformer_efficiency": transformer,
+        "overall_dc_to_poi_efficiency": scale, "transformer_assumption": output["transformer_assumption_status"]}
+    if method == "explicit_efficiency":
+        conversion_status.update(dc_to_ac_efficiency=output_efficiency, dc_to_ac_assumption=output["assumption_status"])
+    else:
+        conversion_status.update(calibrated_dc_to_ac_scale=output_efficiency,
+            calibration_source="causal_fitted_object" if calibration else "configured_static_metadata",
+            dc_reference_conversion_efficiency=reference,
+            assumption_status=output.get("assumption_status"))
+    bifacial = bool(settings.get("bifacial", {}).get("enabled", False))
+    provenance = {**bundle.provenance, "pvlib_version": pvlib.__version__,
+        "pv_target": "farm_AC_at_POI_MW", "farm_ac_capacity_mw": farm.ac_capacity_mw,
+        "dc_reference_capacity_kw": farm.ac_capacity_kw / reference, "dc_reference_efficiency": reference,
+        "modeled_dc_unit": "MW", "pv_output_model": conversion_status, "pv_output_scale": scale,
+        "ac_limit_mw": model.ac_limit, "geometry_location": location,
+        "orientation": "fixed_source_surface_orientation" if farm.tracking_type_id == 0 else "configured_tracker_axis_distinct_from_source_module_orientation",
+        "rear_side_gain": "infinite_sheds" if bifacial else ("omitted_front_side_only" if farm.tracking_type_id == 3 else "not_bifacial"),
+        "transposition_model": settings.get("transposition_model", "isotropic"),
+        "unknown_pv_type_id": "retained_without_inferred_electrical_parameters",
+        "bhi_to_dni": "pvlib.irradiance.dni;uniform_hourly_means_at_quarter_hour_midpoint;low_sun_and_cap_flagged",
+        "temperature_model": "pvlib.temperature.faiman", "wind_height_proxy_m": height,
+        "settings": settings, "night_policy": night_policy, "bess_converter_efficiency_applied": False,
+        "parameter_artifact": artifact_provenance}
     return ForecastBundle(bundle.farm_id, bundle.forecast_vintage, bundle.available_at, frame, {**bundle.units, "pv_ac_mw": "MW_AC", "modeled_dc_mw": "MW_DC"}, bundle.members, bundle.member_origin, provenance)
 
 
@@ -324,7 +290,10 @@ def forecast_pv_from_config(config: dict[str, Any]) -> dict[str, Any]:
     frame = pv.values
     valid = frame.pv_ac_mw.notna()
     forecast_status = "complete_exploratory_forecast" if valid.all() else "ineligible_missing_required_model_inputs"
-    summary = {"farm_id": farm_id, "delivery_day": str(run["delivery_day"]), "intervals": len(frame), "forecast_vintage_utc": pv.forecast_vintage.isoformat(), "available_at_utc": pv.available_at.isoformat(), "member_count": len(pv.members), "member_origin": pv.member_origin, "forecast_status": forecast_status, "missing_pv_intervals": int((~valid).sum()), "forecast_energy_finite_mwh": float(frame.pv_ac_mw.sum() * 0.25), "night_mask_adjustment_mwh": float((frame.pv_ac_mw - frame.pv_ac_before_night_mask_mw).sum() * 0.25), "flags": {name: int(frame[name].sum()) for name in ("bhi_exceeds_ghi", "low_sun_direct_limited", "dni_limited", "ghi_decomposition_used", "nighttime_zero")}, "output_path": str(path), "attempted_vintages": attempted_vintages, "provenance": pv.provenance, "calibration_status": "not_fitted_explicit_PV_output_assumption", "ex_post_point_evaluation": evaluation}
+    conversion = pv.provenance["pv_output_model"]
+    calibration_status = ("issue_time_parameter_artifact" if pv.provenance["parameter_artifact"]["status"] == "fitted"
+                          else conversion.get("calibration_source", "not_fitted_explicit_PV_output_assumption"))
+    summary = {"farm_id": farm_id, "delivery_day": str(run["delivery_day"]), "intervals": len(frame), "forecast_vintage_utc": pv.forecast_vintage.isoformat(), "available_at_utc": pv.available_at.isoformat(), "member_count": len(pv.members), "member_origin": pv.member_origin, "forecast_status": forecast_status, "missing_pv_intervals": int((~valid).sum()), "forecast_energy_finite_mwh": float(frame.pv_ac_mw.sum() * 0.25), "night_mask_adjustment_mwh": float((frame.pv_ac_mw - frame.pv_ac_before_night_mask_mw).sum() * 0.25), "flags": {name: int(frame[name].sum()) for name in ("bhi_exceeds_ghi", "low_sun_direct_limited", "dni_limited", "ghi_decomposition_used", "nighttime_zero")}, "output_path": str(path), "attempted_vintages": attempted_vintages, "provenance": pv.provenance, "calibration_status": calibration_status, "ex_post_point_evaluation": evaluation}
     (output / "manifest.json").write_text(json.dumps(summary, indent=2, default=str) + "\n")
     _plot_pv_forecast(frame, output)
     summary["plot_path"] = str(output / "pv_forecast.png")

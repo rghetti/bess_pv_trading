@@ -1,0 +1,160 @@
+{
+  "schema_version": 1,
+  "farm_id": 910,
+  "farm_metadata": {
+    "farm_id": 910,
+    "zone": "NORD",
+    "ac_capacity_kw": 6638.0,
+    "tracking_type_id": 1,
+    "surface_tilt_deg": 30.0,
+    "source_azimuth_deg": 0.0,
+    "elevation_m": 22.0,
+    "pv_type_id": 0.0,
+    "assumptions": {}
+  },
+  "treatment": "static_farm_knowledge_inferred_from_2025_applied_to_all_experiment_dates",
+  "selection": "best_family_on_February_December_2025_balanced_daylight_RMSE",
+  "training_start_day": "2025-01-01",
+  "training_end_day_exclusive": "2026-01-01",
+  "fit": {
+    "method": "tracker_mse",
+    "parameters": {
+      "coefficient": 0.8050110294570347,
+      "u0": 60.0,
+      "u1": 15.0,
+      "gcr": 0.5667211662668288,
+      "max_angle": 30.0
+    },
+    "fitted_parameters": [
+      "coefficient",
+      "u0",
+      "u1",
+      "gcr",
+      "max_angle"
+    ],
+    "transposition_model": "perez-driesse",
+    "bifacial_enabled": false,
+    "bifacial_settings": {
+      "enabled": false,
+      "bifaciality": 0.8,
+      "height_to_pitch_ratio": 0.4,
+      "shade_factor": -0.02,
+      "transmission_factor": 0.0
+    },
+    "albedo": 0.2,
+    "regularization": 0.0,
+    "loss": "mse",
+    "objective": 0.022015929410074405,
+    "converged": true,
+    "optimizer_message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH",
+    "function_evaluations": 369,
+    "training_rows": 63696,
+    "training_days": 365,
+    "latest_target_available_at_utc": "2025-12-31T15:45:00+00:00",
+    "bound_hits": [
+      "u0",
+      "u1",
+      "max_angle"
+    ],
+    "jacobian_rank": 5,
+    "jacobian_condition_number": 485.9535039542444,
+    "weakly_identified": false,
+    "multistart_trials": [
+      {
+        "parameters": {
+          "coefficient": 0.7906026953494814,
+          "u0": 60.0,
+          "u1": 15.0,
+          "gcr": 0.5677902027601237,
+          "max_angle": 57.93801638749887
+        },
+        "objective": 0.02213496245520879,
+        "converged": false,
+        "message": "STOP: TOTAL NO. OF F,G EVALUATIONS EXCEEDS LIMIT"
+      },
+      {
+        "parameters": {
+          "coefficient": 0.8050110294570347,
+          "u0": 60.0,
+          "u1": 15.0,
+          "gcr": 0.5667211662668288,
+          "max_angle": 30.0
+        },
+        "objective": 0.022015929410074405,
+        "converged": true,
+        "message": "CONVERGENCE: RELATIVE REDUCTION OF F <= FACTR*EPSMCH"
+      },
+      {
+        "parameters": {
+          "coefficient": 0.96,
+          "u0": 25.0,
+          "u1": 6.84,
+          "gcr": 0.35,
+          "max_angle": 60.0
+        },
+        "objective": 0.03351479581675394,
+        "converged": false,
+        "message": "configured_start_reference"
+      }
+    ],
+    "runtime_seconds": 11.12131032673642,
+    "validation_nrmse": 0.07342528919821517,
+    "window_days": null,
+    "training_start_day": "2025-01-01",
+    "training_end_day": "2025-12-31"
+  },
+  "held_out_family_metrics": {
+    "method": "tracker_mse",
+    "daylight_balanced_rmse_mw": 1.032801585766483,
+    "baseline_rmse_mw": 1.1190124487510213,
+    "rmse_improvement_mw": 0.0862108629845384,
+    "improvement_ci_2_5_mw": 0.044545672988959964,
+    "improvement_ci_97_5_mw": 0.12443679208948556,
+    "improvement_ci_2_5_percent_rating": 0.671070698839409,
+    "improvement_ci_97_5_percent_rating": 1.8746127160211745,
+    "block_days": 7,
+    "resamples": 1000,
+    "delivery_days": 334
+  },
+  "global_in_sample_metrics": [
+    {
+      "method": "tracker_mse",
+      "scope": "all_intervals",
+      "pairs": 122604,
+      "mae_mw": 0.3719113427548313,
+      "rmse_mw": 0.739986682105881,
+      "nrmse_percent_ac_rating": 11.147735494213334,
+      "bias_mw": 0.005660654076219903,
+      "overprediction_fraction": 0.2704642589148804,
+      "underprediction_fraction": 0.2880574858895305,
+      "mean_overprediction_mw_when_over": 0.698007193900395,
+      "mean_underprediction_mw_when_under": 0.6357249969526357,
+      "paired_energy_bias_mwh": 173.50470809021624,
+      "measured_energy_mwh": 37408.890625,
+      "forecast_energy_mwh": 37582.39342339127,
+      "forecast_at_ac_rating_fraction": 0.0,
+      "rmse_improvement_percent": 9.508457166728634
+    },
+    {
+      "method": "tracker_mse",
+      "scope": "daylight",
+      "pairs": 63696,
+      "mae_mw": 0.7136197942817428,
+      "rmse_mw": 1.0258321920214604,
+      "nrmse_percent_ac_rating": 15.453934799961742,
+      "bias_mw": 0.010680782994537385,
+      "overprediction_fraction": 0.45040504898266764,
+      "underprediction_fraction": 0.5465649334338106,
+      "mean_overprediction_mw_when_over": 0.8040546824600012,
+      "mean_underprediction_mw_when_under": 0.6430516927521952,
+      "paired_energy_bias_mwh": 170.08078840501332,
+      "measured_energy_mwh": 37388.4765625,
+      "forecast_energy_mwh": 37558.55880324695,
+      "forecast_at_ac_rating_fraction": 0.0,
+      "rmse_improvement_percent": 9.519688857071252
+    }
+  ],
+  "source_fingerprint": "ebc25a0daee14f7134f5c3f7696b91138dd7fda78737579b5f3f5ebfe6f13c9e",
+  "study_configuration_fingerprint": "bc403788100cc79cca093c03ca6bc0124341f475bfe237063e2ed7c02bd82a3f",
+  "interpretation": "Full-year global fits are assumed plant metadata, not causally trained early-2025 forecasts or identified hardware measurements."
+}

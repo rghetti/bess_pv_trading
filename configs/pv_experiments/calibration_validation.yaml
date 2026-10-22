@@ -1,0 +1,14 @@
+# Exercise the complete study and artifact path before the full annual benchmark.
+include: ../standard.yaml
+farms:
+  1: {pv: null}
+  345: {pv: null}
+  901: {pv: null}
+  910: {pv: null}
+pv_calibration:
+  start_day: '2025-01-01'
+  end_day_exclusive: '2025-02-03'
+  evaluation_start_day: '2025-02-01'
+  run_id: physical_pv_validation_jan_feb_2025
+pv:
+  direct_exceeds_ghi: clip_and_flag

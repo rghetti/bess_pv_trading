@@ -75,6 +75,13 @@ def resolve_config(config: dict[str, Any]) -> dict[str, Any]:
         return value
 
     result = visit(source)
+    # Known selected-farm PV settings take precedence over shared assumptions.
+    selected_farm = result.get("forecast", {}).get("farm_id", result.get("farm_id"))
+    farm_pv = result.get("farms", {}).get(str(selected_farm), {}).get("pv", {})
+    if farm_pv:
+        shared_pv = result.get("_pv_shared_settings", result.get("pv", {}))
+        result["_pv_shared_settings"] = deepcopy(shared_pv)
+        result["pv"] = merge_mapping(shared_pv, farm_pv)
     plant = result.get("plant", {})
     for field in ("poi_import_mw", "poi_export_mw"):
         if plant.get(field) == "auto":
@@ -93,6 +100,9 @@ def resolve_config(config: dict[str, Any]) -> dict[str, Any]:
         if value is None or isinstance(value, bool) or not math.isfinite(float(value)) or float(value) <= 0:
             raise ConfigurationError("Automatic PV AC limit requires selected-farm AC capacity")
         pv_output["ac_limit_mw"] = float(value) / 1000
+    shared_output = result.get("_pv_shared_settings", {}).get("output", {})
+    if shared_output.get("ac_limit_mw") == "auto":
+        shared_output["ac_limit_mw"] = float(result["farms"][str(selected_farm)]["ac_capacity_kw"]) / 1000
     validate_config(result)
     return result
 

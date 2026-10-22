@@ -250,8 +250,8 @@ $\eta_{\rm PV}$, or by an explicitly fitted DC-to-AC coefficient $\kappa$:
  \end{cases}
 \end{equation}
 A configured AC cap, limited to no more than the farm AC rating, clips this output;
-the night mask and validity flags are then applied. The present study uses an
-unfitted explicit output factor and a configurable separate transformer factor.
+the night mask and validity flags are then applied. Without a fitted override,
+the model uses the configured fixed output and separate transformer factors.
 An offline calibration pairs each quarter-hour's latest available weather
 vintage with measured AC production $y_i$ and modeled DC $d_i$. With
 $x_i=\eta_{\rm tr}d_i$, it estimates the zero-intercept slope by minimizing
@@ -268,6 +268,211 @@ identified physical inverter efficiency.
 Temperature and wind affect production
 through temperature; irradiance and orientation affect POA. Cloud/dew-point
 fields retained in the store are not additional direct PV predictors here.
+
+\subsection{Chronological physical PV calibration}
+
+The \texttt{study-pv-calibration} workflow compares physical models separately
+for each farm. It constructs the weather view available at each auction's
+submission cutoff, including the configured six-hour UTC lag and decision
+buffer. IDA3 evaluation covers only local noon onwards. Targets are raw
+quarter-hour measured AC power; no transformer loss, interpolation or forecast
+substitution is applied to the targets. Missing/invalid targets are excluded
+by a common mask; genuine zeros remain. Satellite GHI diagnoses weather error
+without entering an operational prediction.
+
+Let $\mathcal T_{da}$ be the eligible daylight targets for delivery day $d$
+and auction view $a$, and $f(X_{dat};\theta)$ the shared physical predictor,
+including its AC cap and night policy. The fitted objective is
+\begin{equation}
+ \min_{\theta\in\mathcal B}\;
+ \frac{1}{|\mathcal G|}\sum_{(d,a)\in\mathcal G}
+ \frac{1}{|\mathcal T_{da}|}\sum_{t\in\mathcal T_{da}}
+ \rho\!\left(\frac{f(X_{dat};\theta)-P^{\rm measured}_{dt}}
+ {P_{\rm AC,rated}}\right)
+ +\lambda\sum_j\left(\frac{\theta_j-\theta_{0,j}}{u_j-l_j}\right)^2.
+\end{equation}
+Here $[l_j,u_j]$ are configured bounds, $\theta_0$ denotes the configured
+assumptions, and $\rho$ is squared error or Huber loss. Equal day/auction
+weights prevent the shorter IDA3 horizon being underweighted. Scale-only
+fits optimize the clipped forward calculation; the earlier closed-form
+slope is retained only by the legacy single-coefficient command.
+
+Candidate families fit $\kappa$ alone, $(\kappa,U_0,U_1)$, or additionally
+tracker GCR and maximum rotation for tracking types 1 and 3. The DC reference,
+$\gamma$, transformer factor, known fixed-array orientation and tracker-axis
+assumptions remain fixed. Front-side candidates compare isotropic, Hay--Davies
+and Perez--Driesse transposition. For farm 901, an additional infinite-sheds
+family uses explicit bifaciality and height/pitch assumptions, holding geometry
+fixed while fitting scale and thermal coefficients. Electrical effective POA
+includes the weighted rear irradiance, while Faiman uses incident front plus
+rear POA. One-at-a-time rear-assumption sensitivities are reported separately.
+AC power alone does not establish that fitted coefficients are true equipment
+properties; bound hits, optimizer stops and local Jacobian diagnostics are saved.
+
+January is warmup and February--December 2025 are held-out delivery months.
+Monthly fits are issued at local midnight on the preceding calendar day, before
+the month's first DA submission. Only already available completed days enter
+training. The latest seven days select the history window (expanding or 90
+days), transposition and regularization, after which the specification is
+refitted on the available history. A separate selected strategy chooses among
+families using that earlier validation alone. A final all-year fit is labeled
+retrospective/in-sample and never included in held-out scores. Paired accuracy
+intervals resample seven-day blocks; daily energy errors remain separate by
+auction because auction views overlap.
+
+The \texttt{retrain-pv-calibration} command reuses this fitting procedure at a
+configured historical-availability timestamp. Immutable artifacts retain farm
+metadata, training/issue cutoffs, source checksums, software versions and fixed
+physical assumptions. The optional \path{pv.parameter_registry} selects only
+the latest matching artifact issued by a forecast's decision cutoff, using the
+fixed baseline before the first fit. This interface is shared by ordinary PV
+forecasts and auction experiments and is disabled by default.
+
+For ordinary experiments, the shared configuration now stores a final static
+parameter set under each farm's \texttt{pv} mapping. The model family is chosen
+by the full held-out comparison and its final all-2025 refit supplies the
+numbers. By the user's modeling convention, these inferred quantities are
+treated as prior farm metadata and apply at every experiment date, including
+January 2025. Their full-year fit scores are in-sample. This static assumption
+is distinct from the causally issued monthly benchmark; that study explicitly
+disables the farm mappings to preserve its original unfitted reference.
+
+\subsubsection{How the installed 2025 parameter sets were selected}
+
+The completed run is
+\path{outputs/pv_calibration/physical_pv_all_farms_2025/}. It contains 365
+delivery days per farm, with January warmup and 334 February--December
+evaluation days. It completed 312 method/issue checkpoints across the four
+farms. A finite shared eligibility mask is frozen before model comparisons;
+the 12 missing unique target quarters per farm are not filled or scored.
+The selection has three separate levels:
+\begin{enumerate}
+\item For each method and monthly issue, fit on the earlier history and
+validate on its latest seven completed days. At least 14 earlier training
+days are required. Compare expanding and trailing 90-day history, admissible
+transposition models, and $\lambda\in\{0,0.01\}$. Scale-only fits retain the
+reference transposition and use $\lambda=0$. Rank candidates by daylight,
+AC-normalized RMSE with equal aggregate weight per day/auction view; then
+refit that candidate on its entire available history, including validation.
+The Huber transition is $0.05$ of AC rating.
+\item Evaluate the resulting monthly forecasts on the following delivery
+month. For the static defaults, select the method family with the smallest
+aggregate February--December daylight RMSE. This is a hindsight family
+selection; the separate monthly \texttt{selected} strategy uses only prior
+validation and can choose a different family each month.
+\item For the selected family, use its final all-2025 refit. This final fit
+uses expanding history only; its transposition and regularization are chosen
+on the latest seven training days, and its physical parameters are then
+refitted on all 365 days. These are the values installed in
+\path{configs/standard.yaml}, with provenance artifacts in
+\path{configs/pv_parameters/2025/}. By the agreed convention they are applied
+as static prior metadata at every delivery date.
+\end{enumerate}
+
+This is bounded nonlinear physical calibration, not a regression on arbitrary
+weather features. The scale-only problem uses bounded scalar minimization;
+thermal/tracker/bifacial fits use L-BFGS-B in unit-box parameter coordinates.
+The completed benchmark used the configured reference start plus one seeded
+random start, a budget of 180 function evaluations per start, and retained
+the best finite iterate, including the starting reference. The $L^2$ term
+regularizes deviations from the original physical assumptions; no $L^1$
+penalty is used. All four installed final fits selected $\lambda=0$.
+
+\begin{table}[htbp]
+\centering\small
+\begin{tabular}{rllrrrrr}
+\toprule
+Farm & Family/loss & Transposition & $\kappa$ & $U_0$ & $U_1$ & GCR & Rotation \\
+\midrule
+1 & Thermal/Huber & Isotropic & 0.531940 & 60 & 15 & --- & --- \\
+345 & Thermal/Huber & Isotropic & 0.462625 & 60 & 15 & --- & --- \\
+901 & Tracker/MSE & Isotropic & 0.889936 & 60 & 7.835820 & 0.638566 & $57.9135^\circ$ \\
+910 & Tracker/MSE & Perez--Driesse & 0.805011 & 60 & 15 & 0.566721 & $30^\circ$ \\
+\bottomrule
+\end{tabular}
+\caption{Installed all-2025 effective physical parameters, rounded for display.
+YAML retains full precision. The DC reference ratio remains 0.96 independently
+of $\kappa$; measured AC has no additional conversion loss.}
+\end{table}
+
+The explicit rear-side candidate did not win farm 901's held-out comparison;
+its installed forecast therefore retains the calibrated front-side tracker
+approximation. The thermal parameters often reach their upper bounds and farm
+910's rotation reaches the lower bound. The final farm 901 fit exhausted its
+configured numerical budget before reporting convergence; the best finite
+iterate is retained and flagged in its artifact. The other three final fits
+report convergence. Consequently these are the best predictive parameters
+found within the configured search, not certified global optima or measured
+equipment properties. These diagnostics are part of the delivered comparison.
+
+\begin{table}[htbp]
+\centering
+\begin{tabular}{rrrr}
+\toprule
+Farm & Original RMSE (MW) & Monthly family RMSE (MW) & Reduction \\
+\midrule
+1 & 0.189674 & 0.076846 & 59.5\% \\
+345 & 0.333161 & 0.144849 & 56.5\% \\
+901 & 0.632407 & 0.571855 & 9.6\% \\
+910 & 1.119012 & 1.032802 & 7.7\% \\
+\bottomrule
+\end{tabular}
+\caption{February--December held-out daylight RMSE. Each calibrated column
+uses that family's monthly historical fits, not the final all-year parameters.
+Family selection itself uses the complete held-out comparison.}
+\end{table}
+
+\subsubsection{Average, minimum and maximum errors against the previous model}
+
+For each matched quarter-hour define the absolute AC power error
+$e_{dat}=|\widehat P_{dat}-P^{\rm measured}_{dt}|$. The mean is
+$\sum_{d,a,t} w_{dat}e_{dat}$, using equal aggregate day/auction weights;
+the minimum and maximum are the extrema across those same quarter-hour pairs.
+The following table compares the original fixed assumptions with the final
+static parameters over all of 2025. It uses daylight intervals to avoid
+improvements driven by nighttime zeros. It is an \emph{in-sample} description
+of the global fit, distinct from the preceding held-out RMSE table.
+
+\begin{table}[htbp]
+\centering\small
+\begin{tabular}{rrrrrrrr}
+\toprule
+ & \multicolumn{2}{c}{Mean absolute (MW)} & \multicolumn{2}{c}{Minimum (MW)} &
+ \multicolumn{2}{c}{Maximum (MW)} & Mean reduction \\
+Farm & Before & After & Before & After & Before & After & \\
+\midrule
+1 & 0.144662 & 0.054573 & 0 & 0 & 0.725960 & 0.483678 & 62.3\% \\
+345 & 0.247601 & 0.108362 & 0 & 0 & 1.203064 & 0.921906 & 56.2\% \\
+901 & 0.443153 & 0.390569 & 0 & 0 & 3.090024 & 3.106609 & 11.9\% \\
+910 & 0.717493 & 0.681918 & 0 & 0 & 5.815742 & 5.383478 & 5.0\% \\
+\bottomrule
+\end{tabular}
+\caption{Matched 2025 daylight absolute errors with the final static parameters.
+Minimum errors are zero even after excluding nighttime. Genuine zeros and
+suspected operating outages remain in the common target population.}
+\end{table}
+
+Average improvement does not imply improvement of every interval or of the
+worst error: farm 901's maximum increases slightly. Residual weather errors,
+proxy location and operating anomalies remain. The machine-readable
+\path{csv/before_after_global_parameters.csv} and its JSON companion report
+both full-day and daylight mean/minimum/maximum errors, signed bias and RMSE
+in MW and percent of installed AC, separately by auction and in aggregate.
+They include a separately labeled monthly held-out-family comparison on its
+own common February--December population. Overlapping auction views are
+never interpreted as additive production or energy.
+
+The four figures under \path{plots/trajectory_examples/} use the operational
+forecast function with these installed defaults. Their three common dates
+(24 January, 25 September and 6 September 2025) are chosen nearest the 20th,
+50th and 80th percentiles of portfolio-normalized measured daily energy,
+independently of forecast residuals. Each panel shows unchanged raw measured
+AC, the DA/IDA1/IDA2 curves, the IDA3 noon-onward curve, the following midnight
+sample when available, and the installed AC rating as a fixed threshold.
+All 12 displayed farm/day examples have no forecast or measured rating
+exceedance. Values, threshold checks, effective configuration and vintage
+provenance accompany the plots in CSV and JSON. These figures illustrate the
+static model on its fitting year rather than held-out forecasting skill.
 
 Invalid required inputs remain invalid unless an explicit policy applies.
 Historical GME studies may use their configured night-zero forecast policy and

@@ -89,20 +89,96 @@ review:
 # FARM SELECTION: change this field, or pass --farm-id. IDs below come from the declared farm metadata.
 # ${farm_id} is a typed reference resolved after all overrides. auto POI uses selected AC capacity / 1000,
 # unless farms.<id>.poi_import_mw / poi_export_mw or explicit plant limits override that proxy.
+# farms.<id>.pv contains the final global 2025 fits, treated as prior farm metadata at ALL dates.
+# Override that farm mapping to tune it; pv: null selects the unfitted shared reference below.
 farm_id: 910
 farms:
   1:
     ac_capacity_kw: 953.28
     tracking_type_id: 0
+    pv:
+      direct_exceeds_ghi: clip_and_flag
+      transposition_model: isotropic
+      albedo: 0.2
+      temperature:
+        u0: 60.0
+        u1: 15.0
+      bifacial:
+        enabled: false
+        bifaciality: 0.8
+        height_to_pitch_ratio: 0.4
+        shade_factor: -0.02
+        transmission_factor: 0.0
+      output:
+        method: calibrated_scale
+        calibrated_coefficient: 0.5319403177692952
+        assumption_status: global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_1.json
   345:
     ac_capacity_kw: 1524.6
     tracking_type_id: 0
+    pv:
+      direct_exceeds_ghi: clip_and_flag
+      transposition_model: isotropic
+      albedo: 0.2
+      temperature:
+        u0: 60.0
+        u1: 15.0
+      bifacial:
+        enabled: false
+        bifaciality: 0.8
+        height_to_pitch_ratio: 0.4
+        shade_factor: -0.02
+        transmission_factor: 0.0
+      output:
+        method: calibrated_scale
+        calibrated_coefficient: 0.4626249301825054
+        assumption_status: global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_345.json
   901:
     ac_capacity_kw: 4160.0
     tracking_type_id: 3
+    pv:
+      direct_exceeds_ghi: clip_and_flag
+      transposition_model: isotropic
+      albedo: 0.2
+      temperature:
+        u0: 60.0
+        u1: 7.835819738293059
+      bifacial:
+        enabled: false
+        bifaciality: 0.8
+        height_to_pitch_ratio: 0.4
+        shade_factor: -0.02
+        transmission_factor: 0.0
+      output:
+        method: calibrated_scale
+        calibrated_coefficient: 0.8899355438128487
+        assumption_status: global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_901.json
+      tracker:
+        gcr: 0.6385656354705106
+        max_angle: 57.91350435093605
   910:
     ac_capacity_kw: 6638.0
     tracking_type_id: 1
+    pv:
+      direct_exceeds_ghi: clip_and_flag
+      transposition_model: perez-driesse
+      albedo: 0.2
+      temperature:
+        u0: 60.0
+        u1: 15.0
+      bifacial:
+        enabled: false
+        bifaciality: 0.8
+        height_to_pitch_ratio: 0.4
+        shade_factor: -0.02
+        transmission_factor: 0.0
+      output:
+        method: calibrated_scale
+        calibrated_coefficient: 0.8050110294570347
+        assumption_status: global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_910.json
+      tracker:
+        gcr: 0.5667211662668288
+        max_angle: 30.0
 
 # PREPARATION AND PV CONVERSION: dates/output IDs belong in the experiment override.
 analysis:
@@ -114,6 +190,15 @@ forecast_run:
   earlier_complete_vintage_fallback: false
   output_dir: outputs/pv
 pv:
+  # Optional immutable, farm-specific registry; only artifacts issued by the cutoff are used.
+  parameter_registry: null
+  transposition_model: isotropic
+  bifacial:
+    enabled: false
+    bifaciality: 0.8
+    height_to_pitch_ratio: 0.4
+    shade_factor: -0.02
+    transmission_factor: 0.0
   shortwave_interpretation: ghi
   shortwave_interpretation_status: user_confirmed
   direct_radiation_interpretation: horizontal_direct
@@ -172,6 +257,39 @@ pv_calibration:
   exclude_policy_adjusted: true
   output_root: outputs/pv_calibration
   run_id: null
+  # Chronological physical-model study/retrain settings (legacy scale command is unchanged).
+  farm_ids: [910, 1, 345, 901]
+  evaluation_start_day: null  # Defaults to the first day of the month after start_day.
+  as_of_utc: null  # Required for retrain-pv-calibration; timezone-aware target availability cutoff.
+  training_windows_days: [null, 90]  # null means expanding history.
+  validation_days: 7
+  minimum_training_days: 14
+  methods: [fixed, scale_mse, scale_huber, thermal_mse, thermal_huber, tracker_mse, tracker_huber, bifacial_mse, bifacial_huber]
+  transposition_models: [isotropic, haydavies, perez-driesse]
+  regularization_values: [0.0, 0.01]
+  huber_delta: 0.05  # Residuals are normalized by farm AC nameplate.
+  parameter_bounds:
+    coefficient: [0.2, 1.5]
+    u0: [10.0, 60.0]
+    u1: [0.0, 15.0]
+    gcr: [0.15, 0.65]
+    max_angle: [30.0, 80.0]
+  multistarts: 2
+  max_function_evaluations: 180
+  optimizer_ftol: 1.0e-11
+  optimizer_gtol: 1.0e-09
+  seed: 2025
+  workers: 4
+  resume: true
+  retrospective_fit: true
+  outage_ghi_threshold_w_m2: 100.0
+  bootstrap_block_days: 7
+  bootstrap_repetitions: 1000
+  representative_days_per_season: 1
+  bifacial_sensitivity:
+    bifaciality: [0.65, 0.9]
+    height_to_pitch_ratio: [0.35, 0.5]
+    albedo: [0.15, 0.25]
 forecast:
   farm_id: ${farm_id}
   initial_decision_cutoff: null

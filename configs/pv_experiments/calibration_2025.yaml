@@ -1,0 +1,19 @@
+# One reproducible physical-model study, with separate parameters for every farm.
+include: ../standard.yaml
+# Freeze the unfitted shared reference even after calibrated farm defaults are promoted.
+farms:
+  1: {pv: null}
+  345: {pv: null}
+  901: {pv: null}
+  910: {pv: null}
+pv_calibration:
+  start_day: '2025-01-01'
+  end_day_exclusive: '2026-01-01'
+  evaluation_start_day: '2025-02-01'
+  run_id: physical_pv_all_farms_2025
+market:
+  valid_from: '2025-01-01'
+  valid_to: '2025-12-31'
+pv:
+  # Match the working continuous-experiment radiation treatment on every model.
+  direct_exceeds_ghi: clip_and_flag

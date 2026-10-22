@@ -11,7 +11,9 @@ from bess_pv_trading.forecasting.pv import fit_dc_to_ac, forecast_pv, source_azi
 
 
 def settings():
-    return load_config("configs/farms_nord.yaml")["pv"]
+    """Exercise the nominal physical equations independently of promoted farm fits."""
+    config=load_config("configs/farms_nord.yaml")
+    return deepcopy(config.get("_pv_shared_settings",config["pv"]))
 
 
 def farm(tracking=0, capacity=1000, pv_type=777):

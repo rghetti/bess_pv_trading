@@ -135,7 +135,7 @@ def test_point_prepared_route_survives_shared_forecast_safety_flag(monkeypatch):
 def test_legacy_saved_study_gains_defaults_but_still_detects_changes():
     config = load_config(CURRENT)
     legacy = deepcopy(config)
-    for key in ("api", "price_scenarios", "optimization", "report", "outputs"):
+    for key in ("api", "pv_calibration", "report", "outputs"):
         legacy.pop(key)
     assert with_standard_defaults(legacy) == with_standard_defaults(config)
     changed = deepcopy(legacy)

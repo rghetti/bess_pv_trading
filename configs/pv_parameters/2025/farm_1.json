@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "farm_id": 1,
+  "farm_metadata": {
+    "farm_id": 1,
+    "zone": "NORD",
+    "ac_capacity_kw": 953.280029296875,
+    "tracking_type_id": 0,
+    "surface_tilt_deg": 15.0,
+    "source_azimuth_deg": 0.0,
+    "elevation_m": 25.0,
+    "pv_type_id": 0.0,
+    "assumptions": {}
+  },
+  "treatment": "static_farm_knowledge_inferred_from_2025_applied_to_all_experiment_dates",
+  "selection": "best_family_on_February_December_2025_balanced_daylight_RMSE",
+  "training_start_day": "2025-01-01",
+  "training_end_day_exclusive": "2026-01-01",
+  "fit": {
+    "method": "thermal_huber",
+    "parameters": {
+      "coefficient": 0.5319403177692952,
+      "u0": 60.0,
+      "u1": 15.0,
+      "gcr": 0.35,
+      "max_angle": 60.0
+    },
+    "fitted_parameters": [
+      "coefficient",
+      "u0",
+      "u1"
+    ],
+    "transposition_model": "isotropic",
+    "bifacial_enabled": false,
+    "bifacial_settings": {
+      "enabled": false,
+      "bifaciality": 0.8,
+      "height_to_pitch_ratio": 0.4,
+      "shade_factor": -0.02,
+      "transmission_factor": 0.0
+    },
+    "albedo": 0.2,
+    "regularization": 0.0,
+    "loss": "huber",
+    "objective": 0.0038814127440279208,
+    "converged": true,
+    "optimizer_message": "CONVERGENCE: NORM OF PROJECTED GRADIENT <= PGTOL",
+    "function_evaluations": 147,
+    "training_rows": 63696,
+    "training_days": 365,
+    "latest_target_available_at_utc": "2025-12-31T15:45:00+00:00",
+    "bound_hits": [
+      "u0",
+      "u1"
+    ],
+    "jacobian_rank": 3,
+    "jacobian_condition_number": 684.5527629137031,
+    "weakly_identified": false,
+    "multistart_trials": [
+      {
+        "parameters": {
+          "coefficient": 0.5319403155110555,
+          "u0": 60.0,
+          "u1": 15.0,
+          "gcr": 0.35,
+          "max_angle": 60.0
+        },
+        "objective": 0.0038814127440279216,
+        "converged": true,
+        "message": "CONVERGENCE: NORM OF PROJECTED GRADIENT <= PGTOL"
+      },
+      {
+        "parameters": {
+          "coefficient": 0.5319403177692952,
+          "u0": 60.0,
+          "u1": 15.0,
+          "gcr": 0.35,
+          "max_angle": 60.0
+        },
+        "objective": 0.0038814127440279208,
+        "converged": true,
+        "message": "CONVERGENCE: NORM OF PROJECTED GRADIENT <= PGTOL"
+      },
+      {
+        "parameters": {
+          "coefficient": 0.96,
+          "u0": 25.0,
+          "u1": 6.84,
+          "gcr": 0.35,
+          "max_angle": 60.0
+        },
+        "objective": 0.013005193433405159,
+        "converged": false,
+        "message": "configured_start_reference"
+      }
+    ],
+    "runtime_seconds": 0.3569341688416898,
+    "validation_nrmse": 0.10313734969097793,
+    "window_days": null,
+    "training_start_day": "2025-01-01",
+    "training_end_day": "2025-12-31"
+  },
+  "held_out_family_metrics": {
+    "method": "thermal_huber",
+    "daylight_balanced_rmse_mw": 0.076845659582608,
+    "baseline_rmse_mw": 0.18967371251593657,
+    "rmse_improvement_mw": 0.11282805293332857,
+    "improvement_ci_2_5_mw": 0.10346871467216581,
+    "improvement_ci_97_5_mw": 0.1223265599964258,
+    "improvement_ci_2_5_percent_rating": 10.853968560369692,
+    "improvement_ci_97_5_percent_rating": 12.832174831843696,
+    "block_days": 7,
+    "resamples": 1000,
+    "delivery_days": 334
+  },
+  "global_in_sample_metrics": [
+    {
+      "method": "thermal_huber",
+      "scope": "all_intervals",
+      "pairs": 122604,
+      "mae_mw": 0.028819454648599484,
+      "rmse_mw": 0.055749575375434894,
+      "nrmse_percent_ac_rating": 5.848184548306853,
+      "bias_mw": 0.0003006299712953229,
+      "overprediction_fraction": 0.31113993018172326,
+      "underprediction_fraction": 0.24536719846008287,
+      "mean_overprediction_mw_when_over": 0.04679580117358617,
+      "mean_underprediction_mw_when_under": 0.05811458266689159,
+      "paired_energy_bias_mwh": 9.214609250172941,
+      "measured_energy_mwh": 2999.875,
+      "forecast_energy_mwh": 3009.089774570611,
+      "forecast_at_ac_rating_fraction": 0.0,
+      "rmse_improvement_percent": 58.41081542864489
+    },
+    {
+      "method": "thermal_huber",
+      "scope": "daylight",
+      "pairs": 63696,
+      "mae_mw": 0.05535303439498136,
+      "rmse_mw": 0.07734110604200846,
+      "nrmse_percent_ac_rating": 8.11315706456728,
+      "bias_mw": 0.0004702514920191167,
+      "overprediction_fraction": 0.526720673197689,
+      "underprediction_fraction": 0.471442476764632,
+      "mean_overprediction_mw_when_over": 0.0529913564509446,
+      "mean_underprediction_mw_when_under": 0.05820729527768296,
+      "paired_energy_bias_mwh": 7.488284758912414,
+      "measured_energy_mwh": 2999.770263671875,
+      "forecast_energy_mwh": 3007.2585250749344,
+      "forecast_at_ac_rating_fraction": 0.0,
+      "rmse_improvement_percent": 58.41228352139631
+    }
+  ],
+  "source_fingerprint": "dcb3a52263ebd742fd30406083a792336f3f2516cb7873ca7c2928b808b3c7b8",
+  "study_configuration_fingerprint": "bc403788100cc79cca093c03ca6bc0124341f475bfe237063e2ed7c02bd82a3f",
+  "interpretation": "Full-year global fits are assumed plant metadata, not causally trained early-2025 forecasts or identified hardware measurements."
+}

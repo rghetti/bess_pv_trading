@@ -1,0 +1,15 @@
+# Change as_of_utc as new completed measurements become available.
+# Remove farm_ids to inherit the standard four-farm selection.
+include: ../standard.yaml
+farms:
+  1: {pv: null}
+  345: {pv: null}
+  901: {pv: null}
+  910: {pv: null}
+pv_calibration:
+  start_day: '2025-01-01'
+  as_of_utc: '2025-03-01T00:00:00Z'
+  farm_ids: [910]
+  run_id: physical_pv_retrain_example
+pv:
+  direct_exceeds_ghi: clip_and_flag
