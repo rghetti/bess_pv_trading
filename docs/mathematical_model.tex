@@ -4,6 +4,8 @@
 \usepackage[margin=23mm]{geometry}
 \usepackage{amsmath,amssymb,mathtools,booktabs,longtable,array}
 \usepackage{xurl}
+\usepackage{graphicx}
+\graphicspath{{docs/}{./}}
 \usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue]{hyperref}
 \hypersetup{pdftitle={PV and Battery Trading: Current Mathematical Model},pdfauthor={bess pv trading repository}}
 \usepackage{enumitem}
@@ -17,7 +19,7 @@
 \DeclareMathOperator{\clip}{clip}
 \title{PV and Battery Trading in MGP and MI Auctions\\Current Mathematical Model and Execution Workflow}
 \author{\texttt{bess\_pv\_trading} repository}
-\date{Implementation reviewed on 22 October 2026}
+\date{Implementation reviewed on 23 October 2026}
 \begin{document}
 \maketitle
 \begin{abstract}
@@ -166,7 +168,7 @@ measured PV or direct PV exports.
 \subsection{Forecast vintages and observability}
 A weather forecast cycle $v$ has source time $t_v$ and availability time $A_v$.
 Without explicit source publication times, the configured convention is
-$A_v=t_v+4$ hours. At decision cutoff $k$, the rolling policy chooses the latest
+$A_v=t_v+6$ hours. At decision cutoff $k$, the rolling policy chooses the latest
 eligible cycle with $A_v\le k$ and required remaining-horizon coverage. Weather
 cycles about six hours apart are successive forecast vintages, not ensemble
 members. The current dataset supplies one deterministic weather member.
@@ -211,8 +213,8 @@ contradictory source values.
 Fixed arrays use metadata tilt and a declared source-to-pvlib azimuth conversion.
 Tracking IDs 1 and 3 use \texttt{pvlib.tracking.singleaxis} with configurable axis
 tilt, axis azimuth, rotation limit, backtracking and ground-coverage ratio. Type
-3 currently requires the explicit front-side-only approximation; rear-side
-bifacial gain is omitted. The current geometry uses an acknowledged Milan
+3 defaults to an explicit front-side-only approximation. The optional
+infinite-sheds route models front/rear irradiance when bifacial modeling is enabled. The current geometry uses an acknowledged Milan
 location proxy rather than verified farm coordinates.
 
 With panel tilt $\beta$, incidence angle $\alpha$ and ground albedo $a$, the
@@ -537,8 +539,9 @@ treatment are identical; overlapping auction energies are not added.
 Saved artifacts include CPU tensors, train-only feature statistics, farm
 identity, resolved configuration, source/code checksums, validation history
 and selection criteria. Target-free artifact inference reproduces benchmark
-predictions. This research workflow does not change the standard trading
-forecaster; deploying the selected neural models is a separate evaluation.
+predictions. The shared default trading forecaster remains calibrated pvlib. The continuous
+runner now also supports optional farm-specific neural or linear artifact
+replacement, evaluated separately below.
 
 The completed \texttt{neural\_pv\_2025\_to\_2026\_08} study contains 608 delivery
 days and 204,276 aligned auction/quarter-hour forecast rows per farm, including
@@ -579,6 +582,43 @@ Target-free artifact inference is replayed on the first, middle and last test
 day for every farm. Completed-run resumption preserves both model weights
 and full prediction tables. Per-model fitting time, epoch counts, parameter
 counts, configuration and source/code fingerprints are saved with the artifacts.
+
+
+\subsection{Tuned candidates and operational forecast replacement}
+The separate \texttt{tune-pv-neural} command searches seeded architecture,
+width/depth, dropout, learning-rate, weight-decay, batch-size, embedding and
+loss settings. It compares OLS, ridge, lasso and elastic-net weather/core
+regressions using the same chronological corpus. The completed tuning run
+\texttt{neural\_hpo\_2025\_to\_2026\_08\_42cpu} reserved six CPU cores and
+used at most 42 workers. Its selected pilot artifacts are:
+\begin{center}\small
+\begin{tabular}{rll}
+\toprule Farm & Pilot model & Artifact/trial \\
+\midrule
+1 & Temporal convolution, extended weather & \texttt{tcn\_weather\_05}\\
+345 & Ordinary least squares, extended weather & \texttt{ols\_weather}\\
+901 & Temporal convolution, core & \texttt{tcn\_core\_07}\\
+910 & Dense MLP, core & \texttt{mlp\_core\_05}\\
+\bottomrule
+\end{tabular}\end{center}
+These choices belong to the later tuning study, distinct from the earlier
+six-candidate results above. Selection uses January--April 2026 validation;
+weights and preprocessing use 2025 training. They do not establish that all
+farms benefit financially; the new trading comparison below covers farm 1 only.
+
+\path{pv.forecast_replacement} is disabled by default. When enabled in the
+continuous runner, \path{models_by_farm} chooses the matching neural or linear
+artifact for each planning and retained-command boundary projection. Each
+call uses the latest cutoff-available weather, unchanged forecast lag and
+current auction identity. Neural inference restores the trained preprocessing
+and weights; linear inference restores coefficients and training preprocessing,
+clips the normalized output to $[0,1]$ and rescales by configured AC nameplate.
+Night-zero policy still applies. Neither route rescales measured production.
+Missing artifacts or artifacts unavailable at the cutoff retain pvlib with
+explicit fallback provenance. Malformed artifacts/inference failures are not
+silently accepted. The explicit retrospective-artifact flag permits later
+artifacts for retrospective experiments and records that choice with each
+forecast. The perfect-PV strategy bypasses these replacements.
 
 \section{Optimization at an auction decision}
 
@@ -658,6 +698,17 @@ In the GME adapter, initial/terminal percentages are converted using nominal
 capacity. A \texttt{null} terminal SOC omits~\eqref{eq:terminal}. Prepared and
 synthetic boundary-state contracts use explicitly named MWh values. Neither
 version adds a terminal energy salvage value to the objective.
+An independent optional lower target, configured by
+\path{state.terminal_soc_min_percent}, imposes
+\begin{equation}\label{eq:terminal-minimum}
+ e_{s,T}\ge E\,s_{\mathrm{floor}}/100.
+\end{equation}
+Its shared default is \texttt{null}. When enabled it applies to every planning
+horizon end, including intermediate delivery days in continuous operation.
+A non-null final equality and this floor both apply on the final day. The
+floor constrains planned energy; forecast-error feedback can produce a
+realized closing SOC below it while still respecting the hard SOC box.
+
 
 \subsection{Auction quantities and physical delivery}
 Let $Q^{\rm fix}_t$ contain all previously submitted commitments, priced or still
@@ -1496,8 +1547,10 @@ delivery day and only when the target is non-null:
    =E^{\rm nominal}\,s_F/100,\qquad s_F=50
        \quad\hbox{(SOC percentage in the January example)}.
 \end{equation}
-Intermediate midnight states are free within their SOC box; there is no
-intermediate target or energy salvage price. Actual terminal energy remains
+Intermediate midnight states have no equality target or energy salvage price.
+They remain inside their SOC box and, when configured, satisfy the additional
+planned minimum in~\eqref{eq:terminal-minimum}. The January 2025 template
+leaves that minimum disabled; the paired January 2026 studies use 40\%. Actual terminal energy remains
 an output of feedback execution and need not equal the planned target. The
 last delivery interval ends at local midnight on 1 February. No orders for
 1 February delivery are submitted by the January study.
@@ -1568,6 +1621,127 @@ times remain separate. Resolved configurations, common-input provenance,
 daily/monthly KPIs, state projections and comparisons are saved by file type
 under \path{outputs/continuous_optimization/<run_id>/}.
 
+
+\section{Farm 1: continuous January 2026 forecast comparison}
+\label{sec:farm1-results}
+All 31 delivery days, 1--31 January 2026 inclusive in Europe/Rome, were replayed
+with integrated participation in DA, IDA1, IDA2 and IDA3. Native DA and IDA1/2
+products have 96 quarters; IDA3 covers the 48 quarters from local noon.
+The farm has 0.95328 MW AC PV and a 0.75 MWh, 0.5 MW BESS. Initial SOC is
+90\%, the planned daily minimum is 40\%, and the final-day equality target is
+50\%. Each trajectory independently carries actual SOC and executed wear.
+The two forecast runs each solve 124 auction problems; perfect PV solves 31
+DA problems and submits retained later-auction orders at their own gates.
+All solves passed physical validation; no infeasibility fallbacks occurred.
+
+The neural case uses \texttt{farm1\_tcn\_weather\_05}; the comparator uses the
+installed globally calibrated pvlib parameters. Source weather/vintages,
+realized AC PV, auction prices, settlement, asset settings and solver settings
+were verified identical. No measured-PV substitutions or artifact fallbacks
+were needed. Duplicate perfect-PV trajectories agree. All runs use six-hour
+UTC weather availability, the five-minute gate buffer, $10^{-4}$ relative MIP
+gap and $10^{-8}$ feasibility/integrality tolerances. The latter avoid
+few-watt numerical residuals at default solver tolerances without relaxing
+any physical constraint.
+
+\begin{table}[htbp]\centering\small
+\begin{tabular}{lrrr}
+\toprule Metric & Calibrated pvlib & Neural TCN & Perfect PV\\
+\midrule
+Realized net profit (EUR) & 10208.40 & 10279.77 & 10582.72\\
+Auction revenue (EUR) & 11686.14 & 10842.89 & 10806.95\\
+Imbalance settlement (EUR) & -957.93 & -123.84 & 0.00\\
+Executed wear cost (EUR) & 519.81 & 439.28 & 224.23\\
+Absolute imbalance (MWh) & 6.203 & 0.702 & 0.000\\
+AC throughput (MWh) & 18.810 & 15.896 & 8.114\\
+Internal two-sided EFC & 12.537 & 10.592 & 5.412\\
+PV curtailment (MWh) & 0.003 & 0.287 & 0.000\\
+Final realized SOC (percent) & 33.15 & 55.06 & 50.00\\
+\bottomrule
+\end{tabular}
+\caption{Continuous January 2026 results, farm 1. Wear uses executed
+throughput. Numerical zero is rounded for display.}
+\end{table}
+
+TCN increases profit by EUR 71.37 (0.70\%), reduces absolute imbalances by
+88.68\% and reduces AC throughput and wear cost by 15.49\% versus pvlib.
+Perfect PV earns EUR 302.96 more than TCN and EUR 374.33 more than pvlib.
+The TCN--pvlib profit difference reconciles as EUR $-843.25$ in auction
+revenue, $+834.09$ in settlement and $+80.53$ in avoided wear.
+For every trajectory the reported profit equals actual submitted-auction
+revenue plus realized settlement minus executed wear and configured costs;
+planned but unsubmitted future trades contribute no realized revenue.
+
+GME progressive volume fees are enabled, with zero realized charges: this
+standalone operator's January submitted volume is about 1,785 MWh, below the
+configured first 20,000 MWh/month threshold. December submissions for January
+1 delivery use December's separate fee volume. Fixed/annual charges remain
+outside this operating-profit comparison.
+
+For interpreting usage, the comparison reports
+\begin{equation}
+ N_{\rm EFC}^{\rm two-sided}=\frac{\sum_t(\eta_c c_t+d_t/\eta_d)\Delta_t}{2E},
+ \qquad N_{\rm EFC}^{\rm discharge}=\frac{\sum_t d_t\Delta_t}{\eta_d E}.
+\end{equation}
+These are internal-energy usage indices; they differ when initial inventory
+is consumed and do not estimate actual capacity fade. No terminal inventory
+cash credit is added. Final realized inventories differ, as the table shows.
+
+Realized daily closing SOC is below 40\% on 24 pvlib days, 11 TCN days and
+zero perfect-PV days. The minimum realized closing SOC is respectively 7.00\%,
+17.01\% and 40.00\%; pvlib reaches the hard minimum on seven day ends, TCN
+on none. This does not violate the planned terminal constraint: feedback
+responds to forecast errors while enforcing the physical 7--93\% box.
+
+\begin{table}[htbp]\centering\small
+\begin{tabular}{lrrrr}
+\toprule & \multicolumn{2}{c}{MAE / AC rating (percent)} &
+\multicolumn{2}{c}{Signed bias (MW)}\\
+Auction & pvlib & TCN & pvlib & TCN\\
+\midrule
+DA & 2.149 & 1.040 & +0.01859 & +0.00188\\
+IDA1 & 2.212 & 1.118 & +0.01843 & +0.00062\\
+IDA2 & 1.971 & 0.976 & +0.01628 & +0.00109\\
+IDA3 & 2.184 & 1.113 & +0.01758 & -0.00426\\
+\bottomrule
+\end{tabular}
+\caption{All eligible delivery quarters, including night, in the used forecast
+views; IDA3 includes only its noon-onward suffix. Positive bias is overprediction.}
+\end{table}
+Pvlib overpredicts on average at every auction; its battery must compensate
+until energy limits leave residual shortfalls. TCN is less biased and roughly
+halves MAE in these views. Overlapping auction forecast energies must not be
+added into a monthly generation total. Effective measured generation is
+14.544175 MWh, counted once across delivery intervals.
+
+This is a retrospective price-oracle comparison. Neural weights were fitted
+to 2025, but candidate selection used January--April 2026 validation, including
+the evaluated month. Both strategies know actual auction clearing curves.
+The result therefore measures the behavior of the selected predictors under
+those assumptions; it is not a causal out-of-sample trading test or an
+investment return attributable solely to storage.
+
+\begin{figure}[p]\centering
+\includegraphics[width=\textwidth,height=0.85\textheight,keepaspectratio]{results/farm1_january_2026/model_comparison.png}
+\caption{Farm 1, January 2026: cumulative realized profit, daily absolute
+imbalance, cumulative executed wear cost, and realized midnight SOC. Blue is
+TCN, orange calibrated pvlib and green perfect PV. The dashed line is the
+planned 40\% terminal minimum. The final boundary is local 1 February midnight.}
+\end{figure}
+
+The paired configurations are
+\path{configs/full_experiments/continuous_optimization_2026-01_forecast_pilot.yaml}
+and \path{configs/full_experiments/continuous_optimization_2026-01_pvlib_soc40.yaml},
+run with \texttt{experiment-continuous --farm-id 1}. Their stable run IDs end
+in \texttt{soc40\_neural\_gme\_real\_v1} and
+\texttt{soc40\_pvlib\_gme\_real\_v1}. Full outputs retain resolved settings,
+input fingerprints, accepted trades, physical dispatch, per-auction forecasts,
+projections and native Gurobi timing. The reusable
+\path{scripts/compare_continuous_forecasts.py} verifies shared inputs and
+accounting before producing paired tables and the figure. Compact numerical
+evidence and this figure are versioned under
+\path{docs/results/farm1_january_2026/}, independent of replaceable run outputs.
+
 \section{Price Forecasting Status}
 
 The active GME and continuous historical experiments use realized auction
@@ -1632,14 +1806,45 @@ after merging. Each farm uses its own weather and measured-power series and
 Parquet metadata for PV geometry and tracking. Automatic directional POI ratings
 use declared AC nameplate capacity divided by 1000 as an illustrative MW proxy;
 per-farm ratings or explicit plant limits override that rule. Battery size and
-SOC percentages remain independent of farm selection. The reusable
+SOC percentages remain common, while automatic battery dimensions resolve from
+\path{farms.<id>.battery} for the selected physical plant. Numeric experiment
+overrides take precedence over these automatic dimensions. The reusable
 \path{configs/full_experiments/gme_day.yaml} exposes this workflow.
 
 The current 50\% study is configured by
 \path{configs/full_experiments/gme_oracle_2025-01-01_farm910_perfect_pv_comparison_terminal_soc_50.yaml}.
 Its inherited assumptions include a 5 MWh battery, 2.5 MW symmetric power,
-a configured SOC box, 0.97 combined efficiencies and a 6.638 MW directional POI.
+a 7--93\% SOC box, directional combined efficiencies of
+$\sqrt{0.90}=0.9486832981$ and a 6.638 MW directional POI. Their product
+gives 90\% AC-to-AC round-trip efficiency for all farms.
 These are reproducible study settings, not confirmed anonymous-farm hardware.
+
+
+The shared per-farm hypothetical BESS dimensions are:
+\begin{center}
+\begin{tabular}{rrrr}
+\toprule Farm & PV AC nameplate (MW) & Battery (MWh) & Symmetric power (MW)\\
+\midrule
+1 & 0.95328 & 0.75 & 0.5\\
+345 & 1.5246 & 1.0 & 0.5\\
+901 & 4.1600 & 2.0 & 1.0\\
+910 & 6.6380 & 5.0 & 2.5\\
+\bottomrule
+\end{tabular}
+\end{center}
+The shared 7--93\% SOC limits are converted to energy after selecting capacity;
+replacement cost scales with that capacity. Throughput economics remain the
+configured historical USD 115/kWh proxy, 1.0389 USD/EUR conversion and 2,500
+reference cycles at 80\% depth. They have not been updated to a 2026 equipment
+quote. With the current efficiencies the derived AC-throughput wear cost is
+27.635145 EUR/MWh; no dynamic capacity fade is simulated.
+
+Fresh experiment runs default to
+\path{experiment_outputs.overwrite_existing: true}: repeating the same ID
+replaces artifacts within that run's scope under its configured output root.
+\texttt{resume: true} takes precedence and preserves checkpoints, requiring
+matching configuration and input fingerprints. Continuous output replacement
+holds the run lock and retains its inode; unrelated run IDs are preserved.
 
 Each historical run is grouped under
 \path{outputs/full_experiments/gme_oracle/<run>/farm_<id>/<day>/} with

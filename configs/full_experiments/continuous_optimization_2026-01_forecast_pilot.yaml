@@ -14,6 +14,10 @@ state:
   initial_soc_percent: 90.0
   terminal_soc_percent: 50.0
   terminal_soc_min_percent: 40.0
+# Match the existing January 2025 continuous study's numerical precision.
+solver:
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
 pv:
   direct_exceeds_ghi: clip_and_flag
   forecast_replacement:

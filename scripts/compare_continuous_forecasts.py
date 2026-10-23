@@ -8,6 +8,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from bess_pv_trading.domain import battery_parameters_from_config
+
 
 def read_json(path: Path):
     """Read one saved JSON artifact with a useful path on failure."""
@@ -54,10 +56,19 @@ def verify_shared_inputs(neural, pvlib):
     for key in ("settlement_values_sha256",):
         if left.get(key) != right.get(key):
             mismatches.append(key)
+    def weather_views(provenance):
+        """Compare pinned source weather before forecast replacement is applied."""
+        return {(row["cutoff_utc"], row["first_interval_utc"], row["last_interval_utc"]):
+            row["aligned_weather_pv_sha256"] for row in provenance["weather_forecasts"]}
+
+    if weather_views(left) != weather_views(right):
+        mismatches.append("weather_forecasts")
     settings = ("plant", "battery", "state", "degradation", "transaction_fees", "trading", "execution")
     for key in settings:
         if left["asset_input_settings"].get(key) != right["asset_input_settings"].get(key):
             mismatches.append(f"asset_input_settings.{key}")
+    if neural["config"]["solver"] != pvlib["config"]["solver"]:
+        mismatches.append("solver")
     if mismatches:
         raise ValueError(f"Runs do not share inputs/settings: {mismatches}")
     return {
@@ -65,6 +76,8 @@ def verify_shared_inputs(neural, pvlib):
         "realized_ac_pv_hashes_match": True,
         "auction_price_hashes_match": True,
         "quarter_hour_settlement_hash_matches": True,
+        "source_weather_views_match": True,
+        "solver_settings_match": True,
         "plant_battery_soc_degradation_fees_trading_execution_match": True,
         "neural_input_fingerprint": neural["manifest"].get("input_fingerprint"),
         "pvlib_input_fingerprint": pvlib["manifest"].get("input_fingerprint"),
@@ -88,6 +101,30 @@ def verify_perfect_reference(neural, pvlib):
     return {"same_perfect_pv_reference": True, "daily_metrics_checked": list(columns)}
 
 
+def battery_usage_metrics(config, daily):
+    """Count executed internal-energy EFC separately from AC charge/discharge throughput.
+
+    The two-sided index assigns half a cycle to a nominal charge or discharge;
+    the discharge-only index counts withdrawals without charging initial stock.
+    These are usage measures, not an estimate of physical capacity fade.
+    """
+    battery = battery_parameters_from_config(config["battery"])
+    charge = float(daily.charge_mwh.sum())
+    discharge = float(daily.discharge_mwh.sum())
+    internal_charge = battery.eta_charge * charge
+    internal_discharge = discharge / battery.eta_discharge
+    return {
+        "battery_capacity_mwh": battery.capacity_mwh,
+        "battery_max_power_mw": battery.max_power_mw,
+        "battery_ac_round_trip_efficiency": battery.eta_charge * battery.eta_discharge,
+        "battery_charge_ac_mwh": charge,
+        "battery_discharge_ac_mwh": discharge,
+        "equivalent_full_cycles_internal_discharge": internal_discharge / battery.capacity_mwh,
+        "equivalent_full_cycles_internal_two_sided": (
+            internal_charge + internal_discharge) / (2 * battery.capacity_mwh),
+    }
+
+
 def strategy_row(label, run, strategy):
     """Flatten one KPI summary into the cross-model comparison table."""
     kpi = run[strategy]
@@ -96,7 +133,7 @@ def strategy_row(label, run, strategy):
     forecast_models = sorted(forecasts.loc[
         forecasts.get("forecast_role", pd.Series(index=forecasts.index, dtype=str)) == "target_delivery",
         "pv_forecast_model"].dropna().astype(str).unique().tolist()) if strategy == "integrated" else ["perfect actual PV"]
-    return {
+    row = {
         "strategy": label,
         "total_gain_eur": kpi["total_gain_eur"],
         "mean_daily_profit_eur": kpi["mean_daily_profit_eur"],
@@ -105,6 +142,8 @@ def strategy_row(label, run, strategy):
         "imbalance_cashflow_eur": components["imbalance_cashflow_eur"],
         "degradation_cost_eur": components["degradation_eur"],
         "transaction_fees_eur": components["transaction_fee_eur"],
+        "import_fees_eur": components["import_fee_eur"],
+        "imbalance_penalty_eur": components["imbalance_penalty_eur"],
         "absolute_imbalance_mwh": kpi["absolute_imbalance_mwh"],
         "signed_imbalance_mwh": kpi["signed_imbalance_mwh"],
         "positive_imbalance_mwh": float(run[f"{strategy}_daily"].positive_imbalance_mwh.sum()),
@@ -113,8 +152,18 @@ def strategy_row(label, run, strategy):
         "throughput_mwh": kpi["throughput_mwh"],
         "curtailment_mwh": kpi["curtailment_mwh"],
         "final_soc_percent": kpi["final_soc_percent"],
+        "auction_solves": kpi["auction_solves"],
+        "fallback_count": kpi["fallback_count"],
         "forecast_models": ";".join(forecast_models),
     }
+    row.update(battery_usage_metrics(run["config"], run[f"{strategy}_daily"]))
+    reconciled = (row["auction_revenue_eur"] + row["imbalance_cashflow_eur"]
+        - row["degradation_cost_eur"] - row["transaction_fees_eur"]
+        - row["import_fees_eur"] - row["imbalance_penalty_eur"])
+    if not np.isclose(reconciled, row["total_gain_eur"], rtol=0, atol=1e-6):
+        raise ValueError(f"Realized financial components do not reconcile for {label}")
+    row["financial_reconciliation_error_eur"] = reconciled - row["total_gain_eur"]
+    return row
 
 
 def forecast_error_rows(run, label):
@@ -129,6 +178,8 @@ def forecast_error_rows(run, label):
     if merged.pv_ac_mw.isna().any():
         raise ValueError(f"Missing actual AC targets for {label} forecast rows")
     merged["forecast_error_mw"] = merged.pv_ac_forecast_mw - merged.pv_ac_mw
+    farm_id = str(run["config"]["plant"]["farm_id"])
+    ac_rating_mw = float(run["config"]["farms"][farm_id]["ac_capacity_kw"]) / 1000
     rows = []
     for auction, group in merged.groupby("auction", sort=False):
         error = group.forecast_error_mw.to_numpy(float)
@@ -136,6 +187,10 @@ def forecast_error_rows(run, label):
             "bias_mw_forecast_minus_actual": float(error.mean()),
             "mae_mw": float(np.abs(error).mean()),
             "rmse_mw": float(np.sqrt(np.mean(error ** 2))),
+            "ac_rating_mw": ac_rating_mw,
+            "nmae_percent_ac_rating": float(np.abs(error).mean()) / ac_rating_mw * 100,
+            "nrmse_percent_ac_rating": float(np.sqrt(np.mean(error ** 2))) / ac_rating_mw * 100,
+            "bias_percent_ac_rating": float(error.mean()) / ac_rating_mw * 100,
             "overprediction_rows": int((error > 0).sum()),
             "underprediction_rows": int((error < 0).sum()),
             "overlapping_auction_views": True})
@@ -155,8 +210,8 @@ def verify_soc_floor(run):
         solves = run[f"{strategy}_solves"]
         if not solves:
             raise ValueError(f"No solve diagnostics for {strategy}")
-        if any(abs(float(row.get("terminal_minimum_mwh", np.nan)) - minimum_mwh) > 1e-8
-                for row in solves):
+        floors = np.asarray([row.get("terminal_minimum_mwh", np.nan) for row in solves], dtype=float)
+        if not np.isfinite(floors).all() or not np.allclose(floors, minimum_mwh, rtol=0, atol=1e-8):
             raise ValueError(f"A {strategy} solve omitted the configured terminal SOC floor")
         if any(not row.get("validation", {}).get("valid", False) for row in solves):
             raise ValueError(f"A {strategy} solve did not pass physical solution validation")
@@ -167,7 +222,7 @@ def verify_soc_floor(run):
 
 
 def make_plots(destination: Path, daily: pd.DataFrame, minimum_soc_percent: float):
-    """Plot model economics, imbalances and midnight SOC on shared date axes."""
+    """Plot economics, imbalances, executed wear and midnight SOC through the final boundary."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -175,28 +230,30 @@ def make_plots(destination: Path, daily: pd.DataFrame, minimum_soc_percent: floa
     colors = {"Integrated neural": "#2864a5", "Integrated PVLib": "#e07a22",
         "Perfect PV knowledge": "#25855a"}
     timezone = "Europe/Rome"
-    delivery = pd.to_datetime(daily.delivery_day).dt.tz_localize(timezone)
-    end_boundary = delivery + pd.Timedelta(days=1)
     origin = pd.Timestamp(daily.delivery_day.min()).tz_localize(timezone)
-    fig, axes = plt.subplots(3, 1, figsize=(14, 11), sharex=True, layout="constrained")
+    fig, axes = plt.subplots(4, 1, figsize=(14, 14), sharex=True, layout="constrained")
 
     for name, group in daily.groupby("strategy", sort=False):
         group = group.sort_values("delivery_day")
         x = pd.to_datetime(group.delivery_day).dt.tz_localize(timezone) + pd.Timedelta(days=1)
         cumulative = group.net_profit_eur.cumsum().to_numpy(float)
         axes[0].step([origin, *x], [0.0, *cumulative], where="post", lw=2,
-            color=colors[name], label=name)
+            color=colors[name], label=f"{name} (€{cumulative[-1]:,.2f})")
         axes[1].plot(x, group.absolute_imbalance_mwh, marker="o", ms=3,
             lw=1.5, color=colors[name], label=name)
         initial = float(group.initial_soc_percent.iloc[0])
-        axes[2].plot([origin, *x], [initial, *group.final_soc_percent.to_numpy(float)],
+        wear = group.degradation_eur.cumsum().to_numpy(float)
+        axes[2].step([origin, *x], [0.0, *wear], where="post", lw=2,
+            color=colors[name], label=name)
+        axes[3].plot([origin, *x], [initial, *group.final_soc_percent.to_numpy(float)],
             marker="o", ms=3, lw=1.5, color=colors[name], label=name)
 
     axes[0].set_ylabel("Cumulative realized profit (€)")
     axes[1].set_ylabel("Daily absolute imbalance (MWh)")
-    axes[2].set_ylabel("Realized SOC (%)")
-    axes[2].set_xlabel("Delivery boundary (Europe/Rome)")
-    axes[2].axhline(minimum_soc_percent, color="black", ls="--", lw=1.3,
+    axes[2].set_ylabel("Cumulative executed wear cost (€)")
+    axes[3].set_ylabel("Realized SOC (%)")
+    axes[3].set_xlabel("Delivery boundary (Europe/Rome)")
+    axes[3].axhline(minimum_soc_percent, color="black", ls="--", lw=1.3,
         label=f"{minimum_soc_percent:g}% planned end-of-day floor")
     for axis in axes:
         axis.grid(alpha=0.2)
@@ -266,6 +323,7 @@ def main():
 
     summary = {
         "status": "complete",
+        "farm_id": int(neural["config"]["plant"]["farm_id"]),
         "delivery_period": [str(daily.delivery_day.min()), str(daily.delivery_day.max())],
         "neural_run": str(neural["path"]), "pvlib_run": str(pvlib["path"]),
         "shared_inputs": shared, "perfect_reference_verification": perfect,
@@ -290,6 +348,7 @@ def main():
                 "total_gain_eur"].iloc[0]),
         },
         "forecast_metric_note": "Forecast rows overlap across auction views; errors score predictions, not additive energy totals.",
+        "cycle_metric_note": "Executed charge/discharge are converted to internal energy using effective efficiencies; two-sided EFC divides their sum by twice nominal capacity, and discharge EFC divides internal withdrawals by nominal capacity. Neither metric models capacity fade.",
     }
     def json_default(value):
         """Normalize report values originating in NumPy and pandas."""
