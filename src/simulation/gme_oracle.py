@@ -24,7 +24,7 @@ from ..optimization.degradation import degradation_settings_from_config
 from ..optimization.model import build_model, solve_model
 from ..optimization.prepared import terminal_minimum_energy_mwh
 from ..optimization.validation import validate_solution
-from ..reporting.artifacts import organize_run_outputs
+from ..reporting.artifacts import organize_run_outputs, prepare_experiment_output
 from ..reporting.plots import plot_boundary_series, plot_interval_series, plot_pv_allocation
 from ..scenarios import synthetic_price_tree
 from ..transaction_fees import transaction_fees_from_config
@@ -945,9 +945,8 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     run_id = str(config["experiment_outputs"].get("run_id") or
                  datetime.now(timezone.utc).strftime("gme_oracle_%Y%m%dT%H%M%SZ"))
     day_output = root / run_id / f"farm_{plant.farm_id}" / day
-    if day_output.exists():
-        raise FileExistsError(f"Experiment output exists; choose a fresh run_id: {day_output}")
-    day_output.mkdir(parents=True, exist_ok=False)
+    prepare_experiment_output(root, day_output,
+        overwrite=config["experiment_outputs"].get("overwrite_existing", True))
     for folder in ("csv", "json"):
         (day_output / folder).mkdir()
     if config["experiment_outputs"].get("plots", True):

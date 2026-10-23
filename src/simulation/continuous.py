@@ -19,6 +19,7 @@ from ..domain import AcceptedTrade, DeliveryGrid, MarketState, OptimizationInput
 from ..optimization import build_model, solve_model, validate_solution
 from ..optimization.degradation import degradation_settings_from_config
 from ..reporting.optimization_timing import optimization_timing_report, solve_timing
+from ..reporting.artifacts import prepare_experiment_output
 from ..scenarios import synthetic_price_tree
 from ..transaction_fees import TransactionFeeState, account_trade_fees, transaction_fees_from_config
 from .continuous_inputs import prepare_continuous_inputs
@@ -713,15 +714,18 @@ def run_continuous_experiment(config, *, progress=None):
     run_id = str(settings.get("run_id") or datetime.now(timezone.utc).strftime("continuous_%Y%m%dT%H%M%S%fZ"))
     destination = root / run_id
     resume = bool(settings.get("resume", False))
-    if destination.exists() and not resume:
-        raise FileExistsError(f"Continuous experiment exists; choose a fresh run ID: {destination}")
-    destination.mkdir(parents=True, exist_ok=resume)
+    # Validate the run scope before touching its lock; clearing happens only
+    # after obtaining that lock, so an active study cannot be overwritten.
+    prepare_experiment_output(root, destination, overwrite=False, resume=True)
     import fcntl
     with (destination / "run.lock").open("a") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             raise RuntimeError(f"Another process is already running continuous study {run_id}") from None
+        prepare_experiment_output(root, destination,
+            overwrite=config.get("experiment_outputs", {}).get("overwrite_existing", True),
+            resume=resume, preserve=("run.lock",))
         identity = {"policy_version": CONTINUOUS_POLICY_VERSION,
             "config_fingerprint": _configuration_fingerprint(config), "input_fingerprint": prepared["input_fingerprint"]}
         manifest_path = destination / "json/manifest.json"

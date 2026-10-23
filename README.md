@@ -58,7 +58,9 @@ All remaining battery, SOC, market, execution, degradation, comparison and outpu
 python -m bess_pv_trading resolve-config --config configs/full_experiments/gme_day.yaml --farm-id 345
 ```
 
-Farm IDs `1`, `345`, `901` and `910` select their own weather, measured PV and metadata. `plant.farm_id` and `forecast.farm_id` follow the root `farm_id`. Automatic POI ratings use each farm's declared nameplate capacity as an explicit proxy, with per-farm measured ratings configurable. The BESS retains its configured size. See [the configuration guide](configs/README.md) for all selection and override rules.
+Farm IDs `1`, `345`, `901` and `910` select their own weather, measured PV, metadata and hypothetical BESS sizing. `plant.farm_id` and `forecast.farm_id` follow the root `farm_id`. Automatic POI ratings use each farm's declared AC nameplate capacity as an explicit proxy, with per-farm measured ratings configurable. Automatic battery sizes come from `farms.<id>.battery`: farm 1 uses 0.75 MWh / 0.5 MW, farm 345 uses 1 MWh / 0.5 MW, farm 901 uses 2 MWh / 1 MW, and farm 910 uses 5 MWh / 2.5 MW. Maximum charge/discharge power is symmetric. All inherit 90% AC-to-AC round-trip efficiency and throughput degradation. Numeric experiment-level battery fields override automatic sizing. See [the configuration guide](configs/README.md) for selection rules and the integrated fitted-model versus PVLib study configs.
+
+Experiments default to replacing previous outputs for the same ID and run scope (`experiment_outputs.overwrite_existing: true`). Keep `resume: false` for a fresh rerun after changing parameters; explicit resume preserves and validates checkpoints. Output roots remain configurable, allowing separate comparisons without changing experiment IDs. Single-day reruns preserve other farm/day scopes.
 
 Then run it offline:
 

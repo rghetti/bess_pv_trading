@@ -14,6 +14,7 @@ from ..data import config_path
 from ..data.gme import native_price_resolution_minutes
 from ..markets import AUCTION_DISPATCH_SCOPE, AuctionCalendar
 from ..reporting.optimization_timing import participation_timing_report
+from ..reporting.artifacts import prepare_experiment_output
 from ..participation import AUCTION_ORDER, auction_subset, participation_profiles, profile_id
 from .gme_oracle import json_load, run_gme_oracle_experiment
 from .synthetic import json_default, write_json
@@ -328,7 +329,8 @@ def run_participation_study(config, *, progress=None):
         if previous_manifest.get("auction_dispatch_scope") != AUCTION_DISPATCH_SCOPE:
             raise ValueError("Cannot resume results with the earlier auction dispatch scope; choose a fresh participation_study.run_id")
     else:
-        destination.mkdir(parents=True, exist_ok=False)
+        prepare_experiment_output(root, destination,
+            overwrite=config.get("experiment_outputs", {}).get("overwrite_existing", True))
     for kind in ("json", "csv"):
         (destination / kind).mkdir(exist_ok=resume)
     if settings.get("plots", True):

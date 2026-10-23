@@ -20,7 +20,7 @@ from ..markets import AUCTION_DISPATCH_SCOPE, AuctionCalendar
 from ..optimization import build_model, solve_model, validate_solution
 from ..optimization.degradation import degradation_settings_from_config
 from ..optimization.prepared import terminal_minimum_energy_mwh
-from ..reporting.artifacts import organize_run_outputs
+from ..reporting.artifacts import organize_run_outputs, prepare_experiment_output
 from ..reporting.optimization_timing import optimization_timing_report, solve_timing
 from ..scenarios import synthetic_price_tree
 from ..transaction_fees import account_trade_fees, transaction_fees_from_config
@@ -653,9 +653,10 @@ def run_synthetic(config: dict[str, Any]) -> dict[str, Any]:
     """Run all configured strategies on the same synthetic realization."""
     fixture = synthetic_inputs(config)
     run_id = config["outputs"].get("run_id") or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
-    destination = Path(config["outputs"]["root"])/run_id/f"farm_{fixture['plant'].farm_id}"/config["synthetic"]["delivery_day"]
-    if destination.exists():
-        raise FileExistsError(f"Output exists; choose a fresh run_id: {destination}")
+    root = Path(config["outputs"]["root"])
+    destination = root/run_id/f"farm_{fixture['plant'].farm_id}"/config["synthetic"]["delivery_day"]
+    prepare_experiment_output(root, destination,
+        overwrite=config.get("experiment_outputs", {}).get("overwrite_existing", True))
     summaries = [_replay_strategy(config,fixture,strategy,destination/strategy)
                  for strategy in config["synthetic"]["strategies"]]
     timing = optimization_timing_report(row for summary in summaries

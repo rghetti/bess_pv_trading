@@ -125,7 +125,75 @@ def test_continuous_study_supports_other_farms_and_date_overrides():
     assert config["plant"]["farm_id"] == config["forecast"]["farm_id"] == int(farm_id)
     assert config["plant"]["poi_export_mw"] == config["farms"][farm_id]["ac_capacity_kw"] / 1000
     assert f"farm{farm_id}" in config["continuous_optimization"]["run_id"]
-    assert config["battery"] == original["battery"]
+    for field, value in config["farms"][farm_id]["battery"].items():
+        assert config["battery"][field] == value
+
+
+def test_continuous_rerun_overwrites_same_id_and_honors_separate_output_root(monkeypatch, tmp_path):
+    """Exercise actual output orchestration with data preparation and solves stubbed."""
+    import json
+    from types import SimpleNamespace
+    from bess_pv_trading.simulation import continuous
+    from bess_pv_trading.reporting import continuous_outputs
+
+    config = load_config(JANUARY, overrides={"continuous_optimization": {
+        "output_root": str(tmp_path / "first"), "resume": False,
+        "planning_modes": ["integrated"], "perfect_pv_reference": False}})
+    settings = config["continuous_optimization"]
+    prepared = {"imbalance_prices_eur_per_mwh": [], "input_fingerprint": "fixture",
+        "provenance": {"source": "in_memory_fixture"},
+        "calendar": SimpleNamespace(timezone=config["market"]["timezone"]),
+        "days": [settings["start_date"]]}
+    monkeypatch.setattr(continuous, "prepare_continuous_inputs", lambda *args, **kwargs: prepared)
+    calls = []
+
+    def replay(config, prepared, strategy, destination, **kwargs):
+        calls.append(kwargs["resume"])
+        destination.mkdir(parents=True, exist_ok=True)
+        (destination / "result.csv").write_text(str(config["battery"]["max_power_mw"]))
+        return {"output_dir": str(destination), "total_gain_eur": config["battery"]["capacity_mwh"]}
+
+    monkeypatch.setattr(continuous, "replay_continuous_strategy", replay)
+    monkeypatch.setattr(continuous_outputs, "save_continuous_comparison", lambda *args: {})
+    first = continuous.run_continuous_experiment(config)
+    destination = Path(first["output_dir"])
+    (destination / "stale.csv").write_text("old")
+    config["battery"]["max_power_mw"] /= 2
+    second = continuous.run_continuous_experiment(config)
+    assert second["output_dir"] == first["output_dir"]
+    assert not (destination / "stale.csv").exists()
+    saved = json.loads((destination / "json/study_config.json").read_text())
+    assert saved["battery"] == config["battery"]
+
+    settings["output_root"] = str(tmp_path / "second")
+    third = continuous.run_continuous_experiment(config)
+    assert third["output_dir"] != first["output_dir"]
+    assert (destination / "json/study_config.json").is_file()
+    retained = Path(third["output_dir"]) / "checkpoint-marker.json"
+    retained.write_text("retained on resume")
+    settings["resume"] = True
+    continuous.run_continuous_experiment(config)
+    assert retained.read_text() == "retained on resume"
+    assert calls == [False, False, False, True]
+
+
+def test_continuous_overwrite_cannot_clear_an_active_run(monkeypatch, tmp_path):
+    """The existing lock is acquired before any stale artifact is removed."""
+    import fcntl
+    from bess_pv_trading.simulation import continuous
+
+    config = load_config(JANUARY, overrides={"continuous_optimization": {
+        "output_root": str(tmp_path), "resume": False}})
+    destination = tmp_path / config["continuous_optimization"]["run_id"]
+    destination.mkdir()
+    (destination / "keep.csv").write_text("active")
+    monkeypatch.setattr(continuous, "prepare_continuous_inputs", lambda *args, **kwargs:
+        {"imbalance_prices_eur_per_mwh": []})
+    with (destination / "run.lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with pytest.raises(RuntimeError, match="already running"):
+            continuous.run_continuous_experiment(config)
+    assert (destination / "keep.csv").read_text() == "active"
 
 
 def test_continuous_command_dispatches_lazily_and_reports_progress(monkeypatch, capsys):

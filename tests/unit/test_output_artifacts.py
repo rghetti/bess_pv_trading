@@ -4,8 +4,67 @@ from pathlib import Path
 
 import pytest
 
-from bess_pv_trading.reporting.artifacts import organize_run_outputs
+from bess_pv_trading.reporting.artifacts import organize_run_outputs, prepare_experiment_output
 from battery_case_config import case_config
+
+
+@pytest.mark.parametrize("scope", ["run", "run/farm/day"])
+def test_fresh_output_replaces_old_artifacts_only_in_matching_scope(tmp_path, scope):
+    root = tmp_path / "outputs"
+    destination, sibling = root / scope, root / "another-run"
+    destination.mkdir(parents=True)
+    sibling.mkdir()
+    (sibling / "keep.csv").write_text("other experiment")
+    (destination / "plots").mkdir()
+    (destination / "plots/stale.png").write_text("old plot")
+    (destination / "checkpoint.json").write_text("old checkpoint")
+    prepare_experiment_output(root, destination, overwrite=True)
+    assert not list(destination.iterdir())
+    assert (sibling / "keep.csv").read_text() == "other experiment"
+    (destination / "new.csv").write_text("new result")
+    prepare_experiment_output(root, destination, overwrite=True)
+    assert not list(destination.iterdir())
+
+
+def test_resume_preserves_outputs_and_disable_overwrite_rejects_replacement(tmp_path):
+    destination = tmp_path / "run"
+    destination.mkdir()
+    checkpoint = destination / "checkpoint.json"
+    checkpoint.write_text("checkpoint")
+    prepare_experiment_output(tmp_path, destination, overwrite=True, resume=True)
+    assert checkpoint.read_text() == "checkpoint"
+    with pytest.raises(FileExistsError, match="overwrite_existing is false"):
+        prepare_experiment_output(tmp_path, destination, overwrite=False)
+    assert checkpoint.read_text() == "checkpoint"
+
+
+def test_overwrite_preserves_continuous_lock_inode_and_unlinks_symlinks(tmp_path):
+    destination = tmp_path / "run"
+    destination.mkdir()
+    lock = destination / "run.lock"
+    lock.touch()
+    inode = lock.stat().st_ino
+    external = tmp_path / "external"
+    external.mkdir()
+    (external / "keep.csv").write_text("input")
+    (destination / "shortcut").symlink_to(external, target_is_directory=True)
+    prepare_experiment_output(tmp_path, destination, overwrite=True, preserve=("run.lock",))
+    assert lock.stat().st_ino == inode
+    assert list(destination.iterdir()) == [lock]
+    assert (external / "keep.csv").read_text() == "input"
+
+
+def test_overwrite_rejects_output_root_escape_and_symlink_destination(tmp_path):
+    root = tmp_path / "outputs"
+    root.mkdir()
+    for destination in (root, root / ".." / "outside"):
+        with pytest.raises(ValueError, match="strictly below"):
+            prepare_experiment_output(root, destination, overwrite=True)
+    external = tmp_path / "external"
+    external.mkdir()
+    (root / "linked-run").symlink_to(external, target_is_directory=True)
+    with pytest.raises(ValueError, match="strictly below"):
+        prepare_experiment_output(root, root / "linked-run", overwrite=True)
 
 
 @pytest.mark.parametrize("relative_root", [False, True])

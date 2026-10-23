@@ -1,5 +1,5 @@
 # January 2026 continuous replay with the calibrated PVLib forecast path.
-# This is paired with the retrospective farm 910 neural pilot; all market and
+# This is paired with the retrospective fitted-model pilot for the selected farm; all market and
 # physical assumptions are shared, including the daily 40% planned SOC floor.
 include: ../standard.yaml
 continuous_optimization:
@@ -9,7 +9,7 @@ continuous_optimization:
   perfect_pv_reference: true
   perfect_pv_reoptimize_at_each_auction: false
   run_id: continuous_nord_farm${farm_id}_2026-01_soc40_pvlib_gme_real_v1
-  resume: true
+  resume: false
 state:
   initial_soc_percent: 90.0
   terminal_soc_percent: 50.0

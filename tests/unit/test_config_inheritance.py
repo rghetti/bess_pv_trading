@@ -7,6 +7,7 @@ import yaml
 
 from bess_pv_trading import cli
 from bess_pv_trading.config import ConfigurationError, load_config, resolve_config, with_standard_defaults
+from bess_pv_trading.domain import battery_parameters_from_config
 
 ROOT = Path(__file__).resolve().parents[2]
 STANDARD = ROOT / "configs/standard.yaml"
@@ -32,7 +33,72 @@ def test_switch_farm_updates_data_selection_limits_and_labels(farm_id):
     assert config["pv"]["output"]["ac_limit_mw"] == FARMS[farm_id]["ac_capacity_kw"] / 1000
     assert f"farm{farm_id}" in config["participation_study"]["run_id"]
     assert f"farm{farm_id}" in config["experiment_outputs"]["run_id"]
-    assert config["battery"] == original["battery"]
+    for field in ("capacity_mwh", "max_power_mw"):
+        assert config["battery"][field] == FARMS[farm_id]["battery"][field]
+    assert {key: value for key, value in config["battery"].items()
+            if key not in FARMS[farm_id]["battery"]} == {
+                key: value for key, value in original["battery"].items()
+                if key not in FARMS[farm_id]["battery"]}
+
+
+@pytest.mark.parametrize("farm_id", FARMS)
+@pytest.mark.parametrize("path", [STANDARD, CURRENT,
+    ROOT / "configs/full_experiments/continuous_optimization_2026-01_forecast_pilot.yaml",
+    ROOT / "configs/full_experiments/continuous_optimization_2026-01_pvlib_soc40.yaml"])
+def test_farm_battery_dimensions_reach_domain_and_survive_saved_config(path, farm_id):
+    """All study routes resolve farm sizing before physical asset construction."""
+    config = load_config(path, overrides={"farm_id": int(farm_id)})
+    battery = battery_parameters_from_config(config["battery"])
+    expected = config["farms"][farm_id]["battery"]
+    assert battery.capacity_mwh == expected["capacity_mwh"]
+    assert battery.max_power_mw == expected["max_power_mw"]
+    assert battery.energy_min_mwh == pytest.approx(
+        battery.capacity_mwh * config["battery"]["soc_min_percent"] / 100)
+    assert battery.maximum_energy == pytest.approx(
+        battery.capacity_mwh * config["battery"]["soc_max_percent"] / 100)
+    shared = load_config(STANDARD)["battery"]
+    assert battery.eta_charge * battery.eta_discharge == pytest.approx(
+        shared["combined_charge_efficiency"] * shared["combined_discharge_efficiency"])
+    assert resolve_config(yaml.safe_load(yaml.safe_dump(config))) == config
+
+
+@pytest.mark.parametrize("field", ["capacity_mwh", "max_power_mw"])
+def test_numeric_battery_study_overrides_take_precedence_per_field(field):
+    """A study can override one dimension while inheriting the other from its farm."""
+    farm_id = next(iter(FARMS))
+    other_id = next(key for key in FARMS
+                    if FARMS[key]["battery"][field] != FARMS[farm_id]["battery"][field])
+    value = FARMS[other_id]["battery"][field]
+    config = load_config(STANDARD, overrides={"farm_id": int(farm_id), "battery": {field: value}})
+    assert config["battery"][field] == value
+    other_field = next(key for key in FARMS[farm_id]["battery"] if key != field)
+    assert config["battery"][other_field] == FARMS[farm_id]["battery"][other_field]
+
+
+@pytest.mark.parametrize("field", ["capacity_mwh", "max_power_mw"])
+@pytest.mark.parametrize("invalid", [None, True, -1, "missing", float("inf")])
+def test_automatic_battery_sizing_requires_valid_farm_metadata(field, invalid):
+    farm_id = next(iter(FARMS))
+    with pytest.raises(ConfigurationError, match=f"Automatic battery.{field}"):
+        load_config(STANDARD, overrides={"farm_id": int(farm_id),
+            "farms": {farm_id: {"battery": {field: invalid}}}})
+
+
+def test_explicit_no_bess_study_bypasses_automatic_farm_sizing():
+    cases = yaml.safe_load((ROOT / "tests/fixtures/configs/battery_cases.yaml").read_text())
+    settings = cases["batteries"]["no_bess"]
+    degradation = dict(cases["solver_cases"]["grid_cycle"]["degradation"],
+                       replacement_economics=None, throughput_lifetime=None)
+    config = load_config(STANDARD, overrides={"battery": settings, "degradation": degradation})
+    battery = battery_parameters_from_config(config["battery"])
+    assert battery.capacity_mwh == settings["capacity_mwh"]
+    assert battery.max_power_mw == settings["max_power_mw"]
+
+
+@pytest.mark.parametrize("invalid", [None, "true", 1])
+def test_overwrite_policy_requires_boolean(invalid):
+    with pytest.raises(ConfigurationError, match="overwrite_existing must be a YAML boolean"):
+        load_config(STANDARD, overrides={"experiment_outputs": {"overwrite_existing": invalid}})
 
 
 def test_per_farm_limits_merge_integer_and_json_string_keys():

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 from typing import Any
 
 
@@ -14,6 +15,34 @@ _DIRECTORY_BY_SUFFIX = {
     **dict.fromkeys((".log", ".txt"), "logs"),
     ".parquet": "parquet",
 }
+
+
+def prepare_experiment_output(root: Path, destination: Path, *, overwrite: bool,
+                              resume: bool = False, preserve: tuple[str, ...] = ()) -> None:
+    """Prepare one run scope under its configured output root.
+
+    A fresh rerun removes all stale artifacts, including plots disabled in the
+    new configuration. Resume retains every checkpoint. Continuous callers hold
+    their run lock while calling this function and preserve its existing inode.
+    """
+    root, destination = Path(root), Path(destination)
+    resolved_root, resolved_destination = root.resolve(), destination.resolve()
+    if (destination.is_symlink() or resolved_destination == resolved_root
+            or not resolved_destination.is_relative_to(resolved_root)):
+        raise ValueError("Experiment destination must be a directory strictly below its output root")
+    if destination.exists() and not destination.is_dir():
+        raise ValueError("Experiment destination must be a directory")
+    destination.mkdir(parents=True, exist_ok=True)
+    if resume:
+        return
+    entries = [path for path in destination.iterdir() if path.name not in preserve]
+    if entries and not overwrite:
+        raise FileExistsError(f"Experiment output exists and overwrite_existing is false: {destination}")
+    for path in entries:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
 
 
 def _grouped_path(relative: Path) -> Path:

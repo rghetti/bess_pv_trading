@@ -91,11 +91,16 @@ review:
 # unless farms.<id>.poi_import_mw / poi_export_mw or explicit plant limits override that proxy.
 # farms.<id>.pv contains the final global 2025 fits, treated as prior farm metadata at ALL dates.
 # Override that farm mapping to tune it; pv: null selects the unfitted shared reference below.
+# farms.<id>.battery supplies hypothetical capacity/power when the shared battery fields are auto.
+# Explicit numeric battery fields in experiment YAMLs override this farm sizing.
 farm_id: 910
 farms:
   1:
     ac_capacity_kw: 953.28
     tracking_type_id: 0
+    battery:
+      capacity_mwh: 0.75
+      max_power_mw: 0.5
     pv:
       direct_exceeds_ghi: clip_and_flag
       transposition_model: isotropic
@@ -116,6 +121,9 @@ farms:
   345:
     ac_capacity_kw: 1524.6
     tracking_type_id: 0
+    battery:
+      capacity_mwh: 1.0
+      max_power_mw: 0.5
     pv:
       direct_exceeds_ghi: clip_and_flag
       transposition_model: isotropic
@@ -136,6 +144,9 @@ farms:
   901:
     ac_capacity_kw: 4160.0
     tracking_type_id: 3
+    battery:
+      capacity_mwh: 2.0
+      max_power_mw: 1.0
     pv:
       direct_exceeds_ghi: clip_and_flag
       transposition_model: isotropic
@@ -159,6 +170,9 @@ farms:
   910:
     ac_capacity_kw: 6638.0
     tracking_type_id: 1
+    battery:
+      capacity_mwh: 5.0
+      max_power_mw: 2.5
     pv:
       direct_exceeds_ghi: clip_and_flag
       transposition_model: perez-driesse
@@ -434,13 +448,16 @@ plant:
   poi_export_mw: auto
   assumption_status: illustrative_symmetric_POI_equal_to_DC_nameplate_not_measured
 battery:
-  capacity_mwh: 5.0
-  max_power_mw: 2.5
+  # Resolve from farms.<plant.farm_id>.battery; numeric study overrides remain supported.
+  capacity_mwh: auto
+  max_power_mw: auto
   soc_min_percent: 7.0
   soc_max_percent: 93.0
   efficiency_convention: combined
-  combined_charge_efficiency: 0.97
-  combined_discharge_efficiency: 0.97
+  # Symmetric effective AC-to-stored-energy efficiencies: sqrt(0.90) per direction.
+  # Their product gives 90% AC-to-AC round-trip efficiency, including conversion losses.
+  combined_charge_efficiency: 0.9486832980505138
+  combined_discharge_efficiency: 0.9486832980505138
   self_discharge_per_hour: 0.0
   assumption_status: illustrative_not_confirmed_battery_specification
 state:
@@ -571,6 +588,9 @@ gme_oracle_experiment:
   price_display_resolution_minutes: 15
   participating_auctions: null
 experiment_outputs:
+  # Shared by GME, continuous, participation and synthetic studies. Resume takes precedence.
+  # With resume disabled, replace existing artifacts for the same run/farm/day scope.
+  overwrite_existing: true
   # Native Gurobi per-solve and aggregate timings are always saved in json/optimization_timing.json.
   root: outputs/full_experiments/gme_oracle
   run_id: null

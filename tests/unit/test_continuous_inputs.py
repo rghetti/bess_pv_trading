@@ -11,6 +11,8 @@ from bess_pv_trading.config import load_config
 from bess_pv_trading.data import ForecastBundle
 from bess_pv_trading.simulation import continuous_inputs
 
+FARM_IDS = load_config(Path(__file__).resolve().parents[2] / "configs/standard.yaml")["farms"]
+
 
 @pytest.fixture
 def prepared_case(monkeypatch):
@@ -55,6 +57,25 @@ def prepared_case(monkeypatch):
         (pd.DataFrame({"settlement_price_eur_mwh": np.full(len(grid.starts), case["settlement_eur_mwh"])}),
          {"snapshots": [{"storage": {"snapshot_id": "settlement"}}]}))
     return config, calls, bundle
+
+
+@pytest.mark.parametrize("farm_id", FARM_IDS)
+def test_continuous_preflight_instantiates_selected_farm_battery(prepared_case, farm_id):
+    """The real preflight constructs per-farm assets using in-memory data providers."""
+    config, _, _ = prepared_case
+    path = Path(__file__).resolve().parents[2] / "tests/fixtures/configs/continuous_inputs_cases.yaml"
+    config.update(load_config(path, overrides={"farm_id": int(farm_id)}))
+    prepared = continuous_inputs.prepare_continuous_inputs(config)
+    battery = prepared["plant"].battery
+    expected = config["farms"][farm_id]["battery"]
+    assert prepared["plant"].farm_id == int(farm_id)
+    assert battery.capacity_mwh == expected["capacity_mwh"]
+    assert battery.max_power_mw == expected["max_power_mw"]
+    assert prepared["initial_energy_mwh"] == pytest.approx(
+        battery.capacity_mwh * config["state"]["initial_soc_percent"] / 100)
+    assert prepared["terminal_energy_mwh"] == pytest.approx(
+        battery.capacity_mwh * config["state"]["terminal_soc_percent"] / 100)
+    assert prepared["provenance"]["asset_input_settings"]["battery"] == config["battery"]
 
 
 def test_continuous_preflight_shares_inputs_and_reads_no_previous_day_observations(prepared_case):

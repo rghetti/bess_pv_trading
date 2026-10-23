@@ -41,7 +41,7 @@ def load_config(path: str | Path, *, overrides: dict[str, Any] | None = None) ->
 
 
 def resolve_config(config: dict[str, Any]) -> dict[str, Any]:
-    """Resolve typed ${path} references and selected-farm POI defaults, then validate."""
+    """Resolve typed references and selected-farm asset defaults, then validate."""
     source = deepcopy(config)
     if isinstance(source.get("farms"), dict):
         source["farms"] = {str(key): value for key, value in source["farms"].items()}
@@ -83,6 +83,23 @@ def resolve_config(config: dict[str, Any]) -> dict[str, Any]:
         result["_pv_shared_settings"] = deepcopy(shared_pv)
         result["pv"] = merge_mapping(shared_pv, farm_pv)
     plant = result.get("plant", {})
+    # Resolve each automatic BESS dimension independently, preserving numeric
+    # study overrides and self-contained numeric settings in saved run configs.
+    battery = result.get("battery", {})
+    battery_farm_id = plant.get("farm_id", result.get("farm_id"))
+    farm_battery = result.get("farms", {}).get(str(battery_farm_id), {}).get("battery", {})
+    for field in ("capacity_mwh", "max_power_mw"):
+        if battery.get(field) == "auto":
+            value = farm_battery.get(field) if isinstance(farm_battery, dict) else None
+            try:
+                valid = (not isinstance(value, bool) and value is not None
+                         and math.isfinite(float(value)) and float(value) > 0)
+            except (TypeError, ValueError):
+                valid = False
+            if not valid:
+                raise ConfigurationError(
+                    f"Automatic battery.{field} requires positive farms.{battery_farm_id}.battery.{field}")
+            battery[field] = float(value)
     for field in ("poi_import_mw", "poi_export_mw"):
         if plant.get(field) == "auto":
             farm = result.get("farms", {}).get(str(plant.get("farm_id")), {})
@@ -207,6 +224,8 @@ def validate_config(config: dict[str, Any]) -> None:
             for child in value:
                 check_credentials(child)
     check_credentials(config)
+    if not isinstance(config.get("experiment_outputs", {}).get("overwrite_existing", True), bool):
+        raise ConfigurationError("experiment_outputs.overwrite_existing must be a YAML boolean")
     forecast_policy = config.get("forecast", {}).get("reoptimization_pv_policy")
     if forecast_policy is not None and forecast_policy not in {
             "freeze_initial_forecast_for_unobserved_delivery_intervals",
