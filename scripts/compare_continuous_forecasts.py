@@ -227,7 +227,7 @@ def make_plots(destination: Path, daily: pd.DataFrame, minimum_soc_percent: floa
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    colors = {"Integrated neural": "#2864a5", "Integrated PVLib": "#e07a22",
+    colors = {daily.strategy.iloc[0]: "#2864a5", "Integrated PVLib": "#e07a22",
         "Perfect PV knowledge": "#25855a"}
     timezone = "Europe/Rome"
     origin = pd.Timestamp(daily.delivery_day.min()).tz_localize(timezone)
@@ -262,6 +262,14 @@ def make_plots(destination: Path, daily: pd.DataFrame, minimum_soc_percent: floa
     plt.close(fig)
 
 
+def replacement_labels(config):
+    """Name linear replacements accurately while retaining existing neural labels."""
+    farm = str(config["plant"]["farm_id"])
+    model = config["pv"]["forecast_replacement"]["models_by_farm"][farm]
+    name = "Regression" if model["kind"] == "linear" else "Neural"
+    return f"Integrated {name.lower()}", name
+
+
 def main():
     """Combine existing runs without rerunning forecasts or optimizations."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -271,28 +279,29 @@ def main():
     args = parser.parse_args()
 
     neural, pvlib = load_run(args.neural_run), load_run(args.pvlib_run)
+    fitted_label, fitted_model = replacement_labels(neural["config"])
     shared = verify_shared_inputs(neural, pvlib)
     perfect = verify_perfect_reference(neural, pvlib)
     strategies = [
-        strategy_row("Integrated neural", neural, "integrated"),
+        strategy_row(fitted_label, neural, "integrated"),
         strategy_row("Integrated PVLib", pvlib, "integrated"),
         strategy_row("Perfect PV knowledge", neural, "perfect"),
     ]
     comparison = pd.DataFrame(strategies)
     daily = pd.concat([
-        neural["integrated_daily"].assign(strategy="Integrated neural"),
+        neural["integrated_daily"].assign(strategy=fitted_label),
         pvlib["integrated_daily"].assign(strategy="Integrated PVLib"),
         neural["perfect_daily"].assign(strategy="Perfect PV knowledge"),
     ], ignore_index=True)
     pivot = daily.pivot(index="delivery_day", columns="strategy", values="net_profit_eur")
     daily_paired = pivot.reset_index()
     daily_paired["pvlib_minus_neural_profit_eur"] = (
-        daily_paired["Integrated PVLib"] - daily_paired["Integrated neural"])
+        daily_paired["Integrated PVLib"] - daily_paired[fitted_label])
     daily_paired["perfect_minus_neural_profit_eur"] = (
-        daily_paired["Perfect PV knowledge"] - daily_paired["Integrated neural"])
+        daily_paired["Perfect PV knowledge"] - daily_paired[fitted_label])
     daily_paired["perfect_minus_pvlib_profit_eur"] = (
         daily_paired["Perfect PV knowledge"] - daily_paired["Integrated PVLib"])
-    forecast_neural, forecast_pvlib = forecast_error_rows(neural, "Neural"), forecast_error_rows(pvlib, "PVLib")
+    forecast_neural, forecast_pvlib = forecast_error_rows(neural, fitted_model), forecast_error_rows(pvlib, "PVLib")
     forecast_metrics = pd.DataFrame(forecast_neural[0] + forecast_pvlib[0])
 
     args.output.mkdir(parents=True, exist_ok=True)
@@ -309,7 +318,7 @@ def main():
     floor_verification = {"neural": verify_soc_floor(neural),
         "pvlib": verify_soc_floor(pvlib)}
     realized_soc = {}
-    for label, run, strategy in (("Integrated neural", neural, "integrated"),
+    for label, run, strategy in ((fitted_label, neural, "integrated"),
             ("Integrated PVLib", pvlib, "integrated"),
             ("Perfect PV knowledge", neural, "perfect")):
         rows = run[f"{strategy}_daily"]
@@ -326,6 +335,8 @@ def main():
         "farm_id": int(neural["config"]["plant"]["farm_id"]),
         "delivery_period": [str(daily.delivery_day.min()), str(daily.delivery_day.max())],
         "neural_run": str(neural["path"]), "pvlib_run": str(pvlib["path"]),
+        "replacement_label": fitted_label,
+        "legacy_key_note": "Keys and CLI paths named neural identify the fitted replacement, which may be linear.",
         "shared_inputs": shared, "perfect_reference_verification": perfect,
         "terminal_soc_floor_verification": floor_verification,
         "realized_soc_floor_outcomes": realized_soc,
@@ -338,10 +349,10 @@ def main():
         },
         "paired_profit_differences_eur": {
             "pvlib_minus_neural": float(comparison.loc[comparison.strategy.eq("Integrated PVLib"),
-                "total_gain_eur"].iloc[0] - comparison.loc[comparison.strategy.eq("Integrated neural"),
+                "total_gain_eur"].iloc[0] - comparison.loc[comparison.strategy.eq(fitted_label),
                 "total_gain_eur"].iloc[0]),
             "perfect_minus_neural": float(comparison.loc[comparison.strategy.eq("Perfect PV knowledge"),
-                "total_gain_eur"].iloc[0] - comparison.loc[comparison.strategy.eq("Integrated neural"),
+                "total_gain_eur"].iloc[0] - comparison.loc[comparison.strategy.eq(fitted_label),
                 "total_gain_eur"].iloc[0]),
             "perfect_minus_pvlib": float(comparison.loc[comparison.strategy.eq("Perfect PV knowledge"),
                 "total_gain_eur"].iloc[0] - comparison.loc[comparison.strategy.eq("Integrated PVLib"),

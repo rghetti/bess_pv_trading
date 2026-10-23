@@ -1742,6 +1742,80 @@ accounting before producing paired tables and the figure. Compact numerical
 evidence and this figure are versioned under
 \path{docs/results/farm1_january_2026/}, independent of replaceable run outputs.
 
+\subsection{Farm 345: repeated January 2026 comparison}
+The same 31-day protocol was repeated for farm 345, using OLS weather regression,
+a 1 MWh / 0.5 MW BESS and 90\% AC round-trip efficiency.
+The initial SOC, daily planned floor and final planned equality remain
+90\%, 40\% and 50\%, respectively. Both integrated trajectories completed
+124 solves and each perfect-PV reference completed 31 solves, with no fallback.
+Shared-input checks, duplicate perfect-reference agreement and financial
+reconciliation passed. No measured-PV or model-artifact fallback was needed.
+Configured progressive GME charges were zero below the exempt volume tier.
+
+\begin{center}\small
+\begin{tabular}{lrrr}
+\toprule Metric & pvlib & Fitted model & Perfect PV\\
+\midrule
+Net profit (EUR) & 20323.20 & 19371.58 & 20956.88\\
+Absolute imbalance (MWh) & 2.821 & 0.638 & 0.000\\
+Executed wear (EUR) & 770.79 & 702.87 & 283.99\\
+AC throughput (MWh) & 27.892 & 25.434 & 10.276\\
+Curtailment (MWh) & 0.345 & 7.505 & 0.000\\
+Final realized SOC (percent) & 67.64 & 84.73 & 50.00\\
+\bottomrule
+\end{tabular}\end{center}
+Fitted-model minus pvlib net profit is EUR -951.62
+(-4.68\%). Absolute imbalances decrease by
+77.38\%; executed wear changes by
+-8.81\%.
+The regression underpredicts PV on average at every auction. With grid tracking, surplus charges the battery subject to constraints and remaining surplus is curtailed. Lower imbalances coexist with substantially greater curtailment and lower realized profit.
+Daily realized closing SOC falls below 40\% on 3 fitted-model days
+and 17 pvlib days, versus zero perfect-PV days.
+These remain retrospective price-oracle results with differing final inventories,
+not a causal out-of-sample profit ranking. In particular, the lower-imbalance
+method need not earn more: curtailed surplus has no export revenue and battery
+feedback changes executed wear and inventory. The forecast methods should
+therefore be compared on financial and physical outcomes together.
+Numerical evidence and the four-panel plot are versioned under
+\path{docs/results/farm345_january_2026/}.
+
+\subsection{Farm 901: repeated January 2026 comparison}
+The same 31-day protocol was repeated for farm 901, using core-weather TCN,
+a 2 MWh / 1 MW BESS and 90\% AC round-trip efficiency.
+The initial SOC, daily planned floor and final planned equality remain
+90\%, 40\% and 50\%, respectively. Both integrated trajectories completed
+124 solves and each perfect-PV reference completed 31 solves, with no fallback.
+Shared-input checks, duplicate perfect-reference agreement and financial
+reconciliation passed. No measured-PV or model-artifact fallback was needed.
+Configured progressive GME charges were zero below the exempt volume tier.
+
+\begin{center}\small
+\begin{tabular}{lrrr}
+\toprule Metric & pvlib & Fitted model & Perfect PV\\
+\midrule
+Net profit (EUR) & 53696.23 & 53512.40 & 56170.13\\
+Absolute imbalance (MWh) & 24.833 & 24.470 & 0.000\\
+Executed wear (EUR) & 1982.11 & 1994.42 & 533.91\\
+AC throughput (MWh) & 71.724 & 72.170 & 19.320\\
+Curtailment (MWh) & 2.048 & 2.371 & 0.000\\
+Final realized SOC (percent) & 35.19 & 24.97 & 50.00\\
+\bottomrule
+\end{tabular}\end{center}
+Fitted-model minus pvlib net profit is EUR -183.83
+(-0.34\%). Absolute imbalances decrease by
+1.46\%; executed wear changes by
++0.62\%.
+The TCN slightly reduces forecast MAE and absolute imbalances, but net profit is slightly lower and wear slightly higher. Both forecasts retain substantial overprediction and depleted daily SOC; forecast accuracy alone does not rank financial outcomes.
+Daily realized closing SOC falls below 40\% on 26 fitted-model days
+and 18 pvlib days, versus zero perfect-PV days.
+These remain retrospective price-oracle results with differing final inventories,
+not a causal out-of-sample profit ranking. In particular, the lower-imbalance
+method need not earn more: curtailed surplus has no export revenue and battery
+feedback changes executed wear and inventory. The forecast methods should
+therefore be compared on financial and physical outcomes together.
+Numerical evidence and the four-panel plot are versioned under
+\path{docs/results/farm901_january_2026/}.
+
 \section{Price Forecasting Status}
 
 The active GME and continuous historical experiments use realized auction

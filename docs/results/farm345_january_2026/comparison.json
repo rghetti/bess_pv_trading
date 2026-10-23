@@ -1,0 +1,325 @@
+{
+  "status": "complete",
+  "farm_id": 345,
+  "delivery_period": [
+    "2026-01-01",
+    "2026-01-31"
+  ],
+  "neural_run": "outputs/continuous_optimization/continuous_nord_farm345_2026-01_soc40_neural_gme_real_v1",
+  "pvlib_run": "outputs/continuous_optimization/continuous_nord_farm345_2026-01_soc40_pvlib_gme_real_v1",
+  "replacement_label": "Integrated regression",
+  "legacy_key_note": "Keys and CLI paths named neural identify the fitted replacement, which may be linear.",
+  "shared_inputs": {
+    "delivery_days": 31,
+    "realized_ac_pv_hashes_match": true,
+    "auction_price_hashes_match": true,
+    "quarter_hour_settlement_hash_matches": true,
+    "source_weather_views_match": true,
+    "solver_settings_match": true,
+    "plant_battery_soc_degradation_fees_trading_execution_match": true,
+    "neural_input_fingerprint": "bd71de7131d6c15fcb697aac848f06b3059228dbc669069caf445dfe663082db",
+    "pvlib_input_fingerprint": "6284606349751c8984016666a59c37e3c19a7783daf33b56ad693978de7f97eb",
+    "input_fingerprints_differ_due_to_model_configuration": true
+  },
+  "perfect_reference_verification": {
+    "same_perfect_pv_reference": true,
+    "daily_metrics_checked": [
+      "net_profit_eur",
+      "auction_revenue_eur",
+      "imbalance_cashflow_eur",
+      "degradation_eur",
+      "transaction_fee_eur",
+      "absolute_imbalance_mwh",
+      "signed_imbalance_mwh",
+      "throughput_mwh",
+      "curtailment_mwh",
+      "final_soc_percent"
+    ]
+  },
+  "terminal_soc_floor_verification": {
+    "neural": {
+      "minimum_soc_percent": 40.0,
+      "minimum_energy_mwh": 0.4,
+      "at_every_solve_horizon_end": {
+        "integrated": {
+          "successful_solves_with_floor": 124,
+          "terminal_minimum_mwh": 0.4,
+          "all_solve_validations_passed": true
+        },
+        "perfect": {
+          "successful_solves_with_floor": 31,
+          "terminal_minimum_mwh": 0.4,
+          "all_solve_validations_passed": true
+        }
+      }
+    },
+    "pvlib": {
+      "minimum_soc_percent": 40.0,
+      "minimum_energy_mwh": 0.4,
+      "at_every_solve_horizon_end": {
+        "integrated": {
+          "successful_solves_with_floor": 124,
+          "terminal_minimum_mwh": 0.4,
+          "all_solve_validations_passed": true
+        },
+        "perfect": {
+          "successful_solves_with_floor": 31,
+          "terminal_minimum_mwh": 0.4,
+          "all_solve_validations_passed": true
+        }
+      }
+    }
+  },
+  "realized_soc_floor_outcomes": {
+    "Integrated regression": {
+      "days_below_configured_floor": 3,
+      "lowest_realized_daily_end_soc_percent": 7.879019281266776,
+      "mean_realized_daily_end_soc_percent": 63.1893497497711,
+      "final_realized_soc_percent": 84.72784737260622,
+      "days_at_battery_minimum": 0
+    },
+    "Integrated PVLib": {
+      "days_below_configured_floor": 17,
+      "lowest_realized_daily_end_soc_percent": 7.116360439942343,
+      "mean_realized_daily_end_soc_percent": 40.49925463964314,
+      "final_realized_soc_percent": 67.64443560998751,
+      "days_at_battery_minimum": 0
+    },
+    "Perfect PV knowledge": {
+      "days_below_configured_floor": 0,
+      "lowest_realized_daily_end_soc_percent": 39.999999999989626,
+      "mean_realized_daily_end_soc_percent": 40.32258064516008,
+      "final_realized_soc_percent": 50.0,
+      "days_at_battery_minimum": 0
+    }
+  },
+  "strategies": [
+    {
+      "strategy": "Integrated regression",
+      "total_gain_eur": 19371.576571848742,
+      "mean_daily_profit_eur": 624.8895668338304,
+      "std_daily_profit_eur": 212.46529718304978,
+      "auction_revenue_eur": 20165.578357557628,
+      "imbalance_cashflow_eur": -91.13560357476001,
+      "degradation_cost_eur": 702.866182134123,
+      "transaction_fees_eur": 0.0,
+      "import_fees_eur": 0.0,
+      "imbalance_penalty_eur": 0.0,
+      "absolute_imbalance_mwh": 0.6380323320320481,
+      "signed_imbalance_mwh": -0.6380323320320481,
+      "positive_imbalance_mwh": 3.720333242727919e-17,
+      "negative_imbalance_mwh": 0.638032332032048,
+      "gross_traded_energy_mwh": 2925.454299974911,
+      "throughput_mwh": 25.43377915250268,
+      "curtailment_mwh": 7.504874883273726,
+      "final_soc_percent": 84.72784737260622,
+      "auction_solves": 124,
+      "fallback_count": 0,
+      "forecast_models": "farm345_ols_weather",
+      "battery_capacity_mwh": 1.0,
+      "battery_max_power_mw": 0.5,
+      "battery_ac_round_trip_efficiency": 0.8999999999999999,
+      "battery_charge_ac_mwh": 13.359875326883614,
+      "battery_discharge_ac_mwh": 12.073903825619064,
+      "equivalent_full_cycles_internal_discharge": 12.727012112925566,
+      "equivalent_full_cycles_internal_two_sided": 12.7006513497886,
+      "financial_reconciliation_error_eur": 3.637978807091713e-12
+    },
+    {
+      "strategy": "Integrated PVLib",
+      "total_gain_eur": 20323.19810534207,
+      "mean_daily_profit_eur": 655.5870356561959,
+      "std_daily_profit_eur": 221.42042997733108,
+      "auction_revenue_eur": 21495.167534847966,
+      "imbalance_cashflow_eur": -401.17696570474385,
+      "degradation_cost_eur": 770.7924638011493,
+      "transaction_fees_eur": 0.0,
+      "import_fees_eur": 0.0,
+      "imbalance_penalty_eur": 0.0,
+      "absolute_imbalance_mwh": 2.8206465291606033,
+      "signed_imbalance_mwh": -2.8206465291606015,
+      "positive_imbalance_mwh": 8.39470637101214e-16,
+      "negative_imbalance_mwh": 2.8206465291606015,
+      "gross_traded_energy_mwh": 2923.816867250519,
+      "throughput_mwh": 27.891746387921845,
+      "curtailment_mwh": 0.3446436740381991,
+      "final_soc_percent": 67.64443560998751,
+      "auction_solves": 124,
+      "fallback_count": 0,
+      "forecast_models": "pvlib",
+      "battery_capacity_mwh": 1.0,
+      "battery_max_power_mw": 0.5,
+      "battery_ac_round_trip_efficiency": 0.8999999999999999,
+      "battery_charge_ac_mwh": 14.568243622299402,
+      "battery_discharge_ac_mwh": 13.323502765622443,
+      "equivalent_full_cycles_internal_discharge": 14.044205050306491,
+      "equivalent_full_cycles_internal_two_sided": 13.932427228356426,
+      "financial_reconciliation_error_eur": 0.0
+    },
+    {
+      "strategy": "Perfect PV knowledge",
+      "total_gain_eur": 20956.87971659909,
+      "mean_daily_profit_eur": 676.0283779548093,
+      "std_daily_profit_eur": 216.26695923466588,
+      "auction_revenue_eur": 21240.869535896858,
+      "imbalance_cashflow_eur": -3.469358134111644e-14,
+      "degradation_cost_eur": 283.989819297764,
+      "transaction_fees_eur": 0.0,
+      "import_fees_eur": 0.0,
+      "imbalance_penalty_eur": 0.0,
+      "absolute_imbalance_mwh": 1.8041124150158794e-16,
+      "signed_imbalance_mwh": -1.8041124150158794e-16,
+      "positive_imbalance_mwh": 0.0,
+      "negative_imbalance_mwh": 1.8041124150158796e-16,
+      "gross_traded_energy_mwh": 2924.519210090359,
+      "throughput_mwh": 10.276400443178769,
+      "curtailment_mwh": 6.765421556309548e-17,
+      "final_soc_percent": 50.0,
+      "auction_solves": 31,
+      "fallback_count": 0,
+      "forecast_models": "perfect actual PV",
+      "battery_capacity_mwh": 1.0,
+      "battery_max_power_mw": 0.5,
+      "battery_ac_round_trip_efficiency": 0.8999999999999999,
+      "battery_charge_ac_mwh": 5.2089090126097695,
+      "battery_discharge_ac_mwh": 5.067491430568998,
+      "equivalent_full_cycles_internal_discharge": 5.341604981327682,
+      "equivalent_full_cycles_internal_two_sided": 5.141604981327681,
+      "financial_reconciliation_error_eur": 3.637978807091713e-12
+    }
+  ],
+  "forecast_metrics_by_auction": [
+    {
+      "model": "Regression",
+      "auction": "DA",
+      "forecast_view_rows": 2976,
+      "bias_mw_forecast_minus_actual": -0.021361111585046857,
+      "mae_mw": 0.028927869470052197,
+      "rmse_mw": 0.06467341260063346,
+      "ac_rating_mw": 1.5246,
+      "nmae_percent_ac_rating": 1.8974071540110322,
+      "nrmse_percent_ac_rating": 4.241992168479173,
+      "bias_percent_ac_rating": -1.4010961291517026,
+      "overprediction_rows": 202,
+      "underprediction_rows": 1065,
+      "overlapping_auction_views": true
+    },
+    {
+      "model": "Regression",
+      "auction": "IDA1",
+      "forecast_view_rows": 2976,
+      "bias_mw_forecast_minus_actual": -0.020557736730643414,
+      "mae_mw": 0.028281684781992555,
+      "rmse_mw": 0.06333585804677876,
+      "ac_rating_mw": 1.5246,
+      "nmae_percent_ac_rating": 1.8550232704966914,
+      "nrmse_percent_ac_rating": 4.154260661601651,
+      "bias_percent_ac_rating": -1.3484019894164643,
+      "overprediction_rows": 202,
+      "underprediction_rows": 1065,
+      "overlapping_auction_views": true
+    },
+    {
+      "model": "Regression",
+      "auction": "IDA2",
+      "forecast_view_rows": 2976,
+      "bias_mw_forecast_minus_actual": -0.020804124368692306,
+      "mae_mw": 0.027565593470552322,
+      "rmse_mw": 0.06223202317815517,
+      "ac_rating_mw": 1.5246,
+      "nmae_percent_ac_rating": 1.8080541434180981,
+      "nrmse_percent_ac_rating": 4.08185905668078,
+      "bias_percent_ac_rating": -1.3645627947456582,
+      "overprediction_rows": 218,
+      "underprediction_rows": 1050,
+      "overlapping_auction_views": true
+    },
+    {
+      "model": "Regression",
+      "auction": "IDA3",
+      "forecast_view_rows": 1488,
+      "bias_mw_forecast_minus_actual": -0.026609257619813247,
+      "mae_mw": 0.031842533029147,
+      "rmse_mw": 0.06625906370025308,
+      "ac_rating_mw": 1.5246,
+      "nmae_percent_ac_rating": 2.0885827777218284,
+      "nrmse_percent_ac_rating": 4.345996569608624,
+      "bias_percent_ac_rating": -1.7453271428448935,
+      "overprediction_rows": 95,
+      "underprediction_rows": 562,
+      "overlapping_auction_views": true
+    },
+    {
+      "model": "PVLib",
+      "auction": "DA",
+      "forecast_view_rows": 2976,
+      "bias_mw_forecast_minus_actual": 0.002370833100075956,
+      "mae_mw": 0.023418254458367295,
+      "rmse_mw": 0.05837121297828542,
+      "ac_rating_mw": 1.5246,
+      "nmae_percent_ac_rating": 1.5360261352726812,
+      "nrmse_percent_ac_rating": 3.828624752609564,
+      "bias_percent_ac_rating": 0.15550525384205405,
+      "overprediction_rows": 588,
+      "underprediction_rows": 700,
+      "overlapping_auction_views": true
+    },
+    {
+      "model": "PVLib",
+      "auction": "IDA1",
+      "forecast_view_rows": 2976,
+      "bias_mw_forecast_minus_actual": 0.003834747885829432,
+      "mae_mw": 0.02395108259324622,
+      "rmse_mw": 0.05877141164119215,
+      "ac_rating_mw": 1.5246,
+      "nmae_percent_ac_rating": 1.5709748519773203,
+      "nrmse_percent_ac_rating": 3.8548741729760034,
+      "bias_percent_ac_rating": 0.2515248514908456,
+      "overprediction_rows": 635,
+      "underprediction_rows": 685,
+      "overlapping_auction_views": true
+    },
+    {
+      "model": "PVLib",
+      "auction": "IDA2",
+      "forecast_view_rows": 2976,
+      "bias_mw_forecast_minus_actual": 0.0036822861591814665,
+      "mae_mw": 0.023240178824027083,
+      "rmse_mw": 0.05609359973007843,
+      "ac_rating_mw": 1.5246,
+      "nmae_percent_ac_rating": 1.5243459808492117,
+      "nrmse_percent_ac_rating": 3.6792338797112967,
+      "bias_percent_ac_rating": 0.24152473823832263,
+      "overprediction_rows": 622,
+      "underprediction_rows": 700,
+      "overlapping_auction_views": true
+    },
+    {
+      "model": "PVLib",
+      "auction": "IDA3",
+      "forecast_view_rows": 1488,
+      "bias_mw_forecast_minus_actual": -0.0009766400348014221,
+      "mae_mw": 0.020540094109625706,
+      "rmse_mw": 0.04810714707568874,
+      "ac_rating_mw": 1.5246,
+      "nmae_percent_ac_rating": 1.3472447927079698,
+      "nrmse_percent_ac_rating": 3.1553946658591596,
+      "bias_percent_ac_rating": -0.06405877179597416,
+      "overprediction_rows": 268,
+      "underprediction_rows": 404,
+      "overlapping_auction_views": true
+    }
+  ],
+  "financial_interpretation": {
+    "price_policy": "Actual historical auction clearing curves are passed to the optimizer (price-oracle study), not predicted prices.",
+    "neural_model_selection": "Retrospective; the selected model used January-April 2026 validation data.",
+    "transaction_fees": "Configured GME volume-tier tariff; check realized total in the comparison table."
+  },
+  "paired_profit_differences_eur": {
+    "pvlib_minus_neural": 951.6215334933295,
+    "perfect_minus_neural": 1585.303144750349,
+    "perfect_minus_pvlib": 633.6816112570195
+  },
+  "forecast_metric_note": "Forecast rows overlap across auction views; errors score predictions, not additive energy totals.",
+  "cycle_metric_note": "Executed charge/discharge are converted to internal energy using effective efficiencies; two-sided EFC divides their sum by twice nominal capacity, and discharge EFC divides internal withdrawals by nominal capacity. Neither metric models capacity fade."
+}
