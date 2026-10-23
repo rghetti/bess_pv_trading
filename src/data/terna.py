@@ -37,7 +37,7 @@ DOCUMENTATION = {
 BIDDING_ZONES = {"North", "Centre-North", "South", "Centre-South", "Sardinia", "Sicily", "Calabria", "Italy"}
 ENERGY_SOURCES = {"Thermal", "Wind", "Geothermal", "Photovoltaic", "Self-consumption", "Hydro"}
 ZONE_CODES = {"North": "NORD", "Nord": "NORD", "NORD": "NORD", "Centre-North": "CNOR", "Centro-Nord": "CNOR", "Centre-South": "CSUD", "Centro-Sud": "CSUD", "South": "SUD", "Sud": "SUD", "Sardinia": "SARD", "Sardegna": "SARD", "Sicily": "SICI", "Sicilia": "SICI", "Calabria": "CALA", "Italy": "IT"}
-_COLUMNS = ["provider", "dataset", "zone", "reference_time", "product_start", "product_end", "value", "unit", "retrieved_at", "source_document_time", "historical_available_at", "availability_provenance", "historical_feature_eligible", "interval_provenance", "session_type", "energy_source", "source_publication_date", "source_prevision_date", "source_date_tz", "source_offset", "source_array", "source_field", "unit_provenance", "source_record", "value_mw", "value_gwh"]
+_COLUMNS = ["provider", "dataset", "zone", "reference_time", "product_start", "product_end", "value", "unit", "retrieved_at", "source_document_time", "historical_available_at", "availability_provenance", "historical_feature_eligible", "interval_provenance", "session_type", "energy_source", "source_publication_date", "source_prevision_date", "source_date_tz", "source_offset", "reference_offset_provenance", "source_array", "source_field", "unit_provenance", "source_record", "value_mw", "value_gwh"]
 
 
 # Keep verified capabilities and unresolved semantics beside every cached request.
@@ -183,12 +183,63 @@ def parse_terna_json(payload: bytes | str, dataset: str, options: Mapping[str, A
             records = []
     if not isinstance(records, list):
         raise MarketDataError(f"Terna response is missing its supported {array_name} array")
+    # On an autumn DST transition, a local wall-clock label occurs twice. Some
+    # Terna endpoints supply both offsets; the observed renewable endpoint
+    # supplies +01 for both copies. Infer only a pair of records that share all
+    # source dimensions, carry the same ambiguous local label, and occur on an
+    # actual Europe/Rome fall-back day. Response order is first DST (+02), then
+    # standard time (+01), matching Terna's descending response ordering.
+    reference_field = "date" if dataset in {"total_load", "total_load_forecast", "renewable_generation"} else "reference_date"
+    duplicate_groups: dict[tuple[Any, ...], list[int]] = {}
+    for i, item in enumerate(records):
+        if not isinstance(item, dict):
+            continue
+        local_value = item.get(reference_field)
+        try:
+            local_stamp = pd.Timestamp(local_value)
+            if pd.isna(local_stamp) or local_stamp.tzinfo is not None:
+                continue
+            zone_name = item.get("date_tz")
+            if not isinstance(zone_name, str) or not zone_name:
+                continue
+            dst = local_stamp.tz_localize(zone_name, ambiguous=True, nonexistent="raise")
+            standard = local_stamp.tz_localize(zone_name, ambiguous=False, nonexistent="raise")
+            if dst.utcoffset() == standard.utcoffset():
+                continue
+        except Exception:
+            continue
+        offset = item.get("date_offset", item.get("offset"))
+        dims = (item.get("bidding_zone", item.get("zone")), item.get("session_type"),
+                item.get("energy_source"), item.get("prevision_date"), item.get("publication_date"))
+        duplicate_groups.setdefault((str(local_stamp), zone_name, *dims), []).append(i)
+    resolved_offsets: dict[int, str] = {}
+    for key, indices in duplicate_groups.items():
+        if len(indices) < 2:
+            continue
+        offsets = [records[i].get("date_offset", records[i].get("offset")) for i in indices]
+        zone_name = key[1]
+        local_stamp = pd.Timestamp(key[0])
+        dst_offset = local_stamp.tz_localize(zone_name, ambiguous=True).strftime("%z")
+        standard_offset = local_stamp.tz_localize(zone_name, ambiguous=False).strftime("%z")
+        dst_label = dst_offset[:3] + ":" + dst_offset[3:]
+        standard_label = standard_offset[:3] + ":" + standard_offset[3:]
+        if len(indices) != 2:
+            raise MarketDataError("Terna autumn repeated-hour records have an unexpected multiplicity; refusing to infer offsets")
+        if set(offsets) == {dst_label, standard_label}:
+            continue
+        if offsets[0] == offsets[1] or offsets[0] is None and offsets[1] is None:
+            resolved_offsets[indices[0]] = dst_label
+            resolved_offsets[indices[1]] = standard_label
+        else:
+            raise MarketDataError("Terna autumn repeated-hour offsets are inconsistent; refusing to infer response order")
     rows = []
     for index, record in enumerate(records):
         if not isinstance(record, dict):
             raise MarketDataError(f"Terna record {index} must be an object")
-        reference_field = "date" if dataset in {"total_load", "total_load_forecast", "renewable_generation"} else "reference_date"
-        reference = _local_timestamp(record, reference_field, require_clock=True)
+        parse_record = record
+        if index in resolved_offsets:
+            parse_record = {**record, "date_offset": resolved_offsets[index]}
+        reference = _local_timestamp(parse_record, reference_field, require_clock=True)
         source_zone = record.get("bidding_zone", record.get("zone", "Italy" if dataset == "renewable_generation" else None))
         if not isinstance(source_zone, str) or not source_zone.strip():
             raise MarketDataError(f"Terna record {index} lacks a zone")
@@ -228,6 +279,7 @@ def parse_terna_json(payload: bytes | str, dataset: str, options: Mapping[str, A
             "session_type": source_session, "energy_source": source,
             "source_publication_date": publication, "source_prevision_date": record.get("prevision_date"),
             "source_date_tz": record.get("date_tz"), "source_offset": record.get("date_offset", record.get("offset")),
+            "reference_offset_provenance": "inferred_response_order_fallback" if index in resolved_offsets else "provider_explicit",
             "source_array": array_name, "source_field": value_field,
             "unit_provenance": "endpoint_documentation_MW; observed forecast field has no unit suffix" if dataset=="wind_forecast" and value_field=="forecast" else "documented_endpoint_field",
             "source_record": json.dumps(record, sort_keys=True, separators=(",", ":")),

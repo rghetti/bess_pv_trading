@@ -1,0 +1,54 @@
+# January 2025 retrospective PV forecast pilot for the selected farm.
+# The pilot deliberately applies the final trained models retrospectively to
+# compare their physical/trading effect. This is not an as-known-in-2025 study.
+include: ../standard.yaml
+continuous_optimization:
+  start_date: '2025-01-01'
+  end_date: '2025-01-31'
+  planning_modes: [integrated, current_auction_only]
+  perfect_pv_reference: true
+  run_id: continuous_nord_farm${farm_id}_2025-01_forecast_pilot_gme_real
+  resume: false
+state:
+  initial_soc_percent: 90.0
+  terminal_soc_percent: 50.0
+market:
+  valid_from: '2025-01-01'
+  valid_to: '2025-01-31'
+pv:
+  direct_exceeds_ghi: clip_and_flag
+  forecast_replacement:
+    enabled: true
+    fallback: pvlib
+    allow_retrospective_artifacts: true
+    models_by_farm:
+      '1':
+        name: farm1_tcn_weather_05
+        kind: neural
+        artifact_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_1/models/trials/tcn_weather_05.pt
+        available_at_utc: '2026-10-22T14:23:00Z'
+      '345':
+        name: farm345_ols_weather
+        kind: linear
+        family: ols
+        ac_capacity_mw: 1.5246
+        artifact_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_345/json/regression_selection.json
+        preprocessors_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_345/json/preprocessors.json
+        available_at_utc: '2026-10-22T14:23:00Z'
+      '901':
+        name: farm901_tcn_core_07
+        kind: neural
+        artifact_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_901/models/trials/tcn_core_07.pt
+        available_at_utc: '2026-10-22T14:23:00Z'
+      '910':
+        name: farm910_mlp_core_05
+        kind: neural
+        artifact_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_910/models/trials/mlp_core_05.pt
+        available_at_utc: '2026-10-22T14:23:00Z'
+transaction_fees:
+  mode: gme_real
+execution:
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+settlement:
+  enabled: true

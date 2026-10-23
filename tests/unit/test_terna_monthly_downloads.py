@@ -92,6 +92,42 @@ def test_monthly_transport_keeps_exact_daily_grid_values_and_offsets(tmp_path, b
     assert not resumed.requests and resumed.auth_calls == 0
 
 
+@pytest.mark.parametrize("year", [2025, 2026])
+@pytest.mark.parametrize("dataset", ["total_load", "load_forecast", "wind_forecast", "renewable_generation"])
+def test_fall_back_duplicate_labels_resolve_for_all_terna_dataset_shapes(year, dataset):
+    from datetime import datetime, timezone
+    transition_day = "2025-10-26" if year == 2025 else "2026-10-25"
+    if dataset in {"total_load", "renewable_generation"}:
+        array, field, ref_field = dataset if dataset == "renewable_generation" else "total_load", (
+            "renewable_generation_GWh" if dataset == "renewable_generation" else "total_load_MW"), "date"
+    elif dataset == "load_forecast":
+        array, field, ref_field = "forecast_load", "load_MW", "reference_date"
+    else:
+        array, field, ref_field = "wind_production_forecast", "forecast", "reference_date"
+    base = {ref_field: f"{transition_day} 02:15:00", "date_tz": "Europe/Rome", "date_offset": "+01:00",
+            field: "12.5", "bidding_zone": "North", "zone": "North"}
+    if dataset in {"load_forecast", "wind_forecast"}:
+        base["session_type"] = "MSD1"
+    if dataset == "renewable_generation":
+        base["energy_source"] = "Wind"
+    records = [dict(base), dict(base, **{field: "13.5"})]
+    payload = json.dumps({"result": {"status": "Completed"}, array: records})
+    frame = terna.parse_terna_json(payload, dataset, retrieved_at=datetime(year, 10, 27, tzinfo=timezone.utc))
+    assert frame.reference_time.tolist() == [pd.Timestamp(f"{transition_day}T00:15:00Z"),
+                                              pd.Timestamp(f"{transition_day}T01:15:00Z")]
+    assert frame.source_offset.tolist() == ["+01:00", "+01:00"]
+    assert frame.reference_offset_provenance.tolist() == ["inferred_response_order_fallback"] * 2
+
+
+def test_fall_back_duplicate_with_unexpected_multiplicity_is_rejected():
+    from datetime import datetime, timezone
+    record = {"date": "2025-10-26 02:15:00", "date_tz": "Europe/Rome", "date_offset": "+01:00",
+              "total_load_MW": "10", "bidding_zone": "North"}
+    payload = json.dumps({"result": {"status": "Completed"}, "total_load": [record] * 3})
+    with pytest.raises(terna.MarketDataError, match="unexpected multiplicity"):
+        terna.parse_terna_json(payload, "total_load", retrieved_at="2025-10-27T00:00:00Z")
+
+
 def test_full_month_uses_one_response_for_both_load_fields(tmp_path):
     config = configuration(tmp_path, "2025-02-01", "2025-03-01")
     transport = MonthlyTransport()
