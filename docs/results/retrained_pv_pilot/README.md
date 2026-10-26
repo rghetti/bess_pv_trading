@@ -77,3 +77,13 @@ replacement remains opt-in: copy the chosen registry mapping to
 `pv.forecast_replacement.models_by_farm` and enable replacement. Availability
 is conservatively September 2026; earlier retrospective use requires the
 explicit existing retrospective-artifact flag.
+
+
+## Five worst held-out days per farm
+
+The [worst-day plots and ranking table](worst_days/README.md) select five
+unique May–August 2026 days per farm by mean squared normalized error over
+available auction views. Each plot shows the worst auction view on its day,
+including measured AC, forecast-input and satellite-input pilot predictions,
+pvlib references and GHI. The CSV records both daily aggregate and worst-view
+scores. This uses the cached pilot predictions; no new training was run.

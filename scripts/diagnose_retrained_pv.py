@@ -241,13 +241,13 @@ def run(config):
     print(root,flush=True)
 
 
-def render_cached_profiles(config,root):
+def render_cached_profiles(config,root,worst_days=0):
     """Render requested profile cases from cached diagnostics without rerunning inference."""
     section=config['pv_retrained_error_diagnostics']
     if not (root/'json/manifest.json').exists():raise ValueError('A completed diagnostic run is required')
     for farm in section['farm_ids']:
-        cases=section['focus_profiles_by_farm'].get(str(farm),[])
-        if not cases:continue
+        cases=list(section['focus_profiles_by_farm'].get(str(farm),[]))
+        if not cases and not worst_days:continue
         folder=root/f'farm_{farm}';frame=pd.read_parquet(folder/'parquet/diagnostic_instances.parquet')
         provenance=json.loads((folder/'json/provenance.json').read_text())
         frame.attrs.update(farm_id=farm,model=f'{provenance["family"]}/{provenance["model"]}')
@@ -259,6 +259,22 @@ def render_cached_profiles(config,root):
             'satellite_ghi_w_m2':history.ghi.values,'eligible':True})
         raw=apply_episode_exclusions(raw,config,farm_id=farm).set_index('interval_start_utc')
         ranking=pd.read_csv(folder/'csv/profile_ranking.csv')
+        if worst_days:
+            test=ranking.loc[ranking.split.eq('test')].copy()
+            daily=test.groupby('delivery_day').nrmse_percent.apply(
+                lambda scores: float(np.sqrt(np.square(scores).mean()))
+            ).rename('mean_auction_view_nrmse_percent').sort_values(ascending=False)
+            chosen=daily.head(worst_days)
+            selected_rows=[]
+            for day,score in chosen.items():
+                profile=test.loc[test.delivery_day.eq(day)].sort_values('nrmse_percent',ascending=False).iloc[0]
+                selected_rows.append({'farm_id':farm,'delivery_day':day,
+                    'daily_mean_auction_view_nrmse_percent':score,
+                    'worst_auction':profile.auction,
+                    'worst_auction_nrmse_percent':profile.nrmse_percent,
+                    'satellite_input_nrmse_percent':profile.satellite_input_nrmse_percent})
+                cases.append({'delivery_day':day,'auction':profile.auction})
+            pd.DataFrame(selected_rows).to_csv(folder/'csv/worst_test_days.csv',index=False)
         weather=[name.removeprefix('delta_') for name in frame if name.startswith('delta_')]
         rating=config['farms'][str(farm)]['ac_capacity_kw']/1000
         for case in cases:
@@ -271,6 +287,14 @@ def render_cached_profiles(config,root):
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--config',required=True)
     parser.add_argument('--plots-only',action='store_true')
+    parser.add_argument('--worst-days',type=int,default=0,
+        help='Additionally plot this many worst distinct held-out days per farm, selecting each day\'s worst auction view.')
     args=parser.parse_args();config=load_config(args.config)
     if args.plots_only:config['pv_retrained_error_diagnostics']['plots_only']=True
-    run(config)
+    if args.worst_days < 0: parser.error('--worst-days must be nonnegative')
+    if config['pv_retrained_error_diagnostics']['plots_only']:
+        section=config['pv_retrained_error_diagnostics']
+        root=config_path(config,section['output_root'])/section['run_id']
+        render_cached_profiles(config,root,worst_days=args.worst_days)
+    else:
+        run(config)
