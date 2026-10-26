@@ -165,15 +165,21 @@ def run_pv_quality_review(config,progress=print):
         if section['save_plots']:
             prediction_path=source/f'farm_{farm}/parquet'/section['plot_prediction_file']
             column=section['plot_prediction_column']
+            comparison_column=section['plot_pvlib_column']
             keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
-            saved=pd.read_parquet(prediction_path,columns=[*keys,column])
+            saved=pd.read_parquet(prediction_path,columns=[*keys,column,comparison_column])
             if not frame[keys].equals(saved[keys]):
                 raise ValueError(f'Farm {farm} PV plot predictions do not align with measured AC corpus')
             prediction=saved[column].to_numpy(dtype=float)
+            comparison_prediction=saved[comparison_column].to_numpy(dtype=float)
             if not np.isfinite(prediction[frame.daylight.to_numpy(dtype=bool)]).all():
                 raise ValueError(f'Farm {farm} PV plot predictions are nonfinite in daylight')
+            if not np.isfinite(comparison_prediction[frame.daylight.to_numpy(dtype=bool)]).all():
+                raise ValueError(f'Farm {farm} pvlib plot predictions are nonfinite in daylight')
             summary['plot_prediction']={'file':str(prediction_path),
                 'column':column,'label':section['plot_prediction_label'],
+                'comparison_column':comparison_column,
+                'comparison_label':section['plot_pvlib_label'],
                 'sha256':hashlib.sha256(prediction_path.read_bytes()).hexdigest()}
             (folder/'json/summary.json').write_text(json.dumps(summary,indent=2)+'\n')
             days=list(section['focus_days'])
@@ -185,6 +191,8 @@ def run_pv_quality_review(config,progress=print):
                 _plot_day(frame,prediction,farm=farm,day=day,rating=rating,
                     timezone=config['pv_neural']['delivery_timezone'],
                     forecast_label=section['plot_prediction_label'],
+                    comparison_prediction=comparison_prediction,
+                    comparison_label=section['plot_pvlib_label'],
                     path=folder/'plots'/f'quality_day_{day}.png')
         progress(f"Farm {farm}: {summary['outage_excluded_quarters']} automatic quarters, {summary['candidate_episodes']} candidate episodes")
         all_episodes.extend(farm_episodes);summaries.append(summary)

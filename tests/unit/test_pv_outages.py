@@ -143,6 +143,7 @@ def test_quality_day_uses_selected_neural_curve_and_checks_target_alignment(tmp_
     keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
     saved=frame[keys].copy()
     saved['prediction_selected_mw']=[.8,.9]
+    saved['prediction_pvlib_mw']=[.2,.3]
     saved.to_parquet(source/'predictions.parquet',index=False)
     config['pv_data_quality_review'].update(farm_ids=[345],source_root=str(tmp_path/'source'),
         output_root=str(tmp_path/'audit'),run_id='selected_neural',save_plots=True,
@@ -153,7 +154,9 @@ def test_quality_day_uses_selected_neural_curve_and_checks_target_alignment(tmp_
     assert len(plotted)==1
     assert plotted[0][1]['forecast_label']=='Selected neural AC forecast'
     np.testing.assert_array_equal(plotted[0][0][1],[.8,.9])
+    np.testing.assert_array_equal(plotted[0][1]['comparison_prediction'],[.2,.3])
     assert result['summaries'][0]['plot_prediction']['column']=='prediction_selected_mw'
+    assert result['summaries'][0]['plot_prediction']['comparison_column']=='prediction_pvlib_mw'
     saved.loc[0,'measured_ac_mw']=.7
     saved.to_parquet(source/'predictions.parquet',index=False)
     with pytest.raises(ValueError,match='do not align'):

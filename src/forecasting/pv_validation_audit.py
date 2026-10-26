@@ -51,8 +51,9 @@ def _day_table(frame,prediction,rating,*,split):
 
 
 def _plot_day(frame,prediction,*,farm,day,rating,timezone,path,
-              forecast_label='AC forecast'):
-    """Place measured AC and GHI beside all auction forecasts on local time."""
+              forecast_label='AC forecast',comparison_prediction=None,
+              comparison_label='pvlib AC forecast'):
+    """Compare AC predictors with measured power and weather with satellite GHI."""
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -60,6 +61,8 @@ def _plot_day(frame,prediction,*,farm,day,rating,timezone,path,
     from zoneinfo import ZoneInfo
     views=frame.loc[frame.delivery_day.eq(day)].copy()
     views['forecast_ac_mw']=np.asarray(prediction)[views.index]
+    if comparison_prediction is not None:
+        views['comparison_ac_mw']=np.asarray(comparison_prediction)[views.index]
     physical=views.groupby('interval_start_utc',sort=True).agg(
         measured_ac_mw=('measured_ac_mw','first'),
         satellite_ghi_w_m2=('satellite_ghi_w_m2','first')).reset_index()
@@ -70,22 +73,36 @@ def _plot_day(frame,prediction,*,farm,day,rating,timezone,path,
             'interval_start_utc':boundary,
             'measured_ac_mw':next_point.measured_ac_mw.iloc[0],
             'satellite_ghi_w_m2':next_point.satellite_ghi_w_m2.iloc[0]}])],ignore_index=True)
-    figure,axes=plt.subplots(2,1,figsize=(13,8),sharex=True,layout='constrained')
-    axes[0].plot(physical.interval_start_utc,physical.measured_ac_mw,
-        color='black',lw=2,label='Measured AC')
-    axes[1].plot(physical.interval_start_utc,physical.satellite_ghi_w_m2,
+    comparison=comparison_prediction is not None
+    figure,axes=plt.subplots(3 if comparison else 2,1,
+        figsize=(13,11 if comparison else 8),sharex=True,layout='constrained')
+    power_axes=axes[:2] if comparison else axes[:1]
+    for axis in power_axes:
+        axis.plot(physical.interval_start_utc,physical.measured_ac_mw,
+            color='black',lw=2,label='Measured AC')
+        axis.axhline(rating,color='gray',ls='--',lw=1,label='Farm AC rating')
+        axis.set_ylabel('AC power (MW)')
+    axes[-1].plot(physical.interval_start_utc,physical.satellite_ghi_w_m2,
         color='black',lw=2,label='Satellite GHI (diagnostic)')
     for auction,curve in views.groupby('auction'):
         axes[0].plot(curve.interval_start_utc,curve.forecast_ac_mw,lw=1,
             label=f'{auction} {forecast_label}')
-        axes[1].plot(curve.interval_start_utc,curve.forecast_ghi,lw=1,
+        if comparison:
+            axes[1].plot(curve.interval_start_utc,curve.comparison_ac_mw,lw=1,
+                label=f'{auction} {comparison_label}')
+        axes[-1].plot(curve.interval_start_utc,curve.forecast_ghi,lw=1,
             label=f'{auction} GHI forecast')
-    axes[0].axhline(rating,color='gray',ls='--',lw=1,label='Farm AC rating')
-    axes[0].set_ylabel('AC power (MW)');axes[1].set_ylabel('GHI (W/m²)')
-    axes[1].set_xlabel(f'Delivery time, {timezone}')
-    axes[1].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M',tz=ZoneInfo(timezone)))
+    if comparison:
+        upper=max(rating,physical.measured_ac_mw.max(),
+            views.forecast_ac_mw.max(),views.comparison_ac_mw.max())
+        for axis in power_axes:axis.set_ylim(-.03*upper,1.05*upper)
+    axes[-1].set_ylabel('GHI (W/m²)')
+    axes[-1].set_xlabel(f'Delivery time, {timezone}')
+    axes[-1].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M',tz=ZoneInfo(timezone)))
     for axis in axes:axis.grid(alpha=.2);axis.legend(ncol=3,fontsize=8)
-    figure.suptitle(f'Farm {farm}, {day}: measured AC and {forecast_label.lower()}')
+    title=f'Farm {farm}, {day}: measured AC and {forecast_label.lower()}'
+    if comparison:title+=f' versus {comparison_label.lower()}'
+    figure.suptitle(title)
     figure.savefig(path,dpi=150);plt.close(figure)
 
 
