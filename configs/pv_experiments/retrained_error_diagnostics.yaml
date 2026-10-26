@@ -1,0 +1,7 @@
+include: ../standard.yaml
+pv_retrained_error_diagnostics:
+  focus_profiles_by_farm:
+    '1': [{delivery_day: '2026-05-15', auction: IDA1}]
+    '345': [{delivery_day: '2026-05-13', auction: DA}]
+    '901': [{delivery_day: '2026-05-06', auction: IDA1}, {delivery_day: '2026-05-06', auction: IDA3}, {delivery_day: '2026-06-02', auction: IDA3}]
+    '910': [{delivery_day: '2026-08-02', auction: DA}, {delivery_day: '2026-08-02', auction: IDA3}, {delivery_day: '2026-08-04', auction: DA}]

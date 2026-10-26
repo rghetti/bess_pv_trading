@@ -1,0 +1,62 @@
+{
+  "feature_sets": {
+    "core": {
+      "count": 12,
+      "columns": [
+        "forecast_ghi",
+        "forecast_bhi",
+        "temperature_c",
+        "wind_u_10m",
+        "wind_v_10m",
+        "hour_sin",
+        "hour_cos",
+        "annual_sin",
+        "annual_cos",
+        "month_sin",
+        "month_cos",
+        "italian_national_holiday"
+      ],
+      "missing_indicators": false
+    },
+    "weather": {
+      "count": 22,
+      "columns": [
+        "forecast_ghi",
+        "forecast_bhi",
+        "temperature_c",
+        "wind_u_10m",
+        "wind_v_10m",
+        "dew_point_c",
+        "cloud_total_pct",
+        "cloud_low_pct",
+        "cloud_mid_pct",
+        "cloud_high_pct",
+        "precipitation_mm",
+        "snow_water_equivalent_m",
+        "visibility_km",
+        "wind_u_100m",
+        "wind_v_100m",
+        "hour_sin",
+        "hour_cos",
+        "annual_sin",
+        "annual_cos",
+        "month_sin",
+        "month_cos",
+        "italian_national_holiday"
+      ],
+      "missing_indicators": false
+    }
+  },
+  "farm_models": "separate learned weights for each farm; no farm ID or location input",
+  "normalization": "measured AC / installed AC rating; output clipped to [0, AC rating]",
+  "removed_features": [
+    "wind_speed_10m",
+    "lead_hours",
+    "cycle_hour_sin",
+    "cycle_hour_cos",
+    "proxy solar geometry",
+    "auction identity"
+  ],
+  "satellite_regime": "replace GHI and rescale BHI by forecast BHI/GHI; remaining weather stays forecast",
+  "sequence_policy": "only retained contiguous quarters; split at excluded intervals; padding has no source instance"
+}

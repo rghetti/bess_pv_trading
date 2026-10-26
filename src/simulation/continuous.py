@@ -235,14 +235,18 @@ class ContinuousReplay:
                 model_frame["delivery_day"] = local.strftime("%Y-%m-%d")
                 model_frame["auction"] = str(auction)
                 model_frame["forecast_cycle_utc"] = pd.Timestamp(bundle.forecast_vintage)
-                model_frame["lead_hours"] = ((starts.floor("h") + pd.Timedelta(hours=1)
-                    - pd.Timestamp(bundle.forecast_vintage)).total_seconds() / 3600)
+                if "lead_hours" not in model_frame:
+                    midpoint=starts+pd.Timedelta(minutes=float(self.config['source']['historical_interval_minutes'])/2)
+                    model_frame["lead_hours"] = ((midpoint-pd.Timestamp(bundle.forecast_vintage)).total_seconds()/3600)
                 model_frame["daylight"] = (~model_frame.get("nighttime_zero", pd.Series(
                     model_frame["solar_zenith_deg"].to_numpy() >= 90, index=model_frame.index)).astype(bool))
                 model_frame["measured_ac_mw"] = np.nan
                 model_frame["eligible"] = False
                 model_frame["split"] = "prediction"
-                if model["kind"] == "neural":
+                if model["kind"] == "weather_bundle":
+                    from ..forecasting.pv_forecast_bundle import predict_bundle
+                    replacement = predict_bundle(model_frame,artifact.parent,farm_id=self.plant.farm_id)
+                elif model["kind"] == "neural":
                     from ..forecasting.pv_neural_predict import predict_neural_frame
                     replacement = predict_neural_frame(model_frame, artifact, farm_id=self.plant.farm_id)
                 elif model["kind"] == "linear":

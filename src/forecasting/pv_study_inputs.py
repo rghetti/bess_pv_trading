@@ -17,7 +17,7 @@ from ..data.policy import plateau_runs
 from ..markets import AuctionCalendar
 from .pv import forecast_pv
 from .pv_artifacts import digest
-from .pv_outages import apply_sustained_zero_exclusion
+from .pv_outages import modeling_instances
 
 
 def farm_settings(config: dict, farm) -> dict:
@@ -49,7 +49,8 @@ def _source_fingerprint(dataset, config, farm, settings) -> str:
         "end": config["pv_calibration"]["end_day_exclusive"],
         "scale": config["forecast"]["realized_power_scale_to_mw"],
         "outage_threshold": config["pv_calibration"]["outage_ghi_threshold_w_m2"],
-        "outage_exclusion": config["pv_data_quality"]["sustained_zero_outage"]}
+        "quality_exclusions_csv": config["pv_data_quality"].get("exclusions_csv"),
+        "remove_excluded_instances":config["pv_data_quality"].get("remove_excluded_instances",False)}
     hasher.update(digest(contract).encode())
     for name in sorted(set(config["forecast_mapping"].values()) | {"time", "cycle_time", "lead_time", "power", "ghi"}):
         array = dataset[name]
@@ -62,6 +63,9 @@ def _source_fingerprint(dataset, config, farm, settings) -> str:
     review = config.get("review", {}).get("exclusions_csv")
     if review:
         hasher.update(config_path(config, review).read_bytes())
+    quality=config['pv_data_quality'].get('exclusions_csv')
+    if quality:
+        hasher.update(config_path(config,quality).read_bytes())
     return hasher.hexdigest()
 
 
@@ -90,7 +94,7 @@ def prepare_corpus(config: dict, farm_id: int, destination: Path, progress=None,
         if retain_weather and not set(config["forecast_mapping"]).issubset(cached.columns):
             raise ValueError("Cached corpus lacks requested weather features; choose a fresh run ID")
         dataset.close()
-        return cached, farm, settings, manifest
+        return modeling_instances(cached,config,farm_id=farm_id), farm, settings, manifest
     # The calendar supplies DST-aware quarter-hours and auction-specific suffixes.
     calendar_settings = deepcopy(config["market"])
     calendar_settings.update(valid_from=section["start_day"],
@@ -143,14 +147,14 @@ def prepare_corpus(config: dict, farm_id: int, destination: Path, progress=None,
     result["review_excluded"] = False
     result["eligible"] = (np.isfinite(result.measured_ac_mw) & (result.measured_ac_mw >= 0)
         & np.isfinite(result.baseline_mw))
-    result=apply_sustained_zero_exclusion(result,config,farm_id=farm_id)
+    result=modeling_instances(result,config,farm_id=farm_id).reset_index(drop=True)
     # Retain only columns needed by the common forward model and diagnostics.
     keep = ["interval_start_utc", "delivery_day", "auction", "decision_cutoff_utc",
         "forecast_cycle_utc", "forecast_available_at_utc", "target_available_at_utc", "lead_hours",
         "solar_zenith_deg", "solar_azimuth_deg", "ghi_w_m2", "bhi_w_m2", "dhi_w_m2", "dni_w_m2",
         "temperature_c", "wind_speed_m_s", "pv_input_valid", "bhi_exceeds_ghi", "dni_limited",
         "baseline_mw", "measured_ac_mw", "satellite_ghi_w_m2", "daylight", "plateau_flag",
-        "suspected_outage", "outage_excluded", "review_excluded", "eligible"]
+        "suspected_outage", "outage_excluded", "review_excluded", "dubious_excluded", "eligible"]
     if retain_weather:
         keep += [name for name in mapping if name not in keep]
     result = result[keep]

@@ -1,0 +1,1163 @@
+schema_version: 1
+inputs:
+  zarr: data/farms/pv_farms_timeseries_20250101_20260831.zarr
+  metadata_parquet: data/farms/pv_farms_timeseries_20250101_20260831.parquet
+source:
+  timezone: UTC
+  historical_dimensions:
+  - time
+  - farm_id
+  forecast_dimensions:
+  - farm_id
+  - cycle_time
+  - lead_time
+  measured_power_basis: AC
+  capacity_basis: AC
+  historical_interval_minutes: 15
+  historical_label: start
+  forecast_radiation_label: end
+  forecast_radiation_interval_hours: 1
+  cycle_cadence_hours: 6
+  availability_lag_hours: 6
+  explicit_availability_variable: null
+  telemetry_latency_minutes: 0
+  numeric_lead_units: hours
+forecast_mapping:
+  forecast_ghi: shortwave_radiation
+  forecast_bhi: direct_radiation
+  temperature_c: temperature_2m
+  dew_point_c: dew_point_2m
+  cloud_total_pct: cloud_cover
+  cloud_low_pct: cloud_cover_low
+  cloud_mid_pct: cloud_cover_mid
+  cloud_high_pct: cloud_cover_high
+  precipitation_mm: precipitation
+  snow_water_equivalent_m: snow_water_equivalent
+  visibility_km: visibility
+  wind_u_10m: wind_u_component_10m
+  wind_v_10m: wind_v_component_10m
+  wind_u_100m: wind_u_component_100m
+  wind_v_100m: wind_v_component_100m
+forecast_semantics:
+  forecast_ghi: hourly_mean
+  forecast_bhi: hourly_mean
+  precipitation_mm: hourly_accumulation
+  default: instantaneous
+policy:
+  version: requested-v1
+  plateau:
+    enabled: true
+    minimum_run: 4
+    atol_kw: 0.01
+    rtol: 0.0001
+    native_minutes: 15
+  night:
+    enabled: true
+    timezone: Europe/Rome
+    start: '21:30'
+    end: 05:00
+  nonnegative_forecasts:
+  - forecast_ghi
+  - forecast_bhi
+  - precipitation_mm
+  - snow_water_equivalent_m
+  - visibility_km
+  - cloud_total_pct
+  - cloud_low_pct
+  - cloud_mid_pct
+  - cloud_high_pct
+  interpolation:
+    enabled: true
+    variables:
+    - power
+    - ghi
+    maximum_gap_hours: null
+  evidence_availability: endpoint_and_mask_evidence
+review:
+  exclusions_csv: null
+  excluded_decisions:
+  - exclude
+  - excluded
+  - reject
+  mode: exploratory
+farm_id: 910
+farms:
+  '1':
+    ac_capacity_kw: 953.28
+    tracking_type_id: 0
+    battery:
+      capacity_mwh: 0.75
+      max_power_mw: 0.5
+    pv:
+      direct_exceeds_ghi: clip_and_flag
+      transposition_model: isotropic
+      albedo: 0.2
+      temperature:
+        u0: 60.0
+        u1: 15.0
+      bifacial:
+        enabled: false
+        bifaciality: 0.8
+        height_to_pitch_ratio: 0.4
+        shade_factor: -0.02
+        transmission_factor: 0.0
+      output:
+        method: calibrated_scale
+        calibrated_coefficient: 0.5319403177692952
+        assumption_status: global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_1.json
+  '345':
+    ac_capacity_kw: 1524.6
+    tracking_type_id: 0
+    battery:
+      capacity_mwh: 1.0
+      max_power_mw: 0.5
+    pv:
+      direct_exceeds_ghi: clip_and_flag
+      transposition_model: isotropic
+      albedo: 0.2
+      temperature:
+        u0: 60.0
+        u1: 15.0
+      bifacial:
+        enabled: false
+        bifaciality: 0.8
+        height_to_pitch_ratio: 0.4
+        shade_factor: -0.02
+        transmission_factor: 0.0
+      output:
+        method: calibrated_scale
+        calibrated_coefficient: 0.4626249301825054
+        assumption_status: global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_345.json
+  '901':
+    ac_capacity_kw: 4160.0
+    tracking_type_id: 3
+    battery:
+      capacity_mwh: 2.0
+      max_power_mw: 1.0
+    pv:
+      direct_exceeds_ghi: clip_and_flag
+      transposition_model: isotropic
+      albedo: 0.2
+      temperature:
+        u0: 60.0
+        u1: 7.835819738293059
+      bifacial:
+        enabled: false
+        bifaciality: 0.8
+        height_to_pitch_ratio: 0.4
+        shade_factor: -0.02
+        transmission_factor: 0.0
+      output:
+        method: calibrated_scale
+        calibrated_coefficient: 0.8899355438128487
+        assumption_status: global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_901.json
+      tracker:
+        gcr: 0.6385656354705106
+        max_angle: 57.91350435093605
+  '910':
+    ac_capacity_kw: 6638.0
+    tracking_type_id: 1
+    battery:
+      capacity_mwh: 5.0
+      max_power_mw: 2.5
+    pv:
+      direct_exceeds_ghi: clip_and_flag
+      transposition_model: perez-driesse
+      albedo: 0.2
+      temperature:
+        u0: 60.0
+        u1: 15.0
+      bifacial:
+        enabled: false
+        bifaciality: 0.8
+        height_to_pitch_ratio: 0.4
+        shade_factor: -0.02
+        transmission_factor: 0.0
+      output:
+        method: calibrated_scale
+        calibrated_coefficient: 0.8050110294570347
+        assumption_status: global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_910.json
+      tracker:
+        gcr: 0.5667211662668288
+        max_angle: 30.0
+analysis:
+  policy_context: complete_selected_farm_history
+forecast_run:
+  decision_cutoff: null
+  delivery_day: null
+  delivery_timezone: Europe/Rome
+  earlier_complete_vintage_fallback: false
+  output_dir: outputs/pv
+pv:
+  parameter_registry: null
+  forecast_replacement:
+    enabled: false
+    fallback: pvlib
+    allow_retrospective_artifacts: false
+    models_by_farm: {}
+  transposition_model: perez-driesse
+  bifacial:
+    enabled: false
+    bifaciality: 0.8
+    height_to_pitch_ratio: 0.4
+    shade_factor: -0.02
+    transmission_factor: 0.0
+  shortwave_interpretation: ghi
+  shortwave_interpretation_status: user_confirmed
+  direct_radiation_interpretation: horizontal_direct
+  direct_radiation_interpretation_status: user_working_assumption
+  fraction_diffuse_enabled: false
+  source_azimuth_positive: east
+  location:
+    latitude: 45.4642
+    longitude: 9.19
+    location_status: proxy
+    acknowledged: true
+  irradiance_redistribution: uniform
+  direct_exceeds_ghi: clip_and_flag
+  ghi_only_decomposition: null
+  low_sun_zenith_deg: 85.0
+  dni_limit_w_m2: 1400.0
+  dni_limit_action: cap_and_flag
+  tracker:
+    assumptions_acknowledged: true
+    axis_tilt: 0.0
+    axis_azimuth: 0.0
+    max_angle: 30.0
+    backtrack: true
+    gcr: 0.5667211662668288
+  bifacial_front_side_only_enabled: true
+  albedo: 0.2
+  temperature:
+    model: faiman
+    u0: 60.0
+    u1: 15.0
+    wind_height_m: 10
+    wind_as_module_proxy_acknowledged: true
+  dc:
+    model: pvwatts
+    reference_conversion_efficiency: 0.96
+    gamma_pdc_per_c: -0.004
+    reference_temperature_c: 25.0
+  output:
+    method: calibrated_scale
+    pv_output_efficiency: 0.96
+    calibrated_coefficient: 0.8050110294570347
+    assumption_status: global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_910.json
+    transformer_efficiency: 1.0
+    transformer_assumption_status: no_measured_transformer_loss_assumed
+    ac_limit_mw: 6.638
+pv_calibration:
+  start_day: null
+  end_day_exclusive: null
+  delivery_timezone: Europe/Rome
+  minimum_dc_fraction_of_ac_rating: 0.05
+  minimum_pairs: 100
+  validation_fraction: 0.2
+  exclude_policy_adjusted: true
+  output_root: outputs/pv_calibration
+  run_id: null
+  farm_ids:
+  - 910
+  - 1
+  - 345
+  - 901
+  evaluation_start_day: null
+  as_of_utc: null
+  training_windows_days:
+  - null
+  - 90
+  validation_days: 7
+  minimum_training_days: 14
+  methods:
+  - fixed
+  - scale_mse
+  - scale_huber
+  - thermal_mse
+  - thermal_huber
+  - tracker_mse
+  - tracker_huber
+  - bifacial_mse
+  - bifacial_huber
+  transposition_models:
+  - isotropic
+  - haydavies
+  - perez-driesse
+  regularization_values:
+  - 0.0
+  - 0.01
+  huber_delta: 0.05
+  parameter_bounds:
+    coefficient:
+    - 0.2
+    - 1.5
+    u0:
+    - 10.0
+    - 60.0
+    u1:
+    - 0.0
+    - 15.0
+    gcr:
+    - 0.15
+    - 0.65
+    max_angle:
+    - 30.0
+    - 80.0
+  multistarts: 2
+  max_function_evaluations: 180
+  optimizer_ftol: 1.0e-11
+  optimizer_gtol: 1.0e-09
+  seed: 2025
+  workers: 4
+  resume: true
+  retrospective_fit: true
+  outage_ghi_threshold_w_m2: 100.0
+  bootstrap_block_days: 7
+  bootstrap_repetitions: 1000
+  representative_days_per_season: 1
+  bifacial_sensitivity:
+    bifaciality:
+    - 0.65
+    - 0.9
+    height_to_pitch_ratio:
+    - 0.35
+    - 0.5
+    albedo:
+    - 0.15
+    - 0.25
+pv_neural:
+  farm_ids:
+  - 910
+  - 1
+  - 345
+  - 901
+  start_day: '2025-01-01'
+  train_end_day_exclusive: '2026-01-01'
+  validation_end_day_exclusive: '2026-05-01'
+  end_day_exclusive: '2026-09-01'
+  delivery_timezone: Europe/Rome
+  output_root: outputs/pv_neural
+  split_embargo_days: 1
+  run_id: null
+  resume: true
+  workers: 4
+  threads_per_worker: 2
+  interop_threads_per_worker: 1
+  seed: 2025
+  deterministic: true
+  device: cpu
+  max_epochs: 100
+  patience: 15
+  minimum_improvement: 1.0e-06
+  batch_size: 32
+  prediction_batch_size: 128
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  gradient_clip_norm: 1.0
+  loss: mse
+  huber_delta: 0.05
+  dropout: 0.05
+  month_embedding_dim: 4
+  auction_embedding_dim: 0
+  standardization_floor: 1.0e-06
+  input_clip_standard_deviations: 12.0
+  include_ridge_baseline: true
+  ridge_alphas:
+  - 0.0001
+  - 0.01
+  - 1.0
+  minimum_training_days: 30
+  minimum_validation_days: 7
+  minimum_test_days: 7
+  bootstrap_repetitions: 1000
+  bootstrap_block_days: 7
+  representative_days: 3
+  candidates:
+  - name: mlp_core
+    architecture: mlp
+    features: core
+    width: 48
+    depth: 2
+  - name: mlp_weather
+    architecture: mlp
+    features: weather
+    width: 64
+    depth: 2
+  - name: residual_core
+    architecture: residual
+    features: core
+    width: 48
+    depth: 2
+  - name: residual_weather
+    architecture: residual
+    features: weather
+    width: 64
+    depth: 2
+  - name: tcn_core
+    architecture: tcn
+    features: core
+    width: 32
+    depth: 3
+    kernel_size: 3
+  - name: tcn_weather
+    architecture: tcn
+    features: weather
+    width: 48
+    depth: 3
+    kernel_size: 3
+pv_neural_tuning:
+  run_id: null
+  output_root: outputs/pv_neural_tuning
+  source_corpus_run_id: null
+  resume: true
+  workers: null
+  reserved_cpu_cores: 6
+  threads_per_worker: 1
+  interop_threads_per_worker: 1
+  seed: 73021
+  trials_per_architecture_feature: 8
+  search_space:
+    widths:
+    - 32
+    - 48
+    - 64
+    - 96
+    mlp_depths:
+    - 2
+    - 3
+    - 4
+    residual_depths:
+    - 1
+    - 2
+    - 3
+    tcn_depths:
+    - 2
+    - 3
+    - 4
+    tcn_kernel_sizes:
+    - 3
+    - 5
+    - 7
+    dropout:
+    - 0.0
+    - 0.05
+    - 0.15
+    learning_rates:
+    - 0.0003
+    - 0.001
+    - 0.003
+    weight_decays:
+    - 1.0e-05
+    - 0.0001
+    - 0.001
+    batch_sizes:
+    - 16
+    - 32
+    - 64
+    losses:
+    - mse
+    - huber
+    huber_deltas:
+    - 0.025
+    - 0.05
+    - 0.1
+    month_embedding_dims:
+    - 2
+    - 4
+    - 8
+    auction_embedding_dims:
+    - 0
+  regression:
+    ridge_alphas:
+    - 1.0e-06
+    - 1.0e-05
+    - 0.0001
+    - 0.001
+    - 0.01
+    - 0.1
+    - 1.0
+    - 10.0
+    lasso_alphas:
+    - 1.0e-06
+    - 1.0e-05
+    - 0.0001
+    - 0.001
+    - 0.01
+    - 0.05
+    elastic_net_alphas:
+    - 1.0e-06
+    - 1.0e-05
+    - 0.0001
+    - 0.001
+    - 0.01
+    elastic_net_l1_ratios:
+    - 0.1
+    - 0.5
+    - 0.9
+    coordinate_descent_max_iterations: 5000
+    coordinate_descent_tolerance: 1.0e-07
+  include_core_and_extended_features: true
+forecast:
+  farm_id: 910
+  initial_decision_cutoff: null
+  member_policy: one_deterministic_weather_vintage
+  reoptimization_pv_policy: latest_available_forecast_at_each_reoptimization
+  realized_power_policy: use_actual_ac_for_execution_and_boundary_state_when_available
+  realized_power_variable: power
+  realized_power_scale_to_mw: 0.001
+  missing_forecast_policy: zero_only_when_policy_marks_night
+  missing_realized_power_policy: use_frozen_pv_forecast
+  maximum_missing_realized_intervals: 4
+  initialization_cutoff: null
+market:
+  zone: NORD
+  timezone: Europe/Rome
+  valid_from: '2025-10-01'
+  valid_to: '2026-08-31'
+  decision_buffer_minutes: 5.0
+  gates:
+    DA: '12:00'
+    IDA1: '15:00'
+    IDA2: '22:00'
+    IDA3: '10:00'
+  gate_day_offsets:
+    DA: -1
+    IDA1: -1
+    IDA2: -1
+    IDA3: 0
+  result_times:
+    DA: '13:30'
+    IDA1: '15:30'
+    IDA2: '22:30'
+    IDA3: '10:30'
+  delivery_start_times:
+    DA: null
+    IDA1: null
+    IDA2: null
+    IDA3: '12:00'
+  result_provenance:
+    DA: study_assumption_13:30; GME final results not earlier than 13:05; recorded
+      timestamps preferred
+    IDA1: 'GME DTF03 rev13: results by 15:30 local'
+    IDA2: 'GME DTF03 rev13: results by 22:30 local'
+    IDA3: 'GME DTF03 rev13: results by 10:30 local'
+  cancelled_auctions: []
+plant:
+  farm_id: 910
+  poi_import_mw: 6.638
+  poi_export_mw: 6.638
+  assumption_status: illustrative_symmetric_POI_equal_to_DC_nameplate_not_measured
+battery:
+  capacity_mwh: 5.0
+  max_power_mw: 2.5
+  soc_min_percent: 7.0
+  soc_max_percent: 93.0
+  efficiency_convention: combined
+  combined_charge_efficiency: 0.9486832980505138
+  combined_discharge_efficiency: 0.9486832980505138
+  self_discharge_per_hour: 0.0
+  assumption_status: illustrative_not_confirmed_battery_specification
+state:
+  initial_soc_percent: 50.0
+  initial_soc_basis: nominal_capacity
+  initial_state_status: study_assumption_not_telemetry
+  terminal_soc_percent: 50.0
+  terminal_soc_min_percent: null
+  origin: known_delivery_start_assumption
+degradation:
+  model: throughput
+  cost_eur_per_mwh_throughput: null
+  replacement_cost_eur: null
+  stress_coefficient: 0.000524
+  stress_exponent: 2.03
+  segment_count: 8
+  assumptions: Generic 2024 BNEF pack-price replacement proxy converted at the 2024-12-31
+    ECB FX rate; excludes labor, inverter, BOS and salvage. Reference LFP cycle life
+    is 2500 cycles at 80% DoD to 80% residual capacity (Victron Lithium NG). Constant
+    nominal-energy lifetime approximation; no calendar aging or battery-specific lifetime
+    calibration. Cost applies to charge plus discharge AC throughput, normalized using
+    the configured charge/discharge efficiencies.
+  replacement_economics:
+    pack_price_usd_per_kwh: 115.0
+    cost_year: 2024
+    price_scope: global_generic_lithium_ion_pack_average_not_installed_BESS
+    price_source: https://about.bnef.com/insights/commodities/lithium-ion-battery-pack-prices-see-largest-drop-since-2017-falling-to-115-per-kilowatt-hour-bloombergnef/
+    price_publication_date: '2024-12-10'
+    usd_per_eur: 1.0389
+    fx_date: '2024-12-31'
+    fx_source: https://www.ecb.europa.eu/stats/exchange/eurofxref/shared/pdf/2024/12/20241231.pdf
+    additional_replacement_eur_per_kwh: 0.0
+    salvage_fraction: 0.0
+    retrieved_on: '2026-10-19'
+  throughput_lifetime:
+    cycle_life: 2500
+    reference_depth_of_discharge: 0.8
+    end_of_life_capacity_fraction: 0.8
+    source: https://www.victronenergy.com/media/pg/Lithium_NG_battery_51%2C2_V/en/technical-data.html
+    scope: illustrative_LFP_reference_life_applied_to_generic_pack_price
+trading:
+  optimize_imbalances: false
+  imbalance_penalty_eur_per_mwh: 0.0
+  grid_import_fee_eur_per_mwh: 0.0
+  imbalance_limit_mwh: null
+  imbalance_price_eur_per_mwh: 0.0
+  settlement_status: exact_planned_delivery_actual_terna_quarter_hour_settlement_ex_post
+  planned_delivery_balance_resolution_minutes: null
+transaction_fees:
+  mode: gme_real
+  flat_eur_per_mwh: 0.0
+  timezone: Europe/Rome
+  operator_scope: standalone_plant
+  tariffs:
+  - version: gme_mpe_published_structure_assumed_2024_2026
+    valid_from: '2024-12-01'
+    valid_to: '2026-12-31'
+    applicability: assumed_unchanged
+    source: https://gme.mercatoelettrico.org/it-it/Home/Accesso-ai-Mercati/Elettricita/MercatiElettrici/CorrispettiviSettlement/CorrispettiviElettricita
+    thresholds_mwh:
+    - 20000.0
+    - 1000000.0
+    - 10000000.0
+    marginal_eur_per_mwh:
+    - 0.0
+    - 0.04
+    - 0.03
+    - 0.02
+  initial_state:
+    as_of: '2024-12-01T00:00:00+01:00'
+    monthly_volume_mwh:
+      2024-12: 0.0
+    cumulative_fees_eur: 0.0
+    provenance: Standalone simulated operator starts with zero December 2024 traded
+      volume and no external portfolio activity. Subsequent months start at zero and
+      continuous execution carries actual submitted volume. Replace this assumption
+      with known operator-level volume when applicable.
+execution:
+  dispatch_policy: track_committed_grid
+  reoptimize_physical_controls: false
+  comparison_tolerance_mw: 1.0e-06
+  infeasible_auction_policy: error
+  save_infeasibility_diagnostics: false
+settlement:
+  enabled: false
+  database_path: data/api/market.duckdb
+  provider: terna
+  dataset: imbalance_prices
+  zone: NORD
+  native_interval_minutes: 15
+  price_column: price_eur_mwh
+  missing_price_policy: error
+gme_oracle_experiment:
+  study_id: null
+  delivery_day: null
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA:
+      dataset: day_ahead_prices
+      native_interval_minutes: null
+    IDA1:
+      dataset: ida1_prices
+      native_interval_minutes: 15
+    IDA2:
+      dataset: ida2_prices
+      native_interval_minutes: 15
+    IDA3:
+      dataset: ida3_prices
+      native_interval_minutes: 15
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions: null
+experiment_outputs:
+  overwrite_existing: true
+  root: outputs/full_experiments/gme_oracle
+  run_id: null
+  plots: true
+  save_model_files: true
+  save_dispatch_plans: true
+  save_kpis: true
+  pv_only_baseline: true
+outputs:
+  root: outputs/trading
+  run_id: null
+  plots: true
+  save_model_files: false
+solver:
+  threads: 10
+  time_limit_seconds: 120.0
+  mip_gap: 0.0001
+  feasibility_tolerance: null
+  integrality_tolerance: null
+  seed: 17
+  output_flag: false
+reoptimization_baseline:
+  enabled: false
+  freeze_after_auctions: null
+  plots: true
+participation_study:
+  candidate_auctions:
+  - DA
+  - IDA1
+  - IDA2
+  - IDA3
+  required_auctions: []
+  profiles: null
+  delivery_days: []
+  output_root: outputs/participation_studies
+  run_id: null
+  plots: true
+  perfect_foresight_reference: true
+  sequential_all_auctions_baseline: false
+  per_profile_plots: false
+  save_model_files: false
+  profit_tolerance_eur: 1.0e-06
+  resume: false
+continuous_optimization:
+  start_date: null
+  end_date: null
+  planning_modes:
+  - integrated
+  - current_auction_only
+  perfect_pv_reference: true
+  perfect_pv_reoptimize_at_each_auction: false
+  output_root: outputs/continuous_optimization
+  run_id: null
+  resume: false
+api:
+  start: null
+  end: null
+  timezone: Europe/Rome
+  download_order: month_first
+  cache_directory: data/api
+  storage_backend: duckdb
+  database_path: data/api/market.duckdb
+  database_threads: 4
+  output_directory: outputs/api
+  no_data_cache_hours: 24
+  progress_every: 25
+  plots: true
+  terna_authorization_scheme: bearer
+  terna_request_period: month
+  terna_http_403_policy: continue_other_providers
+  gme_token_refresh_seconds: 900
+  credentials:
+    entsoe_token_env: ENTSOE_API_TOKEN
+    terna_client_id_env: TERNA_CLIENT_ID
+    terna_client_secret_env: TERNA_CLIENT_SECRET
+    gme_username_env: GME_USERNAME
+    gme_password_env: GME_PASSWORD
+  http:
+    attempts: 3
+    connect_timeout: 10
+    read_timeout: 60
+    retry_delay_seconds: 1
+    minimum_request_interval_seconds: 0.25
+    terna_minimum_request_interval_seconds: null
+    max_retry_delay_seconds: 10
+  requests: []
+gme_workbook_import:
+  retire_hourly_ida_snapshots: false
+terna_workbook_import:
+  ambiguous_time_policy: second_occurrence_minute_marker
+manual_market_import:
+  source_directory: data
+  stage_directory: data/staging/manual_market
+  stage_path: null
+  target_database: data/api/market.duckdb
+  duckdb_threads: 4
+  zone: NORD
+  timezone: Europe/Rome
+  date_start: '2025-01-01'
+  date_end_exclusive: null
+  gme_glob: '*_PrezziZonali_Nord.xlsx'
+  terna_glob: Riepilogo_Mensile_Quarto_Orario_*.xlsx
+  gme_schema_config: configs/api_experiments/gme_workbook_import.yaml
+  terna_schema_config: configs/api_experiments/terna_workbook_import.yaml
+  terna_ambiguous_time_policy: second_occurrence_minute_marker
+  ida3_start_clock: '12:00'
+  audit_delivery_days:
+  - '2025-01-01'
+  - '2025-03-30'
+  - '2025-03-31'
+  - '2025-04-01'
+  - '2025-10-01'
+  - '2025-10-26'
+  - '2026-03-29'
+  - '2026-04-01'
+  check_report_path: outputs/data_imports/manual_market/postcheck.json
+  datasets:
+  - provider: gme
+    dataset: day_ahead_prices
+  - provider: gme
+    dataset: ida1_prices
+  - provider: gme
+    dataset: ida2_prices
+  - provider: gme
+    dataset: ida3_prices
+  - provider: terna
+    dataset: imbalance_prices
+report:
+  compile: true
+pv_ensemble_study:
+  source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  output_root: outputs/pv_ensembles
+  run_id: tracking_ensemble_benchmark
+  focus_month: 2026-01
+  workers: 6
+  seed: 73021
+  feature_sets:
+  - weather
+  - tracker
+  - bifacial
+  models:
+  - name: extra_trees_leaf4
+    family: extra_trees
+    parameters:
+      n_estimators: 150
+      min_samples_leaf: 4
+      max_features: 0.8
+  - name: random_forest_leaf4
+    family: random_forest
+    parameters:
+      n_estimators: 150
+      min_samples_leaf: 4
+      max_features: 0.8
+      max_samples: 0.8
+  - name: boosting_leaf15
+    family: hist_gradient_boosting
+    parameters:
+      max_iter: 200
+      max_leaf_nodes: 15
+      learning_rate: 0.05
+      l2_regularization: 1.0
+  - name: boosting_leaf31
+    family: hist_gradient_boosting
+    parameters:
+      max_iter: 200
+      max_leaf_nodes: 31
+      learning_rate: 0.05
+      l2_regularization: 1.0
+pv_forecast_search:
+  farm_ids:
+  - 901
+  - 910
+  source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  output_root: outputs/pv_forecast_search
+  run_id: weather_only_901_910_hpo_v1
+  resume: true
+  workers: 42
+  reserved_cpu_cores: 6
+  seed: 97231
+  feature_sets:
+  - core
+  - weather
+  baseline_ridge_alpha: 1.0
+  statistical_trials_per_family: 6
+  statistical_spaces:
+    boosting_direct:
+      max_iter:
+      - 150
+      - 300
+      - 500
+      max_leaf_nodes:
+      - 7
+      - 15
+      - 31
+      - 63
+      learning_rate:
+      - 0.025
+      - 0.05
+      - 0.1
+      l2_regularization:
+      - 1.0
+      - 10.0
+      loss:
+      - squared_error
+      - absolute_error
+    boosting_residual:
+      max_iter:
+      - 150
+      - 300
+      - 500
+      max_leaf_nodes:
+      - 7
+      - 15
+      - 31
+      - 63
+      learning_rate:
+      - 0.025
+      - 0.05
+      - 0.1
+      l2_regularization:
+      - 1.0
+      - 10.0
+      loss:
+      - squared_error
+      - absolute_error
+    spline_direct:
+      n_knots:
+      - 4
+      - 6
+      - 8
+      degree:
+      - 3
+      alpha:
+      - 0.1
+      - 1.0
+      - 10.0
+      - 100.0
+    spline_residual:
+      n_knots:
+      - 4
+      - 6
+      - 8
+      degree:
+      - 3
+      alpha:
+      - 0.1
+      - 1.0
+      - 10.0
+      - 100.0
+    rbf_direct:
+      gamma:
+      - 0.005
+      - 0.02
+      - 0.05
+      n_components:
+      - 128
+      - 256
+      - 384
+      alpha:
+      - 0.1
+      - 1.0
+      - 10.0
+    rbf_residual:
+      gamma:
+      - 0.005
+      - 0.02
+      - 0.05
+      n_components:
+      - 128
+      - 256
+      - 384
+      alpha:
+      - 0.1
+      - 1.0
+      - 10.0
+    extra_trees:
+      n_estimators:
+      - 100
+      - 200
+      max_features:
+      - 0.6
+      - 0.8
+      - 1.0
+      min_samples_leaf:
+      - 2
+      - 4
+      - 8
+      - 16
+    huber:
+      alpha:
+      - 0.0001
+      - 0.01
+      - 1.0
+      epsilon:
+      - 1.1
+      - 1.35
+      - 1.8
+      max_iter:
+      - 500
+  neural_architectures:
+  - residual_mlp
+  - mixture_experts
+  - bigru
+  - transformer
+  neural_trials_per_architecture: 4
+  neural_space:
+    kernel_size:
+    - 3
+    - 5
+    - 7
+    width:
+    - 32
+    - 64
+    depth:
+    - 2
+    - 3
+    dropout:
+    - 0.0
+    - 0.05
+    - 0.15
+    heads:
+    - 4
+    experts:
+    - 3
+    - 4
+    learning_rate:
+    - 0.0003
+    - 0.001
+    - 0.003
+    weight_decay:
+    - 1.0e-05
+    - 0.0001
+    - 0.001
+    loss:
+    - mse
+    - huber
+  neural_training:
+    max_epochs: 80
+    patience: 10
+    minimum_improvement: 1.0e-06
+    batch_size: 32
+    huber_delta: 0.05
+    gradient_clip_norm: 1.0
+pv_online_bias:
+  farm_ids:
+  - 901
+  - 910
+  source_runs:
+  - outputs/pv_forecast_search/weather_only_901_910_hpo_v1
+  - outputs/pv_forecast_search/market_free_tcn_901_910_v2
+  output_root: outputs/pv_forecast_comparison
+  run_id: market_free_901_910_comparison
+  base_top_k: 3
+  mean_ensemble_sizes:
+  - 2
+  - 3
+  - 5
+  bootstrap_block_days: 7
+  bootstrap_repetitions: 500
+  bootstrap_seed: 89341
+  window_days:
+  - 7
+  - 14
+  - 30
+  - 60
+  minimum_days:
+  - 3
+  - 7
+  gain_bounds:
+  - 0.3
+  - 1.5
+  workers: 42
+pv_hourly_bias_study:
+  farm_ids:
+  - 901
+  - 910
+  source_root: outputs/pv_forecast_comparison/market_free_901_910_comparison
+  output_root: outputs/pv_hourly_bias
+  run_id: original_forecast_901_910
+  reference_model: old_selected
+  history_start_day: '2026-01-01'
+  bucket_hours: 2
+  window_days:
+  - 7
+  - 14
+  - 30
+  - 60
+  ridge_pseudo_intervals:
+  - 10.0
+  - 50.0
+  - 100.0
+  - 250.0
+  minimum_days: 1
+  save_plots: true
+pv_monthly_retraining:
+  farm_ids:
+  - 901
+  - 910
+  source_root: outputs/pv_forecast_search/weather_only_901_910_hpo_v1
+  comparison_root: outputs/pv_forecast_comparison/market_free_901_910_comparison
+  output_root: outputs/pv_monthly_retraining
+  run_id: expanding_2026_05_to_08
+  report_months:
+  - 2026-05
+  - 2026-06
+  - 2026-07
+  - 2026-08
+  workers: 8
+  reserved_cpu_cores: 6
+  save_plots: true
+pv_error_diagnostics:
+  farm_ids:
+  - 901
+  - 910
+  source_root: outputs/pv_forecast_comparison/market_free_901_910_comparison
+  output_root: outputs/pv_error_diagnostics
+  run_id: frozen_2026_05_to_08
+  forecast_model: old_selected
+  evaluation_split: test
+  ghi_quantile_count: 4
+  operating_flags:
+  - suspected_outage
+  - plateau_flag
+  top_flagged_days_for_sensitivity: 1
+  plot_top_flagged_days: 1
+  scatter_seed: 13817
+  scatter_sample_views: 5000
+  save_plots: true
+_pv_shared_settings:
+  parameter_registry: null
+  forecast_replacement:
+    enabled: false
+    fallback: pvlib
+    allow_retrospective_artifacts: false
+    models_by_farm: {}
+  transposition_model: isotropic
+  bifacial:
+    enabled: false
+    bifaciality: 0.8
+    height_to_pitch_ratio: 0.4
+    shade_factor: -0.02
+    transmission_factor: 0.0
+  shortwave_interpretation: ghi
+  shortwave_interpretation_status: user_confirmed
+  direct_radiation_interpretation: horizontal_direct
+  direct_radiation_interpretation_status: user_working_assumption
+  fraction_diffuse_enabled: false
+  source_azimuth_positive: east
+  location:
+    latitude: 45.4642
+    longitude: 9.19
+    location_status: proxy
+    acknowledged: true
+  irradiance_redistribution: uniform
+  direct_exceeds_ghi: invalidate
+  ghi_only_decomposition: null
+  low_sun_zenith_deg: 85.0
+  dni_limit_w_m2: 1400.0
+  dni_limit_action: cap_and_flag
+  tracker:
+    assumptions_acknowledged: true
+    axis_tilt: 0.0
+    axis_azimuth: 0.0
+    max_angle: 60.0
+    backtrack: true
+    gcr: 0.35
+  bifacial_front_side_only_enabled: true
+  albedo: 0.2
+  temperature:
+    model: faiman
+    u0: 25.0
+    u1: 6.84
+    wind_height_m: 10
+    wind_as_module_proxy_acknowledged: true
+  dc:
+    model: pvwatts
+    reference_conversion_efficiency: 0.96
+    gamma_pdc_per_c: -0.004
+    reference_temperature_c: 25.0
+  output:
+    method: explicit_efficiency
+    pv_output_efficiency: 0.96
+    calibrated_coefficient: null
+    assumption_status: illustrative_unfitted_pv_output_model
+    transformer_efficiency: 1.0
+    transformer_assumption_status: no_measured_transformer_loss_assumed
+    ac_limit_mw: 6.638

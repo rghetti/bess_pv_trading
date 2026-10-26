@@ -1,0 +1,83 @@
+{
+  "TCN": {
+    "source_run": "outputs/continuous_optimization/continuous_nord_farm901_2026-01_soc40_neural_gme_real_v1",
+    "realized_pv_mwh": 139.75627508950234,
+    "active_plan_forecast_mwh": 166.10500804279582,
+    "active_plan_forecast_energy_bias_mwh": 26.348732953293457,
+    "shortfall_mwh": 24.114782286175217,
+    "surplus_mwh": 0.3550236495012825,
+    "shortfall_at_energy_bound_mwh": 22.98574313527594,
+    "shortfall_at_power_only_mwh": 1.1290391508992748,
+    "shortfall_unclassified_mwh": 2.775557561562892e-17,
+    "worst_days": [
+      {
+        "delivery_day": "2026-01-30",
+        "shortfall_mwh": 3.1382054854195247,
+        "shortfall_energy_bound_mwh": 3.1382054854195247,
+        "shortfall_power_only_mwh": 0.0,
+        "shortfall_unclassified_mwh": 0.0,
+        "forecast_error_mwh": 3.730353044026065,
+        "model": "TCN"
+      },
+      {
+        "delivery_day": "2026-01-29",
+        "shortfall_mwh": 2.7711065222694216,
+        "shortfall_energy_bound_mwh": 2.7711065222694216,
+        "shortfall_power_only_mwh": 0.0,
+        "shortfall_unclassified_mwh": 0.0,
+        "forecast_error_mwh": 2.7944979127533727,
+        "model": "TCN"
+      },
+      {
+        "delivery_day": "2026-01-10",
+        "shortfall_mwh": 2.259206087897545,
+        "shortfall_energy_bound_mwh": 2.2373121935976803,
+        "shortfall_power_only_mwh": 0.0218938942998647,
+        "shortfall_unclassified_mwh": 0.0,
+        "forecast_error_mwh": 2.392008110979105,
+        "model": "TCN"
+      }
+    ]
+  },
+  "PVLib": {
+    "source_run": "outputs/continuous_optimization/continuous_nord_farm901_2026-01_soc40_pvlib_gme_real_v1",
+    "realized_pv_mwh": 139.75627508950234,
+    "active_plan_forecast_mwh": 168.0271481152858,
+    "active_plan_forecast_energy_bias_mwh": 28.270873025783466,
+    "shortfall_mwh": 24.644205758631433,
+    "surplus_mwh": 0.1885458091339866,
+    "shortfall_at_energy_bound_mwh": 23.1330549822679,
+    "shortfall_at_power_only_mwh": 1.511150776363532,
+    "shortfall_unclassified_mwh": 1.3962491102539887e-16,
+    "worst_days": [
+      {
+        "delivery_day": "2026-01-30",
+        "shortfall_mwh": 3.8443421883719284,
+        "shortfall_energy_bound_mwh": 3.8443421883719284,
+        "shortfall_power_only_mwh": 0.0,
+        "shortfall_unclassified_mwh": 0.0,
+        "forecast_error_mwh": 4.472663304428753,
+        "model": "PVLib"
+      },
+      {
+        "delivery_day": "2026-01-29",
+        "shortfall_mwh": 2.658013554755135,
+        "shortfall_energy_bound_mwh": 2.658013554755135,
+        "shortfall_power_only_mwh": 0.0,
+        "shortfall_unclassified_mwh": 2.1684043449710093e-19,
+        "forecast_error_mwh": 3.3327016798331326,
+        "model": "PVLib"
+      },
+      {
+        "delivery_day": "2026-01-08",
+        "shortfall_mwh": 2.194765846668202,
+        "shortfall_energy_bound_mwh": 1.1641126165138518,
+        "shortfall_power_only_mwh": 1.03065323015435,
+        "shortfall_unclassified_mwh": 1.0842021724855044e-19,
+        "forecast_error_mwh": 1.8593792820957182,
+        "model": "PVLib"
+      }
+    ]
+  },
+  "interpretation": "Active-plan forecast energies use each executed interval once, taking the forecast saved with its retained active command. These are not overlapping auction-view sums. Energy-bound and power-only classifications are descriptive binding-limit diagnostics, not causal effects of changing battery size. No targets were cleaned or changed."
+}

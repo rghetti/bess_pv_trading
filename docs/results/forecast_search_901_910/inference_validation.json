@@ -1,0 +1,50 @@
+[
+  {
+    "farm_id": 901,
+    "bundle": "selected_static",
+    "rows": 1680,
+    "maximum_absolute_difference_mw": 2.861022947442393e-07,
+    "targets_required": false,
+    "proxy_geometry_required": false,
+    "dst_days": [
+      "2025-03-30",
+      "2025-10-26"
+    ]
+  },
+  {
+    "farm_id": 901,
+    "bundle": "selected_including_online",
+    "rows": 1680,
+    "maximum_absolute_difference_mw": 2.861022947442393e-07,
+    "targets_required": false,
+    "proxy_geometry_required": false,
+    "dst_days": [
+      "2025-03-30",
+      "2025-10-26"
+    ]
+  },
+  {
+    "farm_id": 910,
+    "bundle": "selected_static",
+    "rows": 1680,
+    "maximum_absolute_difference_mw": 7.152557373046875e-07,
+    "targets_required": false,
+    "proxy_geometry_required": false,
+    "dst_days": [
+      "2025-03-30",
+      "2025-10-26"
+    ]
+  },
+  {
+    "farm_id": 910,
+    "bundle": "selected_including_online",
+    "rows": 1680,
+    "maximum_absolute_difference_mw": 5.360408916743609e-07,
+    "targets_required": false,
+    "proxy_geometry_required": false,
+    "dst_days": [
+      "2025-03-30",
+      "2025-10-26"
+    ]
+  }
+]

@@ -79,7 +79,7 @@ policy:
     maximum_gap_hours: null
   evidence_availability: endpoint_and_mask_evidence
 review:
-  exclusions_csv: null
+  exclusions_csv: null  # Legacy raw-observation review; model-quality exclusions use only pv_data_quality.exclusions_csv.
   excluded_decisions:
     - exclude
     - excluded
@@ -266,23 +266,18 @@ pv:
     transformer_efficiency: 1.0
     transformer_assumption_status: no_measured_transformer_loss_assumed
     ac_limit_mw: auto
-# Preserve source AC/GHI values; exclude sustained measured-daylight zero runs
-# only from derived model-fit and benchmark masks. Four consecutive zero-AC
-# quarters must have measured GHI >=100 W/m2 within that run. Once
-# anchored, exclude the full zero-output daylight run, including GHI gaps.
+# The versioned CSV alone defines production-quality exclusions. Model corpora
+# omit each excluded quarter's complete feature/target instance in every split.
 pv_data_quality:
-  sustained_zero_outage:
-    enabled: true
-    minimum_consecutive_intervals: 4
-    minimum_satellite_ghi_w_m2: 100.0
-    expand_full_daylight_run: true
+  exclusions_csv: configs/data_quality/pv_excluded_episodes_2025_to_2026_08.csv  # Sole production-quality exclusion source; null disables it.
+  remove_excluded_instances: true  # Drop complete feature/AC-target rows from every modeling split.
 # Materialized modeling-only view; the raw Zarr and frozen source stay intact.
 pv_outage_export:
   farm_ids: [1, 345, 901, 910]
   source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
   output_root: data/farms/curated
-  run_id: sustained_zero_2025_to_2026_08
-# Inspect how the rule changes frozen validation metrics and the worst days.
+  run_id: approved_episodes_2025_to_2026_08
+# Inspect how CSV-approved exclusions change frozen validation metrics.
 pv_validation_audit:
   farm_ids: [1, 345, 901, 910]
   farm_sources:
@@ -305,10 +300,10 @@ pv_validation_audit:
   split: validation
   top_days_per_farm: 3
   output_root: outputs/pv_validation_audit
-  run_id: sustained_zero_2026_jan_apr
+  run_id: approved_episodes_2026_jan_apr
   save_plots: true
-# Full-history candidate queue. Only the sustained-zero rule auto-excludes;
-# all other evidence awaits an explicit decision in review.exclusions_csv.
+# Full-history candidate queue. Runtime training exclusions come only from
+# pv_data_quality.exclusions_csv; audit findings do not add automatic rules.
 pv_data_quality_review:
   farm_ids: [1, 345, 901, 910]
   source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
@@ -332,6 +327,194 @@ pv_data_quality_review:
   focus_days: []
   plot_top_candidate_days: 2
   save_plots: true
+
+# Explicitly materialize reviewed findings into the one runtime exclusion CSV.
+pv_episode_curation:
+  farm_ids: [1, 345, 901, 910]
+  disconnect_source_root: outputs/pv_data_quality/ghi_power_disconnect_full_history
+  review_source_root: outputs/pv_data_quality/full_history_2025_to_2026_08
+  disconnect_kinds: [low_power, high_power]
+  review_issues: [low_output_high_ghi, nonzero_plateau, above_ac_rating, partial_recovery_between_outages]
+  source_flags: {sustained_zero_outage: outage_excluded, nonzero_plateau: plateau_flag, reviewed_exclusion: review_excluded}
+  # Detection settings belong to explicit audit/curation commands, never to model loaders.
+  zero_detection:
+    minimum_consecutive_intervals: 4
+    minimum_satellite_ghi_w_m2: 100.0
+    expand_full_daylight_run: true
+pv_forecast_pilot:
+  # User-approved research choices; informed by the inspected May-August report period.
+  # Replacement remains opt-in through pv.forecast_replacement.enabled.
+  models_by_farm:
+    '1': {name: cleaned_tcn_without_timing, kind: weather_bundle, artifact_path: models/pv/farm_1/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-09-01T00:00:00Z'}
+    '345': {name: cleaned_tcn_without_timing, kind: weather_bundle, artifact_path: models/pv/farm_345/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-09-01T00:00:00Z'}
+    '901': {name: cleaned_tcn_with_timing, kind: weather_bundle, artifact_path: models/pv/farm_901/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-09-01T00:00:00Z'}
+    '910': {name: cleaned_tcn_with_timing, kind: weather_bundle, artifact_path: models/pv/farm_910/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-09-01T00:00:00Z'}
+pv_retrained_error_diagnostics:
+  # Review-only evidence. These thresholds never modify the authoritative exclusion CSV.
+  farm_ids: [1, 345, 901, 910]
+  study_root: outputs/pv_timing_ablation/restored_lead_cycle_all_farms_16_trials
+  models_root: models/pv  # Published checkpoints make diagnostics independent of deleted experiments.
+  model_folder: pilot_2025_train
+  output_root: outputs/pv_error_diagnostics
+  run_id: retrained_timing_all_farms
+  workers: 4
+  plots_only: false
+  focus_profiles_by_farm: {}
+  splits: [train, validation, test]  # Training errors are in-sample and labeled separately.
+  worst_profiles_per_split: 2
+  candidate_plots_per_farm: 2
+  weather_ghi_disagreement_w_m2: 200.0
+  minimum_ghi_w_m2: 300.0
+  low_power_ratio: 0.55
+  gap_fraction_of_rating: 0.15
+  minimum_episode_quarters: 4
+  power_jump_percent: 10.0
+  stable_ghi_change_w_m2: 50.0
+  stable_weather_delta_sigma: 0.5
+  material_ghi_sse_reduction: 0.5  # Review label: at least 50% squared-error reduction after GHI replacement.
+  large_residual_nrmse_percent: 10.0  # Review label, in percentage of installed AC rating; never an exclusion.
+  matched_ghi_range_w_m2: [500.0, 850.0]
+  matched_local_hours: [10, 15]
+pv_timing_ablation:
+  # Restore lead/cycle metadata in the best validation-selected neural models.
+  farm_ids: [1, 345, 901, 910]
+  data_root: data/farms/curated/timing_ablation_2025_2026  # Permanent modeling inputs; independent of disposable outputs.
+  parent_study_root: outputs/pv_cleaned_hpo/all_farms_cleaned_16_trials
+  prepared_source_root: outputs/pv_satellite_benchmark/cleaned_forecast_vs_satellite_2025_2026
+  output_root: outputs/pv_timing_ablation
+  run_id: restored_lead_cycle_all_farms_16_trials
+  resume: true
+  workers: 42
+  reserved_cpu_cores: 6
+  trials_per_model: 16  # One same-parameter/seed treatment and 15 tuning trials per candidate.
+  seed: 85421
+  excluded_features: [wind_speed_10m]  # Keep lead_hours and UTC cycle-hour sine/cosine.
+  extra_families_by_farm:
+    '345': [direct_tcn]  # Preserve the strong TCN alternative alongside the best validation MLP.
+  replay_tolerance_mw: 0.00001
+  neural_space:
+    width: [16, 32, 64]
+    depth: [1, 2, 3, 4]
+    kernel_size: [3, 5, 7]
+    dropout: [0.0, 0.1]
+    learning_rate: [0.0003, 0.001]
+    weight_decay: [0.00001, 0.001]
+    loss: [mse, huber]
+pv_cleaned_hpo:
+  farm_ids: [1, 345, 901, 910]
+  input_regimes: [forecast, satellite]  # Satellite is retrospective; select operational models from forecast.
+  prepared_source_root: outputs/pv_satellite_benchmark/cleaned_forecast_vs_satellite_2025_2026
+  output_root: outputs/pv_cleaned_hpo
+  run_id: all_farms_cleaned_16_trials
+  resume: true
+  workers: 42
+  reserved_cpu_cores: 6
+  trials_per_family: 16
+  seed: 62483
+  replay_tolerance_mw: 0.00001
+  feature_sets: [core, weather]
+  bootstrap_block_days: 7
+  bootstrap_repetitions: 1000
+  statistical_spaces:
+    ridge:
+      alpha: [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0, 100000.0, 0.000003, 0.00003, 0.0003, 0.003]
+    extra_trees:
+      n_estimators: [100, 200]
+      max_features: [0.5, 0.8, 1.0]
+      min_samples_leaf: [4, 8, 16, 32]
+    boosting_direct:
+      max_iter: [100, 200, 400]
+      max_leaf_nodes: [7, 15, 31]
+      learning_rate: [0.025, 0.05, 0.1]
+      l2_regularization: [0.0, 1.0, 10.0]
+      loss: [squared_error, absolute_error]
+    spline_direct:
+      n_knots: [4, 6, 8]
+      degree: [2, 3]
+      alpha: [0.01, 0.1, 1.0, 10.0]
+  neural_architectures: [direct_tcn, residual_tcn, residual_mlp]
+  neural_space:
+    width: [16, 32, 64]
+    depth: [1, 2, 3, 4]
+    kernel_size: [3, 5, 7]
+    dropout: [0.0, 0.1]
+    learning_rate: [0.0003, 0.001]
+    weight_decay: [0.00001, 0.001]
+    loss: [mse, huber]
+  physical_families: [thermal, tracker, bifacial]
+  physical_losses: [mse, huber]
+  transposition_models: [isotropic, haydavies, perez-driesse]
+  physical_regularizations: [0.0, 0.000001, 0.0001, 0.01]
+pv_satellite_benchmark:
+  # Retrospective cleaned-input study. Model labels are masked in every split.
+  farm_ids: [1, 345, 901, 910]
+  source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  output_root: outputs/pv_satellite_benchmark
+  run_id: cleaned_forecast_vs_satellite_2025_2026
+  resume: true
+  validation_start: '2026-01-01'
+  test_start: '2026-05-01'
+  embargo_days: 1
+  satellite_ghi_gap_fill: linear_inside
+  workers: 8  # Eight farm/input pairs; each worker uses one CPU thread.
+  reserved_cpu_cores: 6
+  seed: 97231
+  replay_tolerance_mw: 0.00001
+  physical_methods: [scale_mse, thermal_mse, tracker_mse, bifacial_mse]
+  physical_regularization: 0.0
+  # Fixed existing TCN sizes; no new architecture search and no auction/location embeddings.
+  # Farm 1 retains its selected TCN size/kernel with the shared market-free network.
+  neural_by_farm:
+    '1': {features: weather, architecture: direct_tcn, width: 64, depth: 3, kernel_size: 7, dropout: 0.0, learning_rate: 0.001, weight_decay: 0.00001, loss: huber}
+    '345': {features: core, architecture: residual_tcn, width: 16, depth: 5, kernel_size: 3, dropout: 0.15, learning_rate: 0.0003, weight_decay: 0.001, loss: mse}
+    '901': {features: core, architecture: direct_tcn, width: 32, depth: 3, kernel_size: 5, dropout: 0.05, learning_rate: 0.001, weight_decay: 0.001, loss: huber}
+    '910': {features: core, architecture: direct_tcn, width: 32, depth: 2, kernel_size: 5, dropout: 0.0, learning_rate: 0.001, weight_decay: 0.00001, loss: mse}
+pv_satellite_ghi_reference:
+  # Diagnostic only: replay the same frozen models using observed satellite GHI.
+  # Preserve forecast BHI/GHI fraction; use Erbs only where this is undefined.
+  # Temperature, wind and other weather remain forecast inputs; no refitting.
+  farm_ids: [1, 345, 901, 910]
+  prediction_source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  episode_source_root: outputs/pv_data_quality/ghi_power_disconnect_full_history
+  output_root: outputs/pv_data_quality
+  run_id: satellite_ghi_references_full_history
+  plots_only: false  # Redraw completed saved results without repeating model inference.
+  satellite_ghi_gap_fill: linear_inside  # Time-linear interpolation between valid endpoints; none disables it.
+  timezone: Europe/Rome
+  cpu_threads: 4
+  replay_tolerance_mw: 0.00001  # Require reproduction of saved original predictions.
+  plot_top_per_farm: 4
+  focus_days_by_farm: {}
+pv_ghi_power_disconnect:
+  farm_ids: [1, 345, 901, 910]
+  source_root: outputs/pv_data_quality/full_history_2025_to_2026_08
+  prediction_source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  neural_prediction_column: prediction_selected_mw
+  pvlib_prediction_column: prediction_pvlib_mw
+  output_root: outputs/pv_data_quality
+  run_id: ghi_power_disconnect_full_history
+  timezone: Europe/Rome
+  satellite_ghi_min_w_m2: 300.0
+  reference_min_fraction_of_rating: 0.15
+  gap_min_fraction_of_rating: 0.15
+  low_power_ratio_max: 0.55
+  high_power_ratio_min: 1.5
+  minimum_consecutive_intervals: 4
+  forecast_ghi_agreement_w_m2: 200.0
+  ratio_sensitivity: [0.4, 0.55, 0.7]
+  duration_sensitivity_intervals: [2, 4, 8]
+  model:
+    max_iter: 150
+    max_leaf_nodes: 15
+    min_samples_leaf: 60
+    learning_rate: 0.05
+    l2_regularization: 10.0
+    upper_quantile: 0.8
+    seed: 2086
+  matched_ghi_range_w_m2: [500.0, 850.0]
+  matched_local_hours: [10.0, 15.0]
+  plot_top_per_farm: 4
+  focus_days_by_farm: {}  # Additional days to plot when they have a candidate episode.
 pv_calibration:
   start_day: null
   end_day_exclusive: null
@@ -339,7 +522,7 @@ pv_calibration:
   minimum_dc_fraction_of_ac_rating: 0.05
   minimum_pairs: 100
   validation_fraction: 0.20
-  exclude_policy_adjusted: true
+  exclude_policy_adjusted: true  # Deprecated compatibility field; quality exclusions come only from pv_data_quality.exclusions_csv.
   output_root: outputs/pv_calibration
   run_id: null
   # Chronological physical-model study/retrain settings (legacy scale command is unchanged).
@@ -405,7 +588,7 @@ pv_neural:
   huber_delta: 0.05
   dropout: 0.05
   month_embedding_dim: 4
-  auction_embedding_dim: 2
+  auction_embedding_dim: 0  # Auction identity is not a production driver.
   standardization_floor: 1.0e-6
   input_clip_standard_deviations: 12.0
   include_ridge_baseline: true
@@ -448,7 +631,7 @@ pv_neural_tuning:
     losses: [mse, huber]
     huber_deltas: [0.025, 0.05, 0.1]
     month_embedding_dims: [2, 4, 8]
-    auction_embedding_dims: [2, 4]
+    auction_embedding_dims: [0]
   regression:
     ridge_alphas: [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1, 1.0, 10.0]
     lasso_alphas: [0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.05]
@@ -797,11 +980,35 @@ manual_market_import:
 report:
   compile: true
 
+# Optional offline tree benchmark; reuses frozen chronological weather/AC pairs.
+pv_ensemble_study:
+  source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  output_root: outputs/pv_ensembles
+  run_id: tracking_ensemble_benchmark  # Also resolves for non-farm/prepared configs.
+  focus_month: '2026-01'
+  workers: 6  # One CPU thread per fit, no nested parallelism.
+  seed: 73021
+  feature_sets: [weather, tracker, bifacial]
+  models:
+    - name: extra_trees_leaf4
+      family: extra_trees
+      parameters: {n_estimators: 150, min_samples_leaf: 4, max_features: 0.8}
+    - name: random_forest_leaf4
+      family: random_forest
+      parameters: {n_estimators: 150, min_samples_leaf: 4, max_features: 0.8, max_samples: 0.8}
+    - name: boosting_leaf15
+      family: hist_gradient_boosting
+      parameters: {max_iter: 200, max_leaf_nodes: 15, learning_rate: 0.05, l2_regularization: 1.0}
+    - name: boosting_leaf31
+      family: hist_gradient_boosting
+      parameters: {max_iter: 200, max_leaf_nodes: 31, learning_rate: 0.05, l2_regularization: 1.0}
+
 # Broad reproducible forecast HPO: fixed 2025 train / Jan-Apr 2026 validation / May-Aug report.
 # No auction identity, proxy geometry/location, physical-model features or elapsed age.
 pv_forecast_search:
   farm_ids: [901, 910]
   include_national_holiday: false  # Known Italian national holiday on local delivery date; opt in per study.
+  excluded_features: []  # Optional input columns to omit after weather/time features are constructed.
   missing_weather_interpolation: linear_per_view  # Fill each forecast vintage independently before fitting.
   include_missing_indicators: false  # Do not append a separate binary feature for each input column.
   source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
@@ -870,3 +1077,84 @@ pv_forecast_search:
     batch_size: 32
     huber_delta: 0.05
     gradient_clip_norm: 1.0
+
+# Online gain corrects recent forecast errors using completed, observed days only.
+# It does not estimate or assume physical aging. Static weights remain trained to 2025.
+pv_online_bias:
+  farm_ids: [901, 910]
+  source_runs:
+    - outputs/pv_forecast_search/weather_only_901_910_hpo_v1
+    - outputs/pv_forecast_search/market_free_tcn_901_910_v2
+  output_root: outputs/pv_forecast_comparison
+  run_id: market_free_901_910_comparison
+  base_top_k: 3
+  mean_ensemble_sizes: [2, 3, 5]
+  bootstrap_block_days: 7
+  bootstrap_repetitions: 500
+  bootstrap_seed: 89341
+  window_days: [7, 14, 30, 60]
+  minimum_days: [3, 7]
+  gain_bounds: [0.3, 1.5]
+  workers: 42
+
+# Optional additive correction by local clock hour from completed production days.
+# Frozen reference weights are never refitted; May-August is a reused holdout.
+pv_hourly_bias_study:
+  farm_ids: [901, 910]
+  source_root: outputs/pv_forecast_comparison/market_free_901_910_comparison
+  output_root: outputs/pv_hourly_bias
+  run_id: original_forecast_901_910
+  reference_model: old_selected
+  history_start_day: '2026-01-01'  # Avoid in-sample 2025 residuals from the frozen model.
+  bucket_hours: 2
+  window_days: [7, 14, 30, 60]
+  ridge_pseudo_intervals: [10.0, 50.0, 100.0, 250.0]
+  minimum_days: 1
+  save_plots: true
+
+# Online ridge correction of a frozen PV predictor from completed production days.
+# Select feature family, history and shrinkage using validation only. Each
+# measured physical quarter enters history once, after all targets are available.
+pv_online_ridge_study:
+  farm_ids: [901, 910]
+  source_root: outputs/pv_forecast_comparison/market_free_901_910_comparison
+  output_root: outputs/pv_online_ridge
+  run_id: conditional_residual_901_910
+  reference_model: old_selected
+  secondary_model: selected_including_online
+  history_start_day: '2026-01-01'  # Avoid in-sample 2025 residuals.
+  families: [offset, gain, irradiance, diurnal, weather_diurnal]
+  window_days: [7, 14, 30, 60]
+  ridge_pseudo_days: [0.1, 1.0, 5.0, 20.0]
+  minimum_days: 3
+  save_plots: true
+
+# Prospective monthly refits of each farm's validation-selected statistical model.
+# At local midnight on the preceding day, use only completed/available targets.
+pv_monthly_retraining:
+  farm_ids: [901, 910]
+  source_root: outputs/pv_forecast_search/weather_only_901_910_hpo_v1
+  comparison_root: outputs/pv_forecast_comparison/market_free_901_910_comparison
+  output_root: outputs/pv_monthly_retraining
+  run_id: expanding_2026_05_to_08
+  report_months: ['2026-05', '2026-06', '2026-07', '2026-08']
+  workers: 8  # Eight farm/month fits; each runs on one CPU.
+  reserved_cpu_cores: 6
+  save_plots: true
+
+# Diagnostics only: satellite GHI and unconfirmed operating flags explain where
+# forecast error accumulates. Neither enters an operational PV prediction.
+pv_error_diagnostics:
+  farm_ids: [901, 910]
+  source_root: outputs/pv_forecast_comparison/market_free_901_910_comparison
+  output_root: outputs/pv_error_diagnostics
+  run_id: frozen_2026_05_to_08
+  forecast_model: old_selected
+  evaluation_split: test
+  ghi_quantile_count: 4
+  operating_flags: [suspected_outage, plateau_flag]
+  top_flagged_days_for_sensitivity: 1  # Report-only mask; never changes training or forecasts.
+  plot_top_flagged_days: 1
+  scatter_seed: 13817
+  scatter_sample_views: 5000
+  save_plots: true

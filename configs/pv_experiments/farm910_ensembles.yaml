@@ -1,0 +1,6 @@
+# Same frozen chronology as farm 901; farm 910 has front-side single-axis tracking.
+include: ../standard.yaml
+farm_id: 910
+pv_ensemble_study:
+  run_id: farm910_tracking_2025_to_2026
+  feature_sets: [weather, tracker]

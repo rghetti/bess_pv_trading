@@ -1,0 +1,9 @@
+{
+  "regime": "forecast",
+  "farm_id": 345,
+  "family": "direct_tcn",
+  "model": "direct_tcn_12",
+  "validation_nrmse_percent": 11.027042929328248,
+  "overall_winner": false,
+  "role": "Validation-selected TCN family winner; alternative to overall winter-validation winner pvlib_scale"
+}

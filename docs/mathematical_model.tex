@@ -19,7 +19,7 @@
 \DeclareMathOperator{\clip}{clip}
 \title{PV and Battery Trading in MGP and MI Auctions\\Current Mathematical Model and Execution Workflow}
 \author{\texttt{bess\_pv\_trading} repository}
-\date{Implementation reviewed on 23 October 2026}
+\date{Implementation updated on 26 October 2026}
 \begin{document}
 \maketitle
 \begin{abstract}
@@ -449,9 +449,10 @@ Farm & Before & After & Before & After & Before & After & \\
 910 & 0.717493 & 0.681918 & 0 & 0 & 5.815742 & 5.383478 & 5.0\% \\
 \bottomrule
 \end{tabular}
-\caption{Matched 2025 daylight absolute errors with the final static parameters.
-Minimum errors are zero even after excluding nighttime. Genuine zeros and
-suspected operating outages remain in the common target population.}
+\caption{Historical, pre-curation matched 2025 daylight absolute errors with
+the final static parameters. Minimum errors are zero even after excluding
+nighttime. Genuine zeros and suspected operating outages remained in that
+study's common target population.}
 \end{table}
 
 Average improvement does not imply improvement of every interval or of the
@@ -496,8 +497,11 @@ chooses epochs and candidates; test observations choose neither.
 Let $X_{dat}$ contain the selected forecast weather, deterministic solar
 geometry, cyclic calendar features, forecast lead and missingness indicators.
 Its imputation and standardization statistics use training data only.
-Learned month and auction embeddings $e_{\theta}(m,a)$ augment those numeric
-features. Each farm predicts
+The original saved models augment those numeric features with learned month
+and auction embeddings $e_{\theta}(m,a)$. New shared defaults disable the
+auction embedding, while historical artifacts retain their saved contract.
+The newer weather-only search below removes both embeddings and proxy solar
+geometry. In the original workflow each farm predicts
 \begin{equation}
  \widehat P_{dat}^{\rm NN}=P_{\rm AC,rated}\,D_{dt}\,\sigma\!\left(
  g_{\theta_f}(X_{da,\cdot},e_\theta(m,a))_t\right),
@@ -1815,6 +1819,364 @@ feedback changes executed wear and inventory. The forecast methods should
 therefore be compared on financial and physical outcomes together.
 Numerical evidence and the four-panel plot are versioned under
 \path{docs/results/farm901_january_2026/}.
+
+\subsection{Farm 901 follow-up: imbalance diagnosis and tree ensembles}
+The January TCN trajectory has 24.115 MWh of shortfalls and 0.355 MWh of
+surpluses, giving 24.470 MWh of absolute imbalance. Summing its retained active
+plan forecasts once per delivered quarter gives 166.105 MWh against 139.756 MWh
+measured. This is distinct from adding overlapping auction forecast views.
+Of the shortfall energy, 22.986 MWh (95.3\%) occurs in quarters ending at the
+hard SOC minimum; the remaining 1.129 MWh reaches the discharge-power limit.
+These binding-limit diagnostics do not establish the causal benefit of a
+larger battery. The three largest shortfall days are January 30, 29 and 10.
+
+The optional \texttt{study-pv-ensembles} command reuses the frozen chronological
+corpus and common eligibility masks. It compares random forests, Extra Trees
+and two histogram gradient-boosting configurations across weather-only,
+front-side tracker-augmented and bifacial-augmented features: twelve new fits.
+Each fit uses one CPU thread; the configured pool uses six workers. Physical
+inputs reuse the operational forward engine's tracker tilt/azimuth, POA,
+cell temperature and AC output, with optional explicit rear-side irradiance.
+Targets and satellite GHI never enter features. The geometry and proxy location
+remain assumptions. Model artifacts are saved separately and are not deployed
+automatically to trading.
+
+\begin{center}\small
+\begin{tabular}{lrrrr}
+\toprule Model & Validation RMSE & January RMSE & January bias & Test RMSE\\
+\midrule
+Calibrated pvlib & 12.730 & 9.643 & +3.403 & 14.114\\
+Existing TCN & 11.212 & 8.082 & +2.770 & 12.559\\
+Tracker-augmented boosting & 11.684 & 8.457 & +0.254 & 12.608\\
+\bottomrule
+\end{tabular}\end{center}
+All entries are daylight errors as percentages of farm AC rating, balanced
+by day/auction; positive bias is overprediction. These differ from the earlier
+all-quarter forecast metrics. Training uses 2025; January--April 2026 selects
+candidates, while May--August is only reported. The best new validation
+candidate uses 15-leaf boosting with front-side physical features. The TCN
+still wins validation RMSE overall, but the new candidate substantially reduces
+January signed bias and slightly reduces January MAE (5.532\% versus 5.753\%).
+Rear-side features do not improve that validation selection. This first search
+does not establish tracking geometry as the primary source of error.
+A subsequent trading comparison is needed to determine whether the lower bias
+reduces imbalances without excessive curtailment; no new trading replay is
+included here. Metrics, selection, comparison plot and the initial imbalance
+diagnosis are versioned with the farm 901 results.
+
+\subsection{Weather-only model search and causal forecast-error adaptation}
+The subsequent farm 901/910 workflow removes proxy coordinates, derived solar
+and tracker geometry, physical PV intermediates, auction embeddings, month
+embeddings and elapsed-age inputs. Its regressors are forecast weather,
+cyclic hour/year/month, cycle hour, lead and train-only missingness indicators.
+Separate per-farm models predict AC fractions. Nameplate power scales and
+clips the output; it is not an estimated weather feature. Measured AC targets
+remain unchanged and satellite GHI never enters forecasting features.
+
+The original chronology remains: fit to 2025, select parameters and stopping
+epochs on January--April 2026, and report May--August 2026. The latter months
+have been inspected in successive research iterations and are therefore a
+reused holdout. Fitting and selection code does not use their scores, but they
+do not constitute an untouched test of the research process. The existing
+availability embargo, six-hour weather lag, buffered cutoffs, native quarters,
+DST and IDA3 noon eligibility are preserved. All valid training quarters,
+including genuine zeros, are retained. Reported comparisons use the same
+frozen daylight mask and equal day/auction weights as the earlier benchmark.
+
+Let $r_f(X)$ be a Ridge weather model fitted only to the 2025 training rows.
+New statistical candidates use histogram gradient boosting, Extra Trees,
+Huber regression, spline expansions with Ridge, and random Fourier features
+with Ridge. Boosting, spline and Fourier candidates can predict directly or
+correct $r_f$. Neural candidates include residual MLPs, mixtures of experts,
+bidirectional GRUs, Transformers and direct/residual temporal convolutions.
+A residual candidate has the form
+\begin{equation}
+ \widehat P_{dat}=P_{\rm AC,rated}D_{dt}
+ \operatorname{clip}_{[0,1]}\{r_f(X_{dat})+g_\theta(X_{da,\cdot})_t\}.
+\end{equation}
+Direct TCNs instead apply a sigmoid output head. Every sequence uses only
+weather already available at issuance. Training uses AdamW, configured
+MSE/Huber loss, gradient clipping, deterministic seeds and validation-only
+early stopping. Exported convolution artifacts preserve the training padding
+length, including 25-hour DST days, to reproduce individual-day predictions.
+
+Two searches complete 176 trial fits: 128 broad statistical/neural trials and
+48 additional direct/residual TCN trials across the two farms. At most 42
+single-thread CPU workers run concurrently. Validation selects equal-weight
+means of its best two, three or five new models. A further 96 comparisons
+test causal scalar correction, with four history windows and two minimum-day
+requirements over six base predictors per farm. For issuance cutoff $c$,
+write $H(c,W)$ for completed days observed by $c$ within the trailing $W$ days.
+With $\bar p_{dt}$ the mean base prediction over overlapping auction views,
+the gain is
+\begin{equation}
+ k_c=\operatorname{clip}_{[k_{\min},k_{\max}]}
+ \frac{\sum_{d\in H(c,W),t}\bar p_{dt}P_{dt}^{\rm measured}}
+      {\sum_{d\in H(c,W),t}\bar p_{dt}^{\,2}},\qquad
+ \widehat P^{\rm adapt}_{dat}=
+ \operatorname{clip}_{[0,P_{\rm AC,rated}]}(k_c\widehat P_{dat}).
+\end{equation}
+The gain is one until sufficient completed history and positive denominator
+are available. Each physical target is counted once. A day becomes available
+only after its next local midnight and all retained targets are observed.
+This adapts forecast errors without asserting an aging mechanism. It adds
+past 2026 measurements to a predictor whose static weights remain fitted to
+2025, and is labelled separately from frozen-model comparisons.
+
+\begin{center}\small
+\begin{tabular}{llrrr}
+\toprule Farm & Model & Train & Validation & Report\\
+\midrule
+901 & Previous selected TCN & 11.286 & 11.212 & 12.559\\
+901 & New five-model mean & 11.308 & 11.046 & 12.770\\
+901 & Calibrated pvlib & 13.359 & 12.730 & 14.114\\
+910 & Previous selected neural & 17.494 & 17.920 & 18.193\\
+910 & New static two-model mean & 15.002 & 17.753 & 18.259\\
+910 & Five-model mean, seven-day gain & 13.915 & 15.899 & 17.057\\
+910 & Calibrated pvlib & 14.849 & 20.451 & 18.430\\
+\bottomrule
+\end{tabular}\end{center}
+Entries are daylight RMSE percentages of installed AC rating, balanced by
+day/auction. Choices use validation only. The new farm 901 ensemble improves
+validation slightly but does not improve the report period. Farm 910's causal
+gain reduces report RMSE by approximately 6.25\% versus its previous selection;
+the static ensemble alone does not improve that period. Seven-day paired block
+resampling gives 95\% candidate-minus-previous intervals of
+$[-0.080,+0.532]$ capacity percentage points for farm 901 and
+$[-2.206,+0.008]$ for farm 910. Both include zero and exclude HPO-selection
+uncertainty, so stronger generalization claims are not supported.
+
+The inspectable launcher is \path{scripts/train_pv_forecasts.py}, with all
+grids and budgets inherited from \path{pv_forecast_search} in the standard
+YAML. The reproduction guide \path{docs/pv_forecast_search.md} describes
+commands, argument meanings, original source snapshots and pinned resolved
+configurations. The comparison output contains metrics, predictions, monthly
+plots and checksum-validated single/ensemble/adaptive inference bundles.
+All four selected exports reproduce first/middle/last-day benchmark outputs
+and both DST transitions within $7.2\times10^{-7}$ MW without measured targets
+or proxy geometry.
+These research artifacts do not change trading defaults, and no additional
+trading replay is included in this model search.
+
+\subsection{Local-hour correction of the existing selected predictors}
+The separate \texttt{study-pv-hourly-bias} command corrects the previous
+selected farm 901/910 predictors without changing their fitted weights. For
+each historical physical quarter, overlapping auction-view predictions are
+averaged and measured AC is counted once. Let $H_h(c,W)$ contain quarters in
+local two-hour bucket $h$ from completed production days within $W$ days of
+issuance cutoff $c$. Days are unavailable until the next Italian midnight
+and all retained measurements arrive. For configured pseudocount $\lambda$,
+\begin{equation}
+ b_h(c)=\frac{\sum_{(d,t)\in H_h(c,W)}
+  (P^{\rm measured}_{dt}-\bar P^{\rm previous}_{dt})}
+  {|H_h(c,W)|+\lambda},\qquad
+ \widehat P^{\rm corrected}_{dat}=\operatorname{clip}_{[0,P_{\rm AC,rated}]}
+ (\widehat P^{\rm previous}_{dat}+b_{h(t)}(c)).
+\end{equation}
+The historical study begins its correction history on 1 January 2026,
+because the frozen predictor used 2025 targets in its fit. The regularization,
+history window, bucket width and minimum completed-day requirement are shared
+YAML settings. January--April 2026 selects the setting using the same balanced
+daylight score; May--August 2026 is a reused report period.
+
+\begin{center}\small
+\begin{tabular}{lrrrr}
+\toprule & \multicolumn{2}{c}{Validation} & \multicolumn{2}{c}{Report}\\
+Farm & Previous & Corrected & Previous & Corrected\\
+\midrule
+901 & 11.212 & 11.192 & 12.559 & 12.492\\
+910 & 17.920 & 16.575 & 18.193 & 17.357\\
+\bottomrule
+\end{tabular}\end{center}
+All entries are daylight RMSE as percentages of installed AC rating. Farm
+901's improvement is small; its seven-day paired report-period interval for
+corrected minus previous error is $[-0.142,+0.004]$ percentage points, including
+zero. Farm 910's corresponding interval is $[-1.325,-0.415]$ points, while the
+five-model adaptive ensemble above still scores better at 17.057\%. These
+intervals exclude model-selection uncertainty and the report months have been
+inspected in earlier studies. The configured script, scores, monthly plots,
+selected predictions and source fingerprints are documented in
+\path{docs/pv_forecast_search.md}.
+
+\subsection{Expanding-history monthly retraining check}
+The independent \texttt{study-pv-monthly-retraining} command evaluates one
+additional historical strategy. At local midnight on the day preceding each
+May--August 2026 delivery month, it refits the farm's statistical family
+selected on January--April validation. It uses all eligible forecast-weather
+and measured-AC pairs whose target availability precedes that issue time.
+The original 2025-fitted feature preprocessing, selected family and
+hyperparameters stay fixed; the underlying regression and, when applicable, its Ridge reference
+use the expanding history. This creates eight farm/month fits on eight
+single-thread CPU workers. Source code and settings are under
+\path{src/forecasting/pv_monthly_retraining.py} and
+\path{configs/pv_experiments/monthly_retraining_901_910.yaml}.
+
+For farm 901, May, June, July and August daylight RMSE percentages of AC
+rating are 18.34, 10.77, 12.21 and 10.08 for the monthly refit, versus
+17.41, 10.37, 12.02 and 8.61 for the earlier fixed predictor. Farm 910's
+results are mixed and August worsens materially. Thus expanding the training
+sample does not justify replacing the fixed predictor in this study. Exact
+issue cutoffs, accepted observation times, input populations, monthly
+predictions and scores are preserved under
+\path{outputs/pv_monthly_retraining/expanding_2026_05_to_08/}.
+
+\subsection{Read-only forecast-error attribution}
+The \texttt{diagnose-pv-forecast-errors} command reports the frozen May--August
+2026 forecast errors on the same daylight and day/auction-weighted population.
+It compares forecast GHI with satellite GHI for diagnostic grouping only; the
+satellite series is neither an operational predictor nor a production target.
+The highest quarter of absolute GHI disagreement contributes 48.5\% of farm
+901's weighted squared PV error and 35.6\% of farm 910's. Pre-existing,
+unconfirmed suspected-outage flags cover 0.44\% and 2.70\% of weighted views,
+yet contribute 12.8\% and 21.2\% of squared error, respectively. The two error
+groups overlap, so their shares are not additive. Farm 901's flagged
+suspected-outage views occur on 1 May 2026, when 34 unique physical quarters
+have zero measured AC despite substantial forecast AC and satellite GHI. The
+data do not identify whether the cause is unavailability, curtailment or a
+measurement problem. Excluding that day for sensitivity reporting reduces the
+previous predictor's normalized RMSE from 12.559\% to 11.731\%, but it remains
+better than the new five-model average (11.825\% on the same subset). No
+observations were removed from that historical training or headline score;
+this is a pre-curation result. Current PV fitting removes complete feature/AC-target
+instances using the single versioned exclusion CSV described below. Its records
+include sustained-zero, nonzero-plateau and high/low-production findings. They
+do not identify whether the cause is curtailment, unavailability or telemetry.
+Candidate audit findings have no additional automatic effect on fitting.
+The reproducible
+configuration, full groups and day-level plots are described in
+\path{docs/pv_forecast_search.md}.
+
+\subsection{CSV-authoritative cleaned PV model search}
+
+The sole runtime production-quality exclusion source is
+\path{configs/data_quality/pv_excluded_episodes_2025_to_2026_08.csv}, selected by
+\path{pv_data_quality.exclusions_csv}. Its explicit reasons include
+\texttt{sustained\_zero\_outage}, \texttt{nonzero\_plateau},
+\texttt{low\_power} and \texttt{high\_power}. Audit tools generate evidence;
+modeling loaders do not run independent zero, plateau or GHI-disagreement
+classification rules. For farm $f$, the excluded physical-quarter starts are
+\begin{align}
+ \mathcal I_f^{\rm excl}
+ &=\bigcup_{r:\ f_r=f,\ {\rm decision}_r={\rm exclude}}
+       \{t:s_r\le t\le e_r\},\\
+ \mathcal D_{f,s}^{\rm model}
+ &=\{(x_{d,a,t},P^{\rm AC}_{f,t})\in\mathcal D_{f,s}:
+          t\notin\mathcal I_f^{\rm excl}\},
+ \qquad s\in\{{\rm train,validation,test}\}.
+\end{align}
+An excluded quarter is absent from features and targets, rather than retained
+with a zero loss weight. Sequence models split into contiguous UTC segments;
+they do not bridge a removed interval. Segment weights retain day/auction
+weighting. Source records and an independent exclusion audit preserve evidence.
+
+\path{scripts/search_cleaned_pv_forecasts.py} runs at least 16 unique
+hyperparameter trials per tunable family, per farm and input regime. The families
+are Ridge, Extra Trees, histogram gradient boosting, spline regression, direct
+TCN, residual TCN and residual MLP, together with bounded thermal, tracker and
+bifacial pvlib fits where applicable. OLS and scale-only pvlib are additional
+fixed references. The shared CPU limit is 42 single-threaded workers.
+
+Two paired input regimes use the same removed-instance population. The
+operational regime uses cutoff-available forecast weather. The diagnostic
+regime replaces forecast GHI with observed satellite GHI while preserving the
+forecast direct/global irradiance fraction; Erbs decomposition is used only
+when this fraction is undefined. Remaining weather is forecast, not perfect.
+Interior satellite gaps are linearly interpolated in physical UTC time within
+each split, with no edge extrapolation. Primary scores exclude interpolated
+GHI; secondary scores include it.
+
+Models fit 2025, select hyperparameters on January--April 2026 and report
+May--August 2026 separately. Retrospective episode curation and earlier
+inspection of this report period mean it is a reused curated holdout, not a
+new assessment of unseen operating conditions. Metrics are normalized by
+installed AC rating. Saved outputs include every trial, family winners,
+monthly/auction and daily errors, four local-time periods, seven-day block
+uncertainty intervals, and replay-checked standalone model bundles. Operational
+model selection uses the forecast-input regime; satellite-input winners are
+diagnostic models.
+
+The completed study contains 1,136 fits and uses 675 explicit CSV episode
+records (which may overlap). Every applicable tunable family has 16 trials per
+farm and input regime; OLS and scale-only pvlib have one reference fit each.
+The following table reports May--August 2026 daylight RMSE as a percentage of
+installed AC rating, on the identical observed-GHI-only curated population.
+``Input swap'' keeps the forecast-trained parameters unchanged and substitutes
+satellite GHI. ``Satellite trained'' also selects and fits a model in that
+input regime; it therefore combines input and fitted-model differences.
+\begin{center}
+\begin{tabular}{rlrrr}
+\toprule
+Farm & Forecast validation winner & Forecast & Input swap & Satellite trained\\
+\midrule
+1   & Direct TCN & 6.089 & 5.092 & 4.353\\
+345 & Scale pvlib & 16.218 & 13.302 & 14.685\\
+901 & Direct TCN & 12.047 & 10.411 & 8.404\\
+910 & Direct TCN & 14.038 & 13.547 & 11.199\\
+\bottomrule
+\end{tabular}
+\end{center}
+Farm 345 illustrates cross-season selection instability: pvlib wins
+January--April validation, whereas the validation-selected TCN family model
+has lower May--August error (11.919\% with forecast GHI and 9.948\% when trained
+with satellite GHI). These test-period comparisons do not change the original
+validation selections. Portable operational candidates are archived under
+\path{models/pv/farm_<id>/cleaned_hpo_2025_train/}, with the additional TCN
+candidate for farm 345. Source tables, model identities, target counts and
+seven-day block uncertainty intervals are in
+\path{docs/results/cleaned_pv_hpo/all_farms_cleaned_16_trials/}.
+
+\subsection{Timing ablation and retained research pilot}
+
+A further 80 fits compare restored forecast lead hours and the sine/cosine
+of cycle UTC hour: one paired treatment and 15 hyperparameter trials for each
+of five farm/family candidates. The research pilot retains direct TCNs for
+all farms, with timing only for farms 901 and 910. Farm 1 retains its
+non-timing winner; farm 345 retains its stronger summer TCN alternative.
+These choices use an already inspected report period and do not replace the
+original validation rankings. May--August daylight normalized RMSE is:
+\begin{center}
+\begin{tabular}{rlrr}
+\toprule
+Farm & Retained pilot & Without timing & With timing candidate\\
+\midrule
+1 & Direct TCN without timing & 6.089\% & 6.224\%\\
+345 & Direct TCN without timing & 11.919\% & 11.764\%\\
+901 & Direct TCN with timing & 12.047\% & 11.696\%\\
+910 & Direct TCN with timing & 14.038\% & 13.859\%\\
+\bottomrule
+\end{tabular}
+\end{center}
+Seven-calendar-day block intervals make farm 345's apparent timing improvement
+inconclusive. The selected farm 901 tuned improvement also has an interval
+crossing zero, although its paired timing treatment improves consistently;
+farm 910's paired improvement is clearer. Pilot bundles are saved in
+\path{models/pv/farm_<id>/pilot_2025_train/direct_tcn/}. Operational loading is
+opt-in and preserves adapter lead times; fallback derivation uses interval
+midpoints relative to the forecast vintage.
+
+For each retained day/auction profile, error analysis holds neural weights
+fixed and substitutes satellite GHI. Writing $R_F$ and $R_S$ for forecast-input
+and satellite-input normalized RMSE, define
+\begin{equation}
+ g=1-\frac{R_S^2}{\max(R_F,\epsilon)^2}.
+\end{equation}
+The configurable review partition calls $g\ge0.5$ a material GHI improvement
+and $R_S\ge0.10$ a large residual. These are diagnostic labels, never new
+exclusion rules. Satellite-input pvlib and changes in all available weather
+features provide additional evidence without fitting another reference model.
+Remaining error can involve weather components, model mapping, operational
+state or measurements; a residual alone does not identify its cause.
+
+For farm 1, 15 May 2026 IDA1 RMSE falls from 15.740\% to 6.756\% after the
+GHI substitution. Farm 901, 6 May IDA1 falls from 26.088\% to 8.462\%.
+Farm 345, 5 June IDA1 improves from 25.998\% to 16.337\%, retaining a large
+residual. Farm 910, 2 August IDA3 instead changes from 32.386\% to 33.103\%,
+while satellite-input pvlib scores 25.184\% and GHI MAE is only
+37.3 W/m$^2$. The retained afternoon low-output interval remains a review
+candidate, not a confirmed operator or equipment event. No further CSV
+exclusions are added. Full day/auction rankings, matched-noon auction
+comparisons, category error shares, feature plots and reproducible commands
+are in \path{docs/results/retrained_pv_pilot/}.
 
 \section{Price Forecasting Status}
 

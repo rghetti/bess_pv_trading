@@ -1,0 +1,5 @@
+{
+  "selected_new_model": "boosting_leaf15_tracker",
+  "criterion": "validation balanced daylight nrmse",
+  "test_used_for_selection": false
+}

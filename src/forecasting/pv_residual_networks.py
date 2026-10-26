@@ -76,6 +76,12 @@ def fit_residual_network(packed,baseline,train_groups,validation_groups,spec,sec
     base=np.zeros(packed['indices'].shape,dtype=np.float32)
     valid=packed['indices']>=0;base[valid]=baseline[packed['indices'][valid]]/rating
     tensors['baseline']=torch.as_tensor(base)
+    # Splitting at removed quarters must not give fragmented days extra weight.
+    view_ids=packed.get('view_ids',np.arange(len(base)))
+    counts=np.asarray(packed['mask']).sum(1)
+    totals=np.bincount(view_ids,weights=counts)
+    sequence_weights=np.divide(counts,totals[view_ids],out=np.zeros(len(counts)),where=totals[view_ids]>0)
+    tensors['sequence_weight']=torch.as_tensor(sequence_weights,dtype=torch.float32)
     model=WeatherResidualNetwork(packed['x'].shape[-1],spec)
     if spec['architecture']=='direct_tcn':
         known=tensors['y'][train_groups][tensors['mask'][train_groups]]
@@ -96,7 +102,8 @@ def fit_residual_network(packed,baseline,train_groups,validation_groups,spec,sec
         model.train();order=rng.permutation(train_groups)
         for start in range(0,len(order),batch):
             ix=order[start:start+batch];prediction=predict(ix)
-            loss=loss_values(prediction,tensors['y'][ix],tensors['mask'][ix],spec['loss']).mean()
+            weights=tensors['sequence_weight'][ix]
+            loss=(loss_values(prediction,tensors['y'][ix],tensors['mask'][ix],spec['loss'])*weights).sum()/weights.sum()
             optimizer.zero_grad(set_to_none=True);loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(),section['gradient_clip_norm']);optimizer.step()
         model.eval();scores=[]
@@ -104,7 +111,7 @@ def fit_residual_network(packed,baseline,train_groups,validation_groups,spec,sec
             for start in range(0,len(validation_groups),batch):
                 ix=validation_groups[start:start+batch]
                 scores.extend(loss_values(predict(ix),tensors['y'][ix],tensors['mask'][ix],'mse').tolist())
-        score=float(np.mean(scores));history.append({'epoch':epoch,'validation_nrmse':float(np.sqrt(score))})
+        score=float(np.average(scores,weights=sequence_weights[validation_groups]));history.append({'epoch':epoch,'validation_nrmse':float(np.sqrt(score))})
         if score<best-section['minimum_improvement']:
             best=score;state=deepcopy(model.state_dict());stale=0
         else:stale+=1

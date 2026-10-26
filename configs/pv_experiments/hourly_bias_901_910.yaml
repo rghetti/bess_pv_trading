@@ -1,0 +1,4 @@
+# Completed-day local-hour corrections for the original farm 901/910 models.
+include: ../standard.yaml
+pv_hourly_bias_study:
+  run_id: original_forecast_901_910

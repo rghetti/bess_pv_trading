@@ -462,7 +462,7 @@ Weather cycles occur about every six hours; overlapping cycles are successive vi
 
 The data policy preserves raw values and records flags, adjustments and evidence times. Current policies include nonzero plateau treatment, a configured local night window, allowlisted nonnegative forecast fields, and two-sided interpolation of eligible historical power/GHI gaps. Those are explicit analysis assumptions: some corrections become knowable only after a later sample. As-of views retain that distinction. Forecast gaps are not automatically filled; the historical GME study permits its configured night-zero forecast handling and a bounded, recorded realized-power fallback.
 
-For **PV model training and benchmark scoring**, `pv_data_quality.sustained_zero_outage` in `configs/standard.yaml` now masks a contiguous zero-AC daylight run when it contains at least four native quarters with satellite GHI at or above 100 W/m². The full daylight zero run is masked, including quarters with missing satellite GHI. Its name is historical: the flag establishes anomalous zero output for prediction fitting, **not the cause**. Economic curtailment, a plant outage and bad telemetry are distinct possibilities, especially on days with negative market prices. Genuine nighttime and shorter daylight zeros remain. Raw AC, GHI and market data are unchanged; eligible modeling views retain exclusion flags and their original values. Historical research artifacts made before this rule use their original masks and must be labeled as pre-curation results. Existing global 2025 farm parameters were fitted before this rule; changing the evaluation mask alone does not retrain them.
+For **PV model training and benchmark scoring**, the only production-quality exclusion source is `pv_data_quality.exclusions_csv` in `configs/standard.yaml`. The versioned CSV contains sustained-zero outages, nonzero plateaus, high/low-power episodes and reviewed intervals with explicit farm IDs, reasons and inclusive UTC boundaries. Excluded quarters are removed as complete feature/AC-target instances from training, validation and test. Model readers do not reclassify zeros, GHI disagreements or plateaus. Audit tools can propose additional findings; update the CSV explicitly before those findings affect modeling. These classifications do not identify the physical cause: curtailment, outages and telemetry problems remain distinct possibilities. Historical artifacts retain their historical populations; the cleaned study refits models on the new instance population.
 
 Run the data-quality audit before choosing additional exclusions:
 
@@ -471,7 +471,7 @@ PYTHONPATH=src python -m bess_pv_trading audit-pv-data-quality \
   --config configs/pv_experiments/audit_data_quality_2025_2026.yaml
 ```
 
-It groups overlapping auction views into physical 15-minute intervals, writes per-farm evidence and episode tables under `outputs/pv_data_quality/full_history_2025_to_2026_08/`, and creates `csv/review_queue.csv`. The queue proposes low output under measured high GHI, short partial recoveries between zero runs, flat nonzero plateaus and AC-rating excess; weather disagreement and missing satellite GHI are reported separately. These candidates do **not** alter eligibility. Daily plots have three aligned panels: selected neural AC (`prediction_selected_mw`) versus measured AC, saved pvlib AC (`prediction_pvlib_mw`) versus measured AC, and forecast GHI versus satellite GHI. Black is measured AC or satellite GHI; matching colors identify the DA/IDA auction forecast in every panel. The dashed AC line is the farm rating, and both AC panels use the same vertical scale. Plot prediction columns and labels are configurable under `pv_data_quality_review`; each saved prediction row must match the raw AC corpus before plotting. Review these plots and the source evidence, copy the queue to a stable CSV, fill `decision` with `keep` or `exclude`, and set `review.exclusions_csv` to that path. An `exclude` decision masks only the farm and inclusive UTC interval in research fits/scores; it never edits source measurements. The study owner identified farm 345's 1 May 2025 zero-production interval as emergency curtailment, not an equipment-failure diagnosis; the source measurements remain unchanged. To materialize the current automatic mask, run `curate-pv-outages --config configs/pv_experiments/curate_sustained_zero.yaml`. To rescore frozen validation predictions without refitting, run `audit-pv-validation --config configs/pv_experiments/audit_validation_2026_jan_apr.yaml`.
+It groups overlapping auction views into physical 15-minute intervals, writes per-farm evidence and episode tables under `outputs/pv_data_quality/full_history_2025_to_2026_08/`, and creates `csv/review_queue.csv`. The queue proposes low output under measured high GHI, short partial recoveries between zero runs, flat nonzero plateaus and AC-rating excess; weather disagreement and missing satellite GHI are reported separately. These candidates do **not** alter eligibility. Daily plots have three aligned panels: selected neural AC (`prediction_selected_mw`) versus measured AC, saved pvlib AC (`prediction_pvlib_mw`) versus measured AC, and forecast GHI versus satellite GHI. Black is measured AC or satellite GHI; matching colors identify the DA/IDA auction forecast in every panel. The dashed AC line is the farm rating, and both AC panels use the same vertical scale. Plot prediction columns and labels are configurable under `pv_data_quality_review`; each saved prediction row must match the raw AC corpus before plotting. Review these plots and the source evidence, add approved intervals to the authoritative CSV with `decision: exclude`, an explicit reason, and inclusive UTC boundaries. The modeling loader removes all corresponding feature/target instances. Candidate detection by itself has no effect on training. The study owner identified farm 345's 1 May 2025 zero-production interval as emergency curtailment, not an equipment-failure diagnosis; the source measurements remain unchanged. To materialize the current CSV-approved modeling population, run `curate-pv-outages --config configs/pv_experiments/curate_sustained_zero.yaml`. To rescore frozen validation predictions without refitting, run `audit-pv-validation --config configs/pv_experiments/audit_validation_2026_jan_apr.yaml`.
 
 The PV model uses forecast GHI and horizontal direct irradiance, solar position, fixed or single-axis orientation, selectable isotropic/Hay–Davies/Perez–Driesse plane-of-array irradiance, Faiman temperature from air temperature and wind speed, and PVWatts DC power. Farm metadata capacity is AC. The DC reference rating is AC nameplate divided by the independent `pv.dc.reference_conversion_efficiency` assumption (currently 0.96). Explicit mode converts DC to AC with `pv.output.pv_output_efficiency`; calibrated mode uses `pv.output.calibrated_coefficient`. Both modes then apply the transformer efficiency and cap the forecast at the farm AC rating; a lower YAML AC cap can be selected. Measured AC is not converted again. The current location is an acknowledged Milan proxy; tracker geometry and temperature coefficients are configured assumptions. Farm 901 defaults to a front-side-only approximation; `pv.bifacial.enabled` enables explicit infinite-sheds front/rear irradiance with declared row geometry and bifaciality. Clouds and dew point may be retained in the input store but do not directly enter this conversion. Known farm-specific PV settings can override shared assumptions under `farms.<id>.pv`. See [data contract](docs/dataset_contract.md) and [PV notes](docs/data_pv_notes.md).
 
@@ -535,9 +535,9 @@ PYTHONPATH=src python -m bess_pv_trading study-pv-neural \
   --config configs/pv_experiments/neural_2025_2026.yaml
 ```
 
-It uses all available delivery dates from January 2025 through August 2026. Training uses 2025, validation uses January–April 2026, and the untouched test uses May–August 2026. A configured one-day embargo excludes late training/validation targets at split boundaries so all fitted observations precede the next split's first DA cutoff. Imputation and standardization use training observations only. Early stopping, architecture selection and ridge regularization use validation only. The test is used to report every frozen candidate and the previously selected winner; its scores never choose the deployed artifact. The test period also measures seasonal generalization beyond the winter/spring validation months.
+It uses all available delivery dates from January 2025 through August 2026. Training uses 2025, validation uses January–April 2026, and the reporting/test period uses May–August 2026. A configured one-day embargo excludes late training/validation targets at split boundaries so all fitted observations precede the next split's first DA cutoff. Imputation and standardization use training observations only. Early stopping, architecture selection and ridge regularization use validation only. Selection code never chooses an artifact from test scores. That period has now been inspected in successive studies and is a reused holdout, rather than an untouched test of the research process. It also measures seasonal generalization beyond the winter/spring validation months.
 
-Each farm independently trains six candidates: dense MLP, residual MLP, and temporal convolution, each with core and extended weather inputs. Core inputs are forecast GHI/horizontal-direct radiation, air temperature, 10 m wind components/speed, deterministic solar position, cyclic delivery hour/year/month and forecast cycle hour, and forecast lead time. The extension adds dew point, cloud layers, precipitation, snow, visibility and 100 m wind. Month and auction embeddings are learned. Missing optional features use persisted training medians and missingness indicators. Separate per-farm weights learn the plant response; fitted DC reference/output coefficients, GCR, maximum rotation, cell temperature and POA are **not neural inputs**. Measured AC and satellite GHI are never input features. Actual source tracking/orientation metadata is retained in the model contract; constant farm attributes need not be estimated from redundant columns within a farm-specific model.
+The original benchmark independently trains six candidates per farm: dense MLP, residual MLP, and temporal convolution, each with core and extended weather inputs. Core inputs are forecast GHI/horizontal-direct radiation, air temperature, 10 m wind components/speed, deterministic solar position, cyclic delivery hour/year/month and forecast cycle hour, and forecast lead time. The extension adds dew point, cloud layers, precipitation, snow, visibility and 100 m wind. This older workflow learns month embeddings; new shared settings disable auction embeddings. Frozen historical artifacts retain their saved feature/embedding contracts. Missing optional features use persisted training medians and missingness indicators. Separate per-farm weights learn the plant response; fitted DC reference/output coefficients, GCR, maximum rotation, cell temperature and POA are **not neural inputs**. Measured AC and satellite GHI are never input features. The newer farm 901/910 search described below additionally removes proxy solar geometry and all embeddings. Actual source tracking/orientation metadata is retained as provenance.
 
 The output is a sigmoid AC-nameplate fraction, zeroed outside the deterministic daylight/night policy. The target is unmodified measured quarter-hour AC divided by known installed AC for normalization; no efficiency loss or forecast substitution is applied. All candidates and the calibrated pvlib reference share one eligibility mask, including genuine zero production, operating anomalies and coverage gaps. Models are fitted with configurable MSE/Huber and AdamW; each day/auction view has equal aggregate loss weight. IDA3 uses only its local-noon delivery suffix. Every input view uses the newest weather cycle available at that auction's buffered cutoff, with the six-hour UTC lag and DST-aware native grid.
 
@@ -558,7 +558,7 @@ PYTHONPATH=src python -m bess_pv_trading tune-pv-neural \
   --config configs/pv_experiments/neural_tuning_2025_2026.yaml
 ```
 
-The search keeps the benchmark's 2025 training period, January–April 2026 validation period, one-day availability embargo, and May–August 2026 untouched test period. It samples eight settings for each of the MLP, residual, and temporal convolution architectures with both core and extended weather inputs, including the existing default in each group. Width, depth, dropout, learning rate, weight decay, batch size, loss, embedding sizes, and temporal kernel are configurable. Independent farm/model trials run in separate CPU processes with one thread each. The standard setting leaves six logical CPUs idle for other cluster users; an experiment may set a lower worker cap. This study caps at 42 workers on the 48-CPU cluster. It also compares validation-selected weighted OLS, Ridge, Lasso, and Elastic Net models using both feature sets. No additional Python package is needed.
+The search keeps the benchmark's 2025 training period, January–April 2026 validation period, one-day availability embargo, and May–August 2026 reporting period. It samples eight settings for each of the MLP, residual, and temporal convolution architectures with both core and extended weather inputs, including the existing default in each group. Width, depth, dropout, learning rate, weight decay, batch size, loss, embedding sizes, and temporal kernel are configurable. Independent farm/model trials run in separate CPU processes with one thread each. The standard setting leaves six logical CPUs idle for other cluster users; an experiment may set a lower worker cap. This study caps at 42 workers on the 48-CPU cluster. It also compares validation-selected weighted OLS, Ridge, Lasso, and Elastic Net models using both feature sets. No additional Python package is needed.
 
 Each candidate is fit using measured AC power normalized by the farm rating. The predictions are clipped to the farm's AC range for validation and test scoring, matching the neural output constraint and calibrated pvlib's AC cap; measured AC targets remain unmodified. Hyperparameters and model families are selected only on the earlier validation period. The test period reports the resulting selected neural models, best neural model per architecture, best setting in each regression family, and the unchanged calibrated pvlib baseline. Outputs include every validation trial, selected model coefficients and weights, paired per-farm test metrics, plots, resolved configuration, source fingerprints, and a completion manifest under `outputs/pv_neural_tuning/<run_id>/`.
 
@@ -574,6 +574,167 @@ The completed `neural_pv_2025_to_2026_08` run fits 24 neural candidates across t
 The neural model does not improve every farm or metric: farm 910 worsens, and farm 345's MAE increases despite its smaller RMSE. Ridge achieves 0.20050 MW RMSE on farm 345. The candidate chosen by earlier validation need not have the lowest test error; no test ranking was used to change that choice. Core configurations were selected for all four farms, but widths also differ between core and extended candidates, so this comparison does not isolate a causal effect of individual weather features. The test months and validation months cover different seasons; one seed and one chronological split limit broader conclusions. No neural model is promoted automatically into trading defaults.
 
 `plots/farm_model_comparison.png` shows every frozen candidate and baseline. Each farm has learning curves and three representative test-day plots, with separate DA/IDA panels, measured AC and the rating threshold. The independent `json/validation_audit.json` verifies all 24 model checksums/CPU states, unchanged targets and pvlib curves, split embargo, shared evaluation masks and validation selection, and target-free selected-artifact replay on first/middle/last test days. A completed-run resume also checks that weights and full prediction tables remain unchanged.
+
+### Earlier tracking-aware tree benchmark
+
+Run `PYTHONPATH=src python -m bess_pv_trading study-pv-ensembles --config configs/pv_experiments/farm901_ensembles.yaml` to compare CPU tree ensembles against the saved neural/regression and calibrated pvlib predictions. This optional command requires scikit-learn (installed with conda after approval); it reuses the frozen corpus from the configured `pv_ensemble_study.source_root` and makes no API requests. The shared defaults expose model parameters, feature sets, seed, workers, output location and focus month. Each fit uses one CPU thread; the shipped six-worker configuration leaves other cluster users capacity. Fresh reruns honor `experiment_outputs.overwrite_existing`.
+
+The study fits random forests, Extra Trees and histogram gradient boosting on 2025 daylight AC targets. January–April 2026 chooses candidates; May–August is evaluated separately and never chooses them. January is additionally reported as a validation-month diagnostic. The frozen embargo and common eligibility masks are retained, including genuine zeros and operating anomalies. Targets and satellite GHI are excluded from features. Outputs remain normalized/clipped AC production with the established night policy.
+
+Compare weather/time inputs alone, weather plus front-side tracker geometry/POA/cell-temperature/physical AC output, and weather plus explicit bifacial physical features. All physical features reuse `PhysicalPVModel`, farm metadata and configured geometry, thermal and bifacial assumptions. This is feature augmentation, not fitted hardware identification. The proxy location and missing actual tracker telemetry remain limitations. New artifacts are research candidates and are not automatically deployed in the trading controller.
+
+Outputs under `outputs/pv_ensembles/<run_id>/` contain `csv/metrics.csv`, full predictions in `parquet/`, model and training-preprocessor artifacts in `models/`, resolved settings, input checksum, selection/provenance JSON and a comparison plot. Model selection and reported scores use balanced day/auction daylight capacity-normalized errors. Unlike monthly imbalance totals, overlapping auction forecast energy views must not be summed.
+
+### Weather-only statistical and neural search for farms 901/910
+
+The [reproduction guide](docs/pv_forecast_search.md) explains the full procedure,
+model families, YAML controls, saved artifacts and exact historical reruns.
+The inspectable launcher runs from the repository root without `PYTHONPATH`:
+
+```bash
+conda activate bess
+python scripts/train_pv_forecasts.py \
+  --config configs/pv_experiments/forecast_search_901_910.yaml \
+  --workers 42 --run-id my_weather_search --no-resume
+```
+
+Use `--plan-only` to inspect every sampled parameter set without fitting,
+`--farms 901` to restrict the study, and `--resume` to reuse matching completed
+trials. The companion `forecast_tcn_901_910.yaml` configuration runs the temporal
+convolution phase. Run phases consecutively to keep the overall CPU limit.
+All grids, seeds, fitting budgets, source/output paths and flags inherit documented
+defaults from `configs/standard.yaml`.
+
+This search uses forecast weather, cyclic time and lead features with **no proxy
+location/solar/tracker geometry, auction embeddings, age or measured-power inputs**.
+Separate models produce clipped AC power; raw AC targets remain unchanged.
+The completed searches fit 176 trials, followed by 96 causal gain comparisons.
+On the reused May–August 2026 holdout, farm 901's validation-selected five-model
+average scores 12.77% daylight capacity-normalized RMSE versus 12.56% for the
+previous selected TCN, so replacing that TCN is not supported. Farm 910's
+validation-selected five-model average with a causal seven-day gain scores
+17.06% versus 18.19% for its previous model, approximately a 6.25% reduction.
+The gain uses completed production days available at each cutoff, explicitly
+adding observed history to the static 2025-trained model. Seven-day paired
+uncertainty intervals include zero for both comparisons; further independent
+evaluation is needed. These research models have not changed trading defaults.
+
+Results are under `outputs/pv_forecast_comparison/market_free_901_910_comparison`;
+per-farm folders contain CSV metrics, full Parquet predictions, selection JSON,
+plots and checksum-validated inference bundles. The separate
+`scripts/predict_pv_forecast.py` command supports target-free prediction.
+Historical source snapshots and pinned resolved YAML support exact reproduction
+as shared defaults evolve; the guide gives those commands.
+
+The complementary `study-pv-hourly-bias` command uses
+`configs/pv_experiments/hourly_bias_901_910.yaml`. It retains the earlier
+selected predictor and estimates a small additive correction by local two-hour
+bucket from completed 2026 production days. Its January–April-selected setting
+reduces farm 901 May–August normalized daylight RMSE from 12.559% to 12.492%;
+the paired interval still includes zero. It reduces farm 910 from 18.193% to
+17.357%, while the five-model adaptive ensemble above remains better at 17.057%.
+All settings, selected predictions, monthly metrics and plots are saved under
+`outputs/pv_hourly_bias/<run_id>/`. The [guide](docs/pv_forecast_search.md)
+explains its equation, causal availability rule and exact command.
+
+`study-pv-monthly-retraining` checks whether refitting each farm's selected
+statistical family on an expanding historical sample helps. It uses the
+buffered complete history available before each May–August 2026 delivery
+month. Farm 901's monthly refit was worse than its existing fixed predictor
+in all four report months; farm 910 was mixed. The command, fixed parameter
+contract and all monthly scores are documented in the same
+[reproduction guide](docs/pv_forecast_search.md).
+
+`diagnose-pv-forecast-errors` reports where the frozen May–August errors occur,
+using satellite GHI only to compare forecast weather with observations. For
+farm 901, the largest quarter of absolute GHI disagreements accounts for 48.5%
+of weighted squared PV error. Its unconfirmed `suspected_outage` views are
+0.44% of weighted views but contribute 12.8% of squared error. The corresponding
+farm 910 figures are 35.6%, 2.70% and 21.2%. These are associations and
+screening flags, not identified equipment faults. No measurements are removed
+from that frozen study's training or headline scores; these are **pre-curation**
+figures and do not describe the current automatic training mask. The command, day-level plots and sensitivity
+scores are in the [forecast guide](docs/pv_forecast_search.md).
+
+For retrospective production-versus-irradiance inspection, replay the frozen
+neural and calibrated pvlib models with observed satellite GHI:
+
+```bash
+PYTHONPATH=src python scripts/plot_pv_satellite_ghi_reference.py \
+  --config configs/pv_experiments/satellite_ghi_references_full_history.yaml
+```
+
+This diagnostic does not retrain either model. It first verifies that the saved
+models reproduce the original forecast curves, then substitutes satellite GHI.
+Direct horizontal irradiance preserves the forecast BHI/GHI fraction, with
+Erbs decomposition only when that fraction is undefined. Temperature, wind,
+cloud inputs, saved preprocessing and physical parameters remain unchanged.
+Consequently these curves use observed GHI, rather than perfect knowledge of
+all weather or actual production. Missing satellite GHI is linearly interpolated
+between valid endpoints on the physical UTC timeline, before either model runs.
+Unbracketed gaps remain missing. Purple markers show the interpolated GHI and
+the corresponding model predictions. Raw GHI and the interpolation flag are saved
+separately; no raw measurements or training masks change. Configure
+`pv_satellite_ghi_reference.satellite_ghi_gap_fill: none` to disable gap filling.
+
+Outputs are under
+`outputs/pv_data_quality/satellite_ghi_references_full_history/farm_<id>/`.
+Each three-panel figure compares measured AC with the neural predictions,
+then the pvlib predictions, then satellite and forecast GHI. Both power panels
+include the installed AC rating. Curves are arithmetic means across the original
+auction views after running each view independently, not a latest-vintage
+operational forecast. Full per-view predictions, source/model checksums and
+replay errors are saved alongside the figures. Highlighted windows come from
+the previous retrospective screen and are not reclassified by this plotting run.
+Curves connect the quarter-hour samples linearly and include the next midnight
+sample when available. Add `--plots-only` to redraw the saved results without
+repeating model inference.
+
+The cleaned multi-farm search uses the approved interval list in
+`configs/data_quality/pv_excluded_episodes_2025_to_2026_08.csv`. Every removed
+nonzero plateau and sustained-zero interval is explicitly included in that file;
+no additional runtime classification rules apply. Excluded quarters are
+**removed as complete feature/AC-target instances** from training, validation
+and test corpora. Neural sequences split at the resulting UTC gaps; deleted
+quarters are not retained as weather context or masked targets. Source data and
+the separate exclusion audit retain the evidence. Weather-GHI disagreement
+alone remains eligible. The shared default is
+`pv_data_quality.remove_excluded_instances: true`.
+
+Reproduce the curated forecast/satellite benchmark and broad HPO with:
+
+```bash
+python scripts/benchmark_satellite_ghi.py --config configs/pv_experiments/satellite_ghi_cleaned_benchmark.yaml
+python scripts/search_cleaned_pv_forecasts.py --config configs/pv_experiments/cleaned_all_farms_hpo.yaml
+python scripts/finalize_cleaned_pv_study.py --config configs/pv_experiments/cleaned_all_farms_hpo.yaml
+```
+
+Training reads the existing versioned CSV without regenerating it. Only when
+deliberately rebuilding that list from the saved audit findings, run
+`python scripts/curate_pv_episode_exclusions.py --config configs/pv_experiments/cleaned_all_farms_hpo.yaml`;
+that explicit command replaces the CSV and its provenance JSON.
+
+Use `--plan-only` on the search command to inspect its budget. It evaluates
+16 unique configurations per tunable statistical/neural/physical family,
+for every farm and each GHI-input regime. OLS and scale-only pvlib are fixed
+references. Training uses 2025, January–April 2026 selects hyperparameters and
+May–August 2026 is reported as a reused, retrospectively curated holdout.
+Satellite-input models are diagnostics; operational model choice uses the
+forecast-GHI regime. Observed-only metrics are reported separately from metrics
+including GHI interpolation. Neither model selection nor training uses test
+targets. CPU workers are bounded at 42, with six cores reserved.
+
+`outputs/pv_cleaned_hpo/all_farms_cleaned_16_trials/` contains resolved
+configuration, frozen input identities, every trial's scores, family rankings,
+daily/monthly and four-period errors, paired seven-day-block uncertainty
+intervals, model checkpoints and standalone winning bundles. Within each
+`forecast|satellite/farm_<id>/`, `json/selected.json` identifies the overall
+validation winner and `bundles/<family>/` contains reusable per-family models.
+The finalizer checks the CSV population and trial counts, marks satellite
+bundles as diagnostic, and copies the operational winners into
+`selected_models/farm_<id>/` beneath the same configurable study directory.
+The already inspected test period and retrospective episode selection limit
+claims about performance on unseen future operation.
 
 ## Outputs and how to read them
 
@@ -628,6 +789,23 @@ Earlier price-prediction research code, dedicated tests, derived training tables
 Historical price-prediction research and its derived training tables are preserved outside the repository at `/home/rghetti/price_prediction_archive`. Current GME experiments use actual auction curves as an oracle benchmark; they do not claim a causal price forecast. Raw market observations remain in DuckDB.
 
 The original farm audit and cloud comparison tools remain available through `python -m bess_pv_trading.audit --config configs/audit.yaml` and `python -m bess_pv_trading.cloud_check --help`. Audit outputs are review candidates and raw-data diagnostics; they are distinct from the policy-treated optimization data.
+
+## Retained PV pilot and error analysis
+
+The approved per-farm pilot retains direct TCNs without timing for farms 1
+and 345, and with forecast lead/cycle-time channels for farms 901 and 910.
+Standalone checkpoints are in `models/pv/farm_<id>/pilot_2025_train/`.
+The shared registry is `pv_forecast_pilot.models_by_farm`; replacement stays
+opt-in through `pv.forecast_replacement`. Portable `weather_bundle` models
+are supported by continuous forecasting, preserving aligned forecast leads.
+
+The [pilot report](docs/results/retrained_pv_pilot/README.md) contains timing
+ablation results, worst-error rankings and representative plots. It separates
+GHI-correctable errors from residual disagreements with both neural and pvlib
+satellite-input references. These diagnostics add no data exclusions.
+Pilot choices use an already inspected report period and are retrospective.
+Reproduction commands and the protected preparation-snapshot path are in the
+report; preserve that snapshot when deleting disposable experiments.
 
 ## Validation and maintaining the documentation
 

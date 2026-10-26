@@ -1,0 +1,9 @@
+{
+  "primary_family": "direct_tcn",
+  "model": "direct_tcn_timing_05",
+  "baseline_model": "direct_tcn_02",
+  "timing_features": true,
+  "selection": "User-approved per-farm research pilot after timing ablation",
+  "evaluation_status": "Pilot choice informed by previously inspected 2026 report period; original validation rankings retained.",
+  "source_bundle": "models/pv/farm_901/timing_restored_2025_train/direct_tcn"
+}

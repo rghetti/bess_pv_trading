@@ -1,0 +1,4 @@
+# Conditional residual correction using completed observed days only.
+include: ../standard.yaml
+pv_online_ridge_study:
+  run_id: conditional_residual_901_910

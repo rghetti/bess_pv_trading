@@ -1,0 +1,4 @@
+# Expanding-history retraining with fixed model families selected before May 2026.
+include: ../standard.yaml
+pv_monthly_retraining:
+  run_id: expanding_2026_05_to_08

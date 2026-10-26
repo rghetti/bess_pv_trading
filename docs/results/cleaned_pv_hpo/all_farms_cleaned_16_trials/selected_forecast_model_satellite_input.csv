@@ -1,0 +1,13 @@
+farm_id,model,family,split,input,rows,days,nrmse_percent,nmae_percent,bias_percent
+1,direct_tcn_02,direct_tcn,train,satellite GHI with forecast-trained parameters unchanged,62914,363,4.7874037767948225,3.0779689064449935,-0.04318526522458298
+1,direct_tcn_02,direct_tcn,validation,satellite GHI with forecast-trained parameters unchanged,18676,118,4.685284066726468,3.1499516601796764,0.5533272839461402
+1,direct_tcn_02,direct_tcn,test,satellite GHI with forecast-trained parameters unchanged,26040,123,5.092017363524502,3.3787032167955497,0.38027649178327266
+345,pvlib_scale,pvlib_scale,train,satellite GHI with forecast-trained parameters unchanged,62029,364,8.600359750136732,6.05217395777683,0.9535632349004749
+345,pvlib_scale,pvlib_scale,validation,satellite GHI with forecast-trained parameters unchanged,17285,119,6.429488279078151,4.555162034247559,-1.9750249859156004
+345,pvlib_scale,pvlib_scale,test,satellite GHI with forecast-trained parameters unchanged,25990,123,13.30174992513515,10.804127879329924,-10.319819054249491
+901,direct_tcn_02,direct_tcn,train,satellite GHI with forecast-trained parameters unchanged,62625,361,9.094734105840596,5.685679679553502,1.6112703665349646
+901,direct_tcn_02,direct_tcn,validation,satellite GHI with forecast-trained parameters unchanged,18808,119,8.287668347910218,5.458179783128951,-0.5779901790363349
+901,direct_tcn_02,direct_tcn,test,satellite GHI with forecast-trained parameters unchanged,25968,123,10.411338815300457,6.306133100177131,2.2412744830419
+910,direct_tcn_14,direct_tcn,train,satellite GHI with forecast-trained parameters unchanged,60466,363,9.730678776440897,6.250809396341254,0.5888861569639142
+910,direct_tcn_14,direct_tcn,validation,satellite GHI with forecast-trained parameters unchanged,15511,115,8.752166542738408,6.013754042357663,-1.4209350777243244
+910,direct_tcn_14,direct_tcn,test,satellite GHI with forecast-trained parameters unchanged,24320,120,13.547188216016561,9.479014586774396,6.410407302612281

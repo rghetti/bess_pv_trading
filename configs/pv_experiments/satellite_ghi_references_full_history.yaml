@@ -1,0 +1,4 @@
+include: ../standard.yaml
+pv_satellite_ghi_reference:
+  focus_days_by_farm:
+    910: ['2026-08-01']

@@ -33,10 +33,15 @@ def _write(path,value):
     temporary.write_text(json.dumps(value,indent=2,default=str,allow_nan=False)+'\n');temporary.replace(path)
 
 
-def weather_features(frame,feature_set,timezone,*,include_national_holiday=False):
+def weather_features(frame,feature_set,timezone,*,include_national_holiday=False,
+                     excluded_features=()):
     """Use forecast weather and known calendar, never observed or proxy inputs."""
-    return feature_frame(frame,feature_set,timezone,include_solar_geometry=False,
+    features=feature_frame(frame,feature_set,timezone,include_solar_geometry=False,
         include_national_holiday=include_national_holiday)
+    unknown=set(excluded_features)-set(features.columns)
+    if unknown:
+        raise ValueError(f'Unknown excluded PV features: {sorted(unknown)}')
+    return features.drop(columns=list(excluded_features))
 
 
 def interpolate_forecast_gaps(frame,method='linear_per_view'):
@@ -133,13 +138,17 @@ def generate_trials(section,farm_id):
 def _fit_statistical(x,y,train,weight,baseline,trial):
     """Fit native statistical models; residual models correct a train-only linear reference."""
     from sklearn.ensemble import HistGradientBoostingRegressor, ExtraTreesRegressor
-    from sklearn.linear_model import Ridge, HuberRegressor
+    from sklearn.linear_model import Ridge, HuberRegressor, LinearRegression
     from sklearn.preprocessing import SplineTransformer
     from sklearn.kernel_approximation import RBFSampler
     from sklearn.pipeline import make_pipeline
     family=trial['family'];parameters=dict(trial['parameters']);transform=None
     target=y-baseline if family.endswith('_residual') else y
-    if family.startswith('boosting'):
+    if family=='ridge':
+        model=Ridge(**parameters)
+    elif family=='ols':
+        model=LinearRegression(**parameters)
+    elif family.startswith('boosting'):
         model=HistGradientBoostingRegressor(random_state=trial['seed'],early_stopping=False,**parameters)
     elif family=='extra_trees':
         model=ExtraTreesRegressor(random_state=trial['seed'],n_jobs=1,**parameters)
@@ -208,15 +217,23 @@ def _worker(job):
     return metadata
 
 
-def prepare_search(config,farm_id,root,identity):
+def prepare_search(config,farm_id,root,identity,*,frame_override=None,sequence_length=None):
     """Reuse frozen vintages and masks; fit feature transforms on 2025 targets only."""
     from sklearn.linear_model import Ridge
     section=config['pv_forecast_search'];source=config_path(config,section['source_root'])/f'farm_{farm_id}'
-    from .pv_outages import apply_sustained_zero_exclusion
-    frame=apply_sustained_zero_exclusion(
-        pd.read_parquet(source/'parquet/corpus.parquet'),config,farm_id=farm_id)
-    prior=pd.read_parquet(source/'parquet/predictions.parquet')
+    from .pv_outages import modeling_instances
+    frame=modeling_instances(
+        pd.read_parquet(source/'parquet/corpus.parquet') if frame_override is None else frame_override,
+        config,farm_id=farm_id)
+    # A supplied numerical corpus is self-contained; historical experiment
+    # predictions are not required to fit its features or unchanged AC targets.
+    prior=(pd.read_parquet(source/'parquet/predictions.parquet')
+        if frame_override is None else frame.copy())
     keys=['interval_start_utc','delivery_day','auction','forecast_cycle_utc']
+    native_length=(int(sequence_length) if sequence_length is not None
+        else int(prior.groupby(['delivery_day','auction']).size().max()))
+    prior=frame[keys].merge(prior,on=keys,how='left',validate='one_to_one')
+    frame=frame.reset_index(drop=True)
     if not frame[keys+['measured_ac_mw']].equals(prior[keys+['measured_ac_mw']]):
         raise ValueError('Frozen corpus/reference keys or raw targets disagree')
     if (frame.forecast_available_at_utc>frame.decision_cutoff_utc).any():raise ValueError('Unavailable forecast')
@@ -241,7 +258,8 @@ def prepare_search(config,farm_id,root,identity):
         frame,section['missing_weather_interpolation'])
     for feature in section['feature_sets']:
         values=weather_features(interpolated_frame,feature,config['pv_neural']['delivery_timezone'],
-            include_national_holiday=section['include_national_holiday'])
+            include_national_holiday=section['include_national_holiday'],
+            excluded_features=section['excluded_features'])
         pre=fit_preprocessor(values,train,config['pv_neural'],
             include_missing_indicators=section['include_missing_indicators'])
         pre['missing_weather_interpolation']=section['missing_weather_interpolation']
@@ -250,17 +268,21 @@ def prepare_search(config,farm_id,root,identity):
         baseline=Ridge(alpha=section['baseline_ridge_alpha']).fit(x[train],y[train],sample_weight=weight)
         base=np.clip(baseline.predict(x),0,1);base[night]=0
         np.save(cache/f'baseline_{feature}.npy',base);joblib.dump(baseline,cache/f'baseline_{feature}.joblib')
-        packed=pack_sequences(neural_frame,x,rating)
-        np.savez(cache/f'packed_{feature}.npz',**{key:packed[key] for key in ['x','y','mask','daylight','indices']})
+        packed=pack_sequences(neural_frame,x,rating,minimum_length=native_length)
+        np.savez(cache/f'packed_{feature}.npz',**{key:packed[key] for key in ['x','y','mask','daylight','indices','view_ids']})
         np.save(cache/f'train_groups_{feature}.npy',np.flatnonzero((packed['split']=='train') & packed['mask'].any(1)))
         # Validate on the unchanged shared daylight mask, rather than a proxy input.
         valid_mask=np.zeros(packed['mask'].shape,dtype=bool);valid=packed['indices']>=0
         valid_mask[valid]=validation[packed['indices'][valid]]
         packed['mask'][np.asarray(packed['split'])=='validation']=valid_mask[np.asarray(packed['split'])=='validation']
-        np.savez(cache/f'packed_{feature}.npz',**{key:packed[key] for key in ['x','y','mask','daylight','indices']})
+        np.savez(cache/f'packed_{feature}.npz',**{key:packed[key] for key in ['x','y','mask','daylight','indices','view_ids']})
         np.save(cache/f'validation_groups_{feature}.npy',np.flatnonzero((packed['split']=='validation') & packed['mask'].any(1)))
-    _write(directory/'json/input_provenance.json',{'corpus_sha256':_sha(source/'parquet/corpus.parquet'),
-        'prior_predictions_sha256':_sha(source/'parquet/predictions.parquet'),
+    source_corpus=source/'parquet/corpus.parquet'
+    _write(directory/'json/input_provenance.json',{'corpus_sha256':(_sha(source_corpus) if source_corpus.exists()
+        else hashlib.sha256(pd.util.hash_pandas_object(frame,index=True).values.tobytes()).hexdigest()),
+        'prepared_override':frame_override is not None,
+        'prepared_frame_sha256':hashlib.sha256(pd.util.hash_pandas_object(frame,index=True).values.tobytes()).hexdigest(),
+        'prior_predictions_sha256':(_sha(source/'parquet/predictions.parquet') if frame_override is None else None),
         'identity':identity,'rating_mw':rating,'weather_geometry_used':False,'auction_features_used':False,
         'aging_features_used':False,'national_holiday_feature_used':bool(section['include_national_holiday']),
         'missing_weather_interpolation':interpolation_report,

@@ -11,7 +11,7 @@ import yaml
 
 from ..data import config_path
 from ..reporting.artifacts import prepare_experiment_output
-from .pv_outages import apply_sustained_zero_exclusion
+from .pv_outages import apply_episode_exclusions
 from .pv_validation_audit import _plot_day
 
 EPISODE_COLUMNS = ['farm_id','issue','status','start_utc','end_utc',
@@ -97,7 +97,7 @@ def run_pv_quality_review(config,progress=print):
     for farm in section['farm_ids']:
         path=source/f'farm_{farm}/parquet/corpus.parquet'
         frame=pd.read_parquet(path)
-        curated=apply_sustained_zero_exclusion(frame,config,farm_id=farm)
+        curated=apply_episode_exclusions(frame,config,farm_id=farm)
         rating=config['farms'][str(farm)]['ac_capacity_kw']/1000
         population=curated.groupby('interval_start_utc',sort=True)
         physical=population.agg(delivery_day=('delivery_day','first'),
@@ -114,7 +114,7 @@ def run_pv_quality_review(config,progress=print):
             max_fraction=section['partial_recovery_max_fraction_of_rating'],
             max_intervals=section['partial_recovery_max_intervals'],interval_minutes=interval)
         issue_masks={
-            'sustained_zero_outage':(physical.outage_excluded,'automatic_excluded',1),
+            'sustained_zero_outage':(physical.outage_excluded,'csv_excluded',1),
             'low_output_high_ghi':(low&high_ghi&physical.daylight&~physical.outage_excluded,
                 'review_candidate',section['low_output_minimum_intervals']),
             'partial_recovery_between_outages':(recovery,'review_candidate',1),
@@ -160,7 +160,7 @@ def run_pv_quality_review(config,progress=print):
             'manual_review_excluded_quarters':int(physical.review_excluded.sum()),
             'candidate_episodes':int((episodes.status=='review_candidate').sum()) if not episodes.empty else 0,
             'input_sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
-            'status':'Candidate flags do not change model eligibility unless reviewed or automatically excluded.'}
+            'status':'Only intervals in pv_data_quality.exclusions_csv change model populations; candidates are evidence only.'}
         (folder/'json/summary.json').write_text(json.dumps(summary,indent=2)+'\n')
         if section['save_plots']:
             prediction_path=source/f'farm_{farm}/parquet'/section['plot_prediction_file']

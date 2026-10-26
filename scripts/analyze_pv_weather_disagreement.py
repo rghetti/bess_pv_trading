@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data import config_path
 from bess_pv_trading.forecasting.pv_fitting import balanced_weights
-from bess_pv_trading.forecasting.pv_outages import apply_sustained_zero_exclusion
+from bess_pv_trading.forecasting.pv_outages import apply_episode_exclusions
 
 
 def metrics(frame, column, rating):
@@ -132,7 +132,7 @@ def main():
     keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
     if not corpus[keys].equals(saved[keys]):
         raise ValueError('Saved predictions and corpus have different keys or measured AC')
-    frame=apply_sustained_zero_exclusion(corpus,config,farm_id=args.farm_id)
+    frame=apply_episode_exclusions(corpus,config,farm_id=args.farm_id)
     methods={'selected_model':args.prediction_column,'pvlib':args.baseline_column}
     for column in methods.values():
         frame[column]=saved[column].to_numpy(float)

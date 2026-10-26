@@ -209,3 +209,18 @@ def test_global_farm_parameters_load_in_experiment_and_apply_before_fitting_year
     assert forecast.provenance["pv_output_model"]["calibration_source"]=="configured_static_metadata"
     assert forecast.provenance["pv_output_model"]["calibrated_dc_to_ac_scale"]==fit["parameters"]["coefficient"]
     assert forecast.provenance["parameter_artifact"]["status"]=="disabled"
+
+
+def test_ensemble_physical_features_ignore_measured_targets(physical_case):
+    """Tracking and rear-side inputs must not expose either production or satellite targets."""
+    from bess_pv_trading.forecasting.pv_ensemble_study import physical_features
+    config, farm, settings, _, frame = physical_case
+    farm = FarmMetadata(**{**asdict(farm), 'tracking_type_id': 3})
+    before = physical_features(frame, farm, settings, config['policy']['night'])
+    changed = frame.copy()
+    changed['measured_ac_mw'] = np.nan
+    changed['satellite_ghi_w_m2'] = np.nan
+    after = physical_features(changed, farm, settings, config['policy']['night'])
+    pd.testing.assert_frame_equal(before, after)
+    assert (before.rear_poa_back_w_m2 > 0).any()
+    assert before.front_surface_tilt_deg.nunique() > 1

@@ -12,7 +12,7 @@ import yaml
 from ..data import config_path
 from ..reporting.artifacts import prepare_experiment_output
 from .pv_fitting import balanced_weights
-from .pv_outages import apply_sustained_zero_exclusion
+from .pv_outages import apply_episode_exclusions
 
 
 def _score(frame,prediction,rating,mask):
@@ -122,7 +122,7 @@ def run_validation_error_audit(config,progress=print):
         keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
         if not frame[keys].equals(saved[keys]):raise ValueError('Audit source keys or raw AC differ')
         prediction=saved[source_spec['prediction_column']].to_numpy(dtype=float)
-        curated=apply_sustained_zero_exclusion(frame,config,farm_id=farm)
+        curated=apply_episode_exclusions(frame,config,farm_id=farm)
         rating=config['farms'][str(farm)]['ac_capacity_kw']/1000
         original_mask=(frame.eligible&frame.daylight&frame.split.eq(split)).to_numpy()
         curated_mask=(curated.eligible&curated.daylight&curated.split.eq(split)).to_numpy()

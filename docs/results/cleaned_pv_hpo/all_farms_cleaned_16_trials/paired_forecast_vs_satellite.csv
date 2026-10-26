@@ -1,0 +1,5 @@
+farm_id,forecast_model,satellite_model,metric,point_difference,lower_95,upper_95,block_days,repetitions
+1,direct_tcn_02,direct_tcn_15,"forecast minus satellite daylight nRMSE, percentage points of AC rating",1.735918116137059,1.038818383815303,2.4173269126450023,7,1000
+345,pvlib_scale,pvlib_scale,"forecast minus satellite daylight nRMSE, percentage points of AC rating",1.5328343924385806,1.2068760404945311,1.8550391004329732,7,1000
+901,direct_tcn_02,direct_tcn_14,"forecast minus satellite daylight nRMSE, percentage points of AC rating",3.6434906968939362,2.503383178339101,4.833330105530395,7,1000
+910,direct_tcn_14,direct_tcn_08,"forecast minus satellite daylight nRMSE, percentage points of AC rating",2.8397911052111837,2.138609411185745,3.482279104949505,7,1000

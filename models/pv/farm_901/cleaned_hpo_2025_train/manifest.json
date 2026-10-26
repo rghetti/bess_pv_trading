@@ -1,0 +1,142 @@
+{
+  "schema": "weather_pv_bundle_v1",
+  "farm_id": 901,
+  "rating_mw": 4.16,
+  "specification": {
+    "name": "direct_tcn_02",
+    "family": "neural",
+    "features": "core",
+    "parameters": {
+      "width": 32,
+      "depth": 1,
+      "kernel_size": 7,
+      "dropout": 0.1,
+      "learning_rate": 0.0003,
+      "weight_decay": 0.001,
+      "loss": "huber",
+      "architecture": "direct_tcn"
+    },
+    "seed": 63386
+  },
+  "preprocessor": {
+    "columns": [
+      "forecast_ghi",
+      "forecast_bhi",
+      "temperature_c",
+      "wind_u_10m",
+      "wind_v_10m",
+      "hour_sin",
+      "hour_cos",
+      "annual_sin",
+      "annual_cos",
+      "month_sin",
+      "month_cos",
+      "italian_national_holiday"
+    ],
+    "median": [
+      10.277366638183594,
+      0.25021983683109283,
+      14.365146696567535,
+      -0.301657235249877,
+      -0.24096152326092124,
+      -0.16289547339458865,
+      0.032719082821776144,
+      0.009413880031481123,
+      -0.009055266026851114,
+      0.0,
+      -1.8369701987210297e-16,
+      0.0
+    ],
+    "mean": [
+      174.76125272813758,
+      115.6120100240299,
+      15.086417723288399,
+      -0.35185294906680975,
+      -0.26498455361895035,
+      -0.09052001305773136,
+      0.0037752316925255035,
+      0.0021999503951155835,
+      -0.00429399709896926,
+      0.0001164517059800536,
+      -0.008849825042802167,
+      0.03301855751513556
+    ],
+    "scale": [
+      249.37118532226717,
+      191.19369326965304,
+      8.569602363159094,
+      1.6629314513848847,
+      1.4164449511334714,
+      0.7016052478623589,
+      0.7067828174437277,
+      0.7074937065273833,
+      0.7067031746294323,
+      0.7068362501066258,
+      0.7073218380418602,
+      0.17868500881370897
+    ],
+    "clip_standard_deviations": 12.0,
+    "fit_rows": 121568,
+    "target_columns_used": [],
+    "include_missing_indicators": false,
+    "output_columns": [
+      "forecast_ghi",
+      "forecast_bhi",
+      "temperature_c",
+      "wind_u_10m",
+      "wind_v_10m",
+      "hour_sin",
+      "hour_cos",
+      "annual_sin",
+      "annual_cos",
+      "month_sin",
+      "month_cos",
+      "italian_national_holiday"
+    ],
+    "missing_weather_interpolation": "linear_per_view"
+  },
+  "night_policy": {
+    "enabled": true,
+    "timezone": "Europe/Rome",
+    "start": "21:30",
+    "end": "05:00"
+  },
+  "include_national_holiday": true,
+  "missing_weather_interpolation": "linear_per_view",
+  "include_missing_indicators": false,
+  "timezone": "Europe/Rome",
+  "model": "model.pt",
+  "baseline": "baseline.joblib",
+  "training_identity": "17cad83101da57dd7cf9b03867eed1658f5ad5ffed1d90012acd37ab329664ba",
+  "train_last_target_utc": "2025-12-30 23:00:00+00:00",
+  "corpus_sha256": "35078d32a49d6282828bea0ba8fd4b8978bf6f54703368d5f0a9bea41c83bb21",
+  "feature_contract": "weather/time; no proxy geometry, auction identity or elapsed age",
+  "software": {
+    "sklearn": "1.9.1",
+    "torch": "2.14.1"
+  },
+  "checksums": {
+    "model.pt": "1490b7290547b8e934efa536c7b71bd61d8b191199504866d802a1b48c8fbf26",
+    "baseline.joblib": "477764518ba33325b6cb78b462f7633b9bb44d087c40a9fc560068ec1e8c376e"
+  },
+  "sequence_length": 100,
+  "input_regime": "forecast",
+  "diagnostic_only": false,
+  "exclusions_csv_sha256": "16cc09def8da381919703d24e3532142dcd1e62258b83a308d6315f99ff6e8dc",
+  "excluded_feature_target_instances_removed": true,
+  "training_period": "2025",
+  "selection_period": "2026 January-April",
+  "report_period": "2026 May-August reused retrospectively curated holdout",
+  "prepared_modeling_corpus_sha256": "563212e841592784773b8173c50c69f13373c11857d8eb14269fa6d8ab771a2d",
+  "farm_metadata": {
+    "farm_id": 901,
+    "zone": "NORD",
+    "ac_capacity_kw": 4160.0,
+    "tracking_type_id": 3,
+    "surface_tilt_deg": 60.0,
+    "source_azimuth_deg": 0.0,
+    "elevation_m": 3.0,
+    "pv_type_id": 0.0,
+    "assumptions": {}
+  }
+}

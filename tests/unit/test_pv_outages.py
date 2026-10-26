@@ -12,8 +12,9 @@ from bess_pv_trading.forecasting.pv_quality_review import run_pv_quality_review
 
 
 def test_sustained_zero_requires_measured_daylight_and_contiguous_quarters():
-    config=load_config('configs/pv_experiments/online_ridge_901_910.yaml')
-    rule=config['pv_data_quality']['sustained_zero_outage']
+    config=load_config('configs/pv_experiments/online_ridge_901_910.yaml',
+        overrides={'pv_data_quality':{'exclusions_csv':None}})
+    rule=config['pv_episode_curation']['zero_detection']
     interval=config['source']['historical_interval_minutes']
     count=rule['minimum_consecutive_intervals']
     first=pd.date_range('2026-05-01T08:00Z',periods=count-1,freq=f'{interval}min')
@@ -30,9 +31,10 @@ def test_sustained_zero_requires_measured_daylight_and_contiguous_quarters():
         minimum_ghi_w_m2=rule['minimum_satellite_ghi_w_m2'],interval_minutes=interval).any()
 
 
-def test_exclusion_preserves_raw_ac_and_applies_to_every_auction_view():
-    config=load_config('configs/pv_experiments/online_ridge_901_910.yaml')
-    rule=config['pv_data_quality']['sustained_zero_outage']
+def test_exclusion_preserves_raw_ac_and_applies_to_every_auction_view(tmp_path):
+    config=load_config('configs/pv_experiments/online_ridge_901_910.yaml',
+        overrides={'pv_data_quality':{'exclusions_csv':None}})
+    rule=config['pv_episode_curation']['zero_detection']
     count=rule['minimum_consecutive_intervals']
     times=pd.date_range('2026-05-01T09:00Z',periods=count+1,
         freq=f"{config['source']['historical_interval_minutes']}min")
@@ -44,7 +46,11 @@ def test_exclusion_preserves_raw_ac_and_applies_to_every_auction_view():
         'eligible':[True]*(count+1)})
     frame=pd.concat([physical,physical],ignore_index=True)
     original=frame.measured_ac_mw.copy()
-    curated=apply_sustained_zero_exclusion(frame,config)
+    episodes=tmp_path/'episodes.csv'
+    pd.DataFrame([{'farm_id':config['farm_id'],'start_utc':times[0].isoformat(),
+        'end_utc':times[count-1].isoformat(),'decision':'exclude','reason':'sustained_zero_outage'}]).to_csv(episodes,index=False)
+    config['pv_data_quality']['exclusions_csv']=str(episodes)
+    curated=apply_sustained_zero_exclusion(frame,config,farm_id=config['farm_id'])
     pd.testing.assert_series_equal(curated.measured_ac_mw,original)
     assert curated.outage_excluded.sum()==2*count
     assert curated.eligible.sum()==2
@@ -52,7 +58,8 @@ def test_exclusion_preserves_raw_ac_and_applies_to_every_auction_view():
 
 
 def test_review_csv_adds_exclusion_without_changing_measured_power(tmp_path):
-    config=load_config('configs/pv_experiments/curate_sustained_zero.yaml')
+    config=load_config('configs/pv_experiments/curate_sustained_zero.yaml',
+        overrides={'pv_data_quality':{'exclusions_csv':None}})
     times=pd.date_range('2026-04-26T13:45Z',periods=2,
         freq=f"{config['source']['historical_interval_minutes']}min")
     frame=pd.DataFrame({'interval_start_utc':times,'delivery_day':['2026-04-26']*2,
@@ -60,8 +67,8 @@ def test_review_csv_adds_exclusion_without_changing_measured_power(tmp_path):
         'daylight':[True,True],'eligible':[True,True],'review_excluded':[False,False]})
     review=tmp_path/'review.csv'
     pd.DataFrame([{'farm_id':910,'start_utc':times[0].isoformat(),
-        'end_utc':times[0].isoformat(),'decision':'exclude'}]).to_csv(review,index=False)
-    config['review']['exclusions_csv']=str(review)
+        'end_utc':times[0].isoformat(),'decision':'exclude','reason':'reviewed_exclusion'}]).to_csv(review,index=False)
+    config['pv_data_quality']['exclusions_csv']=str(review)
     curated=apply_sustained_zero_exclusion(frame,config,farm_id=910)
     assert curated.measured_ac_mw.tolist()==frame.measured_ac_mw.tolist()
     assert curated.eligible.tolist()==[False,True]
@@ -70,8 +77,9 @@ def test_review_csv_adds_exclusion_without_changing_measured_power(tmp_path):
 
 
 def test_anchored_daytime_zero_run_includes_satellite_ghi_gap():
-    config=load_config('configs/pv_experiments/curate_sustained_zero.yaml')
-    rule=config['pv_data_quality']['sustained_zero_outage']
+    config=load_config('configs/pv_experiments/curate_sustained_zero.yaml',
+        overrides={'pv_data_quality':{'exclusions_csv':None}})
+    rule=config['pv_episode_curation']['zero_detection']
     count=rule['minimum_consecutive_intervals']
     times=pd.date_range('2026-04-25T08:00Z',periods=count+2,
         freq=f"{config['source']['historical_interval_minutes']}min")
@@ -87,7 +95,8 @@ def test_anchored_daytime_zero_run_includes_satellite_ghi_gap():
 
 
 def test_short_partial_recovery_is_review_only_with_microsecond_timestamps():
-    config=load_config('configs/pv_experiments/curate_sustained_zero.yaml')
+    config=load_config('configs/pv_experiments/curate_sustained_zero.yaml',
+        overrides={'pv_data_quality':{'exclusions_csv':None}})
     times=pd.date_range('2026-04-26T13:15Z',periods=7,freq='15min').astype('datetime64[us, UTC]')
     physical=pd.DataFrame({'interval_start_utc':times,
         'delivery_day':['2026-04-26']*7,
@@ -103,7 +112,8 @@ def test_short_partial_recovery_is_review_only_with_microsecond_timestamps():
 
 
 def test_quality_review_emits_empty_review_queue_for_clean_source(tmp_path):
-    config=load_config('configs/pv_experiments/audit_data_quality_2025_2026.yaml')
+    config=load_config('configs/pv_experiments/audit_data_quality_2025_2026.yaml',
+        overrides={'pv_data_quality':{'exclusions_csv':None}})
     source=tmp_path/'source'/'farm_910'/'parquet'
     source.mkdir(parents=True)
     times=pd.date_range('2026-04-26T09:00Z',periods=8,freq='15min')
@@ -129,7 +139,8 @@ def test_quality_review_emits_empty_review_queue_for_clean_source(tmp_path):
 def test_quality_day_uses_selected_neural_curve_and_checks_target_alignment(tmp_path,monkeypatch):
     """The review plot must not silently substitute its pvlib baseline for neural AC."""
     from bess_pv_trading.forecasting import pv_quality_review
-    config=load_config('configs/pv_experiments/audit_data_quality_2025_2026.yaml')
+    config=load_config('configs/pv_experiments/audit_data_quality_2025_2026.yaml',
+        overrides={'pv_data_quality':{'exclusions_csv':None}})
     source=tmp_path/'source'/'farm_345'/'parquet'
     source.mkdir(parents=True)
     starts=pd.date_range('2026-05-01T09:00Z',periods=2,freq='15min')

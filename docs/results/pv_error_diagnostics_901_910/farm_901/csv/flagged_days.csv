@@ -1,0 +1,3 @@
+delivery_day,flagged_views,unique_physical_quarters,mean_measured_ac_mw,mean_forecast_ac_mw,mean_satellite_ghi_w_m2,weighted_sq_error,total_squared_error_share
+2026-05-01,115,34,0.0,2.67306860063387,731.9367,0.0020223600347042798,0.12822719663770138
+2026-05-07,16,4,3.5424001,3.2025850117206573,863.6564,4.469515230791399e-06,0.0002833884167700603

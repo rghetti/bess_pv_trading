@@ -1,0 +1,47 @@
+{
+  "source_sha256": {
+    "outputs/pv_data_quality/ghi_power_disconnect_full_history/csv/all_episodes.csv": "1100c516bc1f016d74d4ed5917aa031e804be0e118a4b3e4277b50c8a293781f",
+    "outputs/pv_data_quality/full_history_2025_to_2026_08/farm_1/csv/candidate_episodes.csv": "71b09376385eee0cb9ca45fd4c833613176942bd2188691aba917da99071b960",
+    "outputs/pv_data_quality/full_history_2025_to_2026_08/farm_1/parquet/physical_quarters.parquet": "63677eb7d7e392441265566cb3597bdf1ef1f1df598ddf35028c4c9405b517a2",
+    "outputs/pv_data_quality/full_history_2025_to_2026_08/farm_345/csv/candidate_episodes.csv": "0cf9f69112a78f67f27c83c4bb44007788be1b94bb217d6d7cc7eda23e89e3d0",
+    "outputs/pv_data_quality/full_history_2025_to_2026_08/farm_345/parquet/physical_quarters.parquet": "f104cbf35679f0b4f53f65b18a824470df05b9dbb9776b88fdf08e092d953aaa",
+    "outputs/pv_data_quality/full_history_2025_to_2026_08/farm_901/csv/candidate_episodes.csv": "2c213ef89204b3114894d6cbe9eb96d8e1b220a2378852e805ff3705e558e110",
+    "outputs/pv_data_quality/full_history_2025_to_2026_08/farm_901/parquet/physical_quarters.parquet": "f8a7f310a5687f41c46e0261ede7a117e40e9e7a51ee6a90665aeae9e14e4c06",
+    "outputs/pv_data_quality/full_history_2025_to_2026_08/farm_910/csv/candidate_episodes.csv": "92b430851abd05962e23fdd732e95f1c130de6435fce4dc923e57aa5bf103848",
+    "outputs/pv_data_quality/full_history_2025_to_2026_08/farm_910/parquet/physical_quarters.parquet": "84ceeff667b1c5cdaa44178a65bdf21e266a00889f5d892fcd49e1a46e8bc55a"
+  },
+  "rows": 675,
+  "interval_end": "inclusive UTC quarter start",
+  "interpretation": "Retrospective exclusions explicitly requested by user; not confirmed faults.",
+  "runtime_policy": "This CSV is the sole exclusion source; no additional runtime classification rules.",
+  "configuration": {
+    "farm_ids": [
+      1,
+      345,
+      901,
+      910
+    ],
+    "disconnect_source_root": "outputs/pv_data_quality/ghi_power_disconnect_full_history",
+    "review_source_root": "outputs/pv_data_quality/full_history_2025_to_2026_08",
+    "disconnect_kinds": [
+      "low_power",
+      "high_power"
+    ],
+    "review_issues": [
+      "low_output_high_ghi",
+      "nonzero_plateau",
+      "above_ac_rating",
+      "partial_recovery_between_outages"
+    ],
+    "source_flags": {
+      "sustained_zero_outage": "outage_excluded",
+      "nonzero_plateau": "plateau_flag",
+      "reviewed_exclusion": "review_excluded"
+    },
+    "zero_detection": {
+      "minimum_consecutive_intervals": 4,
+      "minimum_satellite_ghi_w_m2": 100.0,
+      "expand_full_daylight_run": true
+    }
+  }
+}

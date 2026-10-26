@@ -59,48 +59,40 @@ def sustained_daylight_zero_mask(times,power,ghi,*,minimum_intervals,
     return marked
 
 
-def apply_sustained_zero_exclusion(frame,config,*,farm_id=None):
-    """Keep raw targets and rows, but exclude confirmed runs from model masks."""
+def apply_episode_exclusions(frame,config,*,farm_id=None):
+    """Read all production-quality classifications from one authoritative CSV.
+
+    This loader never detects zero runs, plateaus or power/GHI anomalies. Those
+    are review-time evidence only. Every runtime exclusion must be in the CSV.
+    """
     result=frame.copy()
-    settings=config['pv_data_quality']['sustained_zero_outage']
-    keys=['interval_start_utc','delivery_day','measured_ac_mw','satellite_ghi_w_m2','daylight']
-    if not set(keys).issubset(result):raise ValueError('PV corpus lacks outage evidence columns')
-    grouped=result.groupby('interval_start_utc',sort=True)
-    for name in ['delivery_day','measured_ac_mw','satellite_ghi_w_m2','daylight']:
-        if (grouped[name].nunique(dropna=False)>1).any():
-            raise ValueError(f'Auction views disagree on physical-quarter {name}')
-    unique=grouped[keys[1:]].first().reset_index()
-    physical=sustained_daylight_zero_mask(unique.interval_start_utc,
-        unique.measured_ac_mw,unique.satellite_ghi_w_m2,
-        minimum_intervals=settings['minimum_consecutive_intervals'],
-        minimum_ghi_w_m2=settings['minimum_satellite_ghi_w_m2'],
-        interval_minutes=config['source']['historical_interval_minutes'],
-        daylight=unique.daylight,day_keys=unique.delivery_day,
-        expand_full_daylight_run=settings['expand_full_daylight_run'])
-    lookup=pd.Series(physical,index=pd.DatetimeIndex(unique.interval_start_utc))
-    result['outage_excluded']=lookup.reindex(pd.DatetimeIndex(result.interval_start_utc)).to_numpy()
-    if 'review_excluded' not in result:result['review_excluded']=False
-    review=config.get('review',{}).get('exclusions_csv')
-    if review:
-        if farm_id is None:raise ValueError('farm_id is required when applying manual PV review')
-        decisions=pd.read_csv(config_path(config,review))
-        required={'farm_id','start_utc','end_utc','decision'}
-        if not required.issubset(decisions):
-            raise ValueError('PV review CSV requires farm_id,start_utc,end_utc,decision')
-        starts=pd.DatetimeIndex(result.interval_start_utc)
-        excluded={str(value).lower() for value in config['review']['excluded_decisions']}
-        for row in decisions.itertuples(index=False):
-            if (str(row.farm_id) not in {str(farm_id),'portfolio'}
-                    or str(row.decision).lower() not in excluded):continue
-            lower=pd.Timestamp(row.start_utc);upper=pd.Timestamp(row.end_utc)
-            if lower.tzinfo is None or upper.tzinfo is None or upper<lower:
-                raise ValueError('Reviewed PV exclusion timestamps must be ordered and timezone-aware')
-            selected=(starts>=lower)&(starts<=upper)
-            result.loc[selected,'review_excluded']=True
-        result['eligible']=result.eligible.to_numpy(dtype=bool)&~result.review_excluded.to_numpy(dtype=bool)
-    if settings['enabled']:
-        result['eligible']=result.eligible.to_numpy(dtype=bool)&~result.outage_excluded.to_numpy(dtype=bool)
+    for name in ['episode_excluded','outage_excluded','dubious_excluded','review_excluded']:
+        result[name]=False
+    path=config.get('pv_data_quality',{}).get('exclusions_csv')
+    if not path:return result
+    if farm_id is None:raise ValueError('farm_id is required for CSV episode exclusions')
+    decisions=pd.read_csv(config_path(config,path))
+    required={'farm_id','start_utc','end_utc','decision','reason'}
+    if not required.issubset(decisions):raise ValueError('Malformed PV exclusions CSV')
+    starts=pd.DatetimeIndex(result.interval_start_utc)
+    selected=np.zeros(len(result),dtype=bool)
+    for row in decisions.loc[decisions.farm_id.astype(str).eq(str(farm_id))].itertuples(index=False):
+        if str(row.decision).lower()!='exclude':continue
+        lower=pd.Timestamp(row.start_utc);upper=pd.Timestamp(row.end_utc)
+        if lower.tzinfo is None or upper.tzinfo is None or upper<lower:
+            raise ValueError('PV episode boundaries must be ordered and timezone-aware')
+        active=(starts>=lower)&(starts<=upper)
+        selected|=active
+        classification=('outage_excluded' if row.reason=='sustained_zero_outage'
+            else 'review_excluded' if row.reason=='reviewed_exclusion' else 'dubious_excluded')
+        result.loc[active,classification]=True
+    result['episode_excluded']=selected
+    result['eligible']=result.eligible.to_numpy(dtype=bool)&~selected
     return result
+
+
+# Preserve the old import name for external callers; it now reads the CSV only.
+apply_sustained_zero_exclusion=apply_episode_exclusions
 
 
 def run_outage_curation(config,progress=print):
@@ -118,7 +110,7 @@ def run_outage_curation(config,progress=print):
         path=source/f'farm_{farm}/parquet/corpus.parquet'
         if not path.exists():raise FileNotFoundError(path)
         original=pd.read_parquet(path)
-        curated=apply_sustained_zero_exclusion(original,config,farm_id=farm)
+        curated=apply_episode_exclusions(original,config,farm_id=farm)
         folder=output/f'farm_{farm}';folder.mkdir(parents=True,exist_ok=True)
         kept=curated.loc[curated.eligible].copy()
         kept.to_parquet(folder/'modeling_views.parquet',index=False)
@@ -142,10 +134,23 @@ def run_outage_curation(config,progress=print):
         (folder/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
         progress(f"Farm {farm}: excluded {len(unique)} physical quarters across {len(days)} days")
         summaries.append(summary)
-    review=config.get('review',{}).get('exclusions_csv')
-    manifest={'status':'complete','rule':config['pv_data_quality']['sustained_zero_outage'],
+    review=config['pv_data_quality'].get('exclusions_csv')
+    manifest={'status':'complete','quality_policy':'authoritative CSV only',
         'review_csv_sha256':hashlib.sha256(config_path(config,review).read_bytes()).hexdigest()
             if review else None,
         'summaries':summaries,'code_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
     (output/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     return {'output':str(output),'summaries':summaries}
+
+
+def modeling_instances(frame,config,*,farm_id):
+    """Remove excluded feature/AC-target pairs entirely from every modeling split.
+
+    Audit callers use apply_episode_exclusions to retain evidence. Modeling
+    callers use this entry point so excluded quarters never become features,
+    regression targets, neural sequence members, validation or test instances.
+    """
+    marked=apply_episode_exclusions(frame,config,farm_id=farm_id)
+    if not config['pv_data_quality'].get('remove_excluded_instances',False):return marked
+    removed=marked.episode_excluded
+    return marked.loc[~removed].copy()

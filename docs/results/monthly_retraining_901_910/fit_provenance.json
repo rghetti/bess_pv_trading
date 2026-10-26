@@ -1,0 +1,154 @@
+[
+  {
+    "farm_id": 901,
+    "month": "2026-05",
+    "trial": "boosting_residual_05",
+    "issue_cutoff_utc": "2026-04-29 22:00:00+00:00",
+    "training_rows": 162240,
+    "last_training_target_available_utc": "2026-04-29 22:00:00+00:00",
+    "report_rows": 6613,
+    "prediction_path": "outputs/pv_monthly_retraining/expanding_2026_05_to_08/farm_901/arrays/2026-05.npy",
+    "metrics": {
+      "rows": 6613,
+      "days": 31,
+      "nrmse_percent": 18.340235085980446,
+      "nmae_percent": 11.548177658305493,
+      "bias_percent": 5.924851775119915
+    },
+    "prediction_sha256": "8e00e102f0a601b2636e36e86d8ce55922ebe0d4293b0999ab5e42da2b26eb76",
+    "sklearn_version": "1.9.1"
+  },
+  {
+    "farm_id": 901,
+    "month": "2026-06",
+    "trial": "boosting_residual_05",
+    "issue_cutoff_utc": "2026-05-30 22:00:00+00:00",
+    "training_rows": 172320,
+    "last_training_target_available_utc": "2026-05-30 22:00:00+00:00",
+    "report_rows": 6716,
+    "prediction_path": "outputs/pv_monthly_retraining/expanding_2026_05_to_08/farm_901/arrays/2026-06.npy",
+    "metrics": {
+      "rows": 6716,
+      "days": 30,
+      "nrmse_percent": 10.766606283520977,
+      "nmae_percent": 6.5173975804427995,
+      "bias_percent": 0.788630549204662
+    },
+    "prediction_sha256": "5e10b7b4f388cfa201621a03ef4d081a272420416d2bccb001362a8021b60f8f",
+    "sklearn_version": "1.9.1"
+  },
+  {
+    "farm_id": 901,
+    "month": "2026-07",
+    "trial": "boosting_residual_05",
+    "issue_cutoff_utc": "2026-06-29 22:00:00+00:00",
+    "training_rows": 182400,
+    "last_training_target_available_utc": "2026-06-29 22:00:00+00:00",
+    "report_rows": 6789,
+    "prediction_path": "outputs/pv_monthly_retraining/expanding_2026_05_to_08/farm_901/arrays/2026-07.npy",
+    "metrics": {
+      "rows": 6789,
+      "days": 31,
+      "nrmse_percent": 12.20583193849955,
+      "nmae_percent": 7.18041844647299,
+      "bias_percent": 3.6030653431889323
+    },
+    "prediction_sha256": "a4c6ba5892fb081712857c5258ee745bd42e5e61b3b9e6ed8169830b452eb08b",
+    "sklearn_version": "1.9.1"
+  },
+  {
+    "farm_id": 901,
+    "month": "2026-08",
+    "trial": "boosting_residual_05",
+    "issue_cutoff_utc": "2026-07-30 22:00:00+00:00",
+    "training_rows": 192816,
+    "last_training_target_available_utc": "2026-07-30 22:00:00+00:00",
+    "report_rows": 6249,
+    "prediction_path": "outputs/pv_monthly_retraining/expanding_2026_05_to_08/farm_901/arrays/2026-08.npy",
+    "metrics": {
+      "rows": 6249,
+      "days": 31,
+      "nrmse_percent": 10.080548806508412,
+      "nmae_percent": 5.683647898849068,
+      "bias_percent": 3.116752819259614
+    },
+    "prediction_sha256": "a8f78ade112064ff6c31abdd00a6e2dc0b80ccc32b4d6f26d5b047cae59100b5",
+    "sklearn_version": "1.9.1"
+  },
+  {
+    "farm_id": 910,
+    "month": "2026-05",
+    "trial": "rbf_direct_00",
+    "issue_cutoff_utc": "2026-04-29 22:00:00+00:00",
+    "training_rows": 162240,
+    "last_training_target_available_utc": "2026-04-29 22:00:00+00:00",
+    "report_rows": 6610,
+    "prediction_path": "outputs/pv_monthly_retraining/expanding_2026_05_to_08/farm_910/arrays/2026-05.npy",
+    "metrics": {
+      "rows": 6610,
+      "days": 31,
+      "nrmse_percent": 21.832296923652372,
+      "nmae_percent": 15.102604054776844,
+      "bias_percent": 3.3301020450874184
+    },
+    "prediction_sha256": "0b069f55c3d0526c832a0d0a0da7eb7fcf86152a833309563f3fc6bb899eeab7",
+    "sklearn_version": "1.9.1"
+  },
+  {
+    "farm_id": 910,
+    "month": "2026-06",
+    "trial": "rbf_direct_00",
+    "issue_cutoff_utc": "2026-05-30 22:00:00+00:00",
+    "training_rows": 172320,
+    "last_training_target_available_utc": "2026-05-30 22:00:00+00:00",
+    "report_rows": 6716,
+    "prediction_path": "outputs/pv_monthly_retraining/expanding_2026_05_to_08/farm_910/arrays/2026-06.npy",
+    "metrics": {
+      "rows": 6716,
+      "days": 30,
+      "nrmse_percent": 16.306447450046747,
+      "nmae_percent": 11.283421549610116,
+      "bias_percent": 2.582676322748317
+    },
+    "prediction_sha256": "3cf29ee0ba44f88cb29b256c88bc55d7324a8176152ee7a48e9d7d78625de03d",
+    "sklearn_version": "1.9.1"
+  },
+  {
+    "farm_id": 910,
+    "month": "2026-07",
+    "trial": "rbf_direct_00",
+    "issue_cutoff_utc": "2026-06-29 22:00:00+00:00",
+    "training_rows": 182400,
+    "last_training_target_available_utc": "2026-06-29 22:00:00+00:00",
+    "report_rows": 6789,
+    "prediction_path": "outputs/pv_monthly_retraining/expanding_2026_05_to_08/farm_910/arrays/2026-07.npy",
+    "metrics": {
+      "rows": 6789,
+      "days": 31,
+      "nrmse_percent": 14.498691065845215,
+      "nmae_percent": 10.52632001688372,
+      "bias_percent": -0.15550066459731368
+    },
+    "prediction_sha256": "67643782615c264fb106608362b38b127dda37f6faffaaec0f4f13deb3b486fb",
+    "sklearn_version": "1.9.1"
+  },
+  {
+    "farm_id": 910,
+    "month": "2026-08",
+    "trial": "rbf_direct_00",
+    "issue_cutoff_utc": "2026-07-30 22:00:00+00:00",
+    "training_rows": 192816,
+    "last_training_target_available_utc": "2026-07-30 22:00:00+00:00",
+    "report_rows": 6249,
+    "prediction_path": "outputs/pv_monthly_retraining/expanding_2026_05_to_08/farm_910/arrays/2026-08.npy",
+    "metrics": {
+      "rows": 6249,
+      "days": 31,
+      "nrmse_percent": 21.38395726950233,
+      "nmae_percent": 17.064894233814456,
+      "bias_percent": 14.749901765933524
+    },
+    "prediction_sha256": "f79e24470f6a53db2c5e62d1fc8f5bf8da756989a37a1f7254ff0bb5f09c06f5",
+    "sklearn_version": "1.9.1"
+  }
+]

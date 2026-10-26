@@ -69,6 +69,8 @@ def predict_bundle(frame,bundle_directory,*,farm_id):
     interpolated,_=interpolate_forecast_gaps(frame,manifest.get('missing_weather_interpolation','none'))
     features=weather_features(interpolated,spec['features'],manifest['timezone'],
         include_national_holiday=manifest.get('include_national_holiday',False))
+    # The saved preprocessor defines the exact feature subset and order.
+    features=features.loc[:,manifest['preprocessor']['columns']]
     x=transform_features(features,manifest['preprocessor']).astype(np.float32)
     night=night_window_mask(pd.DatetimeIndex(frame.interval_start_utc),manifest['night_policy'])
     baseline_model=joblib.load(bundle_directory/manifest['baseline'])

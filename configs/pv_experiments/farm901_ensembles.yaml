@@ -1,0 +1,5 @@
+# Frozen 2025 fit, Jan-Apr 2026 validation, May-Aug test; no trading rerun.
+include: ../standard.yaml
+farm_id: 901
+pv_ensemble_study:
+  run_id: farm901_tracking_2025_to_2026

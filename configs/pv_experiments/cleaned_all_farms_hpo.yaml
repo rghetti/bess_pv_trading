@@ -1,0 +1,7 @@
+include: ../standard.yaml
+pv_forecast_search:
+  include_national_holiday: true
+  excluded_features: [wind_speed_10m, lead_hours, cycle_hour_sin, cycle_hour_cos]
+  missing_weather_interpolation: linear_per_view
+  include_missing_indicators: false
+  feature_sets: [core, weather]

@@ -146,10 +146,18 @@ def transform_features(features: pd.DataFrame, fitted: dict) -> np.ndarray:
     return output.astype(np.float32)
 
 
-def pack_sequences(frame: pd.DataFrame, features: np.ndarray, rating: float) -> dict:
-    """Pad each date/auction separately, retaining row indices for exact reconstruction."""
-    groups = list(frame.groupby(["delivery_day", "auction"], sort=True).indices.values())
-    maximum = max(map(len, groups))
+def pack_sequences(frame: pd.DataFrame, features: np.ndarray, rating: float, *, minimum_length=0) -> dict:
+    """Pack contiguous date/auction segments; excluded quarters are never represented."""
+    groups=[];view_ids=[]
+    for view_id,positions in enumerate(frame.groupby(["delivery_day", "auction"], sort=True).indices.values()):
+        starts=pd.DatetimeIndex(frame.iloc[positions].interval_start_utc)
+        steps=np.diff(starts.as_unit('ns').asi8)
+        if np.any(steps<=0) or np.any(steps%pd.Timedelta(minutes=15).value):
+            raise ValueError('Neural quarter-hour timestamps must be ordered and unique')
+        boundaries=np.flatnonzero(steps!=pd.Timedelta(minutes=15).value)+1
+        segments=np.split(positions,boundaries)
+        groups.extend(segments);view_ids.extend([view_id]*len(segments))
+    maximum = max(max(map(len, groups)),int(minimum_length))
     shape = (len(groups), maximum)
     x = np.zeros((*shape, features.shape[1]), dtype=np.float32)
     y = np.zeros(shape, dtype=np.float32)
@@ -180,7 +188,7 @@ def pack_sequences(frame: pd.DataFrame, features: np.ndarray, rating: float) -> 
         keys.append((sample.delivery_day.iloc[0], sample.auction.iloc[0]))
     return {"x": x, "y": y, "mask": mask, "daylight": daylight,
             "month": months, "auction": auctions, "indices": indices,
-            "split": np.asarray(split), "keys": keys}
+            "split": np.asarray(split), "keys": keys,"view_ids":np.asarray(view_ids)}
 
 
 def unpack_predictions(packed: dict, prediction: np.ndarray, rows: int, rating: float) -> np.ndarray:

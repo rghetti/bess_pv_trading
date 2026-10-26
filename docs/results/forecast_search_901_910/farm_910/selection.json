@@ -1,0 +1,20 @@
+{
+  "farm_id": 910,
+  "selected_static": "mean_top_2",
+  "selected_including_online": "online_b5_w7_n3",
+  "best_new_neural": "v2/direct_tcn_02",
+  "best_new_statistical": "v1/rbf_direct_00",
+  "selection": "validation Jan-Apr 2026 daylight NRMSE; no test selection",
+  "test_is_reused_holdout": true,
+  "online_information": "Uses completed production days observed by each issuance cutoff; unlike frozen models, adapts causally within 2026.",
+  "test_paired_interval": {
+    "quantity": "candidate minus old selected test NRMSE, percentage points of AC rating",
+    "block_days": 7,
+    "resamples": 500,
+    "percentile_95_interval": [
+      -2.205736297560648,
+      0.007866097629352947
+    ],
+    "scope": "exploratory reused holdout; does not include HPO/model-selection uncertainty"
+  }
+}

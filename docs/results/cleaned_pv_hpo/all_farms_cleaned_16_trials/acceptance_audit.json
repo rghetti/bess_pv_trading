@@ -1,0 +1,95 @@
+{
+  "status": "passed",
+  "total_fits": 1136,
+  "checks": [
+    {
+      "farm_id": 1,
+      "regime": "forecast",
+      "modeling_rows": 203476,
+      "excluded_instances_retained": 0,
+      "neural_instances": 203476
+    },
+    {
+      "farm_id": 345,
+      "regime": "forecast",
+      "modeling_rows": 195628,
+      "excluded_instances_retained": 0,
+      "neural_instances": 195628
+    },
+    {
+      "farm_id": 901,
+      "regime": "forecast",
+      "modeling_rows": 203249,
+      "excluded_instances_retained": 0,
+      "neural_instances": 203249
+    },
+    {
+      "farm_id": 910,
+      "regime": "forecast",
+      "modeling_rows": 195993,
+      "excluded_instances_retained": 0,
+      "neural_instances": 195993
+    },
+    {
+      "farm_id": 1,
+      "regime": "satellite",
+      "modeling_rows": 203476,
+      "excluded_instances_retained": 0,
+      "neural_instances": 203476
+    },
+    {
+      "farm_id": 345,
+      "regime": "satellite",
+      "modeling_rows": 195628,
+      "excluded_instances_retained": 0,
+      "neural_instances": 195628
+    },
+    {
+      "farm_id": 901,
+      "regime": "satellite",
+      "modeling_rows": 203249,
+      "excluded_instances_retained": 0,
+      "neural_instances": 203249
+    },
+    {
+      "farm_id": 910,
+      "regime": "satellite",
+      "modeling_rows": 195993,
+      "excluded_instances_retained": 0,
+      "neural_instances": 195993
+    }
+  ],
+  "quality_csv": "configs/data_quality/pv_excluded_episodes_2025_to_2026_08.csv",
+  "quality_csv_sha256": "16cc09def8da381919703d24e3532142dcd1e62258b83a308d6315f99ff6e8dc",
+  "single_csv_is_sole_quality_source": true,
+  "published_operational_models": [
+    {
+      "farm_id": 1,
+      "family": "direct_tcn",
+      "model": "direct_tcn_02",
+      "directory": "outputs/pv_cleaned_hpo/all_farms_cleaned_16_trials/selected_models/farm_1",
+      "input_regime": "forecast"
+    },
+    {
+      "farm_id": 345,
+      "family": "pvlib_scale",
+      "model": "pvlib_scale",
+      "directory": "outputs/pv_cleaned_hpo/all_farms_cleaned_16_trials/selected_models/farm_345",
+      "input_regime": "forecast"
+    },
+    {
+      "farm_id": 901,
+      "family": "direct_tcn",
+      "model": "direct_tcn_02",
+      "directory": "outputs/pv_cleaned_hpo/all_farms_cleaned_16_trials/selected_models/farm_901",
+      "input_regime": "forecast"
+    },
+    {
+      "farm_id": 910,
+      "family": "direct_tcn",
+      "model": "direct_tcn_14",
+      "directory": "outputs/pv_cleaned_hpo/all_farms_cleaned_16_trials/selected_models/farm_910",
+      "input_regime": "forecast"
+    }
+  ]
+}

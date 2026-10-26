@@ -1,0 +1,28 @@
+{
+  "views": 26364,
+  "days": 123,
+  "capacity_normalized_rmse_percent": 18.192797448257103,
+  "satellite_ghi_coverage": 0.9951025285585176,
+  "weighted_signed_pv_error_ghi_error_correlation": 0.37703286320710955,
+  "ghi_error_quantile_edges_w_m2": [
+    0.0,
+    28.21906805038452,
+    60.28782653808594,
+    100.83589172363281,
+    752.1694450378418
+  ],
+  "evaluation_split": "test",
+  "interpretation": "Associations only. Satellite GHI is diagnostic; flags are unconfirmed operating conditions.",
+  "farm_id": 910,
+  "input_sha256": {
+    "corpus.parquet": "19614391ca7a8b58f0911c91dbeb9d22f891db407f577f7f75cd7bf62b22b2f8",
+    "comparison_predictions.parquet": "4e672ea5d7a5e547d017c04252d447214614090f6674eab668fcf21b0689af48"
+  },
+  "sensitivity_excluded_days": [
+    "2026-05-03"
+  ],
+  "without_top_flagged_days_weather_diagnostics": {
+    "weighted_signed_pv_error_ghi_error_correlation": 0.39809955362980975,
+    "largest_absolute_ghi_error_bin_squared_error_share": 0.3624336210374039
+  }
+}

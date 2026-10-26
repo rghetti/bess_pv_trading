@@ -120,6 +120,21 @@ def dispatch(command: str, config: dict) -> dict:
         from .forecasting.pv_neural_study import run_neural_study
         return run_neural_study(config,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
+    if command == "compare-pv-forecast-searches":
+        from .forecasting.pv_forecast_comparison import run_forecast_comparison
+        return run_forecast_comparison(config)
+    if command == "study-pv-hourly-bias":
+        from .forecasting.pv_hourly_bias import run_hourly_bias_study
+        return run_hourly_bias_study(config)
+    if command == "study-pv-online-ridge":
+        from .forecasting.pv_online_ridge import run_online_ridge_study
+        return run_online_ridge_study(config)
+    if command == "study-pv-monthly-retraining":
+        from .forecasting.pv_monthly_retraining import run_monthly_retraining
+        return run_monthly_retraining(config)
+    if command == "diagnose-pv-forecast-errors":
+        from .forecasting.pv_error_diagnostics import run_pv_error_diagnostics
+        return run_pv_error_diagnostics(config)
     if command == "curate-pv-outages":
         from .forecasting.pv_outages import run_outage_curation
         return run_outage_curation(config)
@@ -132,6 +147,9 @@ def dispatch(command: str, config: dict) -> dict:
     if command == "study-pv-forecast-search":
         from .forecasting.pv_forecast_search import run_forecast_search
         return run_forecast_search(config)
+    if command == "study-pv-ensembles":
+        from .forecasting.pv_ensemble_study import run_ensemble_study
+        return run_ensemble_study(config)
     if command == "tune-pv-neural":
         from .forecasting.pv_neural_tuning import run_neural_tuning
         return run_neural_tuning(config,
@@ -195,7 +213,7 @@ def main(argv: list[str] | None = None) -> int:
     """Print serializable results and actionable errors without credential prompts."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("command",choices=("inspect-data","prepare-analysis-data","validate-config","resolve-config",
-        "run-synthetic","forecast-pv","calibrate-pv-output","study-pv-calibration","retrain-pv-calibration","study-pv-neural","tune-pv-neural","study-pv-forecast-search","curate-pv-outages","audit-pv-validation","audit-pv-data-quality","import-market-data","optimize",
+        "run-synthetic","forecast-pv","calibrate-pv-output","study-pv-calibration","retrain-pv-calibration","study-pv-neural","tune-pv-neural","study-pv-ensembles","study-pv-forecast-search","compare-pv-forecast-searches","study-pv-hourly-bias","study-pv-online-ridge","study-pv-monthly-retraining","diagnose-pv-forecast-errors","curate-pv-outages","audit-pv-validation","audit-pv-data-quality","import-market-data","optimize",
         "backtest","report-implementation","download-data",
         "api-cache-status","migrate-api-cache","diagnose-terna",
         "import-gme-workbooks","import-terna-workbooks","stage-market-workbooks",

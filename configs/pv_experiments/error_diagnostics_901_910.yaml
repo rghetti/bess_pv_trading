@@ -1,0 +1,4 @@
+# Read-only error attribution on the frozen May-August forecast benchmark.
+include: ../standard.yaml
+pv_error_diagnostics:
+  run_id: frozen_2026_05_to_08

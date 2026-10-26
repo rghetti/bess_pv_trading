@@ -1,0 +1,8 @@
+include: ../standard.yaml
+pv_timing_ablation:
+  resume: false
+pv_forecast_search:
+  include_national_holiday: true
+  excluded_features: [wind_speed_10m]
+  missing_weather_interpolation: linear_per_view
+  include_missing_indicators: false

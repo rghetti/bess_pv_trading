@@ -1,0 +1,8 @@
+# Controlled TCN HPO with no auction embeddings or proxy geometry features.
+include: ../standard.yaml
+pv_forecast_search:
+  run_id: market_free_tcn_901_910_v2
+  statistical_spaces: null
+  statistical_trials_per_family: 0
+  neural_architectures: [direct_tcn, residual_tcn]
+  neural_trials_per_architecture: 12

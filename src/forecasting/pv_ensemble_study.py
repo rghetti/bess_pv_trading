@@ -18,7 +18,7 @@ from .pv_fitting import balanced_weights
 from .pv_neural_data import feature_frame, fit_preprocessor, transform_features
 from .pv_physical import PhysicalPVModel
 from .pv_study_inputs import farm_settings
-from .pv_outages import apply_sustained_zero_exclusion
+from .pv_outages import modeling_instances
 
 
 def physical_features(frame, farm, settings, night):
@@ -59,9 +59,9 @@ def run_ensemble_study(config, progress=print):
     section = config['pv_ensemble_study']
     farm_id = int(config['farm_id'])
     source = config_path(config, section['source_root']) / f'farm_{farm_id}'
-    frame = apply_sustained_zero_exclusion(
+    frame = modeling_instances(
         pd.read_parquet(source/'parquet/corpus.parquet'),config,farm_id=farm_id)
-    prior = pd.read_parquet(source/'parquet/predictions.parquet')
+    prior = pd.read_parquet(source/'parquet/predictions.parquet').loc[frame.index]
     keys = ['interval_start_utc', 'delivery_day', 'auction', 'forecast_cycle_utc']
     if not frame[keys].equals(prior[keys]):
         raise ValueError('Reference predictions do not match the frozen corpus')

@@ -1,0 +1,6 @@
+# Review-only scan of all available physical quarters for four farms.
+include: ../standard.yaml
+pv_ghi_power_disconnect:
+  run_id: ghi_power_disconnect_full_history
+  focus_days_by_farm:
+    910: ['2026-08-01']

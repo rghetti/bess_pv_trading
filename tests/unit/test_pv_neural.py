@@ -170,3 +170,151 @@ def test_neural_sequences_preserve_dst_and_ida3_noon(day, quarters):
     assert sorted((packed["indices"] >= 0).sum(axis=1)) == sorted([quarters]*3+[48])
     ida3 = frame.loc[frame.auction == "IDA3", "interval_start_utc"].iloc[0]
     assert ida3.tz_convert(config["market"]["timezone"]).hour == 12
+
+
+def test_new_weather_features_need_neither_proxy_geometry_nor_auction(neural_case):
+    from bess_pv_trading.forecasting.pv_forecast_search import weather_features
+    config, _, _, frame = neural_case
+    original = weather_features(frame, 'weather', config['pv_neural']['delivery_timezone'])
+    changed = frame.drop(columns=['solar_zenith_deg', 'solar_azimuth_deg']).copy()
+    changed['auction'] = 'IDA3'
+    changed['latitude'] = np.nan
+    changed['longitude'] = np.nan
+    changed['measured_ac_mw'] = np.nan
+    changed['satellite_ghi_w_m2'] = np.nan
+    pd.testing.assert_frame_equal(original,weather_features(changed,'weather',config['pv_neural']['delivery_timezone']))
+
+
+def test_disabled_auction_embeddings_make_predictions_auction_invariant(neural_case):
+    _,section,candidate,frame = neural_case
+    assert section['auction_embedding_dim']==0
+    features=feature_frame(frame,'core',section['delivery_timezone'])
+    pre=fit_preprocessor(features,(frame.split=='train').to_numpy(),section)
+    packed=pack_sequences(frame,transform_features(features,pre),1.)
+    tensors=tensor_pack(packed)
+    model=PVNetwork(packed['x'].shape[-1],candidate,section).eval()
+    assert model.auction_embedding is None
+    with torch.no_grad():
+        first=model(tensors['x'],tensors['month'],tensors['auction'],tensors['daylight'])
+        second=model(tensors['x'],tensors['month'],torch.ones_like(tensors['auction']),tensors['daylight'])
+    torch.testing.assert_close(first,second,rtol=0,atol=0)
+
+
+@pytest.mark.parametrize('architecture',['residual_mlp','mixture_experts','bigru','transformer'])
+def test_new_architectures_have_bounded_outputs_and_finite_gradients(neural_case,architecture):
+    from bess_pv_trading.forecasting.pv_forecast_search import weather_features
+    from bess_pv_trading.forecasting.pv_residual_networks import WeatherResidualNetwork
+    config,section,_,frame=neural_case
+    features=weather_features(frame,'core',section['delivery_timezone'])
+    pre=fit_preprocessor(features,(frame.split=='train').to_numpy(),section)
+    packed=pack_sequences(frame,transform_features(features,pre),1.)
+    tensors=tensor_pack(packed)
+    spec={key:values[0] for key,values in config['pv_forecast_search']['neural_space'].items()}
+    spec['architecture']=architecture
+    model=WeatherResidualNetwork(packed['x'].shape[-1],spec)
+    valid=torch.as_tensor(packed['indices']>=0)
+    prediction=model(tensors['x'],tensors['y'],tensors['daylight'],valid)
+    assert ((prediction>=0)&(prediction<=1)).all()
+    prediction.sum().backward()
+    assert all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters())
+
+
+def test_online_gain_does_not_read_future_observations(neural_case):
+    from bess_pv_trading.forecasting.pv_online_bias import completed_day_statistics,causal_gain_prediction
+    config,section,_,frame=neural_case
+    frame=frame.copy()
+    duration=pd.Timedelta(minutes=config['source']['historical_interval_minutes'])
+    frame['target_available_at_utc']=frame.interval_start_utc+duration
+    frame['decision_cutoff_utc']=frame.forecast_cycle_utc
+    prediction=frame.measured_ac_mw.to_numpy().copy()
+    options=config['pv_online_bias']
+    def compute(data):
+        history=completed_day_statistics(data,prediction,section['delivery_timezone'])
+        return causal_gain_prediction(data,prediction,history,window_days=max(options['window_days']),
+            minimum_days=min(options['minimum_days']),gain_bounds=options['gain_bounds'])
+    before,_=compute(frame)
+    changed=frame.copy()
+    future=changed.split.eq('test')
+    changed.loc[future,'measured_ac_mw']=-changed.loc[future,'measured_ac_mw']
+    after,_=compute(changed)
+    np.testing.assert_array_equal(before[~future],after[~future])
+
+
+def test_calibration_counts_overlapping_forecasts_once_and_waits_for_midnight(neural_case):
+    from bess_pv_trading.forecasting.pv_online_bias import completed_day_statistics
+    config,section,_,frame=neural_case
+    frame=frame.copy();frame['target_available_at_utc']=frame.interval_start_utc
+    doubled=pd.concat([frame,frame.assign(auction='IDA3')],ignore_index=True)
+    result=completed_day_statistics(doubled,doubled.measured_ac_mw.to_numpy(),section['delivery_timezone'])
+    assert result.quarters.sum()==len(frame)
+    for _,row in result.iterrows():
+        boundary=(pd.Timestamp(row.delivery_day).tz_localize(section['delivery_timezone'])+pd.DateOffset(days=1)).tz_convert('UTC')
+        assert row.available>=boundary
+
+
+def test_completed_day_calibration_preserves_dst_midnight_boundaries():
+    from bess_pv_trading.markets import AuctionCalendar
+    from bess_pv_trading.forecasting.pv_online_bias import completed_day_statistics
+    config=load_config('tests/fixtures/configs/continuous_cases.yaml')
+    config['market']['valid_to']=max(case['delivery_day'] for case in config['test_case']['dst_cases'])
+    calendar=AuctionCalendar.from_config(config)
+    duration=pd.Timedelta(minutes=config['source']['historical_interval_minutes'])
+    timezone=config['market']['timezone']
+    for case in config['test_case']['dst_cases']:
+        starts=calendar.delivery_grid(case['delivery_day']).starts
+        frame=pd.DataFrame({'delivery_day':case['delivery_day'],'interval_start_utc':starts,
+            'target_available_at_utc':starts+duration,'measured_ac_mw':np.ones(len(starts))})
+        history=completed_day_statistics(frame,frame.measured_ac_mw.to_numpy(),timezone)
+        midnight=pd.Timestamp(case['delivery_day']).tz_localize(timezone)+pd.DateOffset(days=1)
+        assert history.quarters.iloc[0]==case['expected_physical_intervals']
+        assert history.available.iloc[0]==midnight.tz_convert('UTC')
+
+
+@pytest.mark.parametrize('architecture',['direct_tcn','residual_tcn'])
+def test_market_free_tcn_output_contract(neural_case,architecture):
+    from bess_pv_trading.forecasting.pv_forecast_search import weather_features
+    from bess_pv_trading.forecasting.pv_residual_networks import WeatherResidualNetwork
+    config,section,_,frame=neural_case
+    features=weather_features(frame,'core',section['delivery_timezone'])
+    pre=fit_preprocessor(features,(frame.split=='train').to_numpy(),section)
+    packed=pack_sequences(frame,transform_features(features,pre),1.)
+    tensors=tensor_pack(packed)
+    spec={key:values[0] for key,values in config['pv_forecast_search']['neural_space'].items()}
+    spec['architecture']=architecture;model=WeatherResidualNetwork(packed['x'].shape[-1],spec)
+    result=model(tensors['x'],tensors['y'],tensors['daylight'],torch.as_tensor(packed['indices']>=0))
+    assert torch.isfinite(result).all()
+    assert ((result>=0)&(result<=1)).all()
+    result.sum().backward()
+    assert all(p.grad is None or torch.isfinite(p.grad).all() for p in model.parameters())
+
+
+def test_bundle_preserves_convolution_padding_for_single_day_inference(neural_case):
+    from bess_pv_trading.forecasting.pv_forecast_bundle import _pad_sequence_contract
+    from bess_pv_trading.forecasting.pv_forecast_search import weather_features
+    from bess_pv_trading.forecasting.pv_residual_networks import WeatherResidualNetwork
+    config,section,_,frame=neural_case
+    features=weather_features(frame,'core',section['delivery_timezone'])
+    pre=fit_preprocessor(features,(frame.split=='train').to_numpy(),section)
+    x=transform_features(features,pre)
+    original=pack_sequences(frame,x,1.)
+    # A training corpus containing an autumn DST day has a longer padded axis.
+    length=original['indices'].shape[1]+int(60/config['source']['historical_interval_minutes'])
+    full=_pad_sequence_contract(original,length)
+    subset=frame.split.eq('test').to_numpy()
+    single=_pad_sequence_contract(pack_sequences(frame.loc[subset].reset_index(drop=True),x[subset],1.),length)
+    spec={key:values[0] for key,values in config['pv_forecast_search']['neural_space'].items()}
+    spec['architecture']='direct_tcn'
+    torch.manual_seed(section['seed'])
+    model=WeatherResidualNetwork(x.shape[1],spec).eval()
+    # Exercise a learned head rather than the constant zero-initialized head.
+    torch.nn.init.normal_(model.head.weight)
+    def predict(packed):
+        with torch.no_grad():
+            return model(torch.as_tensor(packed['x']),torch.zeros(packed['indices'].shape),
+                torch.as_tensor(packed['daylight']),torch.as_tensor(packed['indices']>=0)).numpy()
+    full_result=unpack_predictions(full,predict(full),len(frame),1.)[subset]
+    single_result=unpack_predictions(single,predict(single),int(subset.sum()),1.)
+    np.testing.assert_allclose(single_result,full_result,rtol=0,atol=1e-6)
+    assert (single['indices'][:,original['indices'].shape[1]:]==-1).all()
+    with pytest.raises(ValueError,match='exceeds'):
+        _pad_sequence_contract(original,original['indices'].shape[1]-1)

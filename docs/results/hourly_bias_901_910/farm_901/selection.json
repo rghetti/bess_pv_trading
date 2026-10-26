@@ -1,0 +1,52 @@
+{
+  "farm_id": 901,
+  "selected_model": "window_7_ridge_250",
+  "previous": {
+    "validation": {
+      "rows": 19027,
+      "days": 119,
+      "nrmse_percent": 11.212340206741906,
+      "nmae_percent": 7.530657090849094,
+      "bias_percent": 0.36180048433319273
+    },
+    "test": {
+      "rows": 26367,
+      "days": 123,
+      "nrmse_percent": 12.55854029319485,
+      "nmae_percent": 7.705466084221977,
+      "bias_percent": 1.9300307327314785
+    }
+  },
+  "corrected": {
+    "validation": {
+      "rows": 19027,
+      "days": 119,
+      "nrmse_percent": 11.191665873758986,
+      "nmae_percent": 7.481061118113674,
+      "bias_percent": 0.27883780300889743
+    },
+    "test": {
+      "rows": 26367,
+      "days": 123,
+      "nrmse_percent": 12.49164975188549,
+      "nmae_percent": 7.640066935120006,
+      "bias_percent": 1.6250609270194185
+    }
+  },
+  "selection": "January-April 2026 daylight NRMSE only",
+  "report_period": "May-August 2026 reused holdout",
+  "paired_interval": {
+    "quantity": "candidate minus old selected test NRMSE, percentage points of AC rating",
+    "block_days": 7,
+    "resamples": 500,
+    "percentile_95_interval": [
+      -0.14162406369755068,
+      0.004420998548878715
+    ],
+    "scope": "exploratory reused holdout; does not include HPO/model-selection uncertainty"
+  },
+  "input_sha256": {
+    "corpus.parquet": "35078d32a49d6282828bea0ba8fd4b8978bf6f54703368d5f0a9bea41c83bb21",
+    "comparison_predictions.parquet": "2669e0f3d4eb09cd13d1445b3e7c184b9ec669df6e712c24bd1652a5cfc7a2ab"
+  }
+}

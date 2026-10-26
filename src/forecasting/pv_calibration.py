@@ -11,10 +11,11 @@ import numpy as np
 import pandas as pd
 
 from ..data import (
-    align_forecast, apply_review_exclusions, config_path, load_metadata,
+    align_forecast, config_path, load_metadata,
     load_observations, open_store, prepare_observations, select_forecast_vintage,
 )
 from .pv import forecast_pv
+from .pv_outages import modeling_instances
 
 
 def fit_scale(x: np.ndarray, y: np.ndarray) -> float:
@@ -121,9 +122,6 @@ def calibrate_pv_output(config: dict[str, Any]) -> dict[str, Any]:
         observations = load_observations(dataset, [farm_id], variables=("power",), start=start, end=end - pd.Timedelta(minutes=15))
     finally:
         dataset.close()
-    review = config.get("review", {})
-    review_path = config_path(config, review["exclusions_csv"]) if review.get("exclusions_csv") else None
-    observations = apply_review_exclusions(observations, review_path, review.get("excluded_decisions"))
     treated = prepare_observations(observations, config["policy"])
     observed = treated.frame.set_index("time").reindex(starts)
     pairs = pd.DataFrame({"interval_start_utc": starts, "forecast_cycle_utc": vintages.to_numpy(),
@@ -137,14 +135,14 @@ def calibrate_pv_output(config: dict[str, Any]) -> dict[str, Any]:
     valid = (pairs.pv_input_valid & np.isfinite(pairs.regressor_mw) & np.isfinite(pairs.measured_ac_mw)
         & (pairs.regressor_mw >= minimum_dc_fraction * farm.ac_capacity_mw)
         & (pairs.measured_ac_mw >= 0) & ~pairs.review_excluded)
-    if settings["exclude_policy_adjusted"]:
-        valid &= ~(pairs.plateau_zero | pairs.nighttime_zero | pairs.measurement_interpolated)
     pairs["eligible"] = valid
     pairs["exclusion_reason"] = np.select([
         ~pairs.pv_input_valid | ~np.isfinite(pairs.regressor_mw), ~np.isfinite(pairs.measured_ac_mw),
         pairs.regressor_mw < minimum_dc_fraction * farm.ac_capacity_mw, pairs.measured_ac_mw < 0,
-        pairs.review_excluded, pairs.plateau_zero | pairs.nighttime_zero | pairs.measurement_interpolated],
-        ["missing_or_invalid_forecast", "missing_measurement", "low_dc", "negative_measurement", "review_excluded", "policy_adjusted"], default="")
+        pairs.review_excluded],
+        ["missing_or_invalid_forecast", "missing_measurement", "low_dc", "negative_measurement", "review_excluded"], default="")
+    pairs=modeling_instances(pairs,config,farm_id=farm_id)
+    valid=pairs.eligible
     pairs.loc[valid, "exclusion_reason"] = ""
     eligible = pairs.loc[valid].sort_values("interval_start_utc")
     if len(eligible) < minimum_pairs:

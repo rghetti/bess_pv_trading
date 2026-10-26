@@ -46,7 +46,7 @@ class PVNetwork(nn.Module):
         width, depth = candidate["width"], candidate["depth"]
         dropout = float(candidate.get("dropout", section["dropout"]))
         self.month_embedding = nn.Embedding(12, month_dim)
-        self.auction_embedding = nn.Embedding(4, auction_dim)
+        self.auction_embedding = nn.Embedding(4, auction_dim) if auction_dim else None
         self.stem = nn.Sequential(nn.Linear(input_features+month_dim+auction_dim, width), nn.GELU())
         if self.architecture == "mlp":
             self.body = nn.Sequential(*[layer for _ in range(depth-1) for layer in
@@ -61,7 +61,10 @@ class PVNetwork(nn.Module):
         self.output = nn.Linear(width, 1)
 
     def forward(self, x, month, auction, daylight):
-        embedded = torch.cat([x, self.month_embedding(month), self.auction_embedding(auction)], dim=-1)
+        parts = [x, self.month_embedding(month)]
+        if self.auction_embedding is not None:
+            parts.append(self.auction_embedding(auction))
+        embedded = torch.cat(parts, dim=-1)
         hidden = self.stem(embedded)
         if self.architecture == "tcn":
             hidden = self.body(hidden.transpose(1, 2)).transpose(1, 2)

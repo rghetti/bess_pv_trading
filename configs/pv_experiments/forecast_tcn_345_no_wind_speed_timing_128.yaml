@@ -1,0 +1,25 @@
+# Farm 345 ablation: remove derived wind speed and forecast timing from the 16-feature TCN.
+# Preserve 2025 training, Jan-Apr 2026 selection, and the same 128-trial architecture grid.
+include: ../standard.yaml
+pv_forecast_search:
+  farm_ids: [345]
+  include_national_holiday: true
+  excluded_features: [wind_speed_10m, lead_hours, cycle_hour_sin, cycle_hour_cos]
+  missing_weather_interpolation: linear_per_view
+  include_missing_indicators: false
+  run_id: tcn_no_wind_speed_timing_345_128_trials
+  workers: 42
+  reserved_cpu_cores: 6
+  statistical_spaces: null
+  statistical_trials_per_family: 0
+  feature_sets: [core]
+  neural_architectures: [direct_tcn, residual_tcn]
+  neural_trials_per_architecture: 64
+  neural_space:
+    kernel_size: [3]
+    width: [16, 32, 48, 64, 96, 128]
+    depth: [1, 2, 3, 4, 5]
+    dropout: [0.15]
+    learning_rate: [0.0003]
+    weight_decay: [0.001]
+    loss: [mse]

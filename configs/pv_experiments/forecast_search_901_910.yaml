@@ -1,0 +1,4 @@
+# Full search inherits all tunable parameters from the documented standard.
+include: ../standard.yaml
+pv_forecast_search:
+  run_id: weather_only_901_910_hpo_v1
