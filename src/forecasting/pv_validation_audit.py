@@ -50,7 +50,8 @@ def _day_table(frame,prediction,rating,*,split):
     return daily.reset_index()
 
 
-def _plot_day(frame,prediction,*,farm,day,rating,timezone,path):
+def _plot_day(frame,prediction,*,farm,day,rating,timezone,path,
+              forecast_label='AC forecast'):
     """Place measured AC and GHI beside all auction forecasts on local time."""
     import matplotlib
     matplotlib.use('Agg')
@@ -76,7 +77,7 @@ def _plot_day(frame,prediction,*,farm,day,rating,timezone,path):
         color='black',lw=2,label='Satellite GHI (diagnostic)')
     for auction,curve in views.groupby('auction'):
         axes[0].plot(curve.interval_start_utc,curve.forecast_ac_mw,lw=1,
-            label=f'{auction} AC forecast')
+            label=f'{auction} {forecast_label}')
         axes[1].plot(curve.interval_start_utc,curve.forecast_ghi,lw=1,
             label=f'{auction} GHI forecast')
     axes[0].axhline(rating,color='gray',ls='--',lw=1,label='Farm AC rating')
@@ -84,7 +85,7 @@ def _plot_day(frame,prediction,*,farm,day,rating,timezone,path):
     axes[1].set_xlabel(f'Delivery time, {timezone}')
     axes[1].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M',tz=ZoneInfo(timezone)))
     for axis in axes:axis.grid(alpha=.2);axis.legend(ncol=3,fontsize=8)
-    figure.suptitle(f'Farm {farm}, {day}: PV production evidence')
+    figure.suptitle(f'Farm {farm}, {day}: measured AC and {forecast_label.lower()}')
     figure.savefig(path,dpi=150);plt.close(figure)
 
 
@@ -142,6 +143,7 @@ def run_validation_error_audit(config,progress=print):
             for day in dict.fromkeys(summary['top_days_before']+summary['top_days_after']):
                 _plot_day(frame,prediction,farm=farm,day=day,rating=rating,
                     timezone=config['pv_neural']['delivery_timezone'],
+                    forecast_label=f"{source_spec['prediction_column']} AC forecast",
                     path=folder/'plots'/f'validation_day_{day}.png')
         progress(f"Farm {farm}: validation RMSE {previous['nrmse_percent']:.3f}% -> {current['nrmse_percent']:.3f}%")
         summaries.append(summary)

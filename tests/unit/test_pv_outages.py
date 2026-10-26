@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.forecasting.pv_outages import (
@@ -123,3 +124,37 @@ def test_quality_review_emits_empty_review_queue_for_clean_source(tmp_path):
     assert queue.empty
     assert {'farm_id','start_utc','end_utc','decision'}.issubset(queue.columns)
     assert result['summaries'][0]['candidate_episodes']==0
+
+
+def test_quality_day_uses_selected_neural_curve_and_checks_target_alignment(tmp_path,monkeypatch):
+    """The review plot must not silently substitute its pvlib baseline for neural AC."""
+    from bess_pv_trading.forecasting import pv_quality_review
+    config=load_config('configs/pv_experiments/audit_data_quality_2025_2026.yaml')
+    source=tmp_path/'source'/'farm_345'/'parquet'
+    source.mkdir(parents=True)
+    starts=pd.date_range('2026-05-01T09:00Z',periods=2,freq='15min')
+    frame=pd.DataFrame({'interval_start_utc':starts,'delivery_day':['2026-05-01']*2,
+        'auction':['DA']*2,'measured_ac_mw':[.5,.6],
+        'satellite_ghi_w_m2':[400.,420.],'forecast_ghi':[400.,420.],
+        'daylight':[True]*2,'plateau_flag':[False]*2,
+        'review_excluded':[False]*2,'eligible':[True]*2,
+        'baseline_mw':[.1,.1]})
+    frame.to_parquet(source/'corpus.parquet',index=False)
+    keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
+    saved=frame[keys].copy()
+    saved['prediction_selected_mw']=[.8,.9]
+    saved.to_parquet(source/'predictions.parquet',index=False)
+    config['pv_data_quality_review'].update(farm_ids=[345],source_root=str(tmp_path/'source'),
+        output_root=str(tmp_path/'audit'),run_id='selected_neural',save_plots=True,
+        focus_days=['2026-05-01'],plot_top_candidate_days=0)
+    plotted=[]
+    monkeypatch.setattr(pv_quality_review,'_plot_day',lambda *args,**kwargs:plotted.append((args,kwargs)))
+    result=run_pv_quality_review(config,progress=lambda _:None)
+    assert len(plotted)==1
+    assert plotted[0][1]['forecast_label']=='Selected neural AC forecast'
+    np.testing.assert_array_equal(plotted[0][0][1],[.8,.9])
+    assert result['summaries'][0]['plot_prediction']['column']=='prediction_selected_mw'
+    saved.loc[0,'measured_ac_mw']=.7
+    saved.to_parquet(source/'predictions.parquet',index=False)
+    with pytest.raises(ValueError,match='do not align'):
+        run_pv_quality_review(config,progress=lambda _:None)

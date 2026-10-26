@@ -314,6 +314,9 @@ pv_data_quality_review:
   source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
   output_root: outputs/pv_data_quality
   run_id: full_history_2025_to_2026_08
+  plot_prediction_file: predictions.parquet  # Within each farm's parquet folder.
+  plot_prediction_column: prediction_selected_mw  # Saved validation-selected neural forecast.
+  plot_prediction_label: Selected neural AC forecast
   low_output_max_fraction_of_rating: 0.10
   low_output_minimum_ghi_w_m2: 300.0
   low_output_minimum_intervals: 3

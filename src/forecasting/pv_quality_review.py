@@ -85,6 +85,11 @@ def run_pv_quality_review(config,progress=print):
     output_root=config_path(config,section['output_root']);output=output_root/section['run_id']
     if source.resolve().is_relative_to(output.resolve()):
         raise ValueError('PV quality source cannot reside in its output directory')
+    if section['save_plots']:
+        for farm in section['farm_ids']:
+            prediction_path=source/f'farm_{farm}/parquet'/section['plot_prediction_file']
+            if not prediction_path.is_file():
+                raise FileNotFoundError(prediction_path)
     prepare_experiment_output(output_root,output,
         overwrite=config['experiment_outputs']['overwrite_existing'])
     (output/'resolved_config.yaml').write_text(yaml.safe_dump(config,sort_keys=False))
@@ -158,14 +163,28 @@ def run_pv_quality_review(config,progress=print):
             'status':'Candidate flags do not change model eligibility unless reviewed or automatically excluded.'}
         (folder/'json/summary.json').write_text(json.dumps(summary,indent=2)+'\n')
         if section['save_plots']:
+            prediction_path=source/f'farm_{farm}/parquet'/section['plot_prediction_file']
+            column=section['plot_prediction_column']
+            keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
+            saved=pd.read_parquet(prediction_path,columns=[*keys,column])
+            if not frame[keys].equals(saved[keys]):
+                raise ValueError(f'Farm {farm} PV plot predictions do not align with measured AC corpus')
+            prediction=saved[column].to_numpy(dtype=float)
+            if not np.isfinite(prediction[frame.daylight.to_numpy(dtype=bool)]).all():
+                raise ValueError(f'Farm {farm} PV plot predictions are nonfinite in daylight')
+            summary['plot_prediction']={'file':str(prediction_path),
+                'column':column,'label':section['plot_prediction_label'],
+                'sha256':hashlib.sha256(prediction_path.read_bytes()).hexdigest()}
+            (folder/'json/summary.json').write_text(json.dumps(summary,indent=2)+'\n')
             days=list(section['focus_days'])
             if not episodes.empty:
                 days+=episodes.loc[episodes.status.eq('review_candidate')].nlargest(
                     section['plot_top_candidate_days'],'physical_quarters').delivery_day.tolist()
             for day in dict.fromkeys(days):
                 if not frame.delivery_day.eq(day).any():continue
-                _plot_day(frame,frame.baseline_mw.to_numpy(),farm=farm,day=day,rating=rating,
+                _plot_day(frame,prediction,farm=farm,day=day,rating=rating,
                     timezone=config['pv_neural']['delivery_timezone'],
+                    forecast_label=section['plot_prediction_label'],
                     path=folder/'plots'/f'quality_day_{day}.png')
         progress(f"Farm {farm}: {summary['outage_excluded_quarters']} automatic quarters, {summary['candidate_episodes']} candidate episodes")
         all_episodes.extend(farm_episodes);summaries.append(summary)
