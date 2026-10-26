@@ -796,3 +796,75 @@ manual_market_import:
 
 report:
   compile: true
+
+# Broad reproducible forecast HPO: fixed 2025 train / Jan-Apr 2026 validation / May-Aug report.
+# No auction identity, proxy geometry/location, physical-model features or elapsed age.
+pv_forecast_search:
+  farm_ids: [901, 910]
+  include_national_holiday: false  # Known Italian national holiday on local delivery date; opt in per study.
+  source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  output_root: outputs/pv_forecast_search
+  run_id: weather_only_901_910_hpo_v1
+  resume: true  # Matching config, code, corpus and saved-artifact checksums required.
+  workers: 42
+  reserved_cpu_cores: 6
+  seed: 97231
+  feature_sets: [core, weather]
+  baseline_ridge_alpha: 1.0  # Fit only to 2025; supplies the residual models' starting curve.
+  statistical_trials_per_family: 6
+  statistical_spaces:
+    boosting_direct:
+      max_iter: [150, 300, 500]
+      max_leaf_nodes: [7, 15, 31, 63]
+      learning_rate: [0.025, 0.05, 0.1]
+      l2_regularization: [1.0, 10.0]
+      loss: [squared_error, absolute_error]
+    boosting_residual:
+      max_iter: [150, 300, 500]
+      max_leaf_nodes: [7, 15, 31, 63]
+      learning_rate: [0.025, 0.05, 0.1]
+      l2_regularization: [1.0, 10.0]
+      loss: [squared_error, absolute_error]
+    spline_direct:
+      n_knots: [4, 6, 8]
+      degree: [3]
+      alpha: [0.1, 1.0, 10.0, 100.0]
+    spline_residual:
+      n_knots: [4, 6, 8]
+      degree: [3]
+      alpha: [0.1, 1.0, 10.0, 100.0]
+    rbf_direct:
+      gamma: [0.005, 0.02, 0.05]
+      n_components: [128, 256, 384]
+      alpha: [0.1, 1.0, 10.0]
+    rbf_residual:
+      gamma: [0.005, 0.02, 0.05]
+      n_components: [128, 256, 384]
+      alpha: [0.1, 1.0, 10.0]
+    extra_trees:
+      n_estimators: [100, 200]
+      max_features: [0.6, 0.8, 1.0]
+      min_samples_leaf: [2, 4, 8, 16]
+    huber:
+      alpha: [0.0001, 0.01, 1.0]
+      epsilon: [1.1, 1.35, 1.8]
+      max_iter: [500]
+  neural_architectures: [residual_mlp, mixture_experts, bigru, transformer]
+  neural_trials_per_architecture: 4
+  neural_space:
+    kernel_size: [3, 5, 7]
+    width: [32, 64]
+    depth: [2, 3]
+    dropout: [0.0, 0.05, 0.15]
+    heads: [4]
+    experts: [3, 4]
+    learning_rate: [0.0003, 0.001, 0.003]
+    weight_decay: [0.00001, 0.0001, 0.001]
+    loss: [mse, huber]
+  neural_training:
+    max_epochs: 80
+    patience: 10
+    minimum_improvement: 0.000001
+    batch_size: 32
+    huber_delta: 0.05
+    gradient_clip_norm: 1.0

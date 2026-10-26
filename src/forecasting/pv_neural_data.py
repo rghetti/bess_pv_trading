@@ -70,7 +70,9 @@ def prepare_neural_corpus(config, farm_id, destination, progress=None):
     return frame, farm, settings, provenance
 
 
-def feature_frame(frame: pd.DataFrame, feature_set: str, timezone: str) -> pd.DataFrame:
+def feature_frame(frame: pd.DataFrame, feature_set: str, timezone: str, *,
+                  include_solar_geometry: bool = True,
+                  include_national_holiday: bool = False) -> pd.DataFrame:
     """Use only forecast weather and deterministic geometry/time, never fitted PV.
 
     Constant farm attributes are recorded in the model contract rather than
@@ -92,11 +94,15 @@ def feature_frame(frame: pd.DataFrame, feature_set: str, timezone: str) -> pd.Da
                         ("month", 2*np.pi*(local.month-1)/12)):
         result[f"{name}_sin"] = np.sin(angle)
         result[f"{name}_cos"] = np.cos(angle)
-    zenith = np.radians(frame.solar_zenith_deg.to_numpy())
-    azimuth = np.radians(frame.solar_azimuth_deg.to_numpy())
-    result["cos_solar_zenith"] = np.cos(zenith)
-    result["solar_azimuth_sin"] = np.sin(azimuth)
-    result["solar_azimuth_cos"] = np.cos(azimuth)
+    if include_national_holiday:
+        from .pv_calendar import italian_national_holiday
+        result["italian_national_holiday"] = italian_national_holiday(starts, timezone)
+    if include_solar_geometry:
+        zenith = np.radians(frame.solar_zenith_deg.to_numpy())
+        azimuth = np.radians(frame.solar_azimuth_deg.to_numpy())
+        result["cos_solar_zenith"] = np.cos(zenith)
+        result["solar_azimuth_sin"] = np.sin(azimuth)
+        result["solar_azimuth_cos"] = np.cos(azimuth)
     result["lead_hours"] = frame.lead_hours.to_numpy()
     cycles = pd.DatetimeIndex(frame.forecast_cycle_utc)
     result["cycle_hour_sin"] = np.sin(2*np.pi*cycles.hour/24)

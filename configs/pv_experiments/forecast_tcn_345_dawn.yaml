@@ -1,0 +1,13 @@
+# Farm 345 TCN search for dawn-shape and four-period error analysis.
+# Uses frozen cutoff-aligned forecasts and AC targets; no API requests.
+include: ../standard.yaml
+pv_forecast_search:
+  farm_ids: [345]
+  include_national_holiday: true
+  run_id: tcn_holiday_dawn_345_2025_train_2026_test
+  workers: 42
+  reserved_cpu_cores: 6
+  statistical_spaces: null
+  statistical_trials_per_family: 0
+  neural_architectures: [direct_tcn, residual_tcn]
+  neural_trials_per_architecture: 12
