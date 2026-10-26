@@ -1,0 +1,4 @@
+# Audit validation errors before/after the shared sustained-zero outage rule.
+include: ../standard.yaml
+pv_validation_audit:
+  run_id: sustained_zero_2026_jan_apr

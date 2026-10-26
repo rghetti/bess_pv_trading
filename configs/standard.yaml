@@ -266,6 +266,67 @@ pv:
     transformer_efficiency: 1.0
     transformer_assumption_status: no_measured_transformer_loss_assumed
     ac_limit_mw: auto
+# Preserve source AC/GHI values; exclude sustained measured-daylight zero runs
+# only from derived model-fit and benchmark masks. Four consecutive zero-AC
+# quarters must have measured GHI >=100 W/m2 within that run. Once
+# anchored, exclude the full zero-output daylight run, including GHI gaps.
+pv_data_quality:
+  sustained_zero_outage:
+    enabled: true
+    minimum_consecutive_intervals: 4
+    minimum_satellite_ghi_w_m2: 100.0
+    expand_full_daylight_run: true
+# Materialized modeling-only view; the raw Zarr and frozen source stay intact.
+pv_outage_export:
+  farm_ids: [1, 345, 901, 910]
+  source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  output_root: data/farms/curated
+  run_id: sustained_zero_2025_to_2026_08
+# Inspect how the rule changes frozen validation metrics and the worst days.
+pv_validation_audit:
+  farm_ids: [1, 345, 901, 910]
+  farm_sources:
+    '1':
+      root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+      predictions_file: predictions.parquet
+      prediction_column: prediction_selected_mw
+    '345':
+      root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+      predictions_file: predictions.parquet
+      prediction_column: prediction_selected_mw
+    '901':
+      root: outputs/pv_forecast_comparison/market_free_901_910_comparison
+      predictions_file: comparison_predictions.parquet
+      prediction_column: prediction_old_selected
+    '910':
+      root: outputs/pv_forecast_comparison/market_free_901_910_comparison
+      predictions_file: comparison_predictions.parquet
+      prediction_column: prediction_old_selected
+  split: validation
+  top_days_per_farm: 3
+  output_root: outputs/pv_validation_audit
+  run_id: sustained_zero_2026_jan_apr
+  save_plots: true
+# Full-history candidate queue. Only the sustained-zero rule auto-excludes;
+# all other evidence awaits an explicit decision in review.exclusions_csv.
+pv_data_quality_review:
+  farm_ids: [1, 345, 901, 910]
+  source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  output_root: outputs/pv_data_quality
+  run_id: full_history_2025_to_2026_08
+  low_output_max_fraction_of_rating: 0.10
+  low_output_minimum_ghi_w_m2: 300.0
+  low_output_minimum_intervals: 3
+  partial_recovery_max_fraction_of_rating: 0.25
+  partial_recovery_max_intervals: 4
+  plateau_minimum_intervals: 4
+  plateau_level_rounding_kw: 1.0
+  rating_excess_fraction: 0.01
+  weather_ghi_disagreement_w_m2: 200.0
+  weather_disagreement_minimum_intervals: 2
+  focus_days: []
+  plot_top_candidate_days: 2
+  save_plots: true
 pv_calibration:
   start_day: null
   end_day_exclusive: null

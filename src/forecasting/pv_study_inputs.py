@@ -17,6 +17,7 @@ from ..data.policy import plateau_runs
 from ..markets import AuctionCalendar
 from .pv import forecast_pv
 from .pv_artifacts import digest
+from .pv_outages import apply_sustained_zero_exclusion
 
 
 def farm_settings(config: dict, farm) -> dict:
@@ -47,7 +48,8 @@ def _source_fingerprint(dataset, config, farm, settings) -> str:
         "market": config["market"], "start": config["pv_calibration"]["start_day"],
         "end": config["pv_calibration"]["end_day_exclusive"],
         "scale": config["forecast"]["realized_power_scale_to_mw"],
-        "outage_threshold": config["pv_calibration"]["outage_ghi_threshold_w_m2"]}
+        "outage_threshold": config["pv_calibration"]["outage_ghi_threshold_w_m2"],
+        "outage_exclusion": config["pv_data_quality"]["sustained_zero_outage"]}
     hasher.update(digest(contract).encode())
     for name in sorted(set(config["forecast_mapping"].values()) | {"time", "cycle_time", "lead_time", "power", "ghi"}):
         array = dataset[name]
@@ -139,28 +141,24 @@ def prepare_corpus(config: dict, farm_id: int, destination: Path, progress=None,
     result["suspected_outage"] = ((result.measured_ac_mw == 0)
         & (result.satellite_ghi_w_m2 > float(section["outage_ghi_threshold_w_m2"])))
     result["review_excluded"] = False
-    review = config.get("review", {}).get("exclusions_csv")
-    if review:
-        reviewed = pd.read_csv(config_path(config, review))
-        for item in reviewed.itertuples(index=False):
-            if str(item.farm_id) not in {str(farm_id), "portfolio"} or str(item.decision).lower() not in config["review"]["excluded_decisions"]:
-                continue
-            result.loc[(index >= pd.Timestamp(item.start_utc)) & (index <= pd.Timestamp(item.end_utc)), "review_excluded"] = True
     result["eligible"] = (np.isfinite(result.measured_ac_mw) & (result.measured_ac_mw >= 0)
-        & np.isfinite(result.baseline_mw) & ~result.review_excluded)
+        & np.isfinite(result.baseline_mw))
+    result=apply_sustained_zero_exclusion(result,config,farm_id=farm_id)
     # Retain only columns needed by the common forward model and diagnostics.
     keep = ["interval_start_utc", "delivery_day", "auction", "decision_cutoff_utc",
         "forecast_cycle_utc", "forecast_available_at_utc", "target_available_at_utc", "lead_hours",
         "solar_zenith_deg", "solar_azimuth_deg", "ghi_w_m2", "bhi_w_m2", "dhi_w_m2", "dni_w_m2",
         "temperature_c", "wind_speed_m_s", "pv_input_valid", "bhi_exceeds_ghi", "dni_limited",
         "baseline_mw", "measured_ac_mw", "satellite_ghi_w_m2", "daylight", "plateau_flag",
-        "suspected_outage", "review_excluded", "eligible"]
+        "suspected_outage", "outage_excluded", "review_excluded", "eligible"]
     if retain_weather:
         keep += [name for name in mapping if name not in keep]
     result = result[keep]
     manifest = {"source_fingerprint": fingerprint, "aligned_fingerprint": frame_fingerprint(result),
         "farm_metadata": asdict(farm), "rows": len(result), "eligible_rows": int(result.eligible.sum()),
         "missing_or_invalid_target_rows": int((~np.isfinite(result.measured_ac_mw) | (result.measured_ac_mw < 0)).sum()),
+        "outage_excluded_views": int(result.outage_excluded.sum()),
+        "outage_excluded_physical_quarters": int(result.loc[result.outage_excluded,'interval_start_utc'].nunique()),
         "forecast_availability_lag_hours": config["source"]["availability_lag_hours"],
         "target": "raw_measured_AC_MW_no_losses_no_imputation", "forecast_selection": "auction_submission_cutoff",
         "satellite_ghi_role": "diagnostics_only", "auction_views": "scheduled_information_times_not_market_participation",

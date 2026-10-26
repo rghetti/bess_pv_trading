@@ -1,0 +1,4 @@
+# Produce reusable modeling views without changing raw farm measurements.
+include: ../standard.yaml
+pv_outage_export:
+  run_id: sustained_zero_2025_to_2026_08
