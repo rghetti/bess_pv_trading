@@ -802,6 +802,8 @@ report:
 pv_forecast_search:
   farm_ids: [901, 910]
   include_national_holiday: false  # Known Italian national holiday on local delivery date; opt in per study.
+  missing_weather_interpolation: linear_per_view  # Fill each forecast vintage independently before fitting.
+  include_missing_indicators: false  # Do not append a separate binary feature for each input column.
   source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
   output_root: outputs/pv_forecast_search
   run_id: weather_only_901_910_hpo_v1

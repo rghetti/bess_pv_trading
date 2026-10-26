@@ -146,6 +146,11 @@ def run(search_run: Path, farm_id: int, *, periods: str, timezone: str,
                                 'nmae_percent': np.nan, 'bias_percent': np.nan})
                         metrics.append(row)
     pd.DataFrame(metrics).to_csv(root / 'csv/period_metrics.csv', index=False)
+    overall_source = pd.read_csv(farm / 'csv/metrics.csv')
+    comparison_ids = {selected: 'Selected TCN', 'selected': 'Frozen neural', 'pvlib': 'pvlib'}
+    overall = overall_source.loc[overall_source.model.isin(comparison_ids)].copy()
+    overall['model_label'] = overall.model.map(comparison_ids)
+    overall.to_csv(root / 'csv/overall_metrics.csv', index=False)
     dawn = []
     for (day, auction), positions in frame.groupby(['delivery_day', 'auction'], sort=True).indices.items():
         if auction == 'IDA3':

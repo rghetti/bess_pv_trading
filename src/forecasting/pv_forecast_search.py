@@ -39,6 +39,72 @@ def weather_features(frame,feature_set,timezone,*,include_national_holiday=False
         include_national_holiday=include_national_holiday)
 
 
+def interpolate_forecast_gaps(frame,method='linear_per_view'):
+    """Interpolate short weather gaps within each delivery-day forecast vintage.
+
+    Interior gaps use linear interpolation on UTC interval times. At the start
+    or end of a view, linear extrapolation from the nearest two finite values
+    fills a boundary gap. A single available value is held constant. Original
+    input frames are never mutated; remaining all-missing fields are reported.
+    """
+    if method not in {'linear_per_view','none'}:
+        raise ValueError(f'Unsupported forecast gap interpolation: {method}')
+    result=frame.copy()
+    columns=[name for name in ['forecast_ghi','forecast_bhi','temperature_c','dew_point_c',
+        'wind_u_10m','wind_v_10m','cloud_total_pct','cloud_low_pct','cloud_mid_pct',
+        'cloud_high_pct','precipitation_mm','snow_water_equivalent_m','visibility_km',
+        'wind_u_100m','wind_v_100m'] if name in result]
+    group_columns=[name for name in ['delivery_day','auction','forecast_cycle_utc'] if name in result]
+    before={name:int((~np.isfinite(result[name].to_numpy(dtype=float))).sum()) for name in columns}
+    report={'method':method,'rows_before':before,'filled_by_feature':{name:0 for name in columns},
+        'boundary_extrapolated_by_feature':{name:0 for name in columns},
+        'unresolved_by_feature':{name:0 for name in columns},'view_count':0}
+    if method=='none' or not columns:
+        report['rows_after']=before.copy()
+        return result,report
+    grouped=result.groupby(group_columns,sort=False,dropna=False).indices if group_columns else {'all':np.arange(len(result))}
+    report['view_count']=len(grouped)
+    weather_values={name:result[name].to_numpy(dtype=float,copy=True) for name in columns}
+    utc_ns=pd.DatetimeIndex(result.interval_start_utc).asi8
+    for positions in grouped.values():
+        positions=np.asarray(positions,dtype=int)
+        if not any((~np.isfinite(weather_values[name][positions])).any() for name in columns):
+            continue
+        order=np.argsort(utc_ns[positions],kind='stable')
+        positions=positions[order]
+        x=(utc_ns[positions]-utc_ns[positions][0]).astype(np.float64)/1e9
+        for name in columns:
+            values=weather_values[name][positions].copy()
+            finite=np.isfinite(values)
+            missing=~finite
+            if not missing.any():
+                continue
+            valid=np.flatnonzero(finite)
+            if not len(valid):
+                report['unresolved_by_feature'][name]+=int(missing.sum())
+                continue
+            filled=np.interp(x[missing],x[valid],values[valid])
+            left=missing & (np.arange(len(values))<valid[0])
+            right=missing & (np.arange(len(values))>valid[-1])
+            if len(valid)>1:
+                left_positions=np.flatnonzero(left)
+                right_positions=np.flatnonzero(right)
+                missing_positions=np.flatnonzero(missing)
+                if len(left_positions):
+                    slope=(values[valid[1]]-values[valid[0]])/(x[valid[1]]-x[valid[0]])
+                    filled[np.searchsorted(missing_positions,left_positions)]=values[valid[0]]+slope*(x[left_positions]-x[valid[0]])
+                if len(right_positions):
+                    slope=(values[valid[-1]]-values[valid[-2]])/(x[valid[-1]]-x[valid[-2]])
+                    filled[np.searchsorted(missing_positions,right_positions)]=values[valid[-1]]+slope*(x[right_positions]-x[valid[-1]])
+            report['filled_by_feature'][name]+=int(missing.sum())
+            report['boundary_extrapolated_by_feature'][name]+=int(left.sum()+right.sum())
+            weather_values[name][positions[missing]]=filled
+    for name in columns:
+        result[name]=weather_values[name]
+    report['rows_after']={name:int((~np.isfinite(result[name].to_numpy(dtype=float))).sum()) for name in columns}
+    return result,report
+
+
 def generate_trials(section,farm_id):
     """Sample finite YAML grids deterministically; do not inspect any model scores."""
     rng=np.random.default_rng(section['seed']+farm_id);trials=[]
@@ -49,8 +115,14 @@ def generate_trials(section,farm_id):
                 'features':section['feature_sets'][number%len(section['feature_sets'])],
                 'parameters':parameters,'seed':section['seed']+farm_id+number})
     for architecture in section['neural_architectures']:
+        space=section['neural_space']
+        size_depth=[(width,depth) for width in space['width'] for depth in space['depth']]
+        rng.shuffle(size_depth)
         for number in range(section['neural_trials_per_architecture']):
-            spec={key:values[int(rng.integers(len(values)))] for key,values in section['neural_space'].items()}
+            spec={key:values[int(rng.integers(len(values)))] for key,values in space.items()
+                if key not in {'width','depth'}}
+            if size_depth:
+                spec['width'],spec['depth']=size_depth[number%len(size_depth)]
             spec['architecture']=architecture
             trials.append({'name':f'{architecture}_{number:02}','family':'neural',
                 'features':section['feature_sets'][number%len(section['feature_sets'])],
@@ -165,10 +237,15 @@ def prepare_search(config,farm_id,root,identity):
     for name,value in [('y',y),('train',train),('weights',weight),('night',night)]:np.save(cache/f'{name}.npy',value)
     # This feature population intentionally never consults proxy geometry.
     neural_frame=frame.copy();neural_frame['daylight']=~night
+    interpolated_frame,interpolation_report=interpolate_forecast_gaps(
+        frame,section['missing_weather_interpolation'])
     for feature in section['feature_sets']:
-        values=weather_features(frame,feature,config['pv_neural']['delivery_timezone'],
+        values=weather_features(interpolated_frame,feature,config['pv_neural']['delivery_timezone'],
             include_national_holiday=section['include_national_holiday'])
-        pre=fit_preprocessor(values,train,config['pv_neural']);x=transform_features(values,pre).astype(np.float32)
+        pre=fit_preprocessor(values,train,config['pv_neural'],
+            include_missing_indicators=section['include_missing_indicators'])
+        pre['missing_weather_interpolation']=section['missing_weather_interpolation']
+        x=transform_features(values,pre).astype(np.float32)
         _write(cache/f'preprocessor_{feature}.json',pre);np.save(cache/f'x_{feature}.npy',x)
         baseline=Ridge(alpha=section['baseline_ridge_alpha']).fit(x[train],y[train],sample_weight=weight)
         base=np.clip(baseline.predict(x),0,1);base[night]=0
@@ -186,6 +263,8 @@ def prepare_search(config,farm_id,root,identity):
         'prior_predictions_sha256':_sha(source/'parquet/predictions.parquet'),
         'identity':identity,'rating_mw':rating,'weather_geometry_used':False,'auction_features_used':False,
         'aging_features_used':False,'national_holiday_feature_used':bool(section['include_national_holiday']),
+        'missing_weather_interpolation':interpolation_report,
+        'missing_indicator_channels_used':bool(section['include_missing_indicators']),
         'training_intervals':int(train.sum()),
         'validation_daylight_intervals':int(validation.sum()),'test_daylight_intervals':int(test.sum()),
         'test_status':'reused holdout; previously inspected, never used by fitting/selection code'})

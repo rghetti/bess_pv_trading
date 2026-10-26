@@ -1,0 +1,24 @@
+# 128-trial TCN search with within-vintage weather interpolation and no missingness channels.
+# Fixed 2025 train / Jan-Apr 2026 validation / May-Aug 2026 reported test, farm 345 only.
+include: ../standard.yaml
+pv_forecast_search:
+  farm_ids: [345]
+  include_national_holiday: true
+  missing_weather_interpolation: linear_per_view
+  include_missing_indicators: false
+  run_id: tcn_interp_no_missing_channels_345_128_trials
+  workers: 42
+  reserved_cpu_cores: 6
+  statistical_spaces: null
+  statistical_trials_per_family: 0
+  feature_sets: [core]
+  neural_architectures: [direct_tcn, residual_tcn]
+  neural_trials_per_architecture: 64
+  neural_space:
+    kernel_size: [3]
+    width: [16, 32, 48, 64, 96, 128]
+    depth: [1, 2, 3, 4, 5]
+    dropout: [0.15]
+    learning_rate: [0.0003]
+    weight_decay: [0.001]
+    loss: [mse]

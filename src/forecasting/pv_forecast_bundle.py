@@ -34,6 +34,8 @@ def export_bundle(farm_directory,model_name,destination):
         'rating_mw':provenance['rating_mw'],'specification':metadata['specification'],
         'preprocessor':metadata['features'],'night_policy':config['policy']['night'],
         'include_national_holiday':config['pv_forecast_search']['include_national_holiday'],
+        'missing_weather_interpolation':metadata['features'].get('missing_weather_interpolation','none'),
+        'include_missing_indicators':metadata['features'].get('include_missing_indicators',True),
         'timezone':config['pv_neural']['delivery_timezone'],'model':model_path.name,
         'baseline':baseline_path.name,'training_identity':metadata['identity'],
         'train_last_target_utc':metadata['train_last_target_utc'],
@@ -63,7 +65,9 @@ def predict_bundle(frame,bundle_directory,*,farm_id):
     for name,expected in manifest['checksums'].items():
         if _sha(bundle_directory/name)!=expected:raise ValueError(f'Forecast bundle checksum mismatch: {name}')
     spec=manifest['specification'];rating=manifest['rating_mw']
-    features=weather_features(frame,spec['features'],manifest['timezone'],
+    from .pv_forecast_search import interpolate_forecast_gaps
+    interpolated,_=interpolate_forecast_gaps(frame,manifest.get('missing_weather_interpolation','none'))
+    features=weather_features(interpolated,spec['features'],manifest['timezone'],
         include_national_holiday=manifest.get('include_national_holiday',False))
     x=transform_features(features,manifest['preprocessor']).astype(np.float32)
     night=night_window_mask(pd.DatetimeIndex(frame.interval_start_utc),manifest['night_policy'])

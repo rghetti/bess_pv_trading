@@ -111,7 +111,8 @@ def feature_frame(frame: pd.DataFrame, feature_set: str, timezone: str, *,
     return result.replace([np.inf, -np.inf], np.nan)
 
 
-def fit_preprocessor(features: pd.DataFrame, mask: np.ndarray, section: dict) -> dict:
+def fit_preprocessor(features: pd.DataFrame, mask: np.ndarray, section: dict, *,
+                    include_missing_indicators: bool = True) -> dict:
     """Fit imputation/scaling only on finite training targets and daylight inputs."""
     selected = features.loc[mask].to_numpy(dtype=float)
     median = np.array([np.median(col[np.isfinite(col)]) if np.isfinite(col).any() else 0
@@ -119,10 +120,14 @@ def fit_preprocessor(features: pd.DataFrame, mask: np.ndarray, section: dict) ->
     filled = np.where(np.isfinite(selected), selected, median)
     mean = filled.mean(axis=0)
     scale = np.maximum(filled.std(axis=0), float(section["standardization_floor"]))
+    output_columns = list(features)
+    if include_missing_indicators:
+        output_columns += [f"{name}__missing" for name in features]
     return {"columns": list(features), "median": median.tolist(), "mean": mean.tolist(),
             "scale": scale.tolist(), "clip_standard_deviations": section["input_clip_standard_deviations"],
             "fit_rows": len(selected), "target_columns_used": [],
-            "output_columns": list(features) + [f"{name}__missing" for name in features]}
+            "include_missing_indicators": bool(include_missing_indicators),
+            "output_columns": output_columns}
 
 
 def transform_features(features: pd.DataFrame, fitted: dict) -> np.ndarray:
@@ -134,7 +139,11 @@ def transform_features(features: pd.DataFrame, fitted: dict) -> np.ndarray:
     filled = np.where(missing, fitted["median"], values)
     scaled = (filled-fitted["mean"])/fitted["scale"]
     clip = fitted["clip_standard_deviations"]
-    return np.concatenate([np.clip(scaled, -clip, clip), missing.astype(float)], axis=1).astype(np.float32)
+    output = np.clip(scaled, -clip, clip)
+    # Older saved preprocessors omit this field and retain their indicator channels.
+    if fitted.get("include_missing_indicators", True):
+        output = np.concatenate([output, missing.astype(float)], axis=1)
+    return output.astype(np.float32)
 
 
 def pack_sequences(frame: pd.DataFrame, features: np.ndarray, rating: float) -> dict:
