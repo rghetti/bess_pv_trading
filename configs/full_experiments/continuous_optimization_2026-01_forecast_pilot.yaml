@@ -26,28 +26,25 @@ pv:
     allow_retrospective_artifacts: true
     models_by_farm:
       '1':
-        name: farm1_tcn_weather_05
-        kind: neural
-        artifact_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_1/models/trials/tcn_weather_05.pt
-        available_at_utc: '2026-10-22T14:23:58Z'
+        name: farm_1_direct_tcn
+        kind: weather_bundle
+        artifact_path: models/pv/farm_1/pilot_2025_train/direct_tcn/manifest.json
+        available_at_utc: '2026-10-27T00:00:00Z'
       '345':
-        name: farm345_ols_weather
-        kind: linear
-        family: ols
-        ac_capacity_mw: 1.5246
-        artifact_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_345/json/regression_selection.json
-        preprocessors_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_345/json/preprocessors.json
-        available_at_utc: '2026-10-22T14:24:25Z'
+        name: farm_345_direct_tcn
+        kind: weather_bundle
+        artifact_path: models/pv/farm_345/pilot_2025_train/direct_tcn/manifest.json
+        available_at_utc: '2026-10-27T00:00:00Z'
       '901':
-        name: farm901_tcn_core_07
-        kind: neural
-        artifact_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_901/models/trials/tcn_core_07.pt
-        available_at_utc: '2026-10-22T14:24:51Z'
+        name: farm_901_direct_tcn_timing
+        kind: weather_bundle
+        artifact_path: models/pv/farm_901/pilot_2025_train/direct_tcn/manifest.json
+        available_at_utc: '2026-10-27T00:00:00Z'
       '910':
-        name: farm910_mlp_core_05
-        kind: neural
-        artifact_path: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu/farm_910/models/trials/mlp_core_05.pt
-        available_at_utc: '2026-10-22T14:23:31Z'
+        name: farm_910_direct_tcn_timing
+        kind: weather_bundle
+        artifact_path: models/pv/farm_910/pilot_2025_train/direct_tcn/manifest.json
+        available_at_utc: '2026-10-27T00:00:00Z'
 transaction_fees:
   mode: gme_real
 execution:

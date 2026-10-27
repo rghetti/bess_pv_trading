@@ -210,7 +210,13 @@ pv:
     enabled: false
     fallback: pvlib
     allow_retrospective_artifacts: false
-    models_by_farm: {}
+    # Selected per-farm pilot bundles are ready for continuous optimization.
+    # Replacement remains disabled by default; enable explicitly in an experiment.
+    models_by_farm:
+      '1': {name: farm_1_direct_tcn, kind: weather_bundle, artifact_path: models/pv/farm_1/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-10-27T00:00:00Z'}
+      '345': {name: farm_345_direct_tcn, kind: weather_bundle, artifact_path: models/pv/farm_345/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-10-27T00:00:00Z'}
+      '901': {name: farm_901_direct_tcn_timing, kind: weather_bundle, artifact_path: models/pv/farm_901/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-10-27T00:00:00Z'}
+      '910': {name: farm_910_direct_tcn_timing, kind: weather_bundle, artifact_path: models/pv/farm_910/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-10-27T00:00:00Z'}
   transposition_model: isotropic
   bifacial:
     enabled: false
@@ -341,14 +347,6 @@ pv_episode_curation:
     minimum_consecutive_intervals: 4
     minimum_satellite_ghi_w_m2: 100.0
     expand_full_daylight_run: true
-pv_forecast_pilot:
-  # User-approved research choices; informed by the inspected May-August report period.
-  # Replacement remains opt-in through pv.forecast_replacement.enabled.
-  models_by_farm:
-    '1': {name: cleaned_tcn_without_timing, kind: weather_bundle, artifact_path: models/pv/farm_1/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-09-01T00:00:00Z'}
-    '345': {name: cleaned_tcn_without_timing, kind: weather_bundle, artifact_path: models/pv/farm_345/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-09-01T00:00:00Z'}
-    '901': {name: cleaned_tcn_with_timing, kind: weather_bundle, artifact_path: models/pv/farm_901/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-09-01T00:00:00Z'}
-    '910': {name: cleaned_tcn_with_timing, kind: weather_bundle, artifact_path: models/pv/farm_910/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-09-01T00:00:00Z'}
 pv_retrained_error_diagnostics:
   # Review-only evidence. These thresholds never modify the authoritative exclusion CSV.
   farm_ids: [1, 345, 901, 910]
