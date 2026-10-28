@@ -3,6 +3,46 @@
 # No experiment is launched by loading this file. Dates and source inputs must be set for the chosen command.
 schema_version: 1
 
+# January member-wise PV and quantile calibration study. All dates are local delivery days.
+pv_probabilistic_study:
+  ensemble_zarr: data/farms/nwp_ens_20260101_20260131.zarr
+  dataset_periods: null  # Optional list of {ensemble_zarr, start_day, end_day} delivery windows.
+  vintage_strategy: preceding_day  # preceding_day or same_day_retrospective with previous-vintage midnight fill.
+  output_root: outputs/pv_probabilistic
+  run_id: january_2026_00utc
+  farm_ids: [1, 345, 901, 910]
+  start_day: '2026-01-01'
+  train_end_day: '2026-01-21'
+  validation_end_day: null  # Null retains the January study's validation-only evaluation.
+  end_day: '2026-01-31'
+  calibration_folds:
+    - {fit_end: '2026-01-07', predict_start: '2026-01-08', predict_end: '2026-01-14'}
+    - {fit_end: '2026-01-14', predict_start: '2026-01-15', predict_end: '2026-01-21'}
+  quantiles: [0.05, 0.10, 0.25, 0.50, 0.75, 0.90, 0.95]
+  calibration_alpha: 0.01
+  workers: 42
+  reserved_cpu_cores: 6
+  estimated_worker_memory_gb: 2.0
+  respect_shared_load: true  # Limit concurrency using the one-minute host load at launch.
+  seed: 202601
+  max_epochs: 80
+  early_stopping_patience: 10
+  batch_size: 32
+  resume: true
+  feature_sets: [core, weather]
+  trial_parameters:
+    ridge: [{alpha: 0.01}, {alpha: 0.1}, {alpha: 1.0}, {alpha: 10.0}]
+    huber: [{alpha: 0.001, epsilon: 1.35}, {alpha: 0.001, epsilon: 1.8}, {alpha: 0.1, epsilon: 1.35}, {alpha: 0.1, epsilon: 1.8}]
+    extra_trees: [{min_samples_leaf: 4, max_features: 0.6}, {min_samples_leaf: 4, max_features: 1.0}, {min_samples_leaf: 16, max_features: 0.6}, {min_samples_leaf: 16, max_features: 1.0}]
+    hist_gradient_boosting: [{max_leaf_nodes: 7, l2_regularization: 1.0}, {max_leaf_nodes: 7, l2_regularization: 10.0}, {max_leaf_nodes: 31, l2_regularization: 1.0}, {max_leaf_nodes: 31, l2_regularization: 10.0}]
+    lightgbm: [{num_leaves: 7, min_child_samples: 20}, {num_leaves: 7, min_child_samples: 80}, {num_leaves: 31, min_child_samples: 20}, {num_leaves: 31, min_child_samples: 80}]
+    catboost: [{depth: 4, l2_leaf_reg: 3.0}, {depth: 4, l2_leaf_reg: 10.0}, {depth: 6, l2_leaf_reg: 3.0}, {depth: 6, l2_leaf_reg: 10.0}]
+    mlp: [{width: 32, weight_decay: 0.0001}, {width: 32, weight_decay: 0.001}, {width: 64, weight_decay: 0.0001}, {width: 64, weight_decay: 0.001}]
+    tcn: [{width: 32, kernel: 3}, {width: 32, kernel: 5}, {width: 64, kernel: 3}, {width: 64, kernel: 5}]
+  tree_estimators: 150
+  boosting_iterations: 200
+  boosting_learning_rate: 0.05
+
 # FARM DATA: measured AC power, weather cycles and static plant metadata. Paths are repository-relative.
 inputs:
   zarr: data/farms/pv_farms_timeseries_20250101_20260831.zarr

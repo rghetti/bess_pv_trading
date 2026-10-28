@@ -1,0 +1,2818 @@
+{
+  "trials": [
+    {
+      "farm_id": 1,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.01
+      },
+      "name": "ridge_core_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.01
+      },
+      "name": "ridge_core_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.01
+      },
+      "name": "ridge_core_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.01
+      },
+      "name": "ridge_core_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.35
+      },
+      "name": "huber_core_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.35
+      },
+      "name": "huber_core_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.35
+      },
+      "name": "huber_core_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.35
+      },
+      "name": "huber_core_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_core_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_core_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_core_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_core_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_core_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_core_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_core_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_core_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_core_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_core_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_core_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_core_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_core_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_core_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_core_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_core_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_core_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_core_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_core_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_core_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "kernel": 3
+      },
+      "name": "tcn_core_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "kernel": 3
+      },
+      "name": "tcn_core_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "kernel": 3
+      },
+      "name": "tcn_core_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "kernel": 3
+      },
+      "name": "tcn_core_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.01
+      },
+      "name": "ridge_weather_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.01
+      },
+      "name": "ridge_weather_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.01
+      },
+      "name": "ridge_weather_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.01
+      },
+      "name": "ridge_weather_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.35
+      },
+      "name": "huber_weather_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.35
+      },
+      "name": "huber_weather_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.35
+      },
+      "name": "huber_weather_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.35
+      },
+      "name": "huber_weather_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_weather_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_weather_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_weather_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_weather_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_weather_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_weather_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_weather_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_weather_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_weather_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_weather_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_weather_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_weather_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_weather_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_weather_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_weather_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_weather_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_weather_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_weather_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_weather_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_weather_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "kernel": 3
+      },
+      "name": "tcn_weather_01",
+      "seed": 202602
+    },
+    {
+      "farm_id": 345,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "kernel": 3
+      },
+      "name": "tcn_weather_01",
+      "seed": 202946
+    },
+    {
+      "farm_id": 901,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "kernel": 3
+      },
+      "name": "tcn_weather_01",
+      "seed": 203502
+    },
+    {
+      "farm_id": 910,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "kernel": 3
+      },
+      "name": "tcn_weather_01",
+      "seed": 203511
+    },
+    {
+      "farm_id": 1,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.1
+      },
+      "name": "ridge_core_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.1
+      },
+      "name": "ridge_core_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.1
+      },
+      "name": "ridge_core_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.1
+      },
+      "name": "ridge_core_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.8
+      },
+      "name": "huber_core_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.8
+      },
+      "name": "huber_core_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.8
+      },
+      "name": "huber_core_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.8
+      },
+      "name": "huber_core_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_core_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_core_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_core_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_core_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_core_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_core_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_core_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_core_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_core_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_core_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_core_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_core_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_core_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_core_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_core_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_core_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_core_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_core_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_core_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_core_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "kernel": 5
+      },
+      "name": "tcn_core_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "kernel": 5
+      },
+      "name": "tcn_core_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "kernel": 5
+      },
+      "name": "tcn_core_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 32,
+        "kernel": 5
+      },
+      "name": "tcn_core_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.1
+      },
+      "name": "ridge_weather_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.1
+      },
+      "name": "ridge_weather_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.1
+      },
+      "name": "ridge_weather_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.1
+      },
+      "name": "ridge_weather_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.8
+      },
+      "name": "huber_weather_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.8
+      },
+      "name": "huber_weather_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.8
+      },
+      "name": "huber_weather_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.001,
+        "epsilon": 1.8
+      },
+      "name": "huber_weather_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_weather_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_weather_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_weather_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 4,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_weather_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_weather_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_weather_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_weather_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 7,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_weather_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_weather_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_weather_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_weather_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 7,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_weather_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_weather_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_weather_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_weather_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 4,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_weather_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_weather_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_weather_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_weather_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_weather_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "kernel": 5
+      },
+      "name": "tcn_weather_02",
+      "seed": 202603
+    },
+    {
+      "farm_id": 345,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "kernel": 5
+      },
+      "name": "tcn_weather_02",
+      "seed": 202947
+    },
+    {
+      "farm_id": 901,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "kernel": 5
+      },
+      "name": "tcn_weather_02",
+      "seed": 203503
+    },
+    {
+      "farm_id": 910,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 32,
+        "kernel": 5
+      },
+      "name": "tcn_weather_02",
+      "seed": 203512
+    },
+    {
+      "farm_id": 1,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 1.0
+      },
+      "name": "ridge_core_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 1.0
+      },
+      "name": "ridge_core_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 1.0
+      },
+      "name": "ridge_core_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 1.0
+      },
+      "name": "ridge_core_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.35
+      },
+      "name": "huber_core_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.35
+      },
+      "name": "huber_core_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.35
+      },
+      "name": "huber_core_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.35
+      },
+      "name": "huber_core_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_core_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_core_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_core_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_core_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_core_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_core_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_core_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_core_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_core_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_core_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_core_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_core_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_core_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_core_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_core_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_core_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_core_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_core_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_core_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_core_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "kernel": 3
+      },
+      "name": "tcn_core_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "kernel": 3
+      },
+      "name": "tcn_core_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "kernel": 3
+      },
+      "name": "tcn_core_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "kernel": 3
+      },
+      "name": "tcn_core_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 1.0
+      },
+      "name": "ridge_weather_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 1.0
+      },
+      "name": "ridge_weather_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 1.0
+      },
+      "name": "ridge_weather_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 1.0
+      },
+      "name": "ridge_weather_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.35
+      },
+      "name": "huber_weather_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.35
+      },
+      "name": "huber_weather_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.35
+      },
+      "name": "huber_weather_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.35
+      },
+      "name": "huber_weather_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_weather_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_weather_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_weather_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 0.6
+      },
+      "name": "extra_trees_weather_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_weather_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_weather_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_weather_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 1.0
+      },
+      "name": "hist_gradient_boosting_weather_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_weather_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_weather_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_weather_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 20
+      },
+      "name": "lightgbm_weather_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_weather_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_weather_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_weather_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 3.0
+      },
+      "name": "catboost_weather_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_weather_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_weather_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_weather_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.0001
+      },
+      "name": "mlp_weather_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "kernel": 3
+      },
+      "name": "tcn_weather_03",
+      "seed": 202604
+    },
+    {
+      "farm_id": 345,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "kernel": 3
+      },
+      "name": "tcn_weather_03",
+      "seed": 202948
+    },
+    {
+      "farm_id": 901,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "kernel": 3
+      },
+      "name": "tcn_weather_03",
+      "seed": 203504
+    },
+    {
+      "farm_id": 910,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "kernel": 3
+      },
+      "name": "tcn_weather_03",
+      "seed": 203513
+    },
+    {
+      "farm_id": 1,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 10.0
+      },
+      "name": "ridge_core_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 10.0
+      },
+      "name": "ridge_core_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 10.0
+      },
+      "name": "ridge_core_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "ridge",
+      "features": "core",
+      "parameters": {
+        "alpha": 10.0
+      },
+      "name": "ridge_core_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.8
+      },
+      "name": "huber_core_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.8
+      },
+      "name": "huber_core_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.8
+      },
+      "name": "huber_core_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "huber",
+      "features": "core",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.8
+      },
+      "name": "huber_core_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_core_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_core_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_core_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "extra_trees",
+      "features": "core",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_core_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_core_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_core_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_core_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "hist_gradient_boosting",
+      "features": "core",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_core_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_core_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_core_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_core_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "lightgbm",
+      "features": "core",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_core_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_core_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_core_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_core_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "catboost",
+      "features": "core",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_core_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_core_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_core_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_core_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "mlp",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_core_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "kernel": 5
+      },
+      "name": "tcn_core_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "kernel": 5
+      },
+      "name": "tcn_core_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "kernel": 5
+      },
+      "name": "tcn_core_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "tcn",
+      "features": "core",
+      "parameters": {
+        "width": 64,
+        "kernel": 5
+      },
+      "name": "tcn_core_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 10.0
+      },
+      "name": "ridge_weather_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 10.0
+      },
+      "name": "ridge_weather_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 10.0
+      },
+      "name": "ridge_weather_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "ridge",
+      "features": "weather",
+      "parameters": {
+        "alpha": 10.0
+      },
+      "name": "ridge_weather_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.8
+      },
+      "name": "huber_weather_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.8
+      },
+      "name": "huber_weather_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.8
+      },
+      "name": "huber_weather_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "huber",
+      "features": "weather",
+      "parameters": {
+        "alpha": 0.1,
+        "epsilon": 1.8
+      },
+      "name": "huber_weather_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_weather_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_weather_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_weather_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "extra_trees",
+      "features": "weather",
+      "parameters": {
+        "min_samples_leaf": 16,
+        "max_features": 1.0
+      },
+      "name": "extra_trees_weather_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_weather_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_weather_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_weather_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "hist_gradient_boosting",
+      "features": "weather",
+      "parameters": {
+        "max_leaf_nodes": 31,
+        "l2_regularization": 10.0
+      },
+      "name": "hist_gradient_boosting_weather_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_weather_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_weather_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_weather_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "lightgbm",
+      "features": "weather",
+      "parameters": {
+        "num_leaves": 31,
+        "min_child_samples": 80
+      },
+      "name": "lightgbm_weather_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_weather_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_weather_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_weather_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "catboost",
+      "features": "weather",
+      "parameters": {
+        "depth": 6,
+        "l2_leaf_reg": 10.0
+      },
+      "name": "catboost_weather_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_weather_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_weather_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_weather_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "mlp",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "weight_decay": 0.001
+      },
+      "name": "mlp_weather_04",
+      "seed": 203514
+    },
+    {
+      "farm_id": 1,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "kernel": 5
+      },
+      "name": "tcn_weather_04",
+      "seed": 202605
+    },
+    {
+      "farm_id": 345,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "kernel": 5
+      },
+      "name": "tcn_weather_04",
+      "seed": 202949
+    },
+    {
+      "farm_id": 901,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "kernel": 5
+      },
+      "name": "tcn_weather_04",
+      "seed": 203505
+    },
+    {
+      "farm_id": 910,
+      "family": "tcn",
+      "features": "weather",
+      "parameters": {
+        "width": 64,
+        "kernel": 5
+      },
+      "name": "tcn_weather_04",
+      "seed": 203514
+    }
+  ],
+  "workers": 42,
+  "cpu_available": 48,
+  "memory_available_gb": 111.92583465576172,
+  "shared_load_at_launch": 17.17431640625,
+  "training": [
+    "2026-01-01",
+    "2026-08-19"
+  ],
+  "validation": [
+    "2026-08-20",
+    "2026-08-31"
+  ],
+  "calibration_folds": [
+    {
+      "fit_end": "2026-01-14",
+      "predict_start": "2026-01-15",
+      "predict_end": "2026-01-31"
+    },
+    {
+      "fit_end": "2026-01-31",
+      "predict_start": "2026-08-02",
+      "predict_end": "2026-08-10"
+    },
+    {
+      "fit_end": "2026-08-10",
+      "predict_start": "2026-08-11",
+      "predict_end": "2026-08-19"
+    }
+  ],
+  "test_set": null
+}

@@ -1,0 +1,17 @@
+include: ../standard.yaml
+pv_probabilistic_study:
+  run_id: january_august_2026_same_day_80_20
+  workers: 42
+  respect_shared_load: false  # User explicitly requested all 42 study workers.
+  vintage_strategy: same_day_retrospective
+  start_day: '2026-01-01'
+  train_end_day: '2026-08-19'
+  validation_end_day: null
+  end_day: '2026-08-31'
+  dataset_periods:
+    - {ensemble_zarr: data/farms/nwp_ens_20260101_20260131.zarr, start_day: '2026-01-01', end_day: '2026-01-31'}
+    - {ensemble_zarr: data/farms/nwp_ens_20260801_20260930.zarr, start_day: '2026-08-02', end_day: '2026-08-31'}
+  calibration_folds:
+    - {fit_end: '2026-01-14', predict_start: '2026-01-15', predict_end: '2026-01-31'}
+    - {fit_end: '2026-01-31', predict_start: '2026-08-02', predict_end: '2026-08-10'}
+    - {fit_end: '2026-08-10', predict_start: '2026-08-11', predict_end: '2026-08-19'}
