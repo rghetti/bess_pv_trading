@@ -35,10 +35,14 @@ day-ahead and IDA1 gates for that delivery day. Member labels are stitched
 across cycles for the midnight fill, but member identity across forecast runs is
 not established; these are not proven joint trajectories. Both experiments use
 the same 61 candidate delivery days and the same 49/12 split for comparison.
+For future auction-focused work, use the preceding-day vintage while only the
+00 UTC ensemble cycle is available. The same-day experiment is retained as a
+retrospective comparison and is not the default for future studies.
 
 ## Commands
 
-Run from the repository root in the existing `bess` environment. The launcher
+After the user approves the specific experiment, run from the repository root
+in the existing `bess` environment. The launcher
 reads shared defaults through its experiment YAML; it does not install packages
 or download data.
 
@@ -73,6 +77,85 @@ interval. Core inputs are irradiance, temperature, 10 m wind and local hour.
 The weather feature set additionally includes available cloud, precipitation,
 snow, dew-point, visibility and 100 m wind variables. Members and quarters from
 a delivery day remain together in the chronological split.
+
+### Training losses and validation selection
+
+Each farm/configuration fits one predictor, not separate predictors optimized
+for MAE, RMSE and CRPS. Power targets are divided by farm AC rating for fitting.
+Each valid member row receives weight `1 / number_of_valid_members_for_interval`;
+the total weight for each measured interval is one. Thus training compares each
+member-wise prediction with the same observed power, rather than minimizing
+the error of their mean or median directly. Prediction values are converted back
+to MW, clipped to `[0, AC rating]` and set to zero during the configured night
+window before scoring. The inherited setting is 21:30–05:00 Europe/Rome;
+this is a fixed clock-time policy, not a solar-position calculation, and it
+does not delete or alter the measured targets.
+
+| Predictor | Training objective used in this study |
+| --- | --- |
+| Ridge | Weighted squared error with L2 coefficient penalty. |
+| Huber | Weighted Huber robust loss with L2 penalty and fitted residual scale. |
+| Extra trees | Squared-error split criterion and leaf means; sample weights enter fitting. |
+| Histogram gradient boosting | Squared-error loss, with configured tree regularization. |
+| LightGBM | Default regression squared-error objective. |
+| CatBoost | Default RMSE regression loss; its minimum agrees with MSE for the same data. |
+| MLP and TCN | Weighted mean squared member-wise error. Neural early stopping uses weighted MSE on the last two fit-period days; the model is then refitted on the entire fit period for the selected number of epochs. |
+| Farm-specific pvlib | Physical baseline with previously supplied farm parameters; no predictor was trained in this experiment. |
+
+Separately, seven linear quantile regressors per predictor use the training
+out-of-fold member-PV mean, p10, p50 and p90, plus sine and cosine of local
+hour, to predict measured power. Each minimizes its own quantile pinball loss
+with the configured L1 coefficient penalty; none is trained directly on CRPS.
+The pvlib baseline has a similarly fitted quantile calibrator, using its training
+period predictions. The validation report evaluates each fitted candidate under
+all applicable point and probabilistic scores, then ranks it independently by
+three specific criteria: RMSE of the raw member mean, MAE of the raw member
+median, and approximate CRPS of the calibrated quantiles. These are model
+selection criteria, not the candidates' training objectives; winners can differ.
+
+### Scoring procedure
+
+For each farm and quarter-hour, retain a target only when the approved target
+exclusions permit it and the measured power, deterministic prediction and all
+50 member predictions are finite. This ensures matched point and raw ensemble
+comparisons. Calibrated scores additionally require finite calibrated quantiles.
+The scores include eligible nighttime quarters and are computed separately for
+the reporting window or day. Hourly scores first average all four eligible
+quarters of each member and the observation; incomplete hours are dropped.
+
+For observations `y_i` and a chosen point forecast `p_i`, the error is
+`e_i = p_i - y_i`: MAE is `mean(abs(e_i))`, RMSE is `sqrt(mean(e_i**2))`,
+and bias is `mean(e_i)` (positive means overprediction). The point forecast may
+be the deterministic-weather prediction, raw ensemble mean or median, or
+calibrated mean or p50. RMSE is always at least MAE on the same observations
+and forecasts because squaring gives large errors more influence. Values from
+different forecasts or different scoring samples need not obey that comparison.
+Percent scores equal `100 * score_MW / farm_AC_rating_MW`.
+
+For each eligible interval, with 50 predicted powers `x_1,...,x_50` and
+observation `y`, empirical ensemble CRPS is exactly
+
+`(1/50) * sum_j |x_j-y| - (1/(2*50**2)) * sum_j sum_k |x_j-x_k|`.
+
+The implementation sorts members to calculate the pairwise term efficiently;
+the formula is unchanged. It includes self-pairs and all ordered pairs and
+assumes equal 1/50 weights. The reported raw CRPS is the average of these
+interval scores, not the CRPS of the ensemble mean. For calibrated CRPS,
+the corrected p05–p95 quantile values are linearly interpolated, with p05 and
+p95 extended as constant tails to probabilities 0 and 1. At 201 equally spaced
+probabilities, compute pinball loss `max(q*(y-p_q), (q-1)*(y-p_q))`, integrate
+it with the trapezoidal rule and multiply by two; average over eligible
+intervals. Raw and calibrated CRPS therefore describe different distributions,
+and the latter is an approximation.
+
+Pinball loss measures each calibrated quantile separately. For example, p90
+penalizes an observation above the predicted p90 nine times as much as the same
+distance below it. Coverage is the fraction of observations inclusively between
+p25–p75, p10–p90 or p05–p95, respectively nominally 50%, 80% and 90%; interval
+width is the mean upper-minus-lower bound. The reliability table separately
+reports fractions strictly below and below-or-equal to each quantile, because
+zero-power ties are common. Calibrated p50 is the corrected median; calibrated
+mean integrates the interpolated quantile curve with constant tails.
 
 Calibration inputs use out-of-fold predictions entirely within training:
 January 15–31 from a January 1–14 fit, August 2–10 from a fit through January
