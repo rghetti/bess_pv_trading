@@ -1,0 +1,134 @@
+{
+  "status": "passed",
+  "checks": [
+    {
+      "farm_id": 1,
+      "auction": "DA",
+      "issued_forecast_rows": 8064,
+      "feedback_updates": 9215,
+      "first_day_retrospective_rows": 672,
+      "passed": true
+    },
+    {
+      "farm_id": 1,
+      "auction": "IDA1",
+      "issued_forecast_rows": 8064,
+      "feedback_updates": 9263,
+      "first_day_retrospective_rows": 672,
+      "passed": true
+    },
+    {
+      "farm_id": 1,
+      "auction": "IDA2",
+      "issued_forecast_rows": 8064,
+      "feedback_updates": 9375,
+      "first_day_retrospective_rows": 672,
+      "passed": true
+    },
+    {
+      "farm_id": 1,
+      "auction": "IDA3",
+      "issued_forecast_rows": 4032,
+      "feedback_updates": 5086,
+      "first_day_retrospective_rows": 0,
+      "passed": true
+    },
+    {
+      "farm_id": 345,
+      "auction": "DA",
+      "issued_forecast_rows": 8064,
+      "feedback_updates": 9288,
+      "first_day_retrospective_rows": 672,
+      "passed": true
+    },
+    {
+      "farm_id": 345,
+      "auction": "IDA1",
+      "issued_forecast_rows": 8064,
+      "feedback_updates": 9336,
+      "first_day_retrospective_rows": 672,
+      "passed": true
+    },
+    {
+      "farm_id": 345,
+      "auction": "IDA2",
+      "issued_forecast_rows": 8064,
+      "feedback_updates": 9448,
+      "first_day_retrospective_rows": 672,
+      "passed": true
+    },
+    {
+      "farm_id": 345,
+      "auction": "IDA3",
+      "issued_forecast_rows": 4032,
+      "feedback_updates": 5120,
+      "first_day_retrospective_rows": 0,
+      "passed": true
+    },
+    {
+      "farm_id": 901,
+      "auction": "DA",
+      "issued_forecast_rows": 8064,
+      "feedback_updates": 9308,
+      "first_day_retrospective_rows": 672,
+      "passed": true
+    },
+    {
+      "farm_id": 901,
+      "auction": "IDA1",
+      "issued_forecast_rows": 8064,
+      "feedback_updates": 9356,
+      "first_day_retrospective_rows": 672,
+      "passed": true
+    },
+    {
+      "farm_id": 901,
+      "auction": "IDA2",
+      "issued_forecast_rows": 8064,
+      "feedback_updates": 9468,
+      "first_day_retrospective_rows": 672,
+      "passed": true
+    },
+    {
+      "farm_id": 901,
+      "auction": "IDA3",
+      "issued_forecast_rows": 4032,
+      "feedback_updates": 5136,
+      "first_day_retrospective_rows": 0,
+      "passed": true
+    },
+    {
+      "farm_id": 910,
+      "auction": "DA",
+      "issued_forecast_rows": 8064,
+      "feedback_updates": 8868,
+      "first_day_retrospective_rows": 672,
+      "passed": true
+    },
+    {
+      "farm_id": 910,
+      "auction": "IDA1",
+      "issued_forecast_rows": 8064,
+      "feedback_updates": 8916,
+      "first_day_retrospective_rows": 672,
+      "passed": true
+    },
+    {
+      "farm_id": 910,
+      "auction": "IDA2",
+      "issued_forecast_rows": 8064,
+      "feedback_updates": 9008,
+      "first_day_retrospective_rows": 672,
+      "passed": true
+    },
+    {
+      "farm_id": 910,
+      "auction": "IDA3",
+      "issued_forecast_rows": 4032,
+      "feedback_updates": 4802,
+      "first_day_retrospective_rows": 0,
+      "passed": true
+    }
+  ],
+  "scope": "saved artifacts and timestamp invariants; quantile history logic covered by tests"
+}

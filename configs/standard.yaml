@@ -4,6 +4,21 @@
 schema_version: 1
 
 # January member-wise PV and quantile calibration study. All dates are local delivery days.
+pv_online_crps_study:
+  output_root: outputs/pv_online_crps
+  run_id: january_august_2026
+  source_config: configs/pv_experiments/probabilistic_january_august_2026.yaml
+  farms: {1: huber_core_03, 345: tcn_weather_02, 901: tcn_weather_01, 910: tcn_core_04}
+  auctions: [DA, IDA1, IDA2, IDA3]
+  block_hours: 3
+  quantiles: [0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95]
+  quantile_alpha: 0.01
+  minimum_quantile_days: 7
+  workers: 42
+  daylight_start: '06:00'
+  daylight_end: '21:30'
+  seed: 202601
+
 pv_probabilistic_study:
   ensemble_zarr: data/farms/nwp_ens_20260101_20260131.zarr
   dataset_periods: null  # Optional list of {ensemble_zarr, start_day, end_day} delivery windows.

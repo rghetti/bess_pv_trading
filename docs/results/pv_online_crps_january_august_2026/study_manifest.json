@@ -1,0 +1,364 @@
+{
+  "settings": {
+    "output_root": "outputs/pv_online_crps",
+    "run_id": "january_august_2026",
+    "source_config": "configs/pv_experiments/probabilistic_january_august_2026.yaml",
+    "farms": {
+      "1": "huber_core_03",
+      "345": "tcn_weather_02",
+      "901": "tcn_weather_01",
+      "910": "tcn_core_04"
+    },
+    "auctions": [
+      "DA",
+      "IDA1",
+      "IDA2",
+      "IDA3"
+    ],
+    "block_hours": 3,
+    "quantiles": [
+      0.05,
+      0.1,
+      0.15,
+      0.2,
+      0.25,
+      0.3,
+      0.35,
+      0.4,
+      0.45,
+      0.5,
+      0.55,
+      0.6,
+      0.65,
+      0.7,
+      0.75,
+      0.8,
+      0.85,
+      0.9,
+      0.95
+    ],
+    "quantile_alpha": 0.01,
+    "minimum_quantile_days": 7,
+    "workers": 42,
+    "daylight_start": "06:00",
+    "daylight_end": "21:30",
+    "seed": 202601
+  },
+  "source_settings": {
+    "ensemble_zarr": "data/farms/nwp_ens_20260101_20260131.zarr",
+    "dataset_periods": [
+      {
+        "ensemble_zarr": "data/farms/nwp_ens_20260101_20260131.zarr",
+        "start_day": "2026-01-01",
+        "end_day": "2026-01-31"
+      },
+      {
+        "ensemble_zarr": "data/farms/nwp_ens_20260801_20260930.zarr",
+        "start_day": "2026-08-02",
+        "end_day": "2026-08-31"
+      }
+    ],
+    "vintage_strategy": "preceding_day",
+    "output_root": "outputs/pv_probabilistic",
+    "run_id": "january_august_2026_80_20",
+    "farm_ids": [
+      1,
+      345,
+      901,
+      910
+    ],
+    "start_day": "2026-01-01",
+    "train_end_day": "2026-08-19",
+    "validation_end_day": null,
+    "end_day": "2026-08-31",
+    "calibration_folds": [
+      {
+        "fit_end": "2026-01-14",
+        "predict_start": "2026-01-15",
+        "predict_end": "2026-01-31"
+      },
+      {
+        "fit_end": "2026-01-31",
+        "predict_start": "2026-08-02",
+        "predict_end": "2026-08-10"
+      },
+      {
+        "fit_end": "2026-08-10",
+        "predict_start": "2026-08-11",
+        "predict_end": "2026-08-19"
+      }
+    ],
+    "quantiles": [
+      0.05,
+      0.1,
+      0.25,
+      0.5,
+      0.75,
+      0.9,
+      0.95
+    ],
+    "calibration_alpha": 0.01,
+    "workers": 42,
+    "reserved_cpu_cores": 6,
+    "estimated_worker_memory_gb": 2.0,
+    "respect_shared_load": false,
+    "seed": 202601,
+    "max_epochs": 80,
+    "early_stopping_patience": 10,
+    "batch_size": 32,
+    "resume": true,
+    "feature_sets": [
+      "core",
+      "weather"
+    ],
+    "trial_parameters": {
+      "ridge": [
+        {
+          "alpha": 0.01
+        },
+        {
+          "alpha": 0.1
+        },
+        {
+          "alpha": 1.0
+        },
+        {
+          "alpha": 10.0
+        }
+      ],
+      "huber": [
+        {
+          "alpha": 0.001,
+          "epsilon": 1.35
+        },
+        {
+          "alpha": 0.001,
+          "epsilon": 1.8
+        },
+        {
+          "alpha": 0.1,
+          "epsilon": 1.35
+        },
+        {
+          "alpha": 0.1,
+          "epsilon": 1.8
+        }
+      ],
+      "extra_trees": [
+        {
+          "min_samples_leaf": 4,
+          "max_features": 0.6
+        },
+        {
+          "min_samples_leaf": 4,
+          "max_features": 1.0
+        },
+        {
+          "min_samples_leaf": 16,
+          "max_features": 0.6
+        },
+        {
+          "min_samples_leaf": 16,
+          "max_features": 1.0
+        }
+      ],
+      "hist_gradient_boosting": [
+        {
+          "max_leaf_nodes": 7,
+          "l2_regularization": 1.0
+        },
+        {
+          "max_leaf_nodes": 7,
+          "l2_regularization": 10.0
+        },
+        {
+          "max_leaf_nodes": 31,
+          "l2_regularization": 1.0
+        },
+        {
+          "max_leaf_nodes": 31,
+          "l2_regularization": 10.0
+        }
+      ],
+      "lightgbm": [
+        {
+          "num_leaves": 7,
+          "min_child_samples": 20
+        },
+        {
+          "num_leaves": 7,
+          "min_child_samples": 80
+        },
+        {
+          "num_leaves": 31,
+          "min_child_samples": 20
+        },
+        {
+          "num_leaves": 31,
+          "min_child_samples": 80
+        }
+      ],
+      "catboost": [
+        {
+          "depth": 4,
+          "l2_leaf_reg": 3.0
+        },
+        {
+          "depth": 4,
+          "l2_leaf_reg": 10.0
+        },
+        {
+          "depth": 6,
+          "l2_leaf_reg": 3.0
+        },
+        {
+          "depth": 6,
+          "l2_leaf_reg": 10.0
+        }
+      ],
+      "mlp": [
+        {
+          "width": 32,
+          "weight_decay": 0.0001
+        },
+        {
+          "width": 32,
+          "weight_decay": 0.001
+        },
+        {
+          "width": 64,
+          "weight_decay": 0.0001
+        },
+        {
+          "width": 64,
+          "weight_decay": 0.001
+        }
+      ],
+      "tcn": [
+        {
+          "width": 32,
+          "kernel": 3
+        },
+        {
+          "width": 32,
+          "kernel": 5
+        },
+        {
+          "width": 64,
+          "kernel": 3
+        },
+        {
+          "width": 64,
+          "kernel": 5
+        }
+      ]
+    },
+    "tree_estimators": 150,
+    "boosting_iterations": 200,
+    "boosting_learning_rate": 0.05
+  },
+  "market": {
+    "zone": "NORD",
+    "timezone": "Europe/Rome",
+    "valid_from": "2025-10-01",
+    "valid_to": "2026-08-31",
+    "decision_buffer_minutes": 5.0,
+    "gates": {
+      "DA": "12:00",
+      "IDA1": "15:00",
+      "IDA2": "22:00",
+      "IDA3": "10:00"
+    },
+    "gate_day_offsets": {
+      "DA": -1,
+      "IDA1": -1,
+      "IDA2": -1,
+      "IDA3": 0
+    },
+    "result_times": {
+      "DA": "13:30",
+      "IDA1": "15:30",
+      "IDA2": "22:30",
+      "IDA3": "10:30"
+    },
+    "delivery_start_times": {
+      "DA": null,
+      "IDA1": null,
+      "IDA2": null,
+      "IDA3": "12:00"
+    },
+    "result_provenance": {
+      "DA": "study_assumption_13:30; GME final results not earlier than 13:05; recorded timestamps preferred",
+      "IDA1": "GME DTF03 rev13: results by 15:30 local",
+      "IDA2": "GME DTF03 rev13: results by 22:30 local",
+      "IDA3": "GME DTF03 rev13: results by 10:30 local"
+    },
+    "cancelled_auctions": []
+  },
+  "source": {
+    "timezone": "UTC",
+    "historical_dimensions": [
+      "time",
+      "farm_id"
+    ],
+    "forecast_dimensions": [
+      "farm_id",
+      "cycle_time",
+      "lead_time"
+    ],
+    "measured_power_basis": "AC",
+    "capacity_basis": "AC",
+    "historical_interval_minutes": 15,
+    "historical_label": "start",
+    "forecast_radiation_label": "end",
+    "forecast_radiation_interval_hours": 1,
+    "cycle_cadence_hours": 6,
+    "availability_lag_hours": 6,
+    "explicit_availability_variable": null,
+    "telemetry_latency_minutes": 0,
+    "numeric_lead_units": "hours"
+  },
+  "policy": {
+    "version": "requested-v1",
+    "plateau": {
+      "enabled": true,
+      "minimum_run": 4,
+      "atol_kw": 0.01,
+      "rtol": 0.0001,
+      "native_minutes": 15
+    },
+    "night": {
+      "enabled": true,
+      "timezone": "Europe/Rome",
+      "start": "21:30",
+      "end": "05:00"
+    },
+    "nonnegative_forecasts": [
+      "forecast_ghi",
+      "forecast_bhi",
+      "precipitation_mm",
+      "snow_water_equivalent_m",
+      "visibility_km",
+      "cloud_total_pct",
+      "cloud_low_pct",
+      "cloud_mid_pct",
+      "cloud_high_pct"
+    ],
+    "interpolation": {
+      "enabled": true,
+      "variables": [
+        "power",
+        "ghi"
+      ],
+      "maximum_gap_hours": null
+    },
+    "evidence_availability": "endpoint_and_mask_evidence"
+  },
+  "code_sha256": {
+    "pv_online_crps.py": "6b3389063cdceb34d73a9537f1a31111199f3286e6770336e7f86df7dc02f59f",
+    "pv_online_crps_prepare.py": "38e42b7ab5d1846e9e4d32fac58ffe8bc0ed570bcc9fbadea3fc0dea4d14d882",
+    "pv_online_crps_evaluate.py": "3a1478eedbc6c92295afbbe8065c6667eaf72d2ebc7c4dc0255a646d4a01fdcb",
+    "pv_online_crps_report.py": "8093ed11842196cb6c32deaff84df96c4a77e13949b96a80b512a34c87413cf4"
+  },
+  "validation_use": "model selection; not an independent test"
+}

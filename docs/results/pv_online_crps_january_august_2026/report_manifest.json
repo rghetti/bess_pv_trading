@@ -1,0 +1,29 @@
+{
+  "status": "complete",
+  "farms": [
+    1,
+    345,
+    901,
+    910
+  ],
+  "auctions": [
+    "DA",
+    "IDA1",
+    "IDA2",
+    "IDA3"
+  ],
+  "methods": [
+    "deterministic_quantiles",
+    "equal_ensemble",
+    "fixed_ensemble_quantiles",
+    "online_combined_cold",
+    "online_combined_warm",
+    "online_ensemble_cold",
+    "online_ensemble_warm"
+  ],
+  "validation_selected": true,
+  "first_validation_day": "DA/IDA1/IDA2 use retrospectively trained source model",
+  "crps": "exact weighted empirical or quantile quadrature with constant tails",
+  "daytime": "fixed local clock range; not a solar-position claim",
+  "joint_trajectories": "not inferred from marginal interval forecasts"
+}
