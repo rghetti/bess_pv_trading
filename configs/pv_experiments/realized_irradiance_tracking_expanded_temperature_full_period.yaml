@@ -2,7 +2,7 @@ include: ../standard.yaml
 
 # Deliberately broad diagnostic range: parameters may be physically implausible.
 pv_realized_irradiance_search:
-  run_id: tracking_expanded_temperature_full_period_deep_seasonal_night_2025_2026
+  run_id: tracking_expanded_temperature_full_period_gamma002_2025_2026
   farm_ids: [901, 910]
   selection_scope: full_period
   workers: 42
@@ -12,7 +12,7 @@ pv_realized_irradiance_search:
     coefficient: [0.2, 1.5]
     u0: [5.0, 300.0]
     u1: [0.0, 80.0]
-    gamma: [-0.006, 0.0]
+    gamma: [-0.006, -0.002]
 
 pv_realized_refinement:
   top_candidates_per_farm: 3
