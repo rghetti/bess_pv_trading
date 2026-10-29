@@ -1,0 +1,29 @@
+include: ../standard.yaml
+
+# Reproduce the comparison against the Milan proxy used before its selection.
+farms:
+  901:
+    pv:
+      location: {latitude: 45.4642, longitude: 9.19, location_status: proxy, acknowledged: true}
+  910:
+    pv:
+      location: {latitude: 45.4642, longitude: 9.19, location_status: proxy, acknowledged: true}
+
+pv_realized_irradiance_search:
+  run_id: tracking_expanded_temperature_full_period_gamma002_2025_2026
+  farm_ids: [901, 910]
+  selection_scope: full_period
+  workers: 42
+  multistarts: 12
+  optimization_max_evaluations: 3000
+  bounds:
+    coefficient: [0.2, 1.5]
+    u0: [5.0, 300.0]
+    u1: [0.0, 80.0]
+    gamma: [-0.006, -0.002]
+
+pv_realized_refinement:
+  top_candidates_per_farm: 3
+  optimization_max_evaluations: 6000
+  multistarts: 12
+  workers: 42

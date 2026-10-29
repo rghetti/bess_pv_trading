@@ -199,6 +199,9 @@ farms:
       capacity_mwh: 2.0
       max_power_mw: 1.0
     pv:
+      # Solar-position proxy selected by the full-period realized-irradiance comparison;
+      # this is not a verified farm location.
+      location: {latitude: 45.6495, longitude: 13.7768, location_status: proxy, acknowledged: true}
       direct_exceeds_ghi: clip_and_flag
       transposition_model: isotropic
       albedo: 0.2
@@ -222,6 +225,9 @@ farms:
       capacity_mwh: 5.0
       max_power_mw: 2.5
     pv:
+      # Solar-position proxy selected by the full-period realized-irradiance comparison;
+      # this is not a verified farm location.
+      location: {latitude: 45.4384, longitude: 10.9916, location_status: proxy, acknowledged: true}
       direct_exceeds_ghi: clip_and_flag
       transposition_model: perez-driesse
       albedo: 0.2
