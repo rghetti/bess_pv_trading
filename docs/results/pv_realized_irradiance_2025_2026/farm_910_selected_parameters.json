@@ -1,0 +1,42 @@
+{
+  "farm_id": 910,
+  "trial_id": 10059,
+  "candidate": {
+    "location": "aosta",
+    "transposition": "isotropic",
+    "gcr": 0.65,
+    "max_angle": 80.0,
+    "backtrack": true,
+    "bifacial_enabled": false,
+    "albedo": 0.2,
+    "bifaciality": 0.8,
+    "height_to_pitch": 0.4,
+    "loss": "mse"
+  },
+  "parameters": {
+    "coefficient": 0.9125020290451624,
+    "u0": 10.455650909131197,
+    "u1": 0.6717153473345321,
+    "gamma": -0.002
+  },
+  "training_loss": 0.004573464675194518,
+  "converged": true,
+  "optimizer_message": "CONVERGENCE: NORM OF PROJECTED GRADIENT <= PGTOL",
+  "metrics": {
+    "all_hours": {
+      "rows": 10760,
+      "mae_percent_capacity": 5.716138633331648,
+      "rmse_percent_capacity": 10.28090929283797,
+      "bias_percent_capacity": 4.714335529520488
+    },
+    "daytime": {
+      "rows": 6576,
+      "mae_percent_capacity": 9.35304922363877,
+      "rmse_percent_capacity": 13.150938925004956,
+      "bias_percent_capacity": 7.713845848181333
+    }
+  },
+  "bound_hits": [
+    "gamma"
+  ]
+}

@@ -23,7 +23,7 @@ The small floating-point differences from the user's 953.28 and 1524.60 kW are r
 |---|---|---|---|
 | measured AC power | `power` | `(time, farm_id)` | kW, start-labeled native 15-minute mean |
 | historical satellite GHI | `ghi` | `(farm_id, time)` | W/m², start-labeled historical interval |
-| diffuse-related field, disabled | `fraction_diffuse` | `(farm_id, time)` | dimensionless, retained but unused |
+| historical diffuse fraction | `fraction_diffuse` | `(farm_id, time)` | dimensionless DHI/GHI; provider confirmed by user on 29 October 2026; not used in the operational forecast engine |
 | forecast GHI | `shortwave_radiation` | `(farm_id, cycle_time, lead_time)` | W/m², hourly mean ending at valid time |
 | forecast BHI working interpretation | `direct_radiation` | same | W/m², hourly mean ending at valid time |
 | air temperature | `temperature_2m` | same | °C, instantaneous |
@@ -35,7 +35,7 @@ The small floating-point differences from the user's 953.28 and 1524.60 kW are r
 | wind u/v at 10 m | `wind_u_component_10m`, `wind_v_component_10m` | same | signed m/s, instantaneous |
 | wind u/v at 100 m | `wind_u_component_100m`, `wind_v_component_100m` | same | signed m/s, instantaneous |
 
-Attributes confirm dimensions, timezone, declared units, forecast valid-time construction, instantaneous versus interval average/accumulation, and historical interval labels. Historical satellite GHI/diffuse attributes say `mean of endpoint readings`; this records an attribute rather than independently verifying the satellite retrieval/measurement operator. The following electrical/radiation meanings are supplied by the user, rather than proved by public provider documentation: historical power is already AC, `total_power` is AC nameplate, shortwave is forecast GHI, direct is a horizontal-direct working interpretation, and the wind/temperature source is not attributed to an inferred NWP provider.
+Attributes confirm dimensions, timezone, declared units, forecast valid-time construction, instantaneous versus interval average/accumulation, and historical interval labels. Historical satellite GHI/diffuse attributes say `mean of endpoint readings`; this records an attribute rather than independently verifying the satellite retrieval/measurement operator. The user confirmed with the data provider that `fraction_diffuse` is DHI/GHI. Multiplying the stored endpoint-averaged fraction and GHI approximates the interval-average diffuse component; a mean of ratios need not equal a ratio of means. The following electrical/radiation meanings are supplied by the user, rather than proved by public provider documentation: historical power is already AC, `total_power` is AC nameplate, shortwave is forecast GHI, direct is horizontal-direct radiation, and the wind/temperature source is not attributed to an inferred NWP provider. The user confirmed the current interpretation of metadata and irradiance inputs on 29 October 2026.
 
 ## Availability and temporal transformations
 

@@ -1,0 +1,215 @@
+{
+  "refinement": {
+    "top_candidates_per_farm": 3,
+    "optimization_max_evaluations": 600,
+    "multistarts": 3,
+    "workers": 42
+  },
+  "jobs": [
+    {
+      "farm": 1,
+      "trial": 10022,
+      "parent_trial": 22,
+      "candidate": {
+        "location": "genoa",
+        "transposition": "isotropic",
+        "gcr": 0.35,
+        "max_angle": 60.0,
+        "backtrack": true,
+        "bifacial_enabled": false,
+        "albedo": 0.2,
+        "bifaciality": 0.8,
+        "height_to_pitch": 0.4,
+        "loss": "huber"
+      }
+    },
+    {
+      "farm": 1,
+      "trial": 10026,
+      "parent_trial": 26,
+      "candidate": {
+        "location": "bologna",
+        "transposition": "isotropic",
+        "gcr": 0.35,
+        "max_angle": 60.0,
+        "backtrack": true,
+        "bifacial_enabled": false,
+        "albedo": 0.2,
+        "bifaciality": 0.8,
+        "height_to_pitch": 0.4,
+        "loss": "huber"
+      }
+    },
+    {
+      "farm": 1,
+      "trial": 10004,
+      "parent_trial": 4,
+      "candidate": {
+        "location": "turin",
+        "transposition": "isotropic",
+        "gcr": 0.35,
+        "max_angle": 60.0,
+        "backtrack": true,
+        "bifacial_enabled": false,
+        "albedo": 0.2,
+        "bifaciality": 0.8,
+        "height_to_pitch": 0.4,
+        "loss": "huber"
+      }
+    },
+    {
+      "farm": 345,
+      "trial": 10010,
+      "parent_trial": 10,
+      "candidate": {
+        "location": "genoa",
+        "transposition": "isotropic",
+        "gcr": 0.35,
+        "max_angle": 60.0,
+        "backtrack": true,
+        "bifacial_enabled": false,
+        "albedo": 0.2,
+        "bifaciality": 0.8,
+        "height_to_pitch": 0.4,
+        "loss": "huber"
+      }
+    },
+    {
+      "farm": 345,
+      "trial": 10038,
+      "parent_trial": 38,
+      "candidate": {
+        "location": "turin",
+        "transposition": "isotropic",
+        "gcr": 0.35,
+        "max_angle": 60.0,
+        "backtrack": true,
+        "bifacial_enabled": false,
+        "albedo": 0.2,
+        "bifaciality": 0.8,
+        "height_to_pitch": 0.4,
+        "loss": "huber"
+      }
+    },
+    {
+      "farm": 345,
+      "trial": 10046,
+      "parent_trial": 46,
+      "candidate": {
+        "location": "aosta",
+        "transposition": "isotropic",
+        "gcr": 0.35,
+        "max_angle": 60.0,
+        "backtrack": true,
+        "bifacial_enabled": false,
+        "albedo": 0.2,
+        "bifaciality": 0.8,
+        "height_to_pitch": 0.4,
+        "loss": "huber"
+      }
+    },
+    {
+      "farm": 901,
+      "trial": 10216,
+      "parent_trial": 216,
+      "candidate": {
+        "location": "trieste",
+        "transposition": "isotropic",
+        "gcr": 0.5,
+        "max_angle": 60.0,
+        "backtrack": false,
+        "bifacial_enabled": true,
+        "albedo": 0.35,
+        "bifaciality": 0.65,
+        "height_to_pitch": 0.5,
+        "loss": "huber"
+      }
+    },
+    {
+      "farm": 901,
+      "trial": 10060,
+      "parent_trial": 60,
+      "candidate": {
+        "location": "trieste",
+        "transposition": "isotropic",
+        "gcr": 0.5,
+        "max_angle": 80.0,
+        "backtrack": false,
+        "bifacial_enabled": true,
+        "albedo": 0.35,
+        "bifaciality": 0.8,
+        "height_to_pitch": 0.5,
+        "loss": "huber"
+      }
+    },
+    {
+      "farm": 901,
+      "trial": 10194,
+      "parent_trial": 194,
+      "candidate": {
+        "location": "trieste",
+        "transposition": "isotropic",
+        "gcr": 0.5,
+        "max_angle": 80.0,
+        "backtrack": true,
+        "bifacial_enabled": true,
+        "albedo": 0.2,
+        "bifaciality": 0.65,
+        "height_to_pitch": 0.35,
+        "loss": "huber"
+      }
+    },
+    {
+      "farm": 910,
+      "trial": 10081,
+      "parent_trial": 81,
+      "candidate": {
+        "location": "bologna",
+        "transposition": "isotropic",
+        "gcr": 0.65,
+        "max_angle": 60.0,
+        "backtrack": true,
+        "bifacial_enabled": false,
+        "albedo": 0.2,
+        "bifaciality": 0.8,
+        "height_to_pitch": 0.4,
+        "loss": "mse"
+      }
+    },
+    {
+      "farm": 910,
+      "trial": 10095,
+      "parent_trial": 95,
+      "candidate": {
+        "location": "genoa",
+        "transposition": "isotropic",
+        "gcr": 0.5,
+        "max_angle": 30.0,
+        "backtrack": true,
+        "bifacial_enabled": false,
+        "albedo": 0.2,
+        "bifaciality": 0.8,
+        "height_to_pitch": 0.4,
+        "loss": "mse"
+      }
+    },
+    {
+      "farm": 910,
+      "trial": 10059,
+      "parent_trial": 59,
+      "candidate": {
+        "location": "aosta",
+        "transposition": "isotropic",
+        "gcr": 0.65,
+        "max_angle": 80.0,
+        "backtrack": true,
+        "bifacial_enabled": false,
+        "albedo": 0.2,
+        "bifaciality": 0.8,
+        "height_to_pitch": 0.4,
+        "loss": "mse"
+      }
+    }
+  ],
+  "selection_caveat": "leading screen candidates selected on August validation"
+}

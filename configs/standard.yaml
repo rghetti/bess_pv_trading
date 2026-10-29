@@ -498,6 +498,67 @@ pv_cleaned_hpo:
   physical_losses: [mse, huber]
   transposition_models: [isotropic, haydavies, perez-driesse]
   physical_regularizations: [0.0, 0.000001, 0.0001, 0.01]
+pv_realized_irradiance_search:
+  output_root: outputs/pv_realized_irradiance_search
+  run_id: four_vintages_2025_2026_v4
+  curated_power_root: data/farms/curated/timing_ablation_2025_2026
+  ghi_gap_fill: linear_inside
+  farm_ids: [1, 345, 901, 910]
+  training_start: '2025-01-01'
+  validation_start: '2026-08-01'
+  end_exclusive: '2026-09-01'
+  delivery_timezone: Europe/Rome
+  cycle_horizon_hours: 24
+  cycle_weight: 0.25
+  workers: 42
+  seed: 20261029
+  locations:
+    milan: [45.4642, 9.19]
+    turin: [45.0703, 7.6869]
+    verona: [45.4384, 10.9916]
+    venice: [45.4408, 12.3155]
+    bologna: [44.4949, 11.3426]
+    trieste: [45.6495, 13.7768]
+    bolzano: [46.4983, 11.3548]
+    genoa: [44.4056, 8.9463]
+    aosta: [45.7375, 7.3201]
+  transposition_models: [isotropic, haydavies, perez-driesse]
+  losses: [mse, huber]
+  huber_delta: 0.05
+  optimization_max_evaluations: 120
+  multistarts: 2
+  structural_trials_per_farm: 128
+  bounds:
+    coefficient: [0.2, 1.5]
+    u0: [10.0, 60.0]
+    u1: [0.0, 15.0]
+    gamma: [-0.006, -0.002]
+  tracker_gcr: [0.2, 0.35, 0.5, 0.65]
+  tracker_max_angle: [30.0, 45.0, 60.0, 80.0]
+  tracker_backtracking: [true, false]
+  bifacial_albedo: [0.1, 0.2, 0.35]
+  bifaciality: [0.65, 0.8, 0.9]
+  bifacial_height_to_pitch: [0.35, 0.5]
+pv_near_flat_review:
+  # Diagnostic candidate generation only; never modifies approved exclusions.
+  output_root: outputs/pv_near_flat_review
+  run_id: near_flat_2025_2026
+  input_run: outputs/pv_realized_irradiance_search/four_vintages_2025_2026_v4
+  farm_ids: [1, 345, 901, 910]
+  timezone: Europe/Rome
+  tolerance_kw: 1.5
+  minimum_quarters: 4
+  priority_minimum_quarters: 8
+  priority_ghi_range_w_m2: 200.0
+  priority_zero_ghi_w_m2: 0.0
+  priority_minimum_ac_fraction: 0.01
+  linked_minimum_distinct_days: 3
+  plot_dpi: 140
+pv_realized_refinement:
+  top_candidates_per_farm: 3
+  optimization_max_evaluations: 600
+  multistarts: 3
+  workers: 42
 pv_satellite_benchmark:
   # Retrospective cleaned-input study. Model labels are masked in every split.
   farm_ids: [1, 345, 901, 910]

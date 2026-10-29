@@ -1,0 +1,134 @@
+[
+  {
+    "farm_id": 1,
+    "statistics": {
+      "train": {
+        "rows": 221552,
+        "eligible_rows": 216144,
+        "excluded_rows": 932,
+        "ghi_interpolated_rows": 728,
+        "vintages_per_interval": {
+          "0": 1352,
+          "4": 54036
+        }
+      },
+      "validation": {
+        "rows": 11904,
+        "eligible_rows": 11692,
+        "excluded_rows": 0,
+        "ghi_interpolated_rows": 16,
+        "vintages_per_interval": {
+          "0": 53,
+          "4": 2923
+        }
+      }
+    },
+    "weight_per_view": 0.25,
+    "cycle_horizon_hours": 24,
+    "split_timezone": "Europe/Rome",
+    "diffuse_definition": "confirmed DHI/GHI",
+    "ghi_source": "historical satellite-derived",
+    "ghi_gap_fill": "linear inside historical timeline only; flagged",
+    "curated_power_path": "data/farms/curated/timing_ablation_2025_2026/farm_1/parquet/corpus.parquet",
+    "temperature_and_wind": "forecast views, interpolated within each vintage at quarter-hour midpoint"
+  },
+  {
+    "farm_id": 345,
+    "statistics": {
+      "train": {
+        "rows": 221552,
+        "eligible_rows": 207452,
+        "excluded_rows": 9764,
+        "ghi_interpolated_rows": 712,
+        "vintages_per_interval": {
+          "0": 3525,
+          "4": 51863
+        }
+      },
+      "validation": {
+        "rows": 11904,
+        "eligible_rows": 11672,
+        "excluded_rows": 16,
+        "ghi_interpolated_rows": 24,
+        "vintages_per_interval": {
+          "0": 58,
+          "4": 2918
+        }
+      }
+    },
+    "weight_per_view": 0.25,
+    "cycle_horizon_hours": 24,
+    "split_timezone": "Europe/Rome",
+    "diffuse_definition": "confirmed DHI/GHI",
+    "ghi_source": "historical satellite-derived",
+    "ghi_gap_fill": "linear inside historical timeline only; flagged",
+    "curated_power_path": "data/farms/curated/timing_ablation_2025_2026/farm_345/parquet/corpus.parquet",
+    "temperature_and_wind": "forecast views, interpolated within each vintage at quarter-hour midpoint"
+  },
+  {
+    "farm_id": 901,
+    "statistics": {
+      "train": {
+        "rows": 221552,
+        "eligible_rows": 215892,
+        "excluded_rows": 1156,
+        "ghi_interpolated_rows": 748,
+        "vintages_per_interval": {
+          "0": 1415,
+          "4": 53973
+        }
+      },
+      "validation": {
+        "rows": 11904,
+        "eligible_rows": 11680,
+        "excluded_rows": 0,
+        "ghi_interpolated_rows": 16,
+        "vintages_per_interval": {
+          "0": 56,
+          "4": 2920
+        }
+      }
+    },
+    "weight_per_view": 0.25,
+    "cycle_horizon_hours": 24,
+    "split_timezone": "Europe/Rome",
+    "diffuse_definition": "confirmed DHI/GHI",
+    "ghi_source": "historical satellite-derived",
+    "ghi_gap_fill": "linear inside historical timeline only; flagged",
+    "curated_power_path": "data/farms/curated/timing_ablation_2025_2026/farm_901/parquet/corpus.parquet",
+    "temperature_and_wind": "forecast views, interpolated within each vintage at quarter-hour midpoint"
+  },
+  {
+    "farm_id": 910,
+    "statistics": {
+      "train": {
+        "rows": 221552,
+        "eligible_rows": 208964,
+        "excluded_rows": 8392,
+        "ghi_interpolated_rows": 688,
+        "vintages_per_interval": {
+          "0": 3147,
+          "4": 52241
+        }
+      },
+      "validation": {
+        "rows": 11904,
+        "eligible_rows": 10760,
+        "excluded_rows": 912,
+        "ghi_interpolated_rows": 16,
+        "vintages_per_interval": {
+          "0": 286,
+          "4": 2690
+        }
+      }
+    },
+    "weight_per_view": 0.25,
+    "cycle_horizon_hours": 24,
+    "split_timezone": "Europe/Rome",
+    "diffuse_definition": "confirmed DHI/GHI",
+    "ghi_source": "historical satellite-derived",
+    "ghi_gap_fill": "linear inside historical timeline only; flagged",
+    "curated_power_path": "data/farms/curated/timing_ablation_2025_2026/farm_910/parquet/corpus.parquet",
+    "temperature_and_wind": "forecast views, interpolated within each vintage at quarter-hour midpoint"
+  }
+]

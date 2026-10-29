@@ -1,0 +1,42 @@
+{
+  "farm_id": 901,
+  "trial_id": 216,
+  "candidate": {
+    "location": "trieste",
+    "transposition": "isotropic",
+    "gcr": 0.5,
+    "max_angle": 60.0,
+    "backtrack": false,
+    "bifacial_enabled": true,
+    "albedo": 0.35,
+    "bifaciality": 0.65,
+    "height_to_pitch": 0.5,
+    "loss": "huber"
+  },
+  "parameters": {
+    "coefficient": 0.7615633558541675,
+    "u0": 49.73786215675499,
+    "u1": 12.177135663369116,
+    "gamma": -0.002
+  },
+  "training_loss": 0.002158410061814438,
+  "converged": true,
+  "optimizer_message": "CONVERGENCE: NORM OF PROJECTED GRADIENT <= PGTOL",
+  "metrics": {
+    "all_hours": {
+      "rows": 11680,
+      "mae_percent_capacity": 3.042701146572127,
+      "rmse_percent_capacity": 5.8387061507420475,
+      "bias_percent_capacity": -0.4257862744487929
+    },
+    "daytime": {
+      "rows": 7492,
+      "mae_percent_capacity": 4.743559715958682,
+      "rmse_percent_capacity": 7.29019517889445,
+      "bias_percent_capacity": -0.6637992105661906
+    }
+  },
+  "bound_hits": [
+    "gamma"
+  ]
+}

@@ -1,0 +1,44 @@
+{
+  "farm_id": 345,
+  "trial_id": 10010,
+  "candidate": {
+    "location": "genoa",
+    "transposition": "isotropic",
+    "gcr": 0.35,
+    "max_angle": 60.0,
+    "backtrack": true,
+    "bifacial_enabled": false,
+    "albedo": 0.2,
+    "bifaciality": 0.8,
+    "height_to_pitch": 0.4,
+    "loss": "huber"
+  },
+  "parameters": {
+    "coefficient": 0.5497179243172927,
+    "u0": 60.0,
+    "u1": 15.0,
+    "gamma": -0.002
+  },
+  "training_loss": 0.002477231657835662,
+  "converged": true,
+  "optimizer_message": "CONVERGENCE: NORM OF PROJECTED GRADIENT <= PGTOL",
+  "metrics": {
+    "all_hours": {
+      "rows": 11672,
+      "mae_percent_capacity": 4.2608548018820604,
+      "rmse_percent_capacity": 6.957517878224929,
+      "bias_percent_capacity": -3.8623505198104526
+    },
+    "daytime": {
+      "rows": 7508,
+      "mae_percent_capacity": 6.623960741551335,
+      "rmse_percent_capacity": 8.67490721671509,
+      "bias_percent_capacity": -6.004442630158178
+    }
+  },
+  "bound_hits": [
+    "u0",
+    "u1",
+    "gamma"
+  ]
+}
