@@ -15,6 +15,7 @@ from ..models.pv import forecast_pv
 from ..evaluation.pv_probabilistic_metrics import fit_calibrator, score_frame
 from ..plotting.pv_probabilistic_reporting import apply_calibrator
 from ..data.pv_study_inputs import farm_settings
+from ..training.pv_realized_search import ranking_path
 
 
 def selected_settings(config, farm, result):
@@ -46,14 +47,15 @@ def convert(inputs, config, farm, settings):
         bundle = ForecastBundle(farm.farm_id, pd.Timestamp(cycle_value), available, part,
             {name: '' for name in config['forecast_mapping']}, members, 'saved_weather',
             {'decision_cutoff_utc': available.isoformat()})
-        result = forecast_pv(bundle, farm, settings, config['policy']['night']).values
+        night = config['pv_realized_irradiance_search'].get('night_policy', config['policy']['night'])
+        result = forecast_pv(bundle, farm, settings, night).values
         outputs.append(result[['interval_start_utc', 'member', 'pv_ac_mw']].reset_index(drop=True))
     return pd.concat(outputs, ignore_index=True)
 
 
 def run_farm(config, ensemble_config, root, farm_id):
     """Fit January calibration on converted ensemble summaries and score August forecasts."""
-    rank = pd.read_csv(root / 'validation_ranking.csv')
+    rank = pd.read_csv(ranking_path(root, config['pv_realized_irradiance_search']))
     chosen = rank.loc[rank.farm_id.eq(farm_id)].sort_values('rmse_percent_capacity').iloc[0]
     trial_path = root / f'farm_{farm_id}' / 'trials' / f'{int(chosen.trial_id):04d}.json'
     result = json.loads(trial_path.read_text())
@@ -89,7 +91,8 @@ def run_farm(config, ensemble_config, root, farm_id):
     calibrator = fit_calibrator(base.loc[jan, ids].to_numpy(float), base.loc[jan, 'measured_ac_mw'],
         base.loc[jan, 'interval_start_utc'], farm.ac_capacity_mw, levels,
         ensemble_config['pv_probabilistic_study']['calibration_alpha'])
-    base, adjustments = apply_calibrator(base, ids, calibrator, levels, config['policy']['night'])
+    night = config['pv_realized_irradiance_search'].get('night_policy', config['policy']['night'])
+    base, adjustments = apply_calibrator(base, ids, calibrator, levels, night)
     joblib.dump(calibrator, root / f'farm_{farm_id}' / 'forecast_ensemble_quantile_calibrator.joblib')
     base.to_parquet(root / f'farm_{farm_id}' / 'forecast_ensemble_predictions.parquet', index=False)
     validation = base.delivery_day.between('2026-08-20', '2026-08-31')

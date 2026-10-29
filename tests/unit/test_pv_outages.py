@@ -11,6 +11,29 @@ from bess_pv_trading.forecasting.evaluation.pv_quality_review import _partial_re
 from bess_pv_trading.forecasting.evaluation.pv_quality_review import run_pv_quality_review
 
 
+def test_farm_910_march_2026_exclusion_respects_local_month_and_other_farms(tmp_path):
+    """The reviewed month includes the spring clock change and no outside quarters."""
+    config = load_config('configs/pv_experiments/realized_irradiance_farm910_no_march_2026.yaml')
+    decisions = pd.read_csv(config['pv_data_quality']['exclusions_csv'])
+    entry = decisions.loc[(decisions.farm_id == 910)
+                          & decisions.start_utc.eq('2026-02-28 23:00:00+00:00')]
+    assert len(entry) == 1
+    isolated = tmp_path / 'month.csv'
+    entry.to_csv(isolated, index=False)
+    config['pv_data_quality']['exclusions_csv'] = str(isolated)
+    times = pd.date_range('2026-02-28 22:45Z', '2026-03-31 22:00Z', freq='15min')
+    frame = pd.DataFrame({'interval_start_utc': times, 'eligible': True,
+                          'measured_ac_mw': 1.0})
+    local = times.tz_convert('Europe/Rome')
+    expected = (local.year == 2026) & (local.month == 3)
+    assert expected.sum() == 2972
+    result = apply_sustained_zero_exclusion(frame, config, farm_id=910)
+    np.testing.assert_array_equal(result.episode_excluded, expected)
+    np.testing.assert_array_equal(result.eligible, ~expected)
+    pd.testing.assert_series_equal(result.measured_ac_mw, frame.measured_ac_mw)
+    assert apply_sustained_zero_exclusion(frame, config, farm_id=1).eligible.all()
+
+
 def test_sustained_zero_requires_measured_daylight_and_contiguous_quarters():
     config=load_config('configs/pv_experiments/online_ridge_901_910.yaml',
         overrides={'pv_data_quality':{'exclusions_csv':None}})

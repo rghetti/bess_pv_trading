@@ -11,18 +11,33 @@ from .contracts import ObservationBundle, utc_timestamp
 
 # The clock mask uses interval starts, independently of proxy solar position.
 def night_window_mask(times: Any, policy: dict[str, Any]) -> np.ndarray:
-    """Return the configured local-time half-open production mask."""
+    """Return local-time half-open night masks, optionally varying by month."""
     index = pd.DatetimeIndex(pd.to_datetime(times, utc=True))
     if not policy.get("enabled", True):
         return np.zeros(len(index), dtype=bool)
     local = index.tz_convert(policy.get("timezone", "Europe/Rome"))
     minutes = local.hour * 60 + local.minute
-    start_hour, start_minute = map(int, policy.get("start", "21:30").split(":"))
-    end_hour, end_minute = map(int, policy.get("end", "05:00").split(":"))
-    start, end = start_hour * 60 + start_minute, end_hour * 60 + end_minute
-    if start == end:
-        raise ValueError("Night-window endpoints must differ")
-    return np.asarray((minutes >= start) | (minutes < end) if start > end else (minutes >= start) & (minutes < end))
+    def mask_for(window):
+        start_hour, start_minute = map(int, window.get("start", "21:30").split(":"))
+        end_hour, end_minute = map(int, window.get("end", "05:00").split(":"))
+        if not (0 <= start_hour < 24 and 0 <= end_hour < 24 and
+                0 <= start_minute < 60 and 0 <= end_minute < 60):
+            raise ValueError("Night-window endpoints must be valid local clock times")
+        start, end = start_hour * 60 + start_minute, end_hour * 60 + end_minute
+        if start == end:
+            raise ValueError("Night-window endpoints must differ")
+        return np.asarray((minutes >= start) | (minutes < end) if start > end
+                          else (minutes >= start) & (minutes < end))
+
+    monthly = policy.get('monthly_windows')
+    if monthly is None:
+        return mask_for(policy)
+    if set(map(str, monthly)) != {f'{month:02d}' for month in range(1, 13)}:
+        raise ValueError('Seasonal night policy must provide keys 01 through 12')
+    result = np.zeros(len(index), dtype=bool)
+    for month in range(1, 13):
+        result |= np.asarray(local.month == month) & mask_for(monthly[f'{month:02d}'])
+    return result
 
 
 # Anchor-based matching avoids treating a gradual ramp as a repeated run.

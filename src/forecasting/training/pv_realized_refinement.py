@@ -10,20 +10,20 @@ import pandas as pd
 
 from ...config import load_config
 from ...data import config_path
-from ..training.pv_realized_search import run_trial
+from ..training.pv_realized_search import ranking_path, run_trial
 
 
 def main():
-    """Resume refined fits and append their August scores to the frozen screen ranking."""
+    """Resume refined fits and append scores to the frozen screen ranking."""
     parser = argparse.ArgumentParser()
     parser.add_argument('--config', required=True)
     args = parser.parse_args()
     config = load_config(args.config)
     section, refine = config['pv_realized_irradiance_search'], config['pv_realized_refinement']
     root = config_path(config, section['output_root']) / section['run_id']
-    screen_path = root / 'validation_ranking_screen.csv'
+    screen_path = ranking_path(root, section, screen=True)
     if not screen_path.exists():
-        screen_path.write_bytes((root / 'validation_ranking.csv').read_bytes())
+        screen_path.write_bytes(ranking_path(root, section).read_bytes())
     ranking = pd.read_csv(screen_path)
     jobs = []
     for farm in section['farm_ids']:
@@ -42,7 +42,9 @@ def main():
             jobs.append((farm, 10000 + int(row.trial_id), original['candidate'], tuned, int(row.trial_id)))
     plan = {'refinement': refine, 'jobs': [{'farm': f, 'trial': i, 'parent_trial': parent, 'candidate': c}
                                           for f, i, c, _, parent in jobs],
-            'selection_caveat': 'leading screen candidates selected on August validation'}
+            'selection_caveat': ('leading screen candidates selected on full-period in-sample error'
+                                 if section.get('selection_scope', 'validation') == 'full_period'
+                                 else 'leading screen candidates selected on August validation')}
     (root / 'refinement_plan.json').write_text(json.dumps(plan, indent=2)+'\n')
     results = []
     with ProcessPoolExecutor(max_workers=int(refine['workers'])) as pool:
@@ -56,7 +58,7 @@ def main():
                  location=x['candidate']['location'], transposition=x['candidate']['transposition'],
                  bifacial=x['candidate']['bifacial_enabled'], **x['metrics']['daytime']) for x in results]
     pd.concat([ranking, pd.DataFrame(rows)], ignore_index=True).sort_values(
-        ['farm_id', 'rmse_percent_capacity']).to_csv(root / 'validation_ranking.csv', index=False)
+        ['farm_id', 'rmse_percent_capacity']).to_csv(ranking_path(root, section), index=False)
 
 
 if __name__ == '__main__':

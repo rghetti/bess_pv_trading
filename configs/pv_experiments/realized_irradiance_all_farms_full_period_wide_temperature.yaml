@@ -1,0 +1,22 @@
+include: ../standard.yaml
+
+# Retrospective physical parameter fitting: all eligible observations are used
+# for both fitting and candidate selection; no independent validation set.
+pv_realized_irradiance_search:
+  run_id: all_farms_full_period_wide_temperature_2025_2026
+  farm_ids: [1, 345, 901, 910]
+  selection_scope: full_period
+  workers: 42
+  multistarts: 8
+  optimization_max_evaluations: 1200
+  bounds:
+    coefficient: [0.2, 1.5]
+    u0: [5.0, 120.0]
+    u1: [0.0, 30.0]
+    gamma: [-0.006, -0.002]
+
+pv_realized_refinement:
+  top_candidates_per_farm: 3
+  optimization_max_evaluations: 3000
+  multistarts: 8
+  workers: 42

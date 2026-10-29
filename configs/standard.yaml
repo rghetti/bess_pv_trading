@@ -502,11 +502,32 @@ pv_realized_irradiance_search:
   output_root: outputs/pv_realized_irradiance_search
   run_id: four_vintages_2025_2026_v4
   curated_power_root: data/farms/curated/timing_ablation_2025_2026
+  night_target_treatment: zero  # Preserve original AC separately; use zero inside this study's seasonal night windows.
+  # Seasonal local-clock windows for the physical fitting study. Derived for
+  # 44-47.2 N, 6.5-13.8 E, civil twilight and a 15-minute margin; see the generator.
+  # May-August 21:30-05:00 are explicit user-selected overrides.
+  night_policy:
+    enabled: true
+    timezone: Europe/Rome
+    monthly_windows:
+      '01': {start: '18:30', end: '06:45'}
+      '02': {start: '19:15', end: '06:00'}
+      '03': {start: '21:00', end: '05:15'}
+      '04': {start: '21:45', end: '05:15'}
+      '05': {start: '21:30', end: '05:00'}
+      '06': {start: '21:30', end: '05:00'}
+      '07': {start: '21:30', end: '05:00'}
+      '08': {start: '21:30', end: '05:00'}
+      '09': {start: '21:15', end: '05:45'}
+      '10': {start: '20:00', end: '06:00'}
+      '11': {start: '18:15', end: '06:00'}
+      '12': {start: '18:00', end: '06:45'}
   ghi_gap_fill: linear_inside
   farm_ids: [1, 345, 901, 910]
   training_start: '2025-01-01'
   validation_start: '2026-08-01'
   end_exclusive: '2026-09-01'
+  selection_scope: validation  # validation: fit through July and select in August; full_period: fit and select on all curated data.
   delivery_timezone: Europe/Rome
   cycle_horizon_hours: 24
   cycle_weight: 0.25

@@ -1,0 +1,6 @@
+include: ../standard.yaml
+
+# Fresh run: keep the existing search settings and all other farms untouched.
+pv_realized_irradiance_search:
+  run_id: farm_910_no_march_2026
+  farm_ids: [910]

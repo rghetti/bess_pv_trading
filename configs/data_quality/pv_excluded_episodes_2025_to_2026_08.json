@@ -10,10 +10,18 @@
     "outputs/pv_data_quality/full_history_2025_to_2026_08/farm_910/csv/candidate_episodes.csv": "92b430851abd05962e23fdd732e95f1c130de6435fce4dc923e57aa5bf103848",
     "outputs/pv_data_quality/full_history_2025_to_2026_08/farm_910/parquet/physical_quarters.parquet": "84ceeff667b1c5cdaa44178a65bdf21e266a00889f5d892fcd49e1a46e8bc55a"
   },
-  "rows": 675,
+  "rows": 676,
   "interval_end": "inclusive UTC quarter start",
   "interpretation": "Retrospective exclusions explicitly requested by user; not confirmed faults.",
   "runtime_policy": "This CSV is the sole exclusion source; no additional runtime classification rules.",
+  "manual_additions": [
+    {
+      "farm_id": 910,
+      "local_period": "2026-03-01 through 2026-03-31, Europe/Rome",
+      "reason": "User reviewed plateau plots and requested exclusion of the whole month.",
+      "previous_rows_and_source_fingerprints_preserved": true
+    }
+  ],
   "configuration": {
     "farm_ids": [
       1,

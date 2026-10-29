@@ -15,9 +15,28 @@ import pvlib
 from scipy.optimize import minimize
 
 from ...config import load_config
-from ...data import config_path, load_metadata
+from ...data import config_path, load_metadata, night_window_mask
 from ..models.pv_physical import PhysicalPVModel, parameter_defaults
 from ..data.pv_study_inputs import farm_settings
+
+
+def ranking_path(root, section, *, screen=False):
+    """Keep in-sample full-period rankings distinct from validation rankings."""
+    scope = section.get('selection_scope', 'validation')
+    if scope not in {'validation', 'full_period'}:
+        raise ValueError(f'Unsupported physical search selection scope: {scope}')
+    name = 'fit_ranking' if scope == 'full_period' else 'validation_ranking'
+    return root / (name + ('_screen' if screen else '') + '.csv')
+
+
+def fit_and_score_masks(frame, scope):
+    """Return fitting and scoring masks without describing in-sample data as validation."""
+    if scope == 'validation':
+        return frame['split'].eq('train').to_numpy(), frame['split'].eq('validation').to_numpy()
+    if scope == 'full_period':
+        mask = np.ones(len(frame), dtype=bool)
+        return mask, mask.copy()
+    raise ValueError(f'Unsupported physical search selection scope: {scope}')
 
 
 def structural_plan(section, farm_id, tracking, settings):
@@ -53,7 +72,7 @@ def structural_plan(section, farm_id, tracking, settings):
 
 
 def run_trial(config, farm_id, trial_id, candidate, root):
-    """Fit one physical chain and write a resumable result with validation metrics."""
+    """Fit one physical chain and write resumable, explicitly scoped metrics."""
     section = config['pv_realized_irradiance_search']
     destination = root / f'farm_{farm_id}' / 'trials' / f'{trial_id:04d}.json'
     if destination.exists():
@@ -85,7 +104,8 @@ def run_trial(config, farm_id, trial_id, candidate, root):
         'ghi_w_m2': ghi, 'dhi_w_m2': dhi, 'dni_w_m2': dni,
         'temperature_c': frame.temperature_c.to_numpy(), 'wind_speed_m_s': frame.wind_speed_m_s.to_numpy(),
         'pv_input_valid': np.isfinite(dni)}, index=pd.DatetimeIndex(frame.interval_start_utc))
-    engine = PhysicalPVModel(physical, metadata, settings, config['policy']['night'])
+    engine = PhysicalPVModel(physical, metadata, settings,
+                             section.get('night_policy', config['policy']['night']))
     defaults = parameter_defaults(settings)
     defaults.update(gcr=float(candidate['gcr']), max_angle=float(candidate['max_angle']))
     names = ['coefficient', 'u0', 'u1', 'gamma']
@@ -93,11 +113,11 @@ def run_trial(config, farm_id, trial_id, candidate, root):
     lower, upper = bounds[:, 0], bounds[:, 1]
     width = upper - lower
     target = frame.measured_ac_mw.to_numpy(float) / metadata.ac_capacity_mw
-    train = frame['split'].eq('train').to_numpy()
-    valid = frame['split'].eq('validation').to_numpy()
+    scope = section.get('selection_scope', 'validation')
+    train, valid = fit_and_score_masks(frame, scope)
     weights = frame.weight.to_numpy(float)
     if not train.any() or not valid.any():
-        raise ValueError('Missing eligible training or validation observations')
+        raise ValueError('Missing eligible fitting or scoring observations')
 
     def prediction(vector):
         params = dict(defaults, **dict(zip(names[:3], vector[:3])))
@@ -135,10 +155,15 @@ def run_trial(config, farm_id, trial_id, candidate, root):
     predicted = prediction(vector)
     residual = predicted[valid] - target[valid]
     if not np.isfinite(residual).all():
-        raise ValueError('Nonfinite validation prediction')
-    daytime = pd.DatetimeIndex(frame.interval_start_utc).tz_convert(section['delivery_timezone'])
-    hours = daytime.hour + daytime.minute / 60
-    masks = {'all_hours': valid, 'daytime': valid & (hours >= 6) & (hours < 21.5)}
+        raise ValueError('Nonfinite scoring prediction')
+    starts = pd.DatetimeIndex(frame.interval_start_utc)
+    if 'night_policy' in section:
+        daytime = ~night_window_mask(starts, section['night_policy'])
+    else:
+        local = starts.tz_convert(section['delivery_timezone'])
+        hours = local.hour + local.minute / 60
+        daytime = (hours >= 6) & (hours < 21.5)
+    masks = {'all_hours': valid, 'daytime': valid & daytime}
     metrics = {}
     for name, mask in masks.items():
         error = predicted[mask] - target[mask]
@@ -148,6 +173,11 @@ def run_trial(config, farm_id, trial_id, candidate, root):
                          'bias_percent_capacity': float(100*np.average(error, weights=w))}
     result = {'farm_id': farm_id, 'trial_id': trial_id, 'candidate': candidate,
               'parameters': dict(zip(names, map(float, vector))), 'training_loss': best[0],
+              'selection_scope': scope,
+              'score_interpretation': ('in-sample full-period fit' if scope == 'full_period'
+                                       else 'held-out validation period'),
+              'daytime_definition': ('outside the configured seasonal night window' if 'night_policy' in section
+                                     else '06:00 through 21:30 local time'),
               'converged': best[2], 'optimizer_message': best[3], 'metrics': metrics,
               'bound_hits': [name for name, x in zip(names, best[1]) if x < 0.0001 or x > 0.9999]}
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -210,7 +240,7 @@ def main():
     rows = [dict(farm_id=x['farm_id'], trial_id=x['trial_id'], loss=x['candidate']['loss'],
                  location=x['candidate']['location'], transposition=x['candidate']['transposition'],
                  bifacial=x['candidate']['bifacial_enabled'], **x['metrics']['daytime']) for x in results]
-    pd.DataFrame(rows).sort_values(['farm_id', 'rmse_percent_capacity']).to_csv(root / 'validation_ranking.csv', index=False)
+    pd.DataFrame(rows).sort_values(['farm_id', 'rmse_percent_capacity']).to_csv(ranking_path(root, section), index=False)
 
 
 if __name__ == '__main__':

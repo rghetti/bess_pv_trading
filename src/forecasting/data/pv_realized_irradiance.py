@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from ...config import load_config
-from ...data import config_path, open_store
+from ...data import config_path, night_window_mask, open_store
 from ..data.pv_outages import apply_episode_exclusions
 
 
@@ -22,6 +22,21 @@ def interpolate_instantaneous_midpoints(hourly_values, horizon):
     hour = steps // 4
     fraction = ((steps % 4) + 0.5) / 4.0
     return values[:, hour] * (1 - fraction) + values[:, hour + 1] * fraction
+
+
+def treat_night_targets(frame, night_policy, treatment):
+    """Preserve measured AC and record zero treatment without creating missing targets."""
+    if treatment not in {'zero', 'preserve'}:
+        raise ValueError(f'Unsupported night target treatment: {treatment}')
+    result = frame.copy()
+    result['measured_ac_raw_mw'] = result.measured_ac_mw
+    night = night_window_mask(pd.DatetimeIndex(result.interval_start_utc), night_policy)
+    finite = np.isfinite(result.measured_ac_mw)
+    result['night_target_zeroed'] = (night & finite & result.measured_ac_mw.ne(0)
+                                      if treatment == 'zero' else False)
+    if treatment == 'zero':
+        result.loc[night & finite, 'measured_ac_mw'] = 0.0
+    return result
 
 
 def prepare_farm(config: dict, farm_id: int, output: Path) -> dict:
@@ -86,6 +101,8 @@ def prepare_farm(config: dict, farm_id: int, output: Path) -> dict:
     frame['wind_speed_m_s'] = np.hypot(frame.wind_u_10m, frame.wind_v_10m)
     frame['weight'] = float(section['cycle_weight'])
     frame['split'] = np.where(frame.interval_start_utc < validation, 'train', 'validation')
+    frame = treat_night_targets(frame, section.get('night_policy', config['policy']['night']),
+                                section.get('night_target_treatment', 'preserve'))
     valid_ghi = np.isfinite(frame.ghi_w_m2) & (frame.ghi_w_m2 >= 0)
     valid_fraction = np.isfinite(frame.diffuse_fraction) & frame.diffuse_fraction.between(0, 1)
     frame['eligible'] = (valid_ghi & ((frame.ghi_w_m2 == 0) | valid_fraction)
@@ -97,11 +114,19 @@ def prepare_farm(config: dict, farm_id: int, output: Path) -> dict:
     counts = frame.groupby(['split', 'interval_start_utc']).eligible.sum()
     stats = {split: {'rows': int(len(part)), 'eligible_rows': int(part.eligible.sum()),
                      'excluded_rows': int(part.episode_excluded.sum()),
+                     'night_target_zeroed_rows': int(part.night_target_zeroed.sum()),
                      'ghi_interpolated_rows': int(part.ghi_interpolated.sum()),
                      'vintages_per_interval': {str(k): int(v) for k, v in
                          counts.loc[split].value_counts().sort_index().items()}}
              for split, part in frame.groupby('split')}
+    if section.get('selection_scope', 'validation') == 'full_period':
+        stats = {('pre_august_fit' if split == 'train' else 'august_fit'): value
+                 for split, value in stats.items()}
     return {'farm_id': farm_id, 'statistics': stats, 'weight_per_view': float(section['cycle_weight']),
+            'selection_scope': section.get('selection_scope', 'validation'),
+            'night_target_treatment': section.get('night_target_treatment', 'preserve'),
+            'night_policy': section.get('night_policy', config['policy']['night']),
+            'raw_target_column': 'measured_ac_raw_mw',
             'cycle_horizon_hours': horizon, 'split_timezone': timezone,
             'diffuse_definition': 'confirmed DHI/GHI', 'ghi_source': 'historical satellite-derived',
             'ghi_gap_fill': 'linear inside historical timeline only; flagged',
