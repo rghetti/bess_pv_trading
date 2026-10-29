@@ -74,7 +74,7 @@ separately from the optimization objective.
 \path{src/simulation/continuous.py} & Consecutive delivery-day books, shadow boundary projections and uninterrupted execution.\\
 \path{src/reporting/continuous_outputs.py} & Continuous trajectory accounting, paired comparisons and native solve timing.\\
 \path{src/simulation/settlement.py} & Exact-grid actual settlement and expected/realized KPI reconciliation.\\
-\path{src/forecasting/pv.py} & Weather-to-AC PV conversion.\\
+\path{src/forecasting/models/pv.py} & Weather-to-AC PV conversion.\\
 \path{src/markets.py} & Configurable local auction gates, publication events and DST-aware delivery grids.\\
 \bottomrule
 \end{longtable}
@@ -1497,7 +1497,7 @@ Markets}. Author preprint and published paper links retained by the repository:
 \url{https://doi.org/10.1109/TPWRS.2017.2733339}.
 \bibitem{pvlib} pvlib Python documentation. The installed library implements the
 solar-position, single-axis tracking, isotropic transposition, Faiman and PVWatts
-functions called by \path{forecasting/pv.py}.
+functions called by \path{forecasting/models/pv.py}.
 \url{https://pvlib-python.readthedocs.io/}.
 \bibitem{gme} Gestore dei Mercati Energetici, Technical Rule 03 rev. 13 MPE,
 valid from 29 September 2025, and rev. 14 MPE, valid from 13 January 2026.

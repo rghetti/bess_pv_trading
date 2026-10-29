@@ -34,7 +34,7 @@ def test_weather_bundle_uses_aligned_or_midpoint_lead(tmp_path, monkeypatch, pro
         captured.update(frame=model_frame, folder=folder, farm_id=farm_id)
         return np.array([0.4, 0.5])
 
-    monkeypatch.setattr('bess_pv_trading.forecasting.pv_forecast_bundle.predict_bundle', predict)
+    monkeypatch.setattr('bess_pv_trading.forecasting.inference.pv_forecast_bundle.predict_bundle', predict)
     values, provenance = replay._forecast(pd.Timestamp('2026-09-02T09:00Z'), starts, 'IDA3')
     np.testing.assert_allclose(values, [0.4, 0.5])
     np.testing.assert_allclose(captured['frame'].lead_hours, [10.125, 10.375])

@@ -1,7 +1,7 @@
 """Check quarter-hour midpoint alignment for individual forecast vintages."""
 import numpy as np
 
-from src.forecasting.pv_realized_irradiance import interpolate_instantaneous_midpoints
+from src.forecasting.data.pv_realized_irradiance import interpolate_instantaneous_midpoints
 
 
 def test_midpoint_interpolation_keeps_vintages_and_gaps_separate():

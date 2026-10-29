@@ -228,7 +228,7 @@ class ContinuousReplay:
             elif retrospective and not model_settings.get("allow_retrospective_artifacts", False):
                 model_provenance["pv_forecast_model_status"] = "fallback_artifact_not_yet_available"
             else:
-                from ..forecasting.pv_neural_data import feature_frame, transform_features
+                from ..forecasting.data.pv_neural_data import feature_frame, transform_features
                 model_frame = bundle.values.copy(deep=True)
                 model_frame["interval_start_utc"] = starts
                 local = starts.tz_convert(self.prepared["calendar"].timezone)
@@ -244,10 +244,10 @@ class ContinuousReplay:
                 model_frame["eligible"] = False
                 model_frame["split"] = "prediction"
                 if model["kind"] == "weather_bundle":
-                    from ..forecasting.pv_forecast_bundle import predict_bundle
+                    from ..forecasting.inference.pv_forecast_bundle import predict_bundle
                     replacement = predict_bundle(model_frame,artifact.parent,farm_id=self.plant.farm_id)
                 elif model["kind"] == "neural":
-                    from ..forecasting.pv_neural_predict import predict_neural_frame
+                    from ..forecasting.inference.pv_neural_predict import predict_neural_frame
                     replacement = predict_neural_frame(model_frame, artifact, farm_id=self.plant.farm_id)
                 elif model["kind"] == "linear":
                     details = json.loads(artifact.read_text())

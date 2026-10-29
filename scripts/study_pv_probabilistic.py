@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
 def main():
     from bess_pv_trading.config import load_config
-    from bess_pv_trading.forecasting.pv_probabilistic_data import prepare_farm, pvlib_farm, study_root, validate_study, delivery_split
+    from bess_pv_trading.forecasting.data.pv_probabilistic_data import prepare_farm, pvlib_farm, study_root, validate_study, delivery_split
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', required=True, type=Path)
     parser.add_argument('--stage', choices=['prepare', 'pvlib', 'search', 'report', 'all'], default='all')
@@ -25,7 +25,7 @@ def main():
     config = load_config(args.config, overrides={'pv_probabilistic_study': overrides})
     section = config['pv_probabilistic_study']
     if args.plan_only:
-        from bess_pv_trading.forecasting.pv_probabilistic_search import trial_plan
+        from bess_pv_trading.forecasting.training.pv_probabilistic_search import trial_plan
         trials = trial_plan(section)
         days = validate_study(section)
         splits = {name: [d.strftime('%Y-%m-%d') for d in days if delivery_split(d, section) == name]
@@ -40,20 +40,20 @@ def main():
     if args.stage in {'prepare', 'all'}:
         for farm in section['farm_ids']: prepare_farm(config, int(farm), force=args.force)
     if args.stage in {'pvlib', 'all'}:
-        from bess_pv_trading.forecasting.pv_probabilistic_reporting import evaluate_pvlib, write_pvlib_overview
+        from bess_pv_trading.forecasting.plotting.pv_probabilistic_reporting import evaluate_pvlib, write_pvlib_overview
         for farm in section['farm_ids']:
             pvlib_farm(config, int(farm), force=args.force)
             evaluate_pvlib(config, int(farm))
         write_pvlib_overview(config)
-        from bess_pv_trading.forecasting.pv_probabilistic_diagnostics import summarize_diagnostics
+        from bess_pv_trading.forecasting.evaluation.pv_probabilistic_diagnostics import summarize_diagnostics
         summarize_diagnostics(config)
     if args.stage in {'search', 'all'}:
-        from bess_pv_trading.forecasting.pv_probabilistic_search import run_search
+        from bess_pv_trading.forecasting.training.pv_probabilistic_search import run_search
         run_search(config)
     if args.stage in {'report', 'all'}:
-        from bess_pv_trading.forecasting.pv_probabilistic_reporting import report_search
+        from bess_pv_trading.forecasting.plotting.pv_probabilistic_reporting import report_search
         report_search(config)
-        from bess_pv_trading.forecasting.pv_probabilistic_diagnostics import summarize_diagnostics
+        from bess_pv_trading.forecasting.evaluation.pv_probabilistic_diagnostics import summarize_diagnostics
         summarize_diagnostics(config, include_winners=True)
 
 

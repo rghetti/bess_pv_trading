@@ -113,7 +113,7 @@ The final predictor was refitted through August 19. In the original benchmark, t
 
 \section{Weather-to-PV predictors}
 \subsection{Physical baseline}
-The existing pvlib workflow applies the same farm-specific physical configuration to every weather member and the matching deterministic weather run. The conversion uses solar position, horizontal global and direct radiation, derives diffuse horizontal and direct normal irradiance, applies configured fixed or tracking geometry and transposition, models module temperature using Faiman, and uses a fitted AC scale. It records conditions such as direct radiation exceeding global radiation, low-sun/DNI caps and night-time adjustments. Full implementation and settings are in \code{src/forecasting/pv.py} and \code{configs/standard.yaml}.
+The existing pvlib workflow applies the same farm-specific physical configuration to every weather member and the matching deterministic weather run. The conversion uses solar position, horizontal global and direct radiation, derives diffuse horizontal and direct normal irradiance, applies configured fixed or tracking geometry and transposition, models module temperature using Faiman, and uses a fitted AC scale. It records conditions such as direct radiation exceeding global radiation, low-sun/DNI caps and night-time adjustments. Full implementation and settings are in \code{src/forecasting/models/pv.py} and \code{configs/standard.yaml}.
 
 This is a physical baseline with prior fitted coefficients, not an unfitted generic pvlib specification. No physical parameter is newly optimized by the reported online experiment. The same physical model is applied consistently to the ensemble and deterministic weather for the earlier matched-vintage benchmark.
 

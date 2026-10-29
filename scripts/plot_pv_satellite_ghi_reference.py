@@ -17,9 +17,9 @@ import torch
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data import config_path, load_metadata
-from bess_pv_trading.forecasting.pv_neural_predict import predict_neural_frame
-from bess_pv_trading.forecasting.pv_physical import PhysicalPVModel
-from bess_pv_trading.forecasting.pv_satellite_inputs import interpolate_satellite, satellite_inputs
+from bess_pv_trading.forecasting.inference.pv_neural_predict import predict_neural_frame
+from bess_pv_trading.forecasting.models.pv_physical import PhysicalPVModel
+from bess_pv_trading.forecasting.data.pv_satellite_inputs import interpolate_satellite, satellite_inputs
 from bess_pv_trading.reporting.artifacts import prepare_experiment_output
 
 

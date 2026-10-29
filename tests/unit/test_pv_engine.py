@@ -7,7 +7,7 @@ import pytest
 from bess_pv_trading.config import load_config
 
 from bess_pv_trading.data import FarmMetadata, ForecastBundle, ObservationBundle, prepare_observations
-from bess_pv_trading.forecasting.pv import fit_dc_to_ac, forecast_pv, source_azimuth_to_pvlib
+from bess_pv_trading.forecasting.models.pv import fit_dc_to_ac, forecast_pv, source_azimuth_to_pvlib
 
 
 def settings():
@@ -67,7 +67,7 @@ def test_dc_reference_stays_fixed_when_fitted_output_coefficient_changes():
 
 
 def test_through_origin_mse_fit():
-    from bess_pv_trading.forecasting.pv_calibration import fit_scale
+    from bess_pv_trading.forecasting.training.pv_calibration import fit_scale
     reference = settings()["output"]["pv_output_efficiency"]
     dc = np.array([1.0, 2.0, 3.0])
     measured = reference * dc
@@ -159,7 +159,7 @@ def test_explicitly_supplied_members_preserved_through_same_pv_interface():
 
 
 def test_exact_grid_ac_point_scoring_reports_missing_and_policy_targets():
-    from bess_pv_trading.forecasting.pv import evaluate_pv_forecast
+    from bess_pv_trading.forecasting.models.pv import evaluate_pv_forecast
     times = pd.date_range("2025-06-01T10:00Z", periods=3, freq="15min")
     frame = pd.DataFrame({"farm_id": 1, "variable": "power", "time": times, "interval_end": times + pd.Timedelta(minutes=15), "available_at": times + pd.Timedelta(minutes=15), "raw_value": [1000, 2000, 3000], "review_excluded": False})
     observations = prepare_observations(ObservationBundle(frame), {"plateau": {"enabled": False}, "night": {"enabled": False}})

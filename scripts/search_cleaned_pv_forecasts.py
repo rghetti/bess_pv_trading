@@ -24,12 +24,12 @@ import pandas as pd
 from benchmark_satellite_ghi import sha, write
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data import config_path, load_metadata
-from bess_pv_trading.forecasting.pv_artifacts import digest
-from bess_pv_trading.forecasting.pv_ensemble_study import score
-from bess_pv_trading.forecasting.pv_fitting import fit_one, predict_fit, validation_score
-from bess_pv_trading.forecasting.pv_forecast_search import _worker
-from bess_pv_trading.forecasting.pv_forecast_bundle import export_bundle, predict_bundle
-from bess_pv_trading.forecasting.pv_outages import apply_episode_exclusions
+from bess_pv_trading.forecasting.inference.pv_artifacts import digest
+from bess_pv_trading.forecasting.studies.pv_ensemble_study import score
+from bess_pv_trading.forecasting.training.pv_fitting import fit_one, predict_fit, validation_score
+from bess_pv_trading.forecasting.training.pv_forecast_search import _worker
+from bess_pv_trading.forecasting.inference.pv_forecast_bundle import export_bundle, predict_bundle
+from bess_pv_trading.forecasting.data.pv_outages import apply_episode_exclusions
 from bess_pv_trading.reporting.artifacts import prepare_experiment_output
 
 
@@ -271,8 +271,8 @@ def run(config,plan_only=False):
     identity_config=deepcopy(config);identity_config['pv_cleaned_hpo'].pop('resume',None)
     contract={'config':identity_config,'prepared_identity':json.loads((source/'json/identity.json').read_text())['identity'],
         'exclusions_csv_sha256':sha(config_path(config,config['pv_data_quality']['exclusions_csv'])),
-        'code':sha(__file__),'worker_code':sha(Path(__file__).parents[1]/'src/forecasting/pv_forecast_search.py'),
-        'network_code':sha(Path(__file__).parents[1]/'src/forecasting/pv_residual_networks.py')}
+        'code':sha(__file__),'worker_code':sha(Path(__file__).parents[1]/'src/forecasting/training/pv_forecast_search.py'),
+        'network_code':sha(Path(__file__).parents[1]/'src/forecasting/models/pv_residual_networks.py')}
     identity=digest(contract)
     previous=root/'json/identity.json'
     if section['resume'] and previous.exists() and json.loads(previous.read_text())['identity']!=identity:

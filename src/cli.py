@@ -107,51 +107,51 @@ def dispatch(command: str, config: dict) -> dict:
         from .data import prepare_analysis_data
         return prepare_analysis_data(config)
     if command == "forecast-pv":
-        from .forecasting.pv import forecast_pv_from_config
+        from .forecasting.models.pv import forecast_pv_from_config
         return forecast_pv_from_config(config)
     if command == "calibrate-pv-output":
-        from .forecasting.pv_calibration import calibrate_pv_output
+        from .forecasting.training.pv_calibration import calibrate_pv_output
         return calibrate_pv_output(config)
     if command in {"study-pv-calibration", "retrain-pv-calibration"}:
-        from .forecasting.pv_study import run_pv_calibration_study
+        from .forecasting.studies.pv_study import run_pv_calibration_study
         return run_pv_calibration_study(config, retrain=command == "retrain-pv-calibration",
             progress=lambda message: print(message, file=sys.stderr, flush=True))
     if command == "study-pv-neural":
-        from .forecasting.pv_neural_study import run_neural_study
+        from .forecasting.studies.pv_neural_study import run_neural_study
         return run_neural_study(config,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
     if command == "compare-pv-forecast-searches":
-        from .forecasting.pv_forecast_comparison import run_forecast_comparison
+        from .forecasting.evaluation.pv_forecast_comparison import run_forecast_comparison
         return run_forecast_comparison(config)
     if command == "study-pv-hourly-bias":
-        from .forecasting.pv_hourly_bias import run_hourly_bias_study
+        from .forecasting.studies.pv_hourly_bias import run_hourly_bias_study
         return run_hourly_bias_study(config)
     if command == "study-pv-online-ridge":
-        from .forecasting.pv_online_ridge import run_online_ridge_study
+        from .forecasting.online.pv_online_ridge import run_online_ridge_study
         return run_online_ridge_study(config)
     if command == "study-pv-monthly-retraining":
-        from .forecasting.pv_monthly_retraining import run_monthly_retraining
+        from .forecasting.studies.pv_monthly_retraining import run_monthly_retraining
         return run_monthly_retraining(config)
     if command == "diagnose-pv-forecast-errors":
-        from .forecasting.pv_error_diagnostics import run_pv_error_diagnostics
+        from .forecasting.evaluation.pv_error_diagnostics import run_pv_error_diagnostics
         return run_pv_error_diagnostics(config)
     if command == "curate-pv-outages":
-        from .forecasting.pv_outages import run_outage_curation
+        from .forecasting.data.pv_outages import run_outage_curation
         return run_outage_curation(config)
     if command == "audit-pv-validation":
-        from .forecasting.pv_validation_audit import run_validation_error_audit
+        from .forecasting.evaluation.pv_validation_audit import run_validation_error_audit
         return run_validation_error_audit(config)
     if command == "audit-pv-data-quality":
-        from .forecasting.pv_quality_review import run_pv_quality_review
+        from .forecasting.evaluation.pv_quality_review import run_pv_quality_review
         return run_pv_quality_review(config)
     if command == "study-pv-forecast-search":
-        from .forecasting.pv_forecast_search import run_forecast_search
+        from .forecasting.training.pv_forecast_search import run_forecast_search
         return run_forecast_search(config)
     if command == "study-pv-ensembles":
-        from .forecasting.pv_ensemble_study import run_ensemble_study
+        from .forecasting.studies.pv_ensemble_study import run_ensemble_study
         return run_ensemble_study(config)
     if command == "tune-pv-neural":
-        from .forecasting.pv_neural_tuning import run_neural_tuning
+        from .forecasting.training.pv_neural_tuning import run_neural_tuning
         return run_neural_tuning(config,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
     if command == "import-market-data":

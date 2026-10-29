@@ -14,7 +14,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 
 def main():
     import pandas as pd
-    from bess_pv_trading.forecasting.pv_forecast_bundle import predict_composite
+    from bess_pv_trading.forecasting.inference.pv_forecast_bundle import predict_composite
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--bundle',required=True,type=Path)
     parser.add_argument('--farm-id',required=True,type=int)

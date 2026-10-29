@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bess_pv_trading.forecasting.pv_online_ridge import (
+from bess_pv_trading.forecasting.online.pv_online_ridge import (
     causal_ridge_prediction,completed_day_moments,correction_features)
 
 

@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
-from bess_pv_trading.forecasting.pv_probabilistic_data import file_hash, write_json
+from bess_pv_trading.forecasting.data.pv_probabilistic_data import file_hash, write_json
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data import config_path
 

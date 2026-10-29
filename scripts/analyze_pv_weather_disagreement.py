@@ -19,8 +19,8 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data import config_path
-from bess_pv_trading.forecasting.pv_fitting import balanced_weights
-from bess_pv_trading.forecasting.pv_outages import apply_episode_exclusions
+from bess_pv_trading.forecasting.training.pv_fitting import balanced_weights
+from bess_pv_trading.forecasting.data.pv_outages import apply_episode_exclusions
 
 
 def metrics(frame, column, rating):

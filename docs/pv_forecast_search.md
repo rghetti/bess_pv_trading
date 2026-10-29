@@ -2,9 +2,9 @@
 
 The inspectable launcher is `scripts/train_pv_forecasts.py`. Statistical fitting,
 data checks, multiprocessing and reporting are in
-`src/forecasting/pv_forecast_search.py`; neural architectures and their training
-loop are in `pv_residual_networks.py`. `pv_forecast_comparison.py` compares the
-frozen fits and `pv_online_bias.py` implements causal adaptation. This workflow
+`src/forecasting/training/pv_forecast_search.py`; neural architectures and their training
+loop are in `src/forecasting/models/pv_residual_networks.py`. `src/forecasting/evaluation/pv_forecast_comparison.py` compares the
+frozen fits and `src/forecasting/online/pv_online_bias.py` implements causal adaptation. This workflow
 uses local cached data, makes no API requests and installs no packages.
 
 ## Run the searches

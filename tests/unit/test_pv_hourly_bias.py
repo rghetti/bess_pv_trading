@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from bess_pv_trading.config import load_config
-from bess_pv_trading.forecasting.pv_hourly_bias import (
+from bess_pv_trading.forecasting.studies.pv_hourly_bias import (
     causal_bucket_prediction, completed_bucket_statistics)
 
 

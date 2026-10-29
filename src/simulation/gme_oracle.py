@@ -18,7 +18,7 @@ from ..domain import (BatteryParameters, DegradationSettings, InformationNode,
                       InformationTree, MarketState, OptimizationInput, PhysicalState,
                       PlantParameters, ScenarioBundle, SolverSettings,
                       battery_parameters_from_config)
-from ..forecasting.pv import forecast_pv
+from ..forecasting.models.pv import forecast_pv
 from ..markets import AuctionCalendar
 from ..optimization.degradation import degradation_settings_from_config
 from ..optimization.model import build_model, solve_model

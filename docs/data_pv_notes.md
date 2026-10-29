@@ -1,6 +1,6 @@
 # Implemented data and PV details
 
-The executable data layer is `src/bess_pv_trading/data/`; the actual pvlib engine is `src/bess_pv_trading/forecasting/pv.py`. The original root audit package, its data adapter, review artifacts and raw store are preserved. A root import compatibility bridge makes the original audit imports continue working alongside the new package.
+The executable data layer is `src/data/`; the pvlib engine is `src/forecasting/models/pv.py`. The original root audit package, its data adapter, review artifacts and raw store are preserved. A root import compatibility bridge makes the original audit imports continue working alongside the new package.
 
 ## PV assumptions actually used
 

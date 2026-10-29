@@ -43,7 +43,7 @@ uses the configured pvlib forecast path.
 For direct inference on an already constructed forecast-view DataFrame:
 
 ```python
-from bess_pv_trading.forecasting.pv_forecast_bundle import predict_bundle
+from bess_pv_trading.forecasting.inference.pv_forecast_bundle import predict_bundle
 
 prediction_mw = predict_bundle(
     forecast_view,

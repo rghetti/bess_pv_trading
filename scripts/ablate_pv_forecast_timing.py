@@ -16,10 +16,10 @@ from benchmark_satellite_ghi import sha, write
 from stage_pv_timing_inputs import stage
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data import config_path
-from bess_pv_trading.forecasting.pv_artifacts import digest
-from bess_pv_trading.forecasting.pv_forecast_search import prepare_search, _worker
-from bess_pv_trading.forecasting.pv_forecast_bundle import export_bundle, predict_bundle
-from bess_pv_trading.forecasting.pv_ensemble_study import score
+from bess_pv_trading.forecasting.inference.pv_artifacts import digest
+from bess_pv_trading.forecasting.training.pv_forecast_search import prepare_search, _worker
+from bess_pv_trading.forecasting.inference.pv_forecast_bundle import export_bundle, predict_bundle
+from bess_pv_trading.forecasting.studies.pv_ensemble_study import score
 from bess_pv_trading.reporting.artifacts import prepare_experiment_output
 
 
@@ -107,8 +107,8 @@ def run(config):
         'preprocessing':{key:config['pv_neural'][key] for key in ['delivery_timezone','standardization_floor','input_clip_standard_deviations']},
         'ratings':{str(farm):config['farms'][str(farm)]['ac_capacity_kw'] for farm in section['farm_ids']},
         'night_policy':config['policy']['night'],'staged_inputs':staged['files'],
-        'worker_sha256':sha(Path(__file__).parents[1]/'src/forecasting/pv_forecast_search.py'),
-        'network_sha256':sha(Path(__file__).parents[1]/'src/forecasting/pv_residual_networks.py'),
+        'worker_sha256':sha(Path(__file__).parents[1]/'src/forecasting/training/pv_forecast_search.py'),
+        'network_sha256':sha(Path(__file__).parents[1]/'src/forecasting/models/pv_residual_networks.py'),
         'code_sha256':sha(__file__)}
     identity=digest(signature)
     if section['resume'] and (root/'json/identity.json').exists():

@@ -4,8 +4,8 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-from bess_pv_trading.forecasting.pv_calendar import italian_national_holiday
-from bess_pv_trading.forecasting.pv_forecast_search import weather_features
+from bess_pv_trading.forecasting.data.pv_calendar import italian_national_holiday
+from bess_pv_trading.forecasting.training.pv_forecast_search import weather_features
 
 
 def test_italian_holidays_follow_local_delivery_dates_and_effective_year():

@@ -2,7 +2,7 @@
 import numpy as np
 import pandas as pd
 from bess_pv_trading.config import load_config
-from bess_pv_trading.forecasting.pv_forecast_search import prepare_search
+from bess_pv_trading.forecasting.training.pv_forecast_search import prepare_search
 
 
 def test_frame_override_does_not_read_old_prediction_files(tmp_path):

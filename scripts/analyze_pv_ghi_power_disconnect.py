@@ -15,7 +15,7 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data import config_path
-from bess_pv_trading.forecasting.pv_calendar import italian_national_holiday
+from bess_pv_trading.forecasting.data.pv_calendar import italian_national_holiday
 from bess_pv_trading.reporting.artifacts import prepare_experiment_output
 
 

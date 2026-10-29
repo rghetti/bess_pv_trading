@@ -21,7 +21,7 @@ def test_public_imports_and_legacy_audit_from_another_directory(tmp_path, import
 import json
 from bess_pv_trading import domain
 from bess_pv_trading.data import build_historical_context, select_forecast_vintage
-from bess_pv_trading.forecasting import pv
+from bess_pv_trading.forecasting.models import pv
 from bess_pv_trading.optimization import model
 from bess_pv_trading.simulation import replay
 import bess_pv_trading.audit
@@ -43,3 +43,20 @@ def test_public_cli_from_another_directory(tmp_path, import_root):
         cwd=tmp_path, env=environment, text=True, capture_output=True, check=True)
     assert "experiment-gme-oracle" in result.stdout
     assert "--config" in result.stdout
+
+
+@pytest.mark.parametrize("import_root", [ROOT, ROOT / "src"], ids=["repository", "src"])
+def test_legacy_forecasting_modules_share_model_identity(tmp_path, import_root):
+    """Old serialized class paths resolve to the grouped model module."""
+    environment = {**os.environ, "PYTHONPATH": str(import_root)}
+    subprocess.run(
+        [sys.executable, "-B", "-c", """
+import importlib
+import pickle
+old = importlib.import_module('bess_pv_trading.forecasting.pv_probabilistic_neural')
+new = importlib.import_module('bess_pv_trading.forecasting.models.pv_probabilistic_neural')
+assert old is new
+assert old.MemberNetwork is new.MemberNetwork
+legacy_class = b'cbess_pv_trading.forecasting.pv_probabilistic_neural\\nMemberNetwork\\n.'
+assert pickle.loads(legacy_class) is new.MemberNetwork
+"""], cwd=tmp_path, env=environment, text=True, capture_output=True, check=True)

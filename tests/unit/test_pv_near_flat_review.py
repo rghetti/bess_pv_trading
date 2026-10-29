@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
-from src.forecasting.pv_near_flat_review import find_candidates, contiguous_spans
+from src.forecasting.plotting.pv_near_flat_review import find_candidates, contiguous_spans
 
 
 def test_existing_exclusions_do_not_fragment_raw_candidate():

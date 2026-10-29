@@ -3,9 +3,9 @@ import numpy as np
 import pandas as pd
 
 from bess_pv_trading.config import load_config
-from bess_pv_trading.forecasting.pv_outages import apply_sustained_zero_exclusion, modeling_instances
-from bess_pv_trading.forecasting.pv_neural_data import pack_sequences
-from bess_pv_trading.forecasting.pv_satellite_inputs import interpolate_satellite
+from bess_pv_trading.forecasting.data.pv_outages import apply_sustained_zero_exclusion, modeling_instances
+from bess_pv_trading.forecasting.data.pv_neural_data import pack_sequences
+from bess_pv_trading.forecasting.data.pv_satellite_inputs import interpolate_satellite
 
 
 def test_approved_episodes_and_plateaus_mask_all_splits_and_views(tmp_path):

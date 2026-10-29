@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from bess_pv_trading.forecasting.pv_fitting import balanced_weights
+from bess_pv_trading.forecasting.training.pv_fitting import balanced_weights
 
 
 def _period_edges(value: str) -> tuple[list[int], list[str]]:

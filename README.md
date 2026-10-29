@@ -244,7 +244,8 @@ delay. This is separate from the forecast availability lag.
 ```text
 src/
   data/             DuckDB catalog, providers, workbook imports, farm adapters, data policy
-  forecasting/      pvlib conversion and PV-output calibration
+  forecasting/      PV forecasting, organized by data, models, training, inference,
+                    evaluation, plotting, studies and online methods
   optimization/     shared MILP builder, prepared-input adapters, degradation, validation
   simulation/       auction events, immutable commitments, feedback execution, settlement
   reporting/        figures, output organization, legacy evidence reporting
@@ -521,7 +522,7 @@ The maximum is the worst absolute quarter-hour error; MAE is an average. Farm 90
 The additional `plots/trajectory_examples/farm_<id>_three_days.png` figures compare raw measured AC with all four operational forecasts under those final global settings, including the next-midnight sample and installed AC threshold. The common dates represent low, medium and high portfolio-normalized daily production; they were chosen independently of forecast residuals. The associated CSVs and JSONs preserve values, resolved configurations, forecast provenance and capacity checks. They illustrate the final static model on its fitting year, rather than held-out forecast performance. To regenerate them without refitting or trading:
 
 ```bash
-PYTHONPATH=src python -c 'from bess_pv_trading.forecasting.pv_global_plots import plot_global_trajectories; plot_global_trajectories("outputs/pv_calibration/physical_pv_all_farms_2025", "configs/standard.yaml")'
+PYTHONPATH=src python -c 'from bess_pv_trading.forecasting.plotting.pv_global_plots import plot_global_trajectories; plot_global_trajectories("outputs/pv_calibration/physical_pv_all_farms_2025", "configs/standard.yaml")'
 ```
 
 Before 1 October 2025, **DA energy orders are hourly**, represented as equal quarter-hour shares. **IDA orders and physical battery controls remain quarter-hourly**, including in January 2025. Repeating a native hourly DA price into four objective coefficients does not create four independent DA prices or require hourly-flat battery dispatch. IDA3's configured gate is 10:00 local, its decision cutoff is five minutes earlier, and its eligible deliveries begin at 12:00 local. Other gates/results and their historical validity are YAML settings. Figures include the final delivery boundary when available.
@@ -547,7 +548,7 @@ All controls inherit `pv_neural` in `configs/standard.yaml`: split dates, embarg
 
 Outputs live in `outputs/pv_neural/<run_id>/`, with study-level comparisons and per-farm `csv`, `json`, `parquet`, `plots`, and `models` folders. They include raw aligned targets and forecasts, separate train/validation/test metrics, mean/minimum/maximum absolute errors, RMSE, signed bias, per-auction/month/hour and daily energy errors, paired seven-day block uncertainty intervals, learning curves, representative test trajectories with the installed AC threshold, input/source fingerprints and resolved configurations. Overlapping auction views are kept separate in energy reporting. `models/selected.pt` and `selected.json` identify each farm's validation-selected neural model, including preprocessing, metadata, architecture, training history and a weight checksum. Other candidates remain reusable. Completed fits resume only with matching configuration, source and training-code fingerprints.
 
-`forecasting.pv_neural_predict.predict_neural_frame(frame, artifact, farm_id=...)` loads a saved model on CPU and predicts without requiring measured targets. It checks farm identity, feature order and the weights checksum. The standard trading forecast remains pvlib; choosing a neural model for trading is a subsequent experiment. For a short four-farm execution check use `configs/pv_experiments/neural_validation.yaml`.
+`forecasting.inference.pv_neural_predict.predict_neural_frame(frame, artifact, farm_id=...)` loads a saved model on CPU and predicts without requiring measured targets. It checks farm identity, feature order and the weights checksum. The standard trading forecast remains pvlib; choosing a neural model for trading is a subsequent experiment. For a short four-farm execution check use `configs/pv_experiments/neural_validation.yaml`.
 
 ### Neural PV hyperparameter search
 

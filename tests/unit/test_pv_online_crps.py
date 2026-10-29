@@ -3,9 +3,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bess_pv_trading.forecasting.pv_online_crps import MLPoly, weighted_crps, weighted_quantile
-from bess_pv_trading.forecasting.pv_online_crps_prepare import choose_cycle, last_target_available
-from bess_pv_trading.forecasting.pv_online_crps_report import score_one
+from bess_pv_trading.forecasting.online.pv_online_crps import MLPoly, weighted_crps, weighted_quantile
+from bess_pv_trading.forecasting.online.pv_online_crps_prepare import choose_cycle, last_target_available
+from bess_pv_trading.forecasting.plotting.pv_online_crps_report import score_one
 from bess_pv_trading.markets import AuctionCalendar
 
 
@@ -68,8 +68,8 @@ def test_dst_calendar_grid_and_calibrated_score():
 
 
 def test_replay_respects_availability_and_freezes_weights(tmp_path, monkeypatch):
-    from bess_pv_trading.forecasting import pv_online_crps_evaluate as replay
-    from bess_pv_trading.forecasting.pv_probabilistic_data import file_hash, write_json
+    from bess_pv_trading.forecasting.online import pv_online_crps_evaluate as replay
+    from bess_pv_trading.forecasting.data.pv_probabilistic_data import file_hash, write_json
     root=tmp_path/'farm_1'; root.mkdir()
     ids=[str(i) for i in range(50)]
     levels=[.05,.1,.25,.5,.75,.9,.95]

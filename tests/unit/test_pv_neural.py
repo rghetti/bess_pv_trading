@@ -11,11 +11,11 @@ torch = pytest.importorskip("torch")
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data.contracts import FarmMetadata
-from bess_pv_trading.forecasting.pv_neural_data import (
+from bess_pv_trading.forecasting.data.pv_neural_data import (
     feature_frame, fit_preprocessor, pack_sequences, transform_features,
     unpack_predictions, validate_neural_config)
-from bess_pv_trading.forecasting.pv_neural_models import PVNetwork
-from bess_pv_trading.forecasting.pv_neural_training import (
+from bess_pv_trading.forecasting.models.pv_neural_models import PVNetwork
+from bess_pv_trading.forecasting.training.pv_neural_training import (
     fit_network, load_network, predict_network, save_network, tensor_pack)
 
 
@@ -114,7 +114,7 @@ def test_neural_weights_reload_and_farm_checksum_contract(neural_case, tmp_path)
     restored, _ = load_network(path, farm_id=farm_id)
     np.testing.assert_array_equal(predict_network(model, tensor_pack(packed), section["prediction_batch_size"]),
                                   predict_network(restored, tensor_pack(packed), section["prediction_batch_size"]))
-    from bess_pv_trading.forecasting.pv_neural_predict import predict_neural_frame
+    from bess_pv_trading.forecasting.inference.pv_neural_predict import predict_neural_frame
     future_free = predict_neural_frame(frame.drop(columns="measured_ac_mw"), path, farm_id=farm_id)
     expected = unpack_predictions(packed,
         predict_network(model, tensor_pack(packed), section["prediction_batch_size"]), len(frame), farm.ac_capacity_mw)
@@ -140,7 +140,7 @@ def test_neural_config_rejects_nonchronological_splits_and_gpu(neural_case):
 
 
 def test_boundary_targets_are_embargoed_before_the_next_first_da(neural_case, monkeypatch, tmp_path):
-    import bess_pv_trading.forecasting.pv_neural_data as module
+    import bess_pv_trading.forecasting.data.pv_neural_data as module
     config, _, _, _ = neural_case
     config["pv_neural"].update(minimum_training_days=1, minimum_validation_days=1, minimum_test_days=1)
     dates = ["2025-01-30", "2025-01-31", "2025-02-06", "2025-02-07", "2025-02-10"]
@@ -173,7 +173,7 @@ def test_neural_sequences_preserve_dst_and_ida3_noon(day, quarters):
 
 
 def test_new_weather_features_need_neither_proxy_geometry_nor_auction(neural_case):
-    from bess_pv_trading.forecasting.pv_forecast_search import weather_features
+    from bess_pv_trading.forecasting.training.pv_forecast_search import weather_features
     config, _, _, frame = neural_case
     original = weather_features(frame, 'weather', config['pv_neural']['delivery_timezone'])
     changed = frame.drop(columns=['solar_zenith_deg', 'solar_azimuth_deg']).copy()
@@ -202,8 +202,8 @@ def test_disabled_auction_embeddings_make_predictions_auction_invariant(neural_c
 
 @pytest.mark.parametrize('architecture',['residual_mlp','mixture_experts','bigru','transformer'])
 def test_new_architectures_have_bounded_outputs_and_finite_gradients(neural_case,architecture):
-    from bess_pv_trading.forecasting.pv_forecast_search import weather_features
-    from bess_pv_trading.forecasting.pv_residual_networks import WeatherResidualNetwork
+    from bess_pv_trading.forecasting.training.pv_forecast_search import weather_features
+    from bess_pv_trading.forecasting.models.pv_residual_networks import WeatherResidualNetwork
     config,section,_,frame=neural_case
     features=weather_features(frame,'core',section['delivery_timezone'])
     pre=fit_preprocessor(features,(frame.split=='train').to_numpy(),section)
@@ -220,7 +220,7 @@ def test_new_architectures_have_bounded_outputs_and_finite_gradients(neural_case
 
 
 def test_online_gain_does_not_read_future_observations(neural_case):
-    from bess_pv_trading.forecasting.pv_online_bias import completed_day_statistics,causal_gain_prediction
+    from bess_pv_trading.forecasting.online.pv_online_bias import completed_day_statistics,causal_gain_prediction
     config,section,_,frame=neural_case
     frame=frame.copy()
     duration=pd.Timedelta(minutes=config['source']['historical_interval_minutes'])
@@ -241,7 +241,7 @@ def test_online_gain_does_not_read_future_observations(neural_case):
 
 
 def test_calibration_counts_overlapping_forecasts_once_and_waits_for_midnight(neural_case):
-    from bess_pv_trading.forecasting.pv_online_bias import completed_day_statistics
+    from bess_pv_trading.forecasting.online.pv_online_bias import completed_day_statistics
     config,section,_,frame=neural_case
     frame=frame.copy();frame['target_available_at_utc']=frame.interval_start_utc
     doubled=pd.concat([frame,frame.assign(auction='IDA3')],ignore_index=True)
@@ -254,7 +254,7 @@ def test_calibration_counts_overlapping_forecasts_once_and_waits_for_midnight(ne
 
 def test_completed_day_calibration_preserves_dst_midnight_boundaries():
     from bess_pv_trading.markets import AuctionCalendar
-    from bess_pv_trading.forecasting.pv_online_bias import completed_day_statistics
+    from bess_pv_trading.forecasting.online.pv_online_bias import completed_day_statistics
     config=load_config('tests/fixtures/configs/continuous_cases.yaml')
     config['market']['valid_to']=max(case['delivery_day'] for case in config['test_case']['dst_cases'])
     calendar=AuctionCalendar.from_config(config)
@@ -272,8 +272,8 @@ def test_completed_day_calibration_preserves_dst_midnight_boundaries():
 
 @pytest.mark.parametrize('architecture',['direct_tcn','residual_tcn'])
 def test_market_free_tcn_output_contract(neural_case,architecture):
-    from bess_pv_trading.forecasting.pv_forecast_search import weather_features
-    from bess_pv_trading.forecasting.pv_residual_networks import WeatherResidualNetwork
+    from bess_pv_trading.forecasting.training.pv_forecast_search import weather_features
+    from bess_pv_trading.forecasting.models.pv_residual_networks import WeatherResidualNetwork
     config,section,_,frame=neural_case
     features=weather_features(frame,'core',section['delivery_timezone'])
     pre=fit_preprocessor(features,(frame.split=='train').to_numpy(),section)
@@ -289,9 +289,9 @@ def test_market_free_tcn_output_contract(neural_case,architecture):
 
 
 def test_bundle_preserves_convolution_padding_for_single_day_inference(neural_case):
-    from bess_pv_trading.forecasting.pv_forecast_bundle import _pad_sequence_contract
-    from bess_pv_trading.forecasting.pv_forecast_search import weather_features
-    from bess_pv_trading.forecasting.pv_residual_networks import WeatherResidualNetwork
+    from bess_pv_trading.forecasting.inference.pv_forecast_bundle import _pad_sequence_contract
+    from bess_pv_trading.forecasting.training.pv_forecast_search import weather_features
+    from bess_pv_trading.forecasting.models.pv_residual_networks import WeatherResidualNetwork
     config,section,_,frame=neural_case
     features=weather_features(frame,'core',section['delivery_timezone'])
     pre=fit_preprocessor(features,(frame.split=='train').to_numpy(),section)

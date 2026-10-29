@@ -5,10 +5,10 @@ import pandas as pd
 import pytest
 
 from bess_pv_trading.config import load_config
-from bess_pv_trading.forecasting.pv_outages import (
+from bess_pv_trading.forecasting.data.pv_outages import (
     apply_sustained_zero_exclusion,sustained_daylight_zero_mask)
-from bess_pv_trading.forecasting.pv_quality_review import _partial_recovery_mask
-from bess_pv_trading.forecasting.pv_quality_review import run_pv_quality_review
+from bess_pv_trading.forecasting.evaluation.pv_quality_review import _partial_recovery_mask
+from bess_pv_trading.forecasting.evaluation.pv_quality_review import run_pv_quality_review
 
 
 def test_sustained_zero_requires_measured_daylight_and_contiguous_quarters():
@@ -138,7 +138,7 @@ def test_quality_review_emits_empty_review_queue_for_clean_source(tmp_path):
 
 def test_quality_day_uses_selected_neural_curve_and_checks_target_alignment(tmp_path,monkeypatch):
     """The review plot must not silently substitute its pvlib baseline for neural AC."""
-    from bess_pv_trading.forecasting import pv_quality_review
+    from bess_pv_trading.forecasting.evaluation import pv_quality_review
     config=load_config('configs/pv_experiments/audit_data_quality_2025_2026.yaml',
         overrides={'pv_data_quality':{'exclusions_csv':None}})
     source=tmp_path/'source'/'farm_345'/'parquet'

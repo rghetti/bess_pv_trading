@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from bess_pv_trading.config import load_config
-from bess_pv_trading.forecasting.pv_error_diagnostics import diagnose_farm_errors
+from bess_pv_trading.forecasting.evaluation.pv_error_diagnostics import diagnose_farm_errors
 
 
 def test_weather_diagnostics_preserve_measured_ac_and_partition_error():

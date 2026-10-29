@@ -19,14 +19,14 @@ import pandas as pd
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data import config_path, load_metadata
-from bess_pv_trading.forecasting.pv_artifacts import digest
-from bess_pv_trading.forecasting.pv_ensemble_study import score
-from bess_pv_trading.forecasting.pv_fitting import available_methods, fit_one, predict_fit, validation_score
-from bess_pv_trading.forecasting.pv_forecast_search import prepare_search, _worker, interpolate_forecast_gaps
-from bess_pv_trading.forecasting.pv_forecast_bundle import export_bundle, predict_bundle
-from bess_pv_trading.forecasting.pv_outages import apply_episode_exclusions, modeling_instances
-from bess_pv_trading.forecasting.pv_physical import PhysicalPVModel
-from bess_pv_trading.forecasting.pv_satellite_inputs import interpolate_satellite, satellite_inputs
+from bess_pv_trading.forecasting.inference.pv_artifacts import digest
+from bess_pv_trading.forecasting.studies.pv_ensemble_study import score
+from bess_pv_trading.forecasting.training.pv_fitting import available_methods, fit_one, predict_fit, validation_score
+from bess_pv_trading.forecasting.training.pv_forecast_search import prepare_search, _worker, interpolate_forecast_gaps
+from bess_pv_trading.forecasting.inference.pv_forecast_bundle import export_bundle, predict_bundle
+from bess_pv_trading.forecasting.data.pv_outages import apply_episode_exclusions, modeling_instances
+from bess_pv_trading.forecasting.models.pv_physical import PhysicalPVModel
+from bess_pv_trading.forecasting.data.pv_satellite_inputs import interpolate_satellite, satellite_inputs
 from bess_pv_trading.reporting.artifacts import prepare_experiment_output
 
 
@@ -258,8 +258,9 @@ def run(config):
     exclusions=config_path(config,config['pv_data_quality']['exclusions_csv'])
     identity_config=deepcopy(config);identity_config['pv_satellite_benchmark'].pop('resume',None)
     contract={'configuration':identity_config,'sources':inputs,'exclusions_sha256':sha(exclusions),
-        'code_sha256':sha(__file__),'shared_code':{name:sha(Path(__file__).parents[1]/'src/forecasting'/name)
-            for name in ['pv_outages.py','pv_residual_networks.py','pv_satellite_inputs.py','pv_forecast_search.py']}}
+        'code_sha256':sha(__file__),'shared_code':{name:sha(Path(__file__).parents[1]/'src/forecasting'/path)
+            for name,path in [('pv_outages.py','data/pv_outages.py'),('pv_residual_networks.py','models/pv_residual_networks.py'),
+                              ('pv_satellite_inputs.py','data/pv_satellite_inputs.py'),('pv_forecast_search.py','training/pv_forecast_search.py')]}}
     identity=digest(contract)
     if section['resume'] and (root/'json/identity.json').exists():
         if json.loads((root/'json/identity.json').read_text())['identity']!=identity:

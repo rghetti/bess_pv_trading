@@ -10,13 +10,13 @@ import pytest
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data import FarmMetadata, ForecastBundle
-from bess_pv_trading.forecasting.pv import forecast_pv
-from bess_pv_trading.forecasting.pv_artifacts import fixed_contract, resolve_parameters
-from bess_pv_trading.forecasting.pv_fitting import (balanced_weights, fit_one, fixed_fit,
+from bess_pv_trading.forecasting.models.pv import forecast_pv
+from bess_pv_trading.forecasting.inference.pv_artifacts import fixed_contract, resolve_parameters
+from bess_pv_trading.forecasting.training.pv_fitting import (balanced_weights, fit_one, fixed_fit,
     predict_fit, select_and_refit)
-from bess_pv_trading.forecasting.pv_physical import parameter_defaults
-from bess_pv_trading.forecasting.pv_study import validate_study
-from bess_pv_trading.forecasting.pv_study_inputs import farm_settings
+from bess_pv_trading.forecasting.models.pv_physical import parameter_defaults
+from bess_pv_trading.forecasting.studies.pv_study import validate_study
+from bess_pv_trading.forecasting.data.pv_study_inputs import farm_settings
 from bess_pv_trading.markets import AuctionCalendar
 
 
@@ -213,7 +213,7 @@ def test_global_farm_parameters_load_in_experiment_and_apply_before_fitting_year
 
 def test_ensemble_physical_features_ignore_measured_targets(physical_case):
     """Tracking and rear-side inputs must not expose either production or satellite targets."""
-    from bess_pv_trading.forecasting.pv_ensemble_study import physical_features
+    from bess_pv_trading.forecasting.studies.pv_ensemble_study import physical_features
     config, farm, settings, _, frame = physical_case
     farm = FarmMetadata(**{**asdict(farm), 'tracking_type_id': 3})
     before = physical_features(frame, farm, settings, config['policy']['night'])

@@ -22,7 +22,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'src'))
 
 def main():
     from bess_pv_trading.config import load_config
-    from bess_pv_trading.forecasting.pv_forecast_search import generate_trials,run_forecast_search
+    from bess_pv_trading.forecasting.training.pv_forecast_search import generate_trials,run_forecast_search
     parser=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--config',required=True,type=Path,help='YAML importing configs/standard.yaml')
     parser.add_argument('--plan-only',action='store_true',help='Print models and parameters without fitting')

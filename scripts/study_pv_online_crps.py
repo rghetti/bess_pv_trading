@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 def main():
     from bess_pv_trading.config import load_config
     from bess_pv_trading.data import config_path
-    from bess_pv_trading.forecasting.pv_online_crps_prepare import prepare_farm
+    from bess_pv_trading.forecasting.online.pv_online_crps_prepare import prepare_farm
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True)
     parser.add_argument('--stage', choices=('prepare', 'evaluate', 'report', 'all'), default='all')
@@ -34,10 +34,11 @@ def main():
                           'limitation': 'Validation-selected predictors; first-day DA/IDA1/IDA2 retrospective'}, indent=2))
         return
     root.mkdir(parents=True, exist_ok=True)
-    from bess_pv_trading.forecasting.pv_probabilistic_data import file_hash, write_json
+    from bess_pv_trading.forecasting.data.pv_probabilistic_data import file_hash, write_json
     sources = Path(__file__).resolve().parents[1] / 'src' / 'forecasting'
-    code = {name: file_hash(sources / name) for name in ('pv_online_crps.py', 'pv_online_crps_prepare.py',
-            'pv_online_crps_evaluate.py', 'pv_online_crps_report.py')}
+    code = {name: file_hash(sources / group / name) for name, group in (
+        ('pv_online_crps.py', 'online'), ('pv_online_crps_prepare.py', 'online'),
+        ('pv_online_crps_evaluate.py', 'online'), ('pv_online_crps_report.py', 'plotting'))}
     run_manifest = {'settings': settings, 'source_settings': source['pv_probabilistic_study'],
                     'market': source['market'], 'source': source['source'], 'policy': source['policy'],
                     'code_sha256': code, 'validation_use': 'model selection; not an independent test'}
@@ -53,7 +54,7 @@ def main():
             for future in as_completed(futures):
                 print(f'Prepared farm {futures[future]}: {future.result()["rows"]} intervals', flush=True)
     if args.stage in ('evaluate', 'all'):
-        from bess_pv_trading.forecasting.pv_online_crps_evaluate import evaluate_farm_auction
+        from bess_pv_trading.forecasting.online.pv_online_crps_evaluate import evaluate_farm_auction
         jobs = [(int(farm), auction) for farm in settings['farms'] for auction in settings['auctions']]
         with ProcessPoolExecutor(max_workers=min(workers, len(jobs)), mp_context=multiprocessing.get_context('fork')) as executor:
             futures = {executor.submit(evaluate_farm_auction, config, source, farm, auction, root): (farm, auction)
@@ -61,7 +62,7 @@ def main():
             for future in as_completed(futures):
                 print(f'Evaluated {futures[future]}: {future.result()}', flush=True)
     if args.stage in ('report', 'all'):
-        from bess_pv_trading.forecasting.pv_online_crps_report import report
+        from bess_pv_trading.forecasting.plotting.pv_online_crps_report import report
         print(report(config, root), flush=True)
 
 

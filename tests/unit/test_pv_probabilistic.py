@@ -7,11 +7,11 @@ import xarray as xr
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data import align_forecast
-from bess_pv_trading.forecasting.pv import local_delivery_starts
-from bess_pv_trading.forecasting.pv_outages import apply_episode_exclusions
-from bess_pv_trading.forecasting.pv_probabilistic_data import _bundle, _cycle, align_cycle
-from bess_pv_trading.forecasting.pv_probabilistic_metrics import raw_crps, quantile_mean, predict_calibrator
-from bess_pv_trading.forecasting.pv_probabilistic_search import interval_weights, trial_plan
+from bess_pv_trading.forecasting.models.pv import local_delivery_starts
+from bess_pv_trading.forecasting.data.pv_outages import apply_episode_exclusions
+from bess_pv_trading.forecasting.data.pv_probabilistic_data import _bundle, _cycle, align_cycle
+from bess_pv_trading.forecasting.evaluation.pv_probabilistic_metrics import raw_crps, quantile_mean, predict_calibrator
+from bess_pv_trading.forecasting.training.pv_probabilistic_search import interval_weights, trial_plan
 
 
 def test_ensemble_midnight_alignment_matches_existing_contract():
@@ -81,8 +81,8 @@ def test_review_exclusion_boundaries_are_inclusive(tmp_path):
 def test_all_predictor_families_fit_small_member_fixture():
     """Exercise each approved backend with a fixed, non-random five-day fixture."""
     from threadpoolctl import threadpool_limits
-    from bess_pv_trading.forecasting.pv_probabilistic_search import add_time_features, fit_predictor, predict
-    from bess_pv_trading.forecasting.pv_probabilistic_search import CORE, EXTRA
+    from bess_pv_trading.forecasting.training.pv_probabilistic_search import add_time_features, fit_predictor, predict
+    from bess_pv_trading.forecasting.training.pv_probabilistic_search import CORE, EXTRA
     rows=[]
     for day in pd.date_range('2026-01-01',periods=5):
         for member in ['1','2']:
@@ -109,7 +109,7 @@ def test_all_predictor_families_fit_small_member_fixture():
 
 def test_quantiles_do_not_use_target_exclusion_to_hide_forecasts():
     """Retrospective review masks affect scoring, not weather-based prediction."""
-    from bess_pv_trading.forecasting.pv_probabilistic_reporting import apply_calibrator
+    from bess_pv_trading.forecasting.plotting.pv_probabilistic_reporting import apply_calibrator
     class Scaler:
         def transform(self,x): return x
     class Estimator:
@@ -127,7 +127,7 @@ def test_quantiles_do_not_use_target_exclusion_to_hide_forecasts():
 
 def test_validation_only_output_has_no_all_january_label():
     """Validation-only candidate predictions are not mislabeled as full January."""
-    from bess_pv_trading.forecasting.pv_probabilistic_reporting import scored_windows
+    from bess_pv_trading.forecasting.plotting.pv_probabilistic_reporting import scored_windows
     ids=[str(i) for i in range(1,51)]
     frame=pd.DataFrame([{**{i:.5 for i in ids},'interval_start_utc':pd.Timestamp('2026-01-22T12:00Z'),
                          'delivery_day':'2026-01-22','split':'validation','measured_ac_mw':.5,
@@ -139,7 +139,7 @@ def test_validation_only_output_has_no_all_january_label():
 
 def test_fit_ignores_targets_after_fit_end():
     """Changing validation targets cannot change a January training fit."""
-    from bess_pv_trading.forecasting.pv_probabilistic_search import add_time_features, fit_predictor, predict, CORE
+    from bess_pv_trading.forecasting.training.pv_probabilistic_search import add_time_features, fit_predictor, predict, CORE
     config=load_config('configs/pv_experiments/probabilistic_january_2026.yaml')
     rows=[]
     for day in pd.date_range('2026-01-01',periods=5):
@@ -159,7 +159,7 @@ def test_fit_ignores_targets_after_fit_end():
 
 def test_hourly_aggregation_requires_four_paired_quarters():
     """An excluded quarter cannot silently become a complete hourly trajectory."""
-    from bess_pv_trading.forecasting.pv_probabilistic_reporting import hourly_frame
+    from bess_pv_trading.forecasting.plotting.pv_probabilistic_reporting import hourly_frame
     ids=[str(i) for i in range(1,51)]
     rows=[]
     for i, stamp in enumerate(pd.date_range('2026-01-22T10:00Z',periods=8,freq='15min')):
@@ -173,7 +173,7 @@ def test_hourly_aggregation_requires_four_paired_quarters():
 
 def test_two_archive_chronological_80_20_split_and_summer_cycle():
     """The August archive starts one day after its first usable next-day forecast."""
-    from bess_pv_trading.forecasting.pv_probabilistic_data import study_days, delivery_split
+    from bess_pv_trading.forecasting.data.pv_probabilistic_data import study_days, delivery_split
     config=load_config('configs/pv_experiments/probabilistic_january_august_2026.yaml')
     section=config['pv_probabilistic_study']; days=study_days(section)
     train=[d for d in days if delivery_split(d,section)=='train']
@@ -190,7 +190,7 @@ def test_two_archive_chronological_80_20_split_and_summer_cycle():
 
 def test_scores_include_nameplate_normalized_errors():
     """MAE, RMSE, bias and CRPS percentages use installed AC capacity."""
-    from bess_pv_trading.forecasting.pv_probabilistic_metrics import score_frame
+    from bess_pv_trading.forecasting.evaluation.pv_probabilistic_metrics import score_frame
     ids=[str(i) for i in range(1,51)]
     row={**{i:2. for i in ids},'measured_ac_mw':1.,'deterministic_prediction':2.,'eligible':True}
     result=score_frame(pd.DataFrame([row]),ids,[.05,.1,.25,.5,.75,.9,.95],4.,'validation')
@@ -204,7 +204,7 @@ def test_scores_include_nameplate_normalized_errors():
 def test_calibration_rejects_future_targets_and_overlapping_folds():
     """Out-of-fold calibration may never consume validation or overlapping days."""
     from copy import deepcopy
-    from bess_pv_trading.forecasting.pv_probabilistic_data import validate_study
+    from bess_pv_trading.forecasting.data.pv_probabilistic_data import validate_study
     config=load_config('configs/pv_experiments/probabilistic_january_august_2026.yaml')
     section=deepcopy(config['pv_probabilistic_study'])
     assert len(validate_study(section))==61
@@ -220,7 +220,7 @@ def test_calibration_rejects_future_targets_and_overlapping_folds():
 
 def test_same_day_retrospective_uses_prior_cycle_only_before_utc_midnight():
     """The midnight fill respects winter/summer local offsets and retains both vintages."""
-    from bess_pv_trading.forecasting.pv_probabilistic_data import day_vintage_segments
+    from bess_pv_trading.forecasting.data.pv_probabilistic_data import day_vintage_segments
     for day, count in [('2026-01-02', 4), ('2026-08-02', 8)]:
         grid = local_delivery_starts(day)
         segments = day_vintage_segments(day, grid, 'same_day_retrospective')
@@ -232,7 +232,7 @@ def test_same_day_retrospective_uses_prior_cycle_only_before_utc_midnight():
 
 def test_matched_vintage_comparison_checks_targets_and_exclusions():
     """Compare vintage strategies only where both forecast the same curated target."""
-    from bess_pv_trading.forecasting.pv_probabilistic_compare import matched_frames
+    from bess_pv_trading.forecasting.evaluation.pv_probabilistic_compare import matched_frames
     ids=[str(i) for i in range(1,51)]
     rows=[]
     for i,t in enumerate(pd.date_range('2026-08-20T08:00Z',periods=2,freq='15min')):

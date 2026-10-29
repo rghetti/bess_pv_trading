@@ -10,7 +10,7 @@ import pandas as pd
 from benchmark_satellite_ghi import write,sha
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data import config_path
-from bess_pv_trading.forecasting.pv_fitting import balanced_weights
+from bess_pv_trading.forecasting.training.pv_fitting import balanced_weights
 
 
 def situations(table,section):
