@@ -1,4 +1,4 @@
-# Seasonal night policy for physical PV fitting
+# Seasonal night policy for physical and ensemble PV studies
 
 The realized-irradiance physical study uses the monthly local-time windows in
 `pv_realized_irradiance_search.night_policy`. The intervals are half-open and
@@ -27,10 +27,17 @@ are not known, and a sampled geographic envelope and satellite-derived GHI do
 not prove that no physical production can occur in any treated interval.
 Review source values rather than interpreting a treated zero as a measurement.
 
+New probabilistic ensemble studies use the same monthly policy for predictions,
+quantile calibration and treated fitting targets. Their inputs retain
+`measured_ac_raw_mw` and `night_target_zeroed`, and the input manifest records
+the policy and treatment. Older cached inputs without this treatment cannot be
+reused as if they followed the new policy; prepare a fresh study run. Existing
+saved predictions and model results are not rewritten.
+
 The independent general `policy.night` remains unchanged for other workflows;
-this physical-study policy does not silently modify existing forecast or
-simulation settings. The seasonal night window also defines which intervals are
-included in the physical search's non-night selection score.
+this study policy does not silently modify existing simulation settings. The
+seasonal night window also defines which intervals are included in the physical
+search's non-night selection score.
 
 An audit of the user-selected windows against all original Zarr quarter-hours
 for 2025 through August 2026 is saved under

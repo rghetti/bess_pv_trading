@@ -23,6 +23,7 @@ pv_probabilistic_study:
   ensemble_zarr: data/farms/nwp_ens_20260101_20260131.zarr
   dataset_periods: null  # Optional list of {ensemble_zarr, start_day, end_day} delivery windows.
   vintage_strategy: preceding_day  # preceding_day or same_day_retrospective with previous-vintage midnight fill.
+  night_target_treatment: zero  # Preserve raw AC; use the approved seasonal physical-study night policy.
   output_root: outputs/pv_probabilistic
   run_id: january_2026_00utc
   farm_ids: [1, 345, 901, 910]
@@ -144,7 +145,8 @@ review:
 # FARM SELECTION: change this field, or pass --farm-id. IDs below come from the declared farm metadata.
 # ${farm_id} is a typed reference resolved after all overrides. auto POI uses selected AC capacity / 1000,
 # unless farms.<id>.poi_import_mw / poi_export_mw or explicit plant limits override that proxy.
-# farms.<id>.pv contains the final global 2025 fits, treated as prior farm metadata at ALL dates.
+# farms.<id>.pv retains the 2025 output-scale and geometry assumptions as prior metadata.
+# Faiman temperature parameters inherit the standard shared pv settings below.
 # Override that farm mapping to tune it; pv: null selects the unfitted shared reference below.
 # farms.<id>.battery supplies hypothetical capacity/power when the shared battery fields are auto.
 # Explicit numeric battery fields in experiment YAMLs override this farm sizing.
@@ -160,9 +162,6 @@ farms:
       direct_exceeds_ghi: clip_and_flag
       transposition_model: isotropic
       albedo: 0.2
-      temperature:
-        u0: 60.0
-        u1: 15.0
       bifacial:
         enabled: false
         bifaciality: 0.8
@@ -183,9 +182,6 @@ farms:
       direct_exceeds_ghi: clip_and_flag
       transposition_model: isotropic
       albedo: 0.2
-      temperature:
-        u0: 60.0
-        u1: 15.0
       bifacial:
         enabled: false
         bifaciality: 0.8
@@ -206,9 +202,6 @@ farms:
       direct_exceeds_ghi: clip_and_flag
       transposition_model: isotropic
       albedo: 0.2
-      temperature:
-        u0: 60.0
-        u1: 7.835819738293059
       bifacial:
         enabled: false
         bifaciality: 0.8
@@ -232,9 +225,6 @@ farms:
       direct_exceeds_ghi: clip_and_flag
       transposition_model: perez-driesse
       albedo: 0.2
-      temperature:
-        u0: 60.0
-        u1: 15.0
       bifacial:
         enabled: false
         bifaciality: 0.8

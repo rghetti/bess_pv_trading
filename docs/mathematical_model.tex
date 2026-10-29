@@ -234,7 +234,10 @@ DC output. In symbolic form,
  P_{\rm DC}&=\max\!\left(0,\frac{P_{\rm AC,rated}}{\eta_{\rm ref}}
  \frac{G_{\rm POA}}{1000}[1+\gamma(T_{\rm mod}-T_{\rm ref})]\right).
 \end{align}
-The DC reference ratio $\eta_{\rm ref}=0.96$ is distinct from the configured
+The shared Faiman coefficients are $U_0=25$ and $U_1=6.84$, and the configured
+PVWatts coefficient is $\gamma=-0.004/{}^\circ\mathrm{C}$. Historical fit
+artifacts retain the settings under which they were produced. The DC reference
+ratio $\eta_{\rm ref}=0.96$ is distinct from the configured
 DC-to-AC scale. The final AC forecast uses the selected output coefficient,
 transformer setting and AC cap. Farm coordinates are a documented proxy, so
 the physical geometry is an assumption. The optimization does not use

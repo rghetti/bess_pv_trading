@@ -18,7 +18,7 @@ from sklearn.preprocessing import StandardScaler
 from threadpoolctl import threadpool_limits
 
 from ...data import night_window_mask
-from ..data.pv_probabilistic_data import file_hash, study_root, validate_study, write_json
+from ..data.pv_probabilistic_data import file_hash, study_root, validate_study, write_json, probabilistic_night_policy
 from ..evaluation.pv_probabilistic_metrics import fit_calibrator, paired_inputs, score_frame
 from ..plotting.pv_probabilistic_reporting import apply_calibrator, comparable, load_farm, scored_windows, _hourly_scores
 
@@ -122,7 +122,7 @@ def predict(model, frame, config):
     elif valid.any():
         pred[valid] = model['model'].predict(model['scaler'].transform(x[valid]))
     pred = np.clip(pred * model['rating_mw'], 0, model['rating_mw'])
-    night = night_window_mask(pd.DatetimeIndex(frame.interval_start_utc), config['policy']['night'])
+    night = night_window_mask(pd.DatetimeIndex(frame.interval_start_utc), probabilistic_night_policy(config))
     pred[np.isfinite(pred) & night] = 0.
     return pred
 
@@ -195,7 +195,7 @@ def run_trial(config, trial):
         sub_e = ens.loc[ens.split.eq('validation')].reset_index(drop=True)
         sub_d = det.loc[det.split.eq('validation')].reset_index(drop=True)
         predictions = paired_inputs(sub_e, sub_d, predict(model, sub_e, config), predict(model, sub_d, config), ids)
-        predictions, adjustments = apply_calibrator(predictions, ids, calibrator, levels, config['policy']['night'])
+        predictions, adjustments = apply_calibrator(predictions, ids, calibrator, levels, probabilistic_night_policy(config))
         metrics = scored_windows(predictions, ids, levels, rating)
         hourly, hourly_metrics = _hourly_scores(predictions, ids, levels, rating)
         predictions.to_parquet(dest / 'predictions.parquet', index=False)

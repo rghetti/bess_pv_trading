@@ -12,7 +12,22 @@ import xarray as xr
 from ...data import ForecastBundle, align_forecast, config_path, load_metadata
 from ..models.pv import forecast_pv, local_delivery_starts
 from ..data.pv_outages import apply_episode_exclusions
+from ..data.pv_realized_irradiance import treat_night_targets
 from ..data.pv_study_inputs import farm_settings
+
+
+def probabilistic_night_policy(config):
+    """Use the approved seasonal night rule for new ensemble studies."""
+    return config.get('pv_realized_irradiance_search', {}).get('night_policy', config['policy']['night'])
+
+
+def validate_prepared_night_policy(manifest, config):
+    """Prevent old raw-target caches from masquerading as seasonal-treated inputs."""
+    expected = config['pv_probabilistic_study'].get('night_target_treatment', 'preserve')
+    if manifest.get('night_target_treatment', 'preserve') != expected:
+        raise ValueError('Prepared ensemble targets use a different night treatment; prepare a fresh run')
+    if expected == 'zero' and manifest.get('night_policy') != probabilistic_night_policy(config):
+        raise ValueError('Prepared ensemble targets use a different night policy; prepare a fresh run')
 
 
 def file_hash(path):
@@ -215,12 +230,14 @@ def align_cycle(dataset, farm_id, cycle, starts, config, ensemble):
 
 
 def _target_frame(dataset, farm_id, starts, config):
-    """Join raw measured AC to the grid and apply only approved episode exclusions."""
+    """Preserve measured AC, apply the configured night treatment and approved exclusions."""
     times = pd.DatetimeIndex(pd.to_datetime(dataset.time.values, utc=True))
     series = pd.Series(dataset.power.sel(farm_id=farm_id).values, index=times)
     frame = pd.DataFrame({'interval_start_utc': starts,
                           'measured_ac_mw': series.reindex(starts).to_numpy() * float(config['forecast']['realized_power_scale_to_mw'])})
     frame['eligible'] = np.isfinite(frame.measured_ac_mw) & (frame.measured_ac_mw >= 0)
+    treatment = config.get('pv_probabilistic_study', {}).get('night_target_treatment', 'preserve')
+    frame = treat_night_targets(frame, probabilistic_night_policy(config), treatment)
     return apply_episode_exclusions(frame, config, farm_id=farm_id)
 
 
@@ -265,12 +282,13 @@ def prepare_farm(config, farm_id, *, force=False):
     root.mkdir(parents=True, exist_ok=True)
     manifest_path = root / 'input_manifest.json'
     fingerprint = source_fingerprint(config, farm_id)
-    input_settings = {key: section.get(key) for key in ('ensemble_zarr', 'dataset_periods', 'start_day', 'train_end_day', 'validation_end_day', 'end_day')}
+    input_settings = {key: section.get(key) for key in ('ensemble_zarr', 'dataset_periods', 'start_day', 'train_end_day', 'validation_end_day', 'end_day', 'night_target_treatment')}
     if section.get('vintage_strategy', 'preceding_day') != 'preceding_day':
         input_settings['vintage_strategy'] = section['vintage_strategy']
     settings_identity = hashlib.sha256(json.dumps({'section': input_settings, 'source': config['source'],
         'mapping': config['forecast_mapping'], 'semantics': config['forecast_semantics'],
-        'policy': config['policy'], 'pv': farm_settings(config, load_metadata(config_path(config, config['inputs']['metadata_parquet']), [farm_id])[farm_id])}, sort_keys=True, default=str).encode()).hexdigest()
+        'policy': config['policy'], 'study_night_policy': probabilistic_night_policy(config),
+        'pv': farm_settings(config, load_metadata(config_path(config, config['inputs']['metadata_parquet']), [farm_id])[farm_id])}, sort_keys=True, default=str).encode()).hexdigest()
     if manifest_path.exists() and not force:
         old = json.loads(manifest_path.read_text())
         if old['source_fingerprint'] != fingerprint or old['settings_fingerprint'] != settings_identity:
@@ -345,7 +363,10 @@ def prepare_farm(config, farm_id, *, force=False):
         frame.to_parquet(path, index=False)
         files[label] = file_hash(path)
     manifest = {'farm_id': farm_id, 'source_fingerprint': fingerprint, 'settings_fingerprint': settings_identity,
-        'files': files, 'ensemble_members': 50, 'target': 'raw measured AC MW; approved exclusions only',
+        'files': files, 'ensemble_members': 50,
+        'target': 'measured AC MW with configured night treatment and approved exclusions; raw values retained',
+        'night_target_treatment': section.get('night_target_treatment', 'preserve'),
+        'night_policy': probabilistic_night_policy(config),
         'vintage_strategy': section.get('vintage_strategy', 'preceding_day'),
         'cycle': ('same-day 00 UTC retrospectively; preceding-day cycle before 00 UTC' if section.get('vintage_strategy') == 'same_day_retrospective' else '00 UTC on prior delivery day'),
         'availability': 'cycle plus assumed six hours',
@@ -365,18 +386,22 @@ def pvlib_farm(config, farm_id, *, force=False):
     """Apply identical configured physical conversion to all members and the deterministic forecast."""
     root = study_root(config) / f'farm_{farm_id}'
     manifest = json.loads((root / 'input_manifest.json').read_text())
+    validate_prepared_night_policy(manifest, config)
+    farm = load_metadata(config_path(config, config['inputs']['metadata_parquet']), [farm_id])[farm_id]
+    settings = farm_settings(config, farm)
+    night_policy = probabilistic_night_policy(config)
     marker = root / 'pvlib_manifest.json'
     if marker.exists() and not force:
         old = json.loads(marker.read_text())
         if old['input_files'] != manifest['files']:
             raise ValueError('pvlib input fingerprints changed')
+        if old.get('pv_parameters') != settings or old.get('night_policy') != night_policy:
+            raise ValueError('pvlib settings or night policy changed; prepare a fresh run')
         for label in ('ensemble', 'deterministic'):
             if file_hash(root / f'{label}_pvlib.parquet') != old['files'][label]:
                 raise ValueError(f'pvlib {label} output checksum mismatch')
         print(f'Farm {farm_id}: reusing pvlib outputs', flush=True)
         return old
-    farm = load_metadata(config_path(config, config['inputs']['metadata_parquet']), [farm_id])[farm_id]
-    settings = farm_settings(config, farm)
     output_files = {}
     mapping = config['forecast_mapping']
     for label in ('ensemble', 'deterministic'):
@@ -389,7 +414,7 @@ def pvlib_farm(config, farm_id, *, force=False):
             bundle = ForecastBundle(farm_id, cycle, pd.Timestamp(part.forecast_available_at_utc.iloc[0]), part,
                 {name: '' for name in mapping}, members, label,
                 {'decision_cutoff_utc': pd.Timestamp(part.forecast_available_at_utc.iloc[0]).isoformat()})
-            converted = forecast_pv(bundle, farm, settings, config['policy']['night']).values.reset_index(drop=True)
+            converted = forecast_pv(bundle, farm, settings, night_policy).values.reset_index(drop=True)
             keep = ['interval_start_utc', 'delivery_day', 'member', 'pv_ac_mw', 'pv_input_valid',
                     'bhi_exceeds_ghi', 'low_sun_direct_limited', 'dni_limited', 'nighttime_zero']
             result.append(converted[keep])
@@ -398,7 +423,8 @@ def pvlib_farm(config, farm_id, *, force=False):
         output.to_parquet(path, index=False)
         output_files[label] = file_hash(path)
     marker_data = {'input_files': manifest['files'], 'files': output_files,
-        'pv_parameters': settings, 'parameter_interpretation': '2025 fitted farm parameters treated as prior metadata'}
+        'pv_parameters': settings, 'night_policy': night_policy,
+        'parameter_interpretation': 'configured physical assumptions and retained farm-specific scale/geometry'}
     write_json(marker, marker_data)
     print(f'Farm {farm_id}: pvlib conversion complete', flush=True)
     return marker_data

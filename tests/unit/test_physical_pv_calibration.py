@@ -191,14 +191,16 @@ def test_float32_nameplate_roundoff_does_not_block_artifacts(physical_case,tmp_p
 
 
 @pytest.mark.parametrize("farm_id",load_config("configs/standard.yaml")["pv_calibration"]["farm_ids"])
-def test_global_farm_parameters_load_in_experiment_and_apply_before_fitting_year(physical_case,farm_id):
+def test_farm_scale_and_standard_temperature_load_before_fitting_year(physical_case,farm_id):
     from pathlib import Path
     config=load_config("configs/full_experiments/continuous_optimization_2025-01.yaml",
                        overrides={"farm_id":farm_id})
     artifact=json.loads(Path(f"configs/pv_parameters/2025/farm_{farm_id}.json").read_text())
     fit=artifact["fit"]
     assert config["pv"]["output"]["calibrated_coefficient"]==fit["parameters"]["coefficient"]
-    assert config["pv"]["temperature"]["u0"]==fit["parameters"]["u0"]
+    assert config["pv"]["temperature"]["u0"]==25.0
+    assert config["pv"]["temperature"]["u1"]==6.84
+    assert config["pv"]["dc"]["gamma_pdc_per_c"]==-0.004
     assert config["pv"]["transposition_model"]==fit["transposition_model"]
     _,_,_,_,frame=physical_case
     values=frame.iloc[:20].set_index("interval_start_utc")

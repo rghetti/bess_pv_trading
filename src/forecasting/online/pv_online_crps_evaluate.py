@@ -15,7 +15,7 @@ from threadpoolctl import threadpool_limits
 
 from ...data import night_window_mask
 from ..online.pv_online_crps import MLPoly
-from ..data.pv_probabilistic_data import file_hash, write_json
+from ..data.pv_probabilistic_data import file_hash, write_json, probabilistic_night_policy
 
 
 def _features(frame, rating):
@@ -91,7 +91,7 @@ def evaluate_farm_auction(config, source_config, farm, auction, output_root):
             raw = q.copy(); crossed = bounded = night = np.zeros(len(current), dtype=bool)
             if history_days >= int(settings['minimum_quantile_days']):
                 q, raw, crossed, bounded, night = deterministic_quantiles(history, current, levels, rating,
-                    float(settings['quantile_alpha']), source_config['policy']['night'])
+                    float(settings['quantile_alpha']), probabilistic_night_policy(source_config))
             local = pd.DatetimeIndex(current.interval_start_utc).tz_convert('Europe/Rome')
             blocks = local.hour.to_numpy() // int(settings['block_hours'])
             issue_log.append({'farm_id': farm, 'auction': auction, 'decision_cutoff_utc': cutoff,

@@ -9,7 +9,8 @@ from bess_pv_trading.config import load_config
 from bess_pv_trading.data import align_forecast
 from bess_pv_trading.forecasting.models.pv import local_delivery_starts
 from bess_pv_trading.forecasting.data.pv_outages import apply_episode_exclusions
-from bess_pv_trading.forecasting.data.pv_probabilistic_data import _bundle, _cycle, align_cycle
+from bess_pv_trading.forecasting.data.pv_probabilistic_data import _bundle, _cycle, _target_frame, align_cycle, pvlib_farm
+from bess_pv_trading.forecasting.plotting.pv_probabilistic_reporting import load_farm
 from bess_pv_trading.forecasting.evaluation.pv_probabilistic_metrics import raw_crps, quantile_mean, predict_calibrator
 from bess_pv_trading.forecasting.training.pv_probabilistic_search import interval_weights, trial_plan
 
@@ -38,6 +39,61 @@ def test_ensemble_midnight_alignment_matches_existing_contract():
     assert member.temperature_c.iloc[:4].isna().all()
     np.testing.assert_allclose(member.temperature_c.iloc[4:], [8.5,9.5,10.5,11.5])
     assert _cycle('2026-01-01') == cycle
+
+
+def test_ensemble_targets_use_seasonal_treatment_and_preserve_raw():
+    """New ensemble inputs retain measured AC and zero only configured nighttime targets."""
+    config = load_config('configs/standard.yaml', overrides={'pv_data_quality': {'exclusions_csv': None}})
+    local = pd.to_datetime(['2026-01-15 18:15', '2026-01-15 18:30',
+                            '2026-01-15 18:45', '2026-01-16 06:45']).tz_localize('Europe/Rome')
+    times = local.tz_convert('UTC')
+    source = xr.Dataset({'power': (('farm_id', 'time'), [[100., 200., np.nan, 300.]])},
+                        coords={'farm_id': [1], 'time': times.tz_localize(None)})
+    frame = _target_frame(source, 1, times, config)
+    np.testing.assert_allclose(frame.measured_ac_raw_mw, [.1, .2, np.nan, .3], equal_nan=True)
+    np.testing.assert_allclose(frame.measured_ac_mw, [.1, 0., np.nan, .3], equal_nan=True)
+    assert frame.night_target_zeroed.tolist() == [False, True, False, False]
+    assert frame.eligible.tolist() == [True, True, False, True]
+
+
+def test_ensemble_refuses_cached_inputs_with_old_night_treatment(tmp_path):
+    """Previously saved raw-target studies cannot be mistaken for seasonal-treated inputs."""
+    config = load_config('configs/standard.yaml')
+    config['pv_probabilistic_study'].update(output_root=str(tmp_path), run_id='old')
+    root = tmp_path / 'old' / 'farm_1'
+    root.mkdir(parents=True)
+    (root / 'input_manifest.json').write_text('{"target": "raw measured AC MW"}')
+    with pytest.raises(ValueError, match='different night treatment'):
+        load_farm(config, 1)
+    with pytest.raises(ValueError, match='different night treatment'):
+        pvlib_farm(config, 1)
+
+
+def test_pvlib_ensemble_refuses_cached_old_physical_settings(tmp_path, monkeypatch):
+    """Changing the physical baseline cannot silently reuse an older pvlib conversion."""
+    from bess_pv_trading.forecasting.data import pv_probabilistic_data as module
+    config = load_config('configs/standard.yaml')
+    config['pv_probabilistic_study'].update(output_root=str(tmp_path), run_id='old')
+    root = tmp_path / 'old' / 'farm_1'
+    root.mkdir(parents=True)
+    policy = config['pv_realized_irradiance_search']['night_policy']
+    module.write_json(root / 'input_manifest.json', {'night_target_treatment': 'zero',
+                                                     'night_policy': policy, 'files': {}})
+    module.write_json(root / 'pvlib_manifest.json', {'input_files': {}, 'files': {},
+        'night_policy': policy, 'pv_parameters': {'temperature': {'u0': 60.0}}})
+    monkeypatch.setattr(module, 'load_metadata', lambda *_args: {1: object()})
+    monkeypatch.setattr(module, 'farm_settings', lambda *_args: {'temperature': {'u0': 25.0}})
+    with pytest.raises(ValueError, match='pvlib settings or night policy changed'):
+        pvlib_farm(config, 1)
+
+
+@pytest.mark.parametrize('farm', [1, 345, 901, 910])
+def test_shared_standard_temperature_parameters_for_each_farm(farm):
+    """Every selected farm inherits the shared Faiman and PVWatts assumptions."""
+    config = load_config('configs/standard.yaml', overrides={'farm_id': farm})
+    assert config['pv']['temperature']['u0'] == 25.0
+    assert config['pv']['temperature']['u1'] == 6.84
+    assert config['pv']['dc']['gamma_pdc_per_c'] == -0.004
 
 
 def test_member_weights_and_trial_budget():

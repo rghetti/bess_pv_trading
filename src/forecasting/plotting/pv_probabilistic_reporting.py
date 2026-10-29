@@ -11,7 +11,8 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from ...data import config_path, load_metadata, night_window_mask
-from ..data.pv_probabilistic_data import file_hash, study_root, study_days, delivery_split, write_json
+from ..data.pv_probabilistic_data import (file_hash, study_root, study_days, delivery_split,
+                                          write_json, probabilistic_night_policy, validate_prepared_night_policy)
 from ..evaluation.pv_probabilistic_metrics import paired_inputs, fit_calibrator, predict_calibrator, quantile_mean, score_frame
 
 
@@ -30,6 +31,7 @@ def load_farm(config, farm_id):
     """Load checksum-matched inputs and configured farm AC rating."""
     root = study_root(config) / f'farm_{farm_id}'
     manifest = json.loads((root / 'input_manifest.json').read_text())
+    validate_prepared_night_policy(manifest, config)
     for label in ('ensemble', 'deterministic'):
         if file_hash(root / f'{label}_inputs.parquet') != manifest['files'][label]:
             raise ValueError('Saved weather input checksum mismatch')
@@ -177,7 +179,7 @@ def evaluate_pvlib(config, farm_id):
     calibration = valid & calibration_dates & frame.split.eq('train').to_numpy()
     calibrator = fit_calibrator(frame.loc[calibration, ids].to_numpy(float), frame.loc[calibration, 'measured_ac_mw'],
         frame.loc[calibration, 'interval_start_utc'], rating, levels, section['calibration_alpha'])
-    frame, adjustments = apply_calibrator(frame, ids, calibrator, levels, config['policy']['night'])
+    frame, adjustments = apply_calibrator(frame, ids, calibrator, levels, probabilistic_night_policy(config))
     # Keep held-out targets out of baseline reports until validation selections are frozen.
     stored = frame.copy()
     if section.get('validation_end_day'):
