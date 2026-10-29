@@ -72,11 +72,27 @@ def plot_farm(config, root, farm_id):
     daily['rmse_percent_capacity'] = 100 * np.sqrt(daily.mse) / farm.ac_capacity_mw
     daily = daily.sort_values(['rmse_percent_capacity', 'day'])
     daily.to_csv(root / f'farm_{farm_id}' / 'training_day_ranking.csv')
-    complete = daily.loc[daily.daytime_intervals.eq(62)] if 'night_policy' not in section else daily.iloc[0:0]
-    selected = ([('best', day) for day in daily.head(3).index] +
-                [('worst', day) for day in daily.tail(3).index] +
-                [('best_complete', day) for day in complete.head(3).index])
-    folder = root / f'farm_{farm_id}' / 'training_day_plots' / f'trial_{int(chosen.trial_id)}'
+    if 'night_policy' in section:
+        expected = {}
+        for day in daily.index:
+            midnight = pd.Timestamp(day, tz=section['delivery_timezone'])
+            grid = pd.date_range(midnight, midnight + pd.DateOffset(days=1),
+                                 freq='15min', inclusive='left').tz_convert('UTC')
+            expected[day] = int((~night_window_mask(grid, section['night_policy'])).sum())
+        daily['expected_non_night_intervals'] = pd.Series(expected)
+        daily.to_csv(root / f'farm_{farm_id}' / 'training_day_ranking.csv')
+        complete = daily.loc[daily.daytime_intervals.eq(daily.expected_non_night_intervals)]
+        if len(complete) < 3:
+            raise ValueError(f'Farm {farm_id} has fewer than three fully covered non-night days')
+        selected = ([('best', day) for day in complete.head(3).index] +
+                    [('worst', day) for day in complete.tail(3).index])
+        folder = root / f'farm_{farm_id}' / 'training_day_plots' / f'trial_{int(chosen.trial_id)}_complete_days'
+    else:
+        complete = daily.loc[daily.daytime_intervals.eq(62)]
+        selected = ([('best', day) for day in daily.head(3).index] +
+                    [('worst', day) for day in daily.tail(3).index] +
+                    [('best_complete', day) for day in complete.head(3).index])
+        folder = root / f'farm_{farm_id}' / 'training_day_plots' / f'trial_{int(chosen.trial_id)}'
     folder.mkdir(parents=True, exist_ok=True)
     for kind, day in selected:
         midnight = pd.Timestamp(day, tz=section['delivery_timezone'])
@@ -94,7 +110,8 @@ def plot_farm(config, root, farm_id):
         ax.plot(local_index, part.prediction_mean, color='tab:blue', label='Mean of four weather views')
         ax.fill_between(local_index, part.prediction_min, part.prediction_max, color='tab:blue', alpha=.2,
                         label='Range of four weather-view predictions')
-        ax.set(title=f'Farm {farm_id}: {day} ({kind} training day); daytime RMSE '
+        label = 'non-night' if 'night_policy' in section else 'daytime'
+        ax.set(title=f'Farm {farm_id}: {day} ({kind} training day); {label} RMSE '
                f'{daily.loc[day, "rmse_percent_capacity"]:.2f}% of AC capacity; '
                f'{int(daily.loc[day, "daytime_intervals"])} eligible daytime quarters',
                ylabel='AC power (MW)', xlabel='Local time (Europe/Rome)')
