@@ -23,11 +23,13 @@ def plot_comparison(a, b, ids, farm, day, prior_model, same_model, destination):
     time = grid.tz_convert('Europe/Rome')
     fig, ax = plt.subplots(figsize=(13, 5), layout='constrained')
     ax.plot(time, p.measured_ac_mw, color='black', lw=1.7, label='Curated measured AC')
+    # Process each `(frame, color, label)` in this collection.
     for frame, color, label in ((p, '#1473a6', f'Previous day: {prior_model}'),
                                  (s, '#d06a20', f'Same day: {same_model}')):
         members = frame[ids].to_numpy(float)
         valid = np.isfinite(members).all(axis=1)
         mean = np.full(len(frame), np.nan); median = mean.copy(); lo = mean.copy(); hi = mean.copy()
+        # When `valid.any()`, set `mean[valid]` using `members[valid].mean(axis=1)`.
         if valid.any():
             mean[valid] = members[valid].mean(axis=1); median[valid] = np.median(members[valid], axis=1)
             lo[valid], hi[valid] = np.quantile(members[valid], [.1, .9], axis=1)
@@ -49,12 +51,15 @@ def matched_frames(a, b, ids):
     """Use identical eligible intervals and verify measured targets and review decisions."""
     a = a.loc[a.split.eq('validation')].set_index('interval_start_utc').sort_index()
     b = b.loc[b.split.eq('validation')].set_index('interval_start_utc').sort_index()
+    # Enforce the input contract: Duplicate validation timestamps.
     if a.index.has_duplicates or b.index.has_duplicates:
         raise ValueError('Duplicate validation timestamps')
     common = a.index.intersection(b.index)
     a, b = a.loc[common].copy(), b.loc[common].copy()
+    # Enforce the input contract: The two experiments do not use identical measured AC targets.
     if not np.allclose(a.measured_ac_mw, b.measured_ac_mw, equal_nan=True):
         raise ValueError('The two experiments do not use identical measured AC targets')
+    # Enforce the input contract: The two experiments have different target/exclusion decisions.
     if not a.eligible.equals(b.eligible) or not a.episode_excluded.equals(b.episode_excluded):
         raise ValueError('The two experiments have different target/exclusion decisions')
     mask = comparable(a, ids) & comparable(b, ids)
@@ -65,35 +70,46 @@ def compare_experiments(prior_config, same_config):
     """Save same-sample pvlib and separately validation-selected model comparisons."""
     prior_root, same_root = study_root(prior_config), study_root(same_config)
     prior_section, same_section = prior_config['pv_probabilistic_study'], same_config['pv_probabilistic_study']
+    # Enforce the input contract: Expected preceding-day and retrospective same-day experiment configurations.
     if prior_section.get('vintage_strategy', 'preceding_day') != 'preceding_day' or same_section.get('vintage_strategy') != 'same_day_retrospective':
         raise ValueError('Expected preceding-day and retrospective same-day experiment configurations')
+    # Process each `key` in this collection.
     for key in ('start_day','train_end_day','end_day','dataset_periods','calibration_folds','quantiles','farm_ids'):
+        # Enforce the input contract: Experiment definitions differ on `key`.
         if prior_section[key] != same_section[key]: raise ValueError(f'Experiment definitions differ on {key}')
     levels = list(map(float, prior_section['quantiles']))
     rows=[]; detailed=[]
     output=prior_root/'vintage_comparison';output.mkdir(parents=True,exist_ok=True)
+    # Save same-sample pvlib and separately validation-selected model comparisons for each `farm` in `prior_section['farm_ids']`.
     for farm in prior_section['farm_ids']:
         p_root, _, _, ids, rating = load_farm(prior_config, int(farm))
         s_root, _, _, same_ids, same_rating = load_farm(same_config, int(farm))
+        # Enforce the input contract: Farm/member definitions differ.
         if ids != same_ids or not np.isclose(rating, same_rating): raise ValueError('Farm/member definitions differ')
         physical_a = pd.read_parquet(p_root/'pvlib_paired_predictions.parquet')
         physical_b = pd.read_parquet(s_root/'pvlib_paired_predictions.parquet')
         pairs=[('pvlib', 'pvlib', 'all', physical_a, physical_b)]
         p_rank = pd.read_csv(p_root/'validation_rankings.csv')
         s_rank = pd.read_csv(s_root/'validation_rankings.csv')
+        # Save same-sample pvlib and separately validation-selected model comparisons for each `method` in `('member_mean', 'member_median', 'calibrated_quantiles')`.
         for method in ('member_mean','member_median','calibrated_quantiles'):
             p = p_rank.loc[p_rank['rank'].eq(1)&p_rank.method.eq(method)].iloc[0]
             s = s_rank.loc[s_rank['rank'].eq(1)&s_rank.method.eq(method)].iloc[0]
             pairs.append((p.trial,s.trial,method,pd.read_parquet(Path(p.trial_path)/'predictions.parquet'),
                           pd.read_parquet(Path(s.trial_path)/'predictions.parquet')))
+        # Save same-sample pvlib and separately validation-selected model comparisons for each `(p_name, s_name, selection, p_frame, s_frame)` in `pairs`.
         for p_name,s_name,selection,p_frame,s_frame in pairs:
             p_frame,s_frame = matched_frames(p_frame,s_frame,ids)
+            # Enforce the input contract: No comparable validation rows for farm `farm` / `selection`.
             if not len(p_frame): raise ValueError(f'No comparable validation rows for farm {farm} / {selection}')
+            # Save same-sample pvlib and separately validation-selected model comparisons when `selection in {'all', 'member_mean'}`.
             if selection in {'all', 'member_mean'}:
+                # Save same-sample pvlib and separately validation-selected model comparisons for each `day` in `sorted(set(p_frame.delivery_day))`.
                 for day in sorted(set(p_frame.delivery_day)):
                     plot_comparison(p_frame, s_frame, ids, farm, day, p_name, s_name,
                                     output / f'farm_{farm}' / day / f'{selection}.png')
             scores=[]
+            # Process each `(strategy, model, frame)` in this collection.
             for strategy,model,frame in [('preceding_day',p_name,p_frame),('same_day_retrospective',s_name,s_frame)]:
                 table=score_frame(frame,ids,levels,rating,'matched_validation')
                 table.insert(0,'model',model);table.insert(0,'strategy',strategy);table.insert(0,'selection',selection);table.insert(0,'farm_id',int(farm))
@@ -103,6 +119,7 @@ def compare_experiments(prior_config, same_config):
                   {'member_mean':('member_mean','rmse_mw','nrmse_percent_capacity'),
                    'member_median':('member_median','mae_mw','nmae_percent_capacity'),
                    'calibrated_quantiles':('calibrated_quantiles','crps_mw','crps_percent_capacity')}[selection]]
+            # Save same-sample pvlib and separately validation-selected model comparisons for each `(method, raw, norm)` in `keys`.
             for method,raw,norm in keys:
                 left,right=scores[0].loc[method],scores[1].loc[method]
                 rows.append({'farm_id':int(farm),'selection':selection,'method':method,'metric':raw,
@@ -120,6 +137,7 @@ def compare_experiments(prior_config, same_config):
         'The model for each objective is selected independently on the same validation days, so comparisons are exploratory.', '',
         '| Farm | Selection | Score | Prior model | Same-day model | Matched quarters | Prior (% AC) | Same day (% AC) |',
         '| --- | --- | --- | --- | --- | ---: | ---: | ---: |']
+    # Save same-sample pvlib and separately validation-selected model comparisons for each `row` in `comparison.itertuples()`.
     for row in comparison.itertuples():
         lines.append(f'| {row.farm_id} | {row.selection} | {row.metric} | {row.preceding_model} | {row.same_day_model} | {row.n_common_quarters} | {row.preceding_percent_capacity:.2f} | {row.same_day_percent_capacity:.2f} |')
     lines.extend(['', 'Scores use all matched eligible quarters, including nighttime. Percentages divide by installed farm AC capacity. '

@@ -20,6 +20,7 @@ from ...data import (
 # Source angles use south-zero; the sign is an explicit dataset assumption.
 def source_azimuth_to_pvlib(angle_deg: Any, positive_direction: str) -> Any:
     """Convert both supported south-zero conventions to north-zero clockwise."""
+    # Enforce the input contract: Source azimuth positive direction must be explicitly east or west.
     if positive_direction not in {"east", "west"}:
         raise ValueError("Source azimuth positive direction must be explicitly east or west")
     sign = -1 if positive_direction == "east" else 1
@@ -32,6 +33,7 @@ class PVCalibration:
     ac_per_dc: float
     fit_cutoff: pd.Timestamp
     training_samples: int
+    # Count observations adjusted by the declared preprocessing policy.
     adjusted_samples: int
     rmse_mw: float
     target_basis: str = "policy_treated_measured_AC"
@@ -46,15 +48,18 @@ def fit_dc_to_ac(modeled_dc_mw: pd.Series, observations: ObservationBundle, farm
     """
     view = observations.as_of(cutoff)
     view = view.loc[(view.farm_id == farm_id) & (view.variable == "power")].copy()
+    # When `not include_interpolated and 'measurement_interpolated' in view`, set `view` using `view.loc[~view.measurement_interpolated]`.
     if not include_interpolated and "measurement_interpolated" in view:
         view = view.loc[~view.measurement_interpolated]
     series = pd.Series(modeled_dc_mw.to_numpy(), index=pd.to_datetime(modeled_dc_mw.index, utc=True), name="dc_mw")
     joined = view.set_index("time").join(series, how="inner")
     joined = joined.loc[np.isfinite(joined.dc_mw) & np.isfinite(joined.value) & (joined.dc_mw > 0)]
+    # Enforce the input contract: Insufficient causal AC samples for PV-output calibration.
     if len(joined) < minimum_samples:
         raise ValueError("Insufficient causal AC samples for PV-output calibration")
     dc, ac = joined.dc_mw.to_numpy(), joined.value.to_numpy() / 1000
     slope = float(np.dot(dc, ac) / np.dot(dc, dc))
+    # Enforce the input contract: PV-output calibration slope must be positive and finite.
     if slope <= 0 or not np.isfinite(slope):
         raise ValueError("PV-output calibration slope must be positive and finite")
     adjusted = joined.get("plateau_zero", False) | joined.get("nighttime_zero", False) | joined.get("measurement_interpolated", False)
@@ -65,27 +70,37 @@ def fit_dc_to_ac(modeled_dc_mw: pd.Series, observations: ObservationBundle, farm
 def forecast_pv(bundle: ForecastBundle, farm: FarmMetadata, settings: dict[str, Any], night_policy: dict[str, Any], calibration: PVCalibration | None = None) -> ForecastBundle:
     """Run pvlib at interval midpoint, returning modeled DC and predicted AC MW."""
     from ..inference.pv_artifacts import resolve_parameters
+    # Enforce the input contract: Select either a PV parameter registry or an explicit calibration object.
     if calibration is not None and settings.get("parameter_registry"):
         raise ValueError("Select either a PV parameter registry or an explicit calibration object")
     settings, artifact_provenance = resolve_parameters(settings, farm, night_policy,
         bundle.provenance.get("decision_cutoff_utc", bundle.available_at))
+    # Enforce the input contract: fraction_diffuse is not enabled: independent definition/validation is required.
     if settings.get("fraction_diffuse_enabled", False):
         raise ValueError("fraction_diffuse is not enabled: independent definition/validation is required")
+    # Enforce the input contract: PV engine requires explicitly declared forecast shortwave GHI.
     if settings.get("shortwave_interpretation") != "ghi":
         raise ValueError("PV engine requires explicitly declared forecast shortwave GHI")
+    # Enforce the input contract: PV engine requires explicit horizontal-direct working interpretation.
     if settings.get("direct_radiation_interpretation") != "horizontal_direct":
         raise ValueError("PV engine requires explicit horizontal-direct working interpretation")
     location = settings.get("location", {})
+    # Enforce the input contract: Proxy coordinates require explicit acknowledgement.
     if location.get("location_status") == "proxy" and not location.get("acknowledged", False):
         raise ValueError("Proxy coordinates require explicit acknowledgement")
+    # Run pvlib at interval midpoint, returning modeled DC and predicted AC MW for each `coordinate` in `('latitude', 'longitude')`.
     for coordinate in ("latitude", "longitude"):
+        # Enforce the input contract: PV location requires `coordinate`.
         if coordinate not in location:
             raise ValueError(f"PV location requires {coordinate}")
     frame = bundle.values.copy(deep=True)
     required = ["forecast_ghi", "temperature_c", "wind_u_10m", "wind_v_10m"]
+    # When `settings.get('temperature', {}).get('wind_height_m', 10) == 100`, set `required` using `['forecast_ghi', 'temperature_c', 'wind_u_100m', 'wind_v_100m']`.
     if settings.get("temperature", {}).get("wind_height_m", 10) == 100:
         required = ["forecast_ghi", "temperature_c", "wind_u_100m", "wind_v_100m"]
+    # Run pvlib at interval midpoint, returning modeled DC and predicted AC MW for each `name` in `required`.
     for name in required:
+        # Enforce the input contract: Aligned forecast lacks PV input `name`.
         if name not in frame:
             raise ValueError(f"Aligned forecast lacks PV input {name}")
     times = pd.DatetimeIndex(frame.index) + pd.Timedelta(minutes=7.5)
@@ -97,14 +112,17 @@ def forecast_pv(bundle: ForecastBundle, farm: FarmMetadata, settings: dict[str, 
     direct_valid = np.isfinite(bhi) & (bhi >= 0) & (bhi <= ghi)
     contradiction = np.isfinite(bhi) & np.isfinite(ghi) & (bhi > ghi)
     action = settings.get("direct_exceeds_ghi", "invalidate")
+    # Enforce the input contract: direct_exceeds_ghi must be invalidate or clip_and_flag.
     if action not in {"invalidate", "clip_and_flag"}:
         raise ValueError("direct_exceeds_ghi must be invalidate or clip_and_flag")
+    # When `action == 'clip_and_flag'`, set `bhi` using `np.where(contradiction, ghi, bhi)`.
     if action == "clip_and_flag":
         bhi = np.where(contradiction, ghi, bhi)
         direct_valid = np.isfinite(bhi) & (bhi >= 0) & (bhi <= ghi)
     dhi = ghi - bhi
     # pvlib.dni derives DNI from horizontal GHI/DHI and suppresses the horizon.
     zenith_limit = float(settings.get("low_sun_zenith_deg", 85))
+    # Enforce the input contract: Low-sun zenith limit must lie strictly between 0 and 90 degrees.
     if not 0 < zenith_limit < 90:
         raise ValueError("Low-sun zenith limit must lie strictly between 0 and 90 degrees")
     dni = np.asarray(pvlib.irradiance.dni(pd.Series(ghi), pd.Series(dhi), pd.Series(zenith), zenith_threshold_for_zero_dni=zenith_limit), dtype=float)
@@ -113,8 +131,10 @@ def forecast_pv(bundle: ForecastBundle, farm: FarmMetadata, settings: dict[str, 
     dni = np.where(direct_valid & ghi_valid, dni, np.nan)
     decomposition_used = np.zeros(len(frame), dtype=bool)
     decomposition = settings.get("ghi_only_decomposition")
+    # Enforce the input contract: Only explicitly selected erbs GHI decomposition is supported.
     if decomposition not in {None, "erbs"}:
         raise ValueError("Only explicitly selected erbs GHI decomposition is supported")
+    # When `decomposition == 'erbs'`, set `alternative` using `pvlib.irradiance.erbs(ghi, zenith, times)`.
     if decomposition == "erbs":
         # An explicitly selected model can replace unusable direct input, not GHI.
         alternative = pvlib.irradiance.erbs(ghi, zenith, times)
@@ -123,15 +143,19 @@ def forecast_pv(bundle: ForecastBundle, farm: FarmMetadata, settings: dict[str, 
         dhi[decomposition_used] = np.asarray(alternative["dhi"])[decomposition_used]
         dni[decomposition_used & (zenith >= zenith_limit)] = 0
     valid = ghi_valid & (direct_valid | decomposition_used)
+    # When `action == 'invalidate'`, set `valid` using `~contradiction`.
     if action == "invalidate":
         valid &= ~contradiction
     dni_limit = float(settings.get("dni_limit_w_m2", 1400))
+    # Enforce the input contract: DNI limit must be positive.
     if dni_limit <= 0:
         raise ValueError("DNI limit must be positive")
     dni_limited = np.isfinite(dni) & (dni > dni_limit)
     limit_action = settings.get("dni_limit_action", "cap_and_flag")
+    # When `limit_action == 'cap_and_flag'`, set `dni` using `np.minimum(dni, dni_limit)`.
     if limit_action == "cap_and_flag":
         dni = np.minimum(dni, dni_limit)
+    # When `limit_action == 'invalidate'`, set `valid` using `~dni_limited`.
     elif limit_action == "invalidate":
         valid &= ~dni_limited
     else:
@@ -139,26 +163,34 @@ def forecast_pv(bundle: ForecastBundle, farm: FarmMetadata, settings: dict[str, 
     from ..models.pv_physical import PhysicalPVModel
     temperature = settings["temperature"]
     height = int(temperature.get("wind_height_m", 10))
+    # Enforce the input contract: Wind source height must be 10 or 100 m.
     if height not in {10, 100}:
         raise ValueError("Wind source height must be 10 or 100 m")
     wind = np.hypot(frame[f"wind_u_{height}m"].to_numpy(), frame[f"wind_v_{height}m"].to_numpy())
     output, dc_settings = settings["output"], settings["dc"]
     method = output["method"]
+    # When `method == 'explicit_efficiency'`, set `output_efficiency` using `float(output['pv_output_efficiency'])`.
     if method == "explicit_efficiency":
         output_efficiency = float(output["pv_output_efficiency"])
+        # Enforce the input contract: PV-output efficiency requires 0<eta<=1 and assumption provenance.
         if not 0 < output_efficiency <= 1 or not output.get("assumption_status"):
             raise ValueError("PV-output efficiency requires 0<eta<=1 and assumption provenance")
+    # Run pvlib at interval midpoint, returning modeled DC and predicted AC MW when `method == 'calibrated_scale'`.
     elif method == "calibrated_scale":
+        # Run pvlib at interval midpoint, returning modeled DC and predicted AC MW when `calibration is not None`.
         if calibration is not None:
+            # Enforce the input contract: Calibrated PV output requires a fit available by decision cutoff.
             if calibration.fit_cutoff > utc_timestamp(bundle.provenance.get("decision_cutoff_utc", bundle.available_at)):
                 raise ValueError("Calibrated PV output requires a fit available by decision cutoff")
             output_efficiency = calibration.ac_per_dc
+        # When `output.get('calibrated_coefficient') is not None`, set `output_efficiency` using `float(output['calibrated_coefficient'])`.
         elif output.get("calibrated_coefficient") is not None:
             output_efficiency = float(output["calibrated_coefficient"])
         else:
             raise ValueError("Calibrated PV output requires a fitted coefficient")
     else:
         raise ValueError("PV output requires explicit_efficiency or calibrated_scale")
+    # Enforce the input contract: Calibrated PV output coefficient must be positive and finite.
     if not np.isfinite(output_efficiency) or output_efficiency <= 0:
         raise ValueError("Calibrated PV output coefficient must be positive and finite")
     # These target-independent inputs are also saved for efficient fitting.
@@ -172,6 +204,7 @@ def forecast_pv(bundle: ForecastBundle, farm: FarmMetadata, settings: dict[str, 
     model = PhysicalPVModel(frame, farm, settings, night_policy)
     parameters = parameter_defaults(settings)
     parameters["coefficient"] = output_efficiency
+    # Run pvlib at interval midpoint, returning modeled DC and predicted AC MW for each `(name, values)` in `model.evaluate(parameters, diagnostics=True).items()`.
     for name, values in model.evaluate(parameters, diagnostics=True).items():
         frame[name] = values
     reference = float(dc_settings["reference_conversion_efficiency"])
@@ -179,6 +212,7 @@ def forecast_pv(bundle: ForecastBundle, farm: FarmMetadata, settings: dict[str, 
     scale = output_efficiency * transformer
     conversion_status = {"transformer_efficiency": transformer,
         "overall_dc_to_poi_efficiency": scale, "transformer_assumption": output["transformer_assumption_status"]}
+    # Run pvlib at interval midpoint, returning modeled DC and predicted AC MW when `method == 'explicit_efficiency'`.
     if method == "explicit_efficiency":
         conversion_status.update(dc_to_ac_efficiency=output_efficiency, dc_to_ac_assumption=output["assumption_status"])
     else:
@@ -227,12 +261,15 @@ def forecast_pv_from_config(config: dict[str, Any]) -> dict[str, Any]:
         pv = forecast_pv(weather, metadata, config["pv"], config.get("policy", {}).get("night", {}))
         fallback = run.get("earlier_complete_vintage_fallback", False)
         attempted_vintages = [pv.forecast_vintage.isoformat()]
+        # When `fallback and pv.values.pv_ac_mw.isna().any()`, set `selected_latest` using `pv`.
         if fallback and pv.values.pv_ac_mw.isna().any():
             selected_latest = pv
             cursor = pv.forecast_vintage
             maximum_lead = pd.Timedelta(hours=float(dataset.lead_time.values[-1] / np.timedelta64(1, "h"))) if np.issubdtype(dataset.lead_time.dtype, np.timedelta64) else pd.Timedelta(hours=float(dataset.lead_time.values[-1]))
+            # Continue until `True` is false.
             while True:
                 previous = dataset.sel(cycle_time=slice(None, (cursor - pd.Timedelta(nanoseconds=1)).tz_localize(None)))
+                # Stop processing when `previous.sizes.get('cycle_time', 0) == 0`.
                 if previous.sizes.get("cycle_time", 0) == 0:
                     break
                 try:
@@ -247,9 +284,11 @@ def forecast_pv_from_config(config: dict[str, Any]) -> dict[str, Any]:
                 weather = align_forecast(weather_source, starts, config["forecast_semantics"], config.get("policy", {}).get("nonnegative_forecasts", []))
                 candidate = forecast_pv(weather, metadata, config["pv"], config.get("policy", {}).get("night", {}))
                 attempted_vintages.append(candidate.forecast_vintage.isoformat())
+                # When `candidate.values.pv_ac_mw.notna().all()`, set `pv` using `candidate`.
                 if candidate.values.pv_ac_mw.notna().all():
                     pv = candidate
                     break
+            # When `pv.values.pv_ac_mw.isna().any()`, set `pv` using `selected_latest`.
             if pv.values.pv_ac_mw.isna().any():
                 pv = selected_latest
         pv.provenance["earlier_complete_vintage_fallback_requested"] = bool(fallback)
@@ -313,6 +352,7 @@ def _plot_pv_forecast(frame: pd.DataFrame, output: Path) -> None:
     from ...reporting.plots import plot_interval_series
     def plot_values(axis, values, **kwargs):
         """Close the last forecast interval when its explicit end is available."""
+        # Return the selected result for this condition.
         if "interval_end_utc" in frame:
             return plot_interval_series(axis, frame.index,
                 pd.to_datetime(frame.interval_end_utc, utc=True), values, **kwargs)
@@ -320,6 +360,7 @@ def _plot_pv_forecast(frame: pd.DataFrame, output: Path) -> None:
     fig, axes = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
     plot_values(axes[0], frame.modeled_dc_mw, label="modeled DC diagnostic MW")
     plot_values(axes[0], frame.pv_ac_mw, label="predicted farm AC MW")
+    # Save forecast output/radiation and display required-input gaps explicitly when `'raw_actual_ac_mw' in frame`.
     if "raw_actual_ac_mw" in frame:
         plot_values(axes[0], frame.raw_actual_ac_mw, label="raw measured AC MW", linewidth=1.2)
         plot_values(axes[0], frame.treated_actual_ac_mw, linestyle="--", label="policy-treated AC MW", linewidth=1.0)
@@ -330,8 +371,10 @@ def _plot_pv_forecast(frame: pd.DataFrame, output: Path) -> None:
     plot_values(axes[1], frame.forecast_bhi, label="forecast BHI working interpretation")
     axes[1].set_ylabel("W/m²")
     axes[1].set_xlabel("UTC delivery time (including available interval ends)")
+    # Save forecast output/radiation and display required-input gaps explicitly when `'interval_end_utc' in frame and len(frame)`.
     if "interval_end_utc" in frame and len(frame):
         axes[0].set_xlim(frame.index[0], pd.to_datetime(frame.interval_end_utc, utc=True).iloc[-1])
+    # Save forecast output/radiation and display required-input gaps explicitly for each `axis` in `axes`.
     for axis in axes:
         axis.grid(alpha=0.2)
         axis.legend(loc="upper right")
@@ -344,9 +387,11 @@ def _plot_pv_forecast(frame: pd.DataFrame, output: Path) -> None:
 # Scoring uses exact native interval starts and is explicitly ex-post accounting.
 def evaluate_pv_forecast(bundle: ForecastBundle, observations: ObservationBundle, lead_bin_hours: float = 12) -> tuple[pd.DataFrame, dict[str, Any]]:
     """Compare AC forecasts to raw/treated AC, separately by member and lead bin."""
+    # Enforce the input contract: Lead-bin width must be positive.
     if lead_bin_hours <= 0:
         raise ValueError("Lead-bin width must be positive")
     power = observations.frame.loc[(observations.frame.farm_id == bundle.farm_id) & (observations.frame.variable == "power")].set_index("time")
+    # Enforce the input contract: Measured native power interval keys must be unique.
     if power.index.has_duplicates:
         raise ValueError("Measured native power interval keys must be unique")
     frame = bundle.values.copy()
@@ -355,6 +400,7 @@ def evaluate_pv_forecast(bundle: ForecastBundle, observations: ObservationBundle
     frame["treated_actual_ac_mw"] = actual.treated_value.to_numpy(dtype=float) / 1000
     frame["review_excluded"] = actual.review_excluded.fillna(True).to_numpy(dtype=bool)
     frame["derived_review_excluded"] = actual.get("derived_review_excluded", actual.review_excluded).fillna(True).to_numpy(dtype=bool)
+    # Compare AC forecasts to raw/treated AC, separately by member and lead bin for each `column` in `('measurement_interpolated', 'plateau_zero', 'nighttime_zero')`.
     for column in ("measurement_interpolated", "plateau_zero", "nighttime_zero"):
         frame[f"observation_{column}"] = actual[column].fillna(False).to_numpy(dtype=bool)
     frame["observation_evidence_at"] = actual.evidence_at.to_numpy()
@@ -368,6 +414,7 @@ def evaluate_pv_forecast(bundle: ForecastBundle, observations: ObservationBundle
         return {"intervals": len(group), "finite_eligible_pairs": int(valid.sum()), "coverage_fraction": float(valid.mean()) if len(group) else 0.0, "forecast_missing_intervals": int((~np.isfinite(forecast)).sum()), "target_missing_intervals": int((~np.isfinite(measured)).sum()), "review_excluded_intervals": int(group[excluded].sum()), "mae_mw": float(np.mean(np.abs(error))) if len(error) else None, "rmse_mw": float(np.sqrt(np.mean(error ** 2))) if len(error) else None, "bias_mw": float(np.mean(error)) if len(error) else None, "paired_forecast_energy_mwh": float(np.sum(forecast[valid]) * 0.25), "paired_measured_energy_mwh": float(np.sum(measured[valid]) * 0.25)}
 
     members: list[dict[str, Any]] = []
+    # Compare AC forecasts to raw/treated AC, separately by member and lead bin for each `(member, group)` in `frame.groupby('member', sort=False)`.
     for member, group in frame.groupby("member", sort=False):
         members.append({"member_id": str(member), "raw_AC_target": metrics(group, "raw_actual_ac_mw", "review_excluded"), "policy_treated_AC_target": metrics(group, "treated_actual_ac_mw", "derived_review_excluded"), "adjusted_observation_intervals": int((group.observation_measurement_interpolated | group.observation_plateau_zero | group.observation_nighttime_zero).sum()), "lead_bins": [{"lead_bin_start_hours": float(lead), "raw_AC_target": metrics(lead_group, "raw_actual_ac_mw", "review_excluded"), "policy_treated_AC_target": metrics(lead_group, "treated_actual_ac_mw", "derived_review_excluded")} for lead, lead_group in group.groupby("lead_bin_start_hours", sort=True)]})
     summary = {"evaluation_type": "ex_post_exact_grid_point_forecast_by_vintage_not_ensemble_calibration", "farm_id": bundle.farm_id, "forecast_vintage_utc": bundle.forecast_vintage.isoformat(), "source_member_origin": bundle.member_origin, "target_basis": "measured_AC_MW", "period_start_utc": frame.index.min().isoformat(), "period_end_utc": frame.index.max().isoformat(), "lead_bin_hours": lead_bin_hours, "members": members, "limitations": "Policy-treated observations may include curtailment/outages and are not certified unconstrained availability; one deterministic vintage is not an ensemble sample."}

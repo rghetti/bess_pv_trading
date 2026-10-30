@@ -17,14 +17,18 @@ def predict_neural_frame(frame: pd.DataFrame, artifact: str | Path, *, farm_id: 
     A production caller supplies the same quarter-hour weather frame as the
     benchmark, plus date/auction/vintage identifiers and the daylight policy.
     """
+    # The saved network carries the preprocessing and farm-specific training contract.
     model, metadata = load_network(Path(artifact), farm_id=farm_id)
     candidate, section = metadata["candidate"], metadata["neural_settings"]
+    # Remove any supplied measurements before constructing inference features.
     inputs = frame.copy()
     inputs["measured_ac_mw"] = np.nan
     inputs["eligible"] = False
     inputs["split"] = "prediction"
+    # Reproduce the training feature order, scaling and sequence layout.
     features = feature_frame(inputs, candidate["features"], section["delivery_timezone"])
     rating = metadata["farm_metadata"]["ac_capacity_kw"]/1000
     packed = pack_sequences(inputs, transform_features(features, metadata["preprocessor"]), rating)
+    # Convert normalized network outputs back to the input row order and AC MW.
     prediction = predict_network(model, tensor_pack(packed), int(section["prediction_batch_size"]))
     return unpack_predictions(packed, prediction, len(inputs), rating)

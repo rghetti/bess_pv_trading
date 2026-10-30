@@ -35,12 +35,15 @@ def run(config):
     persistent=episodes.loc[episodes.reason.str.startswith('persistent')].groupby(
         ['farm_id','delivery_day','auction']).duration_hours.sum().rename('persistent_low_hours').reset_index()
     extra=[];auction_rows=[];matched=[]
+    # Summarize matched input counterfactuals, worst profiles and cross-year behavior for each `farm` in `section['farm_ids']`.
     for farm in section['farm_ids']:
         f=pd.read_parquet(root/f'farm_{farm}/parquet/diagnostic_instances.parquet')
         rating=config['farms'][str(farm)]['ac_capacity_kw']/1000
         selected=f.loc[f.score_eligible].copy()
+        # Process each `(name, column)` in this collection.
         for name,column in [('previous','without_timing_mw'),('physical_sat','pvlib_satellite_mw')]:
             selected[f'{name}_mse']=np.square((selected[column]-selected.measured_ac_mw)/rating*100)
+        # Summarize matched input counterfactuals, worst profiles and cross-year behavior for each `((split, day, auction), part)` in `selected.groupby(['split', 'delivery_day', 'auction'])`.
         for (split,day,auction),part in selected.groupby(['split','delivery_day','auction']):
             extra.append({'farm_id':farm,'split':split,'delivery_day':day,'auction':auction,
                 'without_timing_nrmse_percent':float(np.sqrt(part.previous_mse.mean())),
@@ -50,6 +53,7 @@ def run(config):
         noon=f.loc[f.score_eligible&(local.hour>=12)]
         counts=noon.groupby('interval_start_utc').auction.nunique()
         shared=noon.loc[noon.interval_start_utc.isin(counts.index[counts.eq(4)])]
+        # Summarize matched input counterfactuals, worst profiles and cross-year behavior for each `((split, auction), part)` in `shared.groupby(['split', 'auction'])`.
         for (split,auction),part in shared.groupby(['split','auction']):
             weights=balanced_weights(part)
             err=(part.neural_mw-part.measured_ac_mw).to_numpy()/rating
@@ -64,6 +68,7 @@ def run(config):
         low,high=section['matched_ghi_range_w_m2'];begin,end=section['matched_local_hours']
         mask=f.score_eligible&f.auction.eq('DA')&f.satellite_ghi_input_w_m2.between(low,high)
         mask&=(local.hour>=begin)&(local.hour<end)
+        # Summarize matched input counterfactuals, worst profiles and cross-year behavior for each `(month, part)` in `f.loc[mask].groupby(f.loc[mask, 'delivery_day'].str[:7])`.
         for month,part in f.loc[mask].groupby(f.loc[mask,'delivery_day'].str[:7]):
             matched.append({'farm_id':farm,'month':month,'quarters':len(part),
                 'median_ac_mw':float(part.measured_ac_mw.median()),
@@ -91,6 +96,7 @@ def run(config):
         distinct_delivery_days=('delivery_day','nunique'),squared_error_share=('squared_error_share','sum')).reset_index()
     summaries.to_csv(root/'csv/situation_error_shares.csv',index=False)
     daily=[]
+    # Summarize matched input counterfactuals, worst profiles and cross-year behavior for each `((farm, split, day), part)` in `profiles.groupby(['farm_id', 'split', 'delivery_day'])`.
     for (farm,split,day),part in profiles.groupby(['farm_id','split','delivery_day']):
         daily.append({'farm_id':farm,'split':split,'delivery_day':day,
             'nrmse_percent':float(np.sqrt(np.mean(part.nrmse_percent**2))),
@@ -111,6 +117,7 @@ def run(config):
     print(root,flush=True)
 
 
+# When `__name__ == '__main__'`, set `parser` using `argparse.ArgumentParser(description=__doc__)`.
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--config',required=True)
     args=parser.parse_args();run(load_config(args.config))

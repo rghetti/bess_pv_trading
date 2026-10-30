@@ -28,6 +28,7 @@ from .pv_mayer_data import check_coverage, prepare_farm
 def censored_normal_quantiles(location, scale, levels):
     """Quantiles of clamp(N(location,scale), 0, 1), including boundary atoms."""
     location = np.asarray(location, float); scale = np.asarray(scale, float)
+    # Enforce the input contract: Censored normal needs finite location and positive scale.
     if np.any(~np.isfinite(location) | ~np.isfinite(scale) | (scale <= 0)):
         raise ValueError('Censored normal needs finite location and positive scale')
     return np.clip(location[:, None] + scale[:, None] * norm.ppf(np.asarray(levels, float))[None, :], 0, 1)
@@ -51,6 +52,7 @@ def r_models(train, test, destination, rscript):
                                 capture_output=True, text=True, check=False)
         (destination / 'r_stdout.txt').write_text(result.stdout)
         (destination / 'r_stderr.txt').write_text(result.stderr)
+        # Enforce the input contract: R fitting failed (`result.returncode`): `result.stderr[-2000:]`.
         if result.returncode:
             raise RuntimeError(f'R fitting failed ({result.returncode}): {result.stderr[-2000:]}')
     return pd.read_csv(destination / 'predictions.csv'), pd.read_csv(destination / 'fit_status.csv')
@@ -62,6 +64,7 @@ def fit_lqr(train_members, train_control, train_targets, test_members, test_cont
     x_test = np.column_stack([test_control, np.sort(test_members, axis=1)])
     models = []
     predictions = []
+    # Apply fit for `level` from `levels`.
     for level in levels:
         model = QuantileRegressor(quantile=float(level), alpha=0., solver='highs', solver_options={'threads': 1})
         with warnings.catch_warnings():
@@ -88,19 +91,23 @@ def scoring_rows(frame, members, levels, r_predictions, lqr_quantiles, *, rearra
                                               x=np.r_[0., levels, 1.], axis=1)
     crps['linear_quantile'] = quantile_crps(lqr_quantiles, levels, y)
     crps['linear_quantile'][~lqr_valid] = np.nan
+    # Score the same finite, valid-distribution rows across all four methods for each `method` in `('cn_emos', 'cn_emos_b')`.
     for method in ('cn_emos', 'cn_emos_b'):
         table = r_predictions.loc[r_predictions.method.eq(method)].set_index('row_id').reindex(frame.row_id)
         loc = table.location.to_numpy(float); scale = table.scale.to_numpy(float)
         good = np.isfinite(loc) & np.isfinite(scale) & (scale > 0)
         q = np.full((n, len(levels)), np.nan); mean = np.full(n, np.nan)
+        # When `good.any()`, set `q[good]` using `censored_normal_quantiles(loc[good], scale[good], levels)`.
         if good.any():
             q[good] = censored_normal_quantiles(loc[good], scale[good], levels)
             mean[good] = censored_normal_mean(loc[good], scale[good])
         quantiles[method] = q; means[method] = mean; crps[method] = table.crps.to_numpy(float)
     common = lqr_valid.copy()
+    # Score the same finite, valid-distribution rows across all four methods for each `method` in `quantiles`.
     for method in quantiles:
         common &= np.isfinite(quantiles[method]).all(axis=1) & np.isfinite(crps[method]) & np.isfinite(means[method])
     tables = []
+    # Score the same finite, valid-distribution rows across all four methods for each `(method, q)` in `quantiles.items()`.
     for method, q in quantiles.items():
         lower = np.array([np.interp(.05, levels, row) for row in q])
         upper = np.array([np.interp(.95, levels, row) for row in q])
@@ -115,8 +122,11 @@ def scoring_rows(frame, members, levels, r_predictions, lqr_quantiles, *, rearra
         part['lqr_crossing'] = crossing
         part['lqr_out_of_bounds'] = out_of_bounds
         part['lqr_rearranged'] = crossing & rearrange_quantiles
+        # Score the same finite, valid-distribution rows across all four methods for each `(i, level)` in `enumerate(levels)`.
         for i, level in enumerate(levels): part[f'q_{i+1:02d}'] = q[:, i]
+        # Score the same finite, valid-distribution rows across all four methods when `method == 'linear_quantile'`.
         if method == 'linear_quantile':
+            # Score the same finite, valid-distribution rows across all four methods for each `(i, level)` in `enumerate(levels)`.
             for i, level in enumerate(levels): part[f'raw_q_{i+1:02d}'] = raw_lqr_quantiles[:, i]
         tables.append(part)
     return pd.concat(tables, ignore_index=True)
@@ -128,6 +138,7 @@ def summarize_scores(predictions, levels, rating, destination):
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     valid = predictions.loc[predictions.common_score].copy()
+    # Write matched overall/month scores and a quantile reliability plot when `valid.empty`.
     if valid.empty:
         pd.DataFrame(columns=['month', 'method', 'hours', 'crps_mw']).to_csv(destination / 'scores.csv', index=False)
         pd.DataFrame(columns=['method', 'level', 'observed_fraction_le_quantile']).to_csv(
@@ -135,7 +146,9 @@ def summarize_scores(predictions, levels, rating, destination):
         return False
     valid['month'] = valid.delivery_day.str[:7]
     rows = []
+    # Write matched overall/month scores and a quantile reliability plot for each `(month, subset)` in `[('all', valid), *list(valid.groupby('month', sort=True))]`.
     for month, subset in [('all', valid), *list(valid.groupby('month', sort=True))]:
+        # Write matched overall/month scores and a quantile reliability plot for each `(method, group)` in `subset.groupby('method')`.
         for method, group in subset.groupby('method'):
             error = group.mean_fraction_capacity - group.observation_fraction_capacity
             rows.append({'month': month, 'method': method, 'hours': len(group), 'days': group.delivery_day.nunique(),
@@ -153,6 +166,7 @@ def summarize_scores(predictions, levels, rating, destination):
     scores.to_csv(destination / 'scores.csv', index=False)
     reliability = []
     fig, ax = plt.subplots(figsize=(6, 5), layout='constrained')
+    # Write matched overall/month scores and a quantile reliability plot for each `(method, group)` in `valid.groupby('method')`.
     for method, group in valid.groupby('method'):
         observed = group.observation_fraction_capacity.to_numpy(float)
         cover = [float(np.mean(observed <= group[f'q_{i+1:02d}'].to_numpy(float))) for i in range(len(levels))]
@@ -195,6 +209,7 @@ def fit_farm(config, farm, hourly, members, rating, root):
         zero_variance_hours=('variance', lambda x: int((x == 0).sum())),
         unavailable_fit_labels=('fit_label_available', lambda x: int((~x).sum()))).reset_index().rename(columns={'delivery_day': 'month'})
     counts.to_csv(root / 'hourly_counts.csv', index=False)
+    # Enforce the input contract: No eligible training or evaluation hours.
     if train.empty or test.empty: raise ValueError('No eligible training or evaluation hours')
     r_columns = ['row_id', 'lead', 'y', 'control', 'ens_mean', 'ens_sd', 'variance', 'log_variance']
     r_predictions, status = r_models(train[r_columns], test[r_columns], root / 'r_models', config_path(config, section['rscript']))
@@ -228,8 +243,10 @@ def prepare_farm_parallel(config, farm, routes, pool):
     futures = [pool.submit(_prepare_one_day, config, farm, day, archive) for day, archive in ordered]
     frames, quarter_frames, names, rating, location = [], [], None, None, None
     source_digest = hashlib.sha256()
+    # Combine day-level member forecasts in time order without cross-day mixing for each `((day, _), future)` in `zip(ordered, futures)`.
     for (day, _), future in zip(ordered, futures):
         hourly, quarters, day_names, day_rating, day_location, day_digest = future.result()
+        # Enforce the input contract: Farm `farm` model or member contract changed across days.
         if names is not None and (names != day_names or rating != day_rating or location != day_location):
             raise ValueError(f'Farm {farm} model or member contract changed across days')
         names, rating, location = day_names, day_rating, day_location
@@ -247,9 +264,11 @@ def rearrange_existing(run_root):
     section = manifest['configuration']
     levels = np.arange(1, int(section['quantile_count']) + 1) / (int(section['quantile_count']) + 1)
     destination = run_root / 'rearranged_quantiles'
+    # Enforce the input contract: Rearranged report already exists: `destination`.
     if destination.exists(): raise FileExistsError(f'Rearranged report already exists: {destination}')
     destination.mkdir()
     summaries = []
+    # Write the corresponding artifacts for `farm` from `section['farm_ids']`.
     for farm in section['farm_ids']:
         source = run_root / f'farm_{farm}'
         frame = pd.read_parquet(source / 'hourly_inputs_normalized.parquet')
@@ -258,6 +277,7 @@ def rearrange_existing(run_root):
         original = pd.read_parquet(source / 'evaluation_predictions.parquet')
         original_lqr = original.loc[original.method.eq('linear_quantile')].set_index('row_id').reindex(test.row_id)
         q = original_lqr[[f'q_{i+1:02d}' for i in range(len(levels))]].to_numpy(float)
+        # Enforce the input contract: Farm `farm`: missing saved raw quantiles.
         if not np.isfinite(q).all(): raise ValueError(f'Farm {farm}: missing saved raw quantiles')
         r_predictions = pd.read_csv(source / 'r_models' / 'predictions.csv')
         scored = scoring_rows(test, members, levels, r_predictions, q, rearrange_quantiles=True)
@@ -284,15 +304,18 @@ def run(config):
     section = config['pv_mayer_postprocessing']
     routes = check_coverage(config)  # Reject undeclared gaps before creating any output.
     root = config_path(config, section['output_root']) / section['run_id']
+    # Enforce the input contract: Output already exists; choose a new run ID: `root`.
     if root.exists(): raise FileExistsError(f'Output already exists; choose a new run ID: {root}')
     root.mkdir(parents=True)
     write_json(root / 'resolved_config.json', config)
     write_json(root / 'manifest.json', {'status': 'running', 'configuration': section})
     summaries = []
     try:
+        # Process each `variable` in this collection.
         for variable in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS'):
             os.environ[variable] = '1'
         with ProcessPoolExecutor(max_workers=int(section['workers'])) as pool:
+            # Apply fit farm for `farm` from `section['farm_ids']`.
             for farm in section['farm_ids']:
                 print(f'Farm {farm}: preparing {len(routes)} days using up to {section["workers"]} single-thread workers', flush=True)
                 hourly, quarters, members, rating, location, source_digest = prepare_farm_parallel(config, int(farm), routes, pool)

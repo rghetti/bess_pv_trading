@@ -47,6 +47,7 @@ def _ridge(frame, features, preprocessor, farm, section, destination):
     penalty = np.eye(x.shape[1]); penalty[-1, -1] = 0
     validation_weights = balanced_weights(frame.loc[validation])
     trials = []
+    # Provide a simple weather-only linear sanity baseline selected on validation for each `alpha` in `section['ridge_alphas']`.
     for alpha in section["ridge_alphas"]:
         coefficients = np.linalg.lstsq(gram+float(alpha)*penalty, rhs, rcond=None)[0]
         values = np.clip(x@coefficients, 0, 1)*frame.daylight.to_numpy()
@@ -66,11 +67,13 @@ def _farm_worker(config, farm_id, root, config_hash):
     section = config["pv_neural"]
     configure_cpu(section)
     destination = Path(root)/f"farm_{farm_id}"
+    # Run each farm with independent weights, scaler, embeddings and artifacts for each `folder` in `('csv', 'json', 'parquet', 'plots', 'models')`.
     for folder in ("csv", "json", "parquet", "plots", "models"):
         (destination/folder).mkdir(parents=True, exist_ok=True)
     frame, farm, pv_settings, provenance = prepare_neural_corpus(config, farm_id, destination, _progress)
     train_mask = (frame.eligible & frame.daylight & (frame.split == "train")).to_numpy()
     views, preprocessors, feature_tables = {}, {}, {}
+    # Process each `name` in this collection.
     for name in {candidate["features"] for candidate in section["candidates"]} | {"weather"}:
         features = feature_frame(frame, name, section["delivery_timezone"])
         preprocessor = fit_preprocessor(features, train_mask, section)
@@ -80,14 +83,18 @@ def _farm_worker(config, farm_id, root, config_hash):
     frame["prediction_fixed_mw"] = frame.baseline_mw  # Common paired-bootstrap interface.
     diagnostics, methods, reload_differences = [], ["pvlib"], []
     input_hash = provenance["source_fingerprint"]
+    # Write the corresponding artifacts for `candidate` from `section['candidates']`.
     for candidate in section["candidates"]:
         name = candidate["name"]
         packed = views[candidate["features"]]
         path = destination/"models"/f"{name}.pt"
+        # When `path.exists() and path.with_suffix('.json').exists()`, set `(model, metadata)` using `load_network(path, farm_id=farm_id)`.
         if path.exists() and path.with_suffix(".json").exists():
             model, metadata = load_network(path, farm_id=farm_id)
+            # Enforce the input contract: Neural model resume fingerprint mismatch.
             if metadata["configuration_fingerprint"] != config_hash or metadata["source_fingerprint"] != input_hash:
                 raise ValueError("Neural model resume fingerprint mismatch")
+            # Enforce the input contract: Neural preprocessing changed during resume.
             if metadata["preprocessor"] != preprocessors[candidate["features"]]:
                 raise ValueError("Neural preprocessing changed during resume")
             diagnostic = metadata["diagnostics"]
@@ -112,6 +119,7 @@ def _farm_worker(config, farm_id, root, config_hash):
         reloaded, _ = load_network(path, farm_id=farm_id)
         repeated = predict_network(reloaded, tensor_pack(packed), int(section["prediction_batch_size"]))
         reload_differences.append(float(np.max(abs(prediction-repeated))))
+        # Enforce the input contract: Neural artifact reload changed predictions.
         if reload_differences[-1] > 1e-7:
             raise ValueError("Neural artifact reload changed predictions")
         diagnostics.append(diagnostic)
@@ -122,8 +130,10 @@ def _farm_worker(config, farm_id, root, config_hash):
     selected = best["candidate"]["name"]
     frame["prediction_selected_mw"] = frame[f"prediction_{selected}_mw"]
     methods.append("selected")
+    # Run each farm with independent weights, scaler, embeddings and artifacts for each `suffix` in `('.pt', '.json')`.
     for suffix in (".pt", ".json"):
         shutil.copyfile(destination/"models"/f"{selected}{suffix}", destination/"models"/f"selected{suffix}")
+    # Update `frame['prediction_ridge_mw']` when this condition is met.
     if section["include_ridge_baseline"]:
         frame["prediction_ridge_mw"] = _ridge(frame, feature_tables["weather"], preprocessors["weather"],
                                                farm, section, destination)
@@ -151,6 +161,7 @@ def _farm_worker(config, farm_id, root, config_hash):
         "scope_counts": scope_counts,
         "delivery_days": frame.groupby("split").delivery_day.nunique().to_dict(),
         "scored_daylight_rows": frame.loc[frame.eligible & frame.daylight].groupby("split").size().to_dict()}
+    # Enforce the input contract: Neural corpus contains an unavailable forecast.
     if not audit["forecast_availability_respected"]:
         raise ValueError("Neural corpus contains an unavailable forecast")
     _write(destination/"json"/"validation_audit.json", audit)
@@ -176,34 +187,45 @@ def run_neural_study(config, progress=None):
     path = root/"json"/"study_config.json"
     previous_manifest_path = root/"json"/"manifest.json"
     previous_manifest = json.loads(previous_manifest_path.read_text()) if previous_manifest_path.exists() else {}
+    # Launch resumable independent farm fits and compare their untouched test data when `root.exists()`.
     if root.exists():
+        # Enforce the input contract: Neural output exists with different settings/code; choose a fresh run ID.
         if not section["resume"] or not path.exists() or digest(json.loads(path.read_text())) != config_hash:
             raise ValueError("Neural output exists with different settings/code; choose a fresh run ID")
+    # Launch resumable independent farm fits and compare their untouched test data for each `folder` in `('json', 'csv', 'plots')`.
     for folder in ("json", "csv", "plots"):
         (root/folder).mkdir(parents=True, exist_ok=True)
     _write(path, config)
     workers = min(int(section["workers"]), len(section["farm_ids"]))
+    # Launch resumable independent farm fits and compare their untouched test data when `progress`.
     if progress:
         progress(f"CPU neural PV study: {workers} farm workers, {section['threads_per_worker']} threads each; output={root}")
     complete = []
+    # Launch resumable independent farm fits and compare their untouched test data when `workers == 1`.
     if workers == 1:
+        # Launch resumable independent farm fits and compare their untouched test data for each `farm_id` in `section['farm_ids']`.
         for farm_id in section["farm_ids"]:
             complete.append(_farm_worker(config, int(farm_id), str(root), config_hash))
     else:
         variables = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
         previous = {name: os.environ.get(name) for name in variables}
         try:
+            # Launch resumable independent farm fits and compare their untouched test data for each `name` in `variables`.
             for name in variables:
                 os.environ[name] = str(section["threads_per_worker"])
             with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn")) as pool:
                 futures = {pool.submit(_farm_worker, config, int(farm), str(root), config_hash): farm
                            for farm in section["farm_ids"]}
+                # Launch resumable independent farm fits and compare their untouched test data for each `future` in `as_completed(futures)`.
                 for future in as_completed(futures):
                     complete.append(future.result())
+                    # Launch resumable independent farm fits and compare their untouched test data when `progress`.
                     if progress:
                         progress(f"Neural PV: farm {futures[future]} complete")
         finally:
+            # Launch resumable independent farm fits and compare their untouched test data for each `(name, value)` in `previous.items()`.
             for name, value in previous.items():
+                # Launch resumable independent farm fits and compare their untouched test data when `value is None`.
                 if value is None:
                     os.environ.pop(name, None)
                 else:
@@ -235,6 +257,7 @@ def _comparison_plot(table, output, section):
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     fig, axes = plt.subplots(2, 2, figsize=(13, 10), layout="constrained")
+    # Compare farms on capacity-normalized test error, without selecting on test for each `(axis, (farm, group))` in `zip(axes.flat, table.groupby('farm_id'))`.
     for axis, (farm, group) in zip(axes.flat, table.groupby("farm_id")):
         group = group.sort_values("rmse_mw", ascending=False)
         axis.barh(group.method, group.nrmse_percent_ac_rating,

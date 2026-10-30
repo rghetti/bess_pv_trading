@@ -28,6 +28,7 @@ def sha(path):
     """Hash cached inputs and candidate artifacts for resumable comparison."""
     digest = hashlib.sha256()
     with Path(path).open('rb') as source:
+        # Hash cached inputs and candidate artifacts for resumable comparison for each `block` in `iter(lambda: source.read(1024 * 1024), b'')`.
         for block in iter(lambda: source.read(1024 * 1024), b''):
             digest.update(block)
     return digest.hexdigest()
@@ -36,6 +37,7 @@ def sha(path):
 def set_path(settings, path, value):
     """Set one declared nested physical setting without changing other fields."""
     part = settings
+    # Set one declared nested physical setting without changing other fields for each `key` in `path[:-1]`.
     for key in path[:-1]:
         part = part[key]
     part[path[-1]] = value
@@ -43,6 +45,7 @@ def set_path(settings, path, value):
 
 def factorial_plan(config, farm, result):
     """Enumerate every distinct old/new parameter choice and identify exact duplicates."""
+    # Enforce the input contract: Candidate belongs to another farm.
     if int(result['farm_id']) != int(farm.farm_id):
         raise ValueError('Candidate belongs to another farm')
     base = farm_settings(config, farm)
@@ -67,12 +70,15 @@ def factorial_plan(config, farm, result):
     axes = [('location', None, old_location, new_location)] if old_location != new_location else []
     axes += [item for item in possibilities[2:] if item[2] != item[3]]
     all_cases, unique, keys = [], [], {}
+    # Enumerate every distinct old/new parameter choice and identify exact duplicates for each `(index, bits)` in `enumerate(itertools.product([0, 1], repeat=len(axes)))`.
     for index, bits in enumerate(itertools.product([0, 1], repeat=len(axes))):
         settings = deepcopy(base)
         labels = {}
+        # Enumerate every distinct old/new parameter choice and identify exact duplicates for each `((name, path, old, new), bit)` in `zip(axes, bits)`.
         for (name, path, old, new), bit in zip(axes, bits):
             value = new if bit else old
             labels[name] = 'new' if bit else 'old'
+            # Enumerate every distinct old/new parameter choice and identify exact duplicates when `name == 'location'`.
             if name == 'location':
                 settings['location'].update(latitude=value[0], longitude=value[1])
             else:
@@ -80,11 +86,13 @@ def factorial_plan(config, farm, result):
         # Both old and new output settings are calibrated scales, not efficiencies.
         settings['output']['method'] = 'calibrated_scale'
         canonical = deepcopy(settings)
+        # When `not canonical['bifacial']['enabled']`, set `canonical['bifacial']['bifaciality']` using `None`.
         if not canonical['bifacial']['enabled']:
             # These two fields are unused by the front-only forward model.
             canonical['bifacial']['bifaciality'] = None
             canonical['bifacial']['height_to_pitch_ratio'] = None
         key = json.dumps(canonical, sort_keys=True, default=str)
+        # When `key not in keys`, set `keys[key]` using `len(unique)`.
         if key not in keys:
             keys[key] = len(unique)
             unique.append({'unique_id': keys[key], 'settings': settings})
@@ -101,7 +109,9 @@ def run_one(config, farm_id, source, output, job):
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{job['unique_id']:04d}.parquet"
     checksum = path.with_suffix('.sha256')
+    # Evaluate and atomically checkpoint one unique physical forward model when `path.exists() and checksum.exists()`.
     if path.exists() and checksum.exists():
+        # Enforce the input contract: Forecast checkpoint checksum mismatch: `path`.
         if sha(path) != checksum.read_text().strip():
             raise ValueError(f'Forecast checkpoint checksum mismatch: {path}')
         return job['unique_id']
@@ -128,6 +138,7 @@ def report(config, farm_id, source, output, plan):
     base = frame.groupby('interval_start_utc').agg(target_mw=('measured_ac_mw', 'first'),
                                                   ghi_w_m2=('ghi_w_m2', 'first'))
     series = []
+    # Score every enumerated case on the common physical quarter-hour population for each `model` in `plan['unique_models']`.
     for model in plan['unique_models']:
         i = model['unique_id']
         part = pd.read_parquet(directory / 'checkpoints' / f'{i:04d}.parquet').set_index('interval_start_utc')
@@ -141,9 +152,12 @@ def report(config, farm_id, source, output, plan):
     subsets += [(f'ghi_above_20_{season}', part) for season, part in
                 data.loc[data.ghi_w_m2.gt(20)].groupby('season', sort=True)]
     rows = []
+    # Score every enumerated case on the common physical quarter-hour population for each `(scope, part)` in `subsets`.
     for scope, part in subsets:
+        # Skip the current item when `part.empty`.
         if part.empty:
             continue
+        # Score every enumerated case on the common physical quarter-hour population for each `case` in `plan['cases']`.
         for case in plan['cases']:
             error = part[str(case['unique_id'])].to_numpy(float) - part.target_mw.to_numpy(float)
             rows.append({'farm_id': farm_id, 'scope': scope, 'case_id': case['case_id'],
@@ -180,6 +194,7 @@ def main():
     source_root = config_path(config, section['output_root']) / section['run_id']
     candidates = Path(args.candidate_root)
     plans, source_hashes = {}, {}
+    # Print the full plan or execute its resumable, bounded-CPU evaluation for each `farm_id` in `section['farm_ids']`.
     for farm_id in section['farm_ids']:
         farm_id = int(farm_id)
         farm = load_metadata(config_path(config, config['inputs']['metadata_parquet']), [farm_id])[farm_id]
@@ -193,10 +208,12 @@ def main():
     summary = {farm: {'axes': plan['axes'], 'combinations': len(plan['cases']),
         'unique_forward_models': len(plan['unique_models']), 'fixed_temperature': plan['fixed_temperature']}
         for farm, plan in plans.items()}
+    # Print the full plan or execute its resumable, bounded-CPU evaluation when `args.plan_only`.
     if args.plan_only:
         print(json.dumps(summary, indent=2, default=str))
         return
     workers = int(section['workers'])
+    # Enforce the input contract: Worker count must be between 1 and 42.
     if not 1 <= workers <= 42:
         raise ValueError('Worker count must be between 1 and 42')
     manifest = {'configuration': section, 'night_policy': section.get('night_policy', config['policy']['night']),
@@ -213,6 +230,7 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     manifest_path = output / 'study_manifest.json'
     serialized = json.dumps(manifest, sort_keys=True, indent=2, default=str) + '\n'
+    # Enforce the input contract: Study inputs, settings or code changed; use a fresh output directory.
     if manifest_path.exists() and manifest_path.read_text() != serialized:
         raise ValueError('Study inputs, settings or code changed; use a fresh output directory')
     manifest_path.write_text(serialized)
@@ -222,6 +240,7 @@ def main():
     with ProcessPoolExecutor(max_workers=workers) as pool:
         futures = {pool.submit(run_one, config, farm, source, output, job): (farm, job['unique_id'])
                    for farm, source, job in jobs}
+        # Print the full plan or execute its resumable, bounded-CPU evaluation for each `(index, future)` in `enumerate(as_completed(futures), 1)`.
         for index, future in enumerate(as_completed(futures), 1):
             farm, unique_id = futures[future]
             future.result()
@@ -231,5 +250,6 @@ def main():
     pd.concat(results, ignore_index=True).to_csv(output / 'combined_metrics.csv', index=False)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

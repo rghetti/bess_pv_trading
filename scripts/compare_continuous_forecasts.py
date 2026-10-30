@@ -22,6 +22,7 @@ def read_json(path: Path):
 def load_run(path: Path):
     """Load the realized summary, daily ledger and input fingerprints."""
     manifest = read_json(path / "json/manifest.json")
+    # Enforce the input contract: Continuous run is not complete: `path`.
     if manifest.get("status") != "complete":
         raise ValueError(f"Continuous run is not complete: {path}")
     return {
@@ -46,14 +47,20 @@ def load_run(path: Path):
 def verify_shared_inputs(neural, pvlib):
     """Prove the two forecasts faced identical local observations and markets."""
     left, right = neural["provenance"], pvlib["provenance"]
+    # Enforce the input contract: Runs cover different delivery dates.
     if set(left["days"]) != set(right["days"]):
         raise ValueError("Runs cover different delivery dates")
     mismatches = []
+    # Prove the two forecasts faced identical local observations and markets for each `day` in `left['days']`.
     for day in left["days"]:
+        # Prove the two forecasts faced identical local observations and markets for each `key` in `('realized_pv_sha256', 'auction_price_sha256')`.
         for key in ("realized_pv_sha256", "auction_price_sha256"):
+            # Prove the two forecasts faced identical local observations and markets when `left['days'][day][key] != right['days'][day][key]`.
             if left["days"][day][key] != right["days"][day][key]:
                 mismatches.append(f"{day}/{key}")
+    # Prove the two forecasts faced identical local observations and markets for each `key` in `('settlement_values_sha256',)`.
     for key in ("settlement_values_sha256",):
+        # Prove the two forecasts faced identical local observations and markets when `left.get(key) != right.get(key)`.
         if left.get(key) != right.get(key):
             mismatches.append(key)
     def weather_views(provenance):
@@ -61,14 +68,19 @@ def verify_shared_inputs(neural, pvlib):
         return {(row["cutoff_utc"], row["first_interval_utc"], row["last_interval_utc"]):
             row["aligned_weather_pv_sha256"] for row in provenance["weather_forecasts"]}
 
+    # Prove the two forecasts faced identical local observations and markets when `weather_views(left) != weather_views(right)`.
     if weather_views(left) != weather_views(right):
         mismatches.append("weather_forecasts")
     settings = ("plant", "battery", "state", "degradation", "transaction_fees", "trading", "execution")
+    # Prove the two forecasts faced identical local observations and markets for each `key` in `settings`.
     for key in settings:
+        # Apply this branch only when its condition is met.
         if left["asset_input_settings"].get(key) != right["asset_input_settings"].get(key):
             mismatches.append(f"asset_input_settings.{key}")
+    # Prove the two forecasts faced identical local observations and markets when `neural['config']['solver'] != pvlib['config']['solver']`.
     if neural["config"]["solver"] != pvlib["config"]["solver"]:
         mismatches.append("solver")
+    # Enforce the input contract: Runs do not share inputs/settings: `mismatches`.
     if mismatches:
         raise ValueError(f"Runs do not share inputs/settings: {mismatches}")
     return {
@@ -93,9 +105,12 @@ def verify_perfect_reference(neural, pvlib):
         "signed_imbalance_mwh", "throughput_mwh", "curtailment_mwh", "final_soc_percent")
     left = neural["perfect_daily"].sort_values("delivery_day").reset_index(drop=True)
     right = pvlib["perfect_daily"].sort_values("delivery_day").reset_index(drop=True)
+    # Enforce the input contract: Perfect-PV runs cover different delivery dates.
     if list(left.delivery_day) != list(right.delivery_day):
         raise ValueError("Perfect-PV runs cover different delivery dates")
+    # Require duplicated perfect-PV paths to agree before keeping one row for each `column` in `columns`.
     for column in columns:
+        # Enforce the input contract: Perfect-PV reference differs between runs in `column`.
         if not np.allclose(left[column], right[column], rtol=0, atol=1e-7):
             raise ValueError(f"Perfect-PV reference differs between runs in {column}")
     return {"same_perfect_pv_reference": True, "daily_metrics_checked": list(columns)}
@@ -160,6 +175,7 @@ def strategy_row(label, run, strategy):
     reconciled = (row["auction_revenue_eur"] + row["imbalance_cashflow_eur"]
         - row["degradation_cost_eur"] - row["transaction_fees_eur"]
         - row["import_fees_eur"] - row["imbalance_penalty_eur"])
+    # Enforce the input contract: Realized financial components do not reconcile for `label`.
     if not np.isclose(reconciled, row["total_gain_eur"], rtol=0, atol=1e-6):
         raise ValueError(f"Realized financial components do not reconcile for {label}")
     row["financial_reconciliation_error_eur"] = reconciled - row["total_gain_eur"]
@@ -175,12 +191,14 @@ def forecast_error_rows(run, label):
     actual["start"] = pd.to_datetime(actual.start, utc=True)
     merged = forecasts.merge(actual[["start", "pv_ac_mw"]], left_on="interval_start_utc",
         right_on="start", how="left", validate="many_to_one")
+    # Enforce the input contract: Missing actual AC targets for `label` forecast rows.
     if merged.pv_ac_mw.isna().any():
         raise ValueError(f"Missing actual AC targets for {label} forecast rows")
     merged["forecast_error_mw"] = merged.pv_ac_forecast_mw - merged.pv_ac_mw
     farm_id = str(run["config"]["plant"]["farm_id"])
     ac_rating_mw = float(run["config"]["farms"][farm_id]["ac_capacity_kw"]) / 1000
     rows = []
+    # Score each submitted forecast view against the same realized AC series for each `(auction, group)` in `merged.groupby('auction', sort=False)`.
     for auction, group in merged.groupby("auction", sort=False):
         error = group.forecast_error_mw.to_numpy(float)
         rows.append({"model": label, "auction": auction, "forecast_view_rows": len(group),
@@ -202,17 +220,22 @@ def verify_soc_floor(run):
     """Check every successful solve included and satisfied the configured floor."""
     config = run["config"]
     percentage = config["state"].get("terminal_soc_min_percent")
+    # Enforce the input contract: Both continuous runs must configure terminal_soc_min_percent.
     if percentage is None:
         raise ValueError("Both continuous runs must configure terminal_soc_min_percent")
     minimum_mwh = float(config["battery"]["capacity_mwh"]) * float(percentage) / 100.0
     reports = {}
+    # Check every successful solve included and satisfied the configured floor for each `strategy` in `('integrated', 'perfect')`.
     for strategy in ("integrated", "perfect"):
         solves = run[f"{strategy}_solves"]
+        # Enforce the input contract: No solve diagnostics for `strategy`.
         if not solves:
             raise ValueError(f"No solve diagnostics for {strategy}")
         floors = np.asarray([row.get("terminal_minimum_mwh", np.nan) for row in solves], dtype=float)
+        # Enforce the input contract: A `strategy` solve omitted the configured terminal SOC floor.
         if not np.isfinite(floors).all() or not np.allclose(floors, minimum_mwh, rtol=0, atol=1e-8):
             raise ValueError(f"A {strategy} solve omitted the configured terminal SOC floor")
+        # Enforce the input contract: A `strategy` solve did not pass physical solution validation.
         if any(not row.get("validation", {}).get("valid", False) for row in solves):
             raise ValueError(f"A {strategy} solve did not pass physical solution validation")
         reports[strategy] = {"successful_solves_with_floor": len(solves),
@@ -233,6 +256,7 @@ def make_plots(destination: Path, daily: pd.DataFrame, minimum_soc_percent: floa
     origin = pd.Timestamp(daily.delivery_day.min()).tz_localize(timezone)
     fig, axes = plt.subplots(4, 1, figsize=(14, 14), sharex=True, layout="constrained")
 
+    # Plot economics, imbalances, executed wear and midnight SOC through the final boundary for each `(name, group)` in `daily.groupby('strategy', sort=False)`.
     for name, group in daily.groupby("strategy", sort=False):
         group = group.sort_values("delivery_day")
         x = pd.to_datetime(group.delivery_day).dt.tz_localize(timezone) + pd.Timedelta(days=1)
@@ -255,6 +279,7 @@ def make_plots(destination: Path, daily: pd.DataFrame, minimum_soc_percent: floa
     axes[3].set_xlabel("Delivery boundary (Europe/Rome)")
     axes[3].axhline(minimum_soc_percent, color="black", ls="--", lw=1.3,
         label=f"{minimum_soc_percent:g}% planned end-of-day floor")
+    # Plot economics, imbalances, executed wear and midnight SOC through the final boundary for each `axis` in `axes`.
     for axis in axes:
         axis.grid(alpha=0.2)
         axis.legend(loc="best")
@@ -305,6 +330,7 @@ def main():
     forecast_metrics = pd.DataFrame(forecast_neural[0] + forecast_pvlib[0])
 
     args.output.mkdir(parents=True, exist_ok=True)
+    # Combine existing runs without rerunning forecasts or optimizations for each `folder` in `('csv', 'json', 'plots')`.
     for folder in ("csv", "json", "plots"):
         (args.output / folder).mkdir(exist_ok=True)
     comparison.to_csv(args.output / "csv/strategy_comparison.csv", index=False)
@@ -318,6 +344,7 @@ def main():
     floor_verification = {"neural": verify_soc_floor(neural),
         "pvlib": verify_soc_floor(pvlib)}
     realized_soc = {}
+    # Process each `(label, run, strategy)` in this collection.
     for label, run, strategy in ((fitted_label, neural, "integrated"),
             ("Integrated PVLib", pvlib, "integrated"),
             ("Perfect PV knowledge", neural, "perfect")):
@@ -363,8 +390,10 @@ def main():
     }
     def json_default(value):
         """Normalize report values originating in NumPy and pandas."""
+        # Return `value.item()` when `isinstance(value, np.generic)`.
         if isinstance(value, np.generic):
             return value.item()
+        # Return `str(value)` when `isinstance(value, Path)`.
         if isinstance(value, Path):
             return str(value)
         raise TypeError(f"Unsupported JSON value: {type(value).__name__}")
@@ -375,5 +404,6 @@ def main():
         "paired_profit_differences_eur": summary["paired_profit_differences_eur"]}, indent=2))
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == "__main__":
     main()

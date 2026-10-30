@@ -24,14 +24,17 @@ from ..data.pv_outages import modeling_instances
 def physical_features(frame, farm, settings, night):
     """Use the production physical engine, without reading measured AC or satellite GHI."""
     result = pd.DataFrame(index=frame.index)
+    # Use the production physical engine, without reading measured AC or satellite GHI for each `rear` in `(False, True) if farm.tracking_type_id == 3 else (False,)`.
     for rear in (False, True) if farm.tracking_type_id == 3 else (False,):
         declared = deepcopy(settings)
         declared['bifacial']['enabled'] = rear
+        # When `rear and declared['transposition_model'] == 'perez-driesse'`, set `declared['transposition_model']` using `'haydavies'`.
         if rear and declared['transposition_model'] == 'perez-driesse':
             declared['transposition_model'] = 'haydavies'
         model = PhysicalPVModel(frame.set_index('interval_start_utc'), farm, declared, night)
         values = model.evaluate(diagnostics=True)
         prefix = 'rear' if rear else 'front'
+        # Process each `key` in this collection.
         for key in ('surface_tilt_deg', 'surface_azimuth_deg', 'poa_w_m2',
                     'poa_front_w_m2', 'poa_back_w_m2', 'cell_temperature_c', 'pv_ac_mw'):
             result[f'{prefix}_{key}'] = values[key]
@@ -42,6 +45,7 @@ def score(frame, prediction, rating, mask):
     """Use identical finite daylight targets and balanced day/auction weights."""
     part = frame.loc[mask]
     error = (prediction[mask]-part.measured_ac_mw.to_numpy())/rating
+    # Enforce the input contract: Nonfinite predictions on the common evaluation mask.
     if not np.isfinite(error).all():
         raise ValueError("Nonfinite predictions on the common evaluation mask")
     weights = balanced_weights(part)
@@ -63,10 +67,13 @@ def run_ensemble_study(config, progress=print):
         pd.read_parquet(source/'parquet/corpus.parquet'),config,farm_id=farm_id)
     prior = pd.read_parquet(source/'parquet/predictions.parquet').loc[frame.index]
     keys = ['interval_start_utc', 'delivery_day', 'auction', 'forecast_cycle_utc']
+    # Enforce the input contract: Reference predictions do not match the frozen corpus.
     if not frame[keys].equals(prior[keys]):
         raise ValueError('Reference predictions do not match the frozen corpus')
+    # Enforce the input contract: Reference and corpus targets differ.
     if not frame.measured_ac_mw.equals(prior.measured_ac_mw):
         raise ValueError('Reference and corpus targets differ')
+    # Enforce the input contract: An input forecast was unavailable at submission.
     if (frame.forecast_available_at_utc > frame.decision_cutoff_utc).any():
         raise ValueError('An input forecast was unavailable at submission')
     farm = load_metadata(config_path(config,config['inputs']['metadata_parquet']),[farm_id])[farm_id]
@@ -82,16 +89,20 @@ def run_ensemble_study(config, progress=print):
     train = (frame.eligible & frame.daylight & frame.split.eq('train')).to_numpy()
     validation = (frame.eligible & frame.daylight & frame.split.eq('validation')).to_numpy()
     test = (frame.eligible & frame.daylight & frame.split.eq('test')).to_numpy()
+    # Enforce the input contract: Every chronological split needs eligible daylight targets.
     if any(not mask.any() for mask in (train,validation,test)):
         raise ValueError('Every chronological split needs eligible daylight targets')
+    # Enforce the input contract: Training targets are not available before validation begins.
     if frame.loc[train,'target_available_at_utc'].max() >= frame.loc[validation,'decision_cutoff_utc'].min():
         raise ValueError('Training targets are not available before validation begins')
+    # Enforce the input contract: Validation targets are not available before test begins.
     if frame.loc[validation,'target_available_at_utc'].max() >= frame.loc[test,'decision_cutoff_utc'].min():
         raise ValueError('Validation targets are not available before test begins')
     output_root = config_path(config, section['output_root'])
     output = output_root / section['run_id'].replace('${farm_id}',str(farm_id))
     prepare_experiment_output(output_root, output,
         overwrite=config['experiment_outputs']['overwrite_existing'])
+    # Train only on frozen training rows; select on validation, report test separately for each `folder` in `('json', 'csv', 'parquet', 'models', 'plots')`.
     for folder in ('json','csv','parquet','models','plots'):(output/folder).mkdir(parents=True,exist_ok=True)
     digest = hashlib.sha256((source/'parquet/corpus.parquet').read_bytes()).hexdigest()
     write = lambda name,value: (output/'json'/name).write_text(json.dumps(value,indent=2,default=str)+'\n')
@@ -101,6 +112,7 @@ def run_ensemble_study(config, progress=print):
         'test_used_for_selection':False,'unchanged_measured_targets':True,
         'geometry_status':'configured proxy location and tracker assumptions, not measured tracker telemetry'})
     prepared={};preprocessors={}
+    # Train only on frozen training rows; select on validation, report test separately for each `name` in `section['feature_sets']`.
     for name in section['feature_sets']:
         pre = fit_preprocessor(views[name],train,config['pv_neural'])
         prepared[name] = transform_features(views[name],pre);preprocessors[name]=pre
@@ -114,6 +126,7 @@ def run_ensemble_study(config, progress=print):
         feature,spec=trial;started=time.perf_counter();options=dict(spec['parameters'])
         name=f"{spec['name']}_{feature}"
         classes={'extra_trees':ExtraTreesRegressor,'random_forest':RandomForestRegressor,'hist_gradient_boosting':HistGradientBoostingRegressor}
+        # When `spec['family'] != 'hist_gradient_boosting'`, set `options['n_jobs']` using `1`.
         if spec['family'] != 'hist_gradient_boosting':options['n_jobs']=1
         else: options['early_stopping']=False
         model=classes[spec['family']](random_state=section['seed'],**options)
@@ -128,11 +141,15 @@ def run_ensemble_study(config, progress=print):
 
     # Limit native BLAS/OpenMP pools globally; each tree job owns one CPU thread.
     workers=int(section['workers'])
+    # Enforce the input contract: pv_ensemble_study.workers must be between 1 and 42.
     if not 1 <= workers <= 42:raise ValueError('pv_ensemble_study.workers must be between 1 and 42')
     with threadpool_limits(limits=1), ThreadPoolExecutor(max_workers=workers) as pool:
+        # Train only on frozen training rows; select on validation, report test separately for each `(name, prediction)` in `pool.map(fit, trials)`.
         for name,prediction in pool.map(fit,trials):predictions[name]=prediction
     table=[]
+    # Apply score for `(name, prediction)` from `predictions.items()`.
     for name,prediction in predictions.items():
+        # Process each `(split, mask)` in this collection.
         for split,mask in [('validation',validation),('test',test),('january',validation & frame.delivery_day.str.startswith(section['focus_month']).to_numpy())]:
             table.append({'model':name,'split':split,**score(frame,prediction,farm.ac_capacity_mw,mask)})
     table=pd.DataFrame(table)
@@ -141,6 +158,7 @@ def run_ensemble_study(config, progress=print):
     write('selection.json',{'selected_new_model':selected,'criterion':'validation balanced daylight nrmse','test_used_for_selection':False})
     table.to_csv(output/'csv/metrics.csv',index=False)
     saved=frame[keys+['split','eligible','daylight','measured_ac_mw']].copy()
+    # Train only on frozen training rows; select on validation, report test separately for each `(name, prediction)` in `predictions.items()`.
     for name,prediction in predictions.items():saved[f'prediction_{name}_mw']=prediction
     saved.to_parquet(output/'parquet/predictions.parquet',index=False)
     _plot(table,output)
@@ -156,6 +174,7 @@ def _plot(table,output):
     import matplotlib.pyplot as plt
     fig,axes=plt.subplots(1,3,figsize=(18,8),layout='constrained')
     order=table.loc[table.split.eq('validation')].sort_values('nrmse_percent').model.tolist()
+    # Compare the selected split without using its scores to choose candidates for each `(ax, split)` in `zip(axes, ['validation', 'january', 'test'])`.
     for ax,split in zip(axes,['validation','january','test']):
         rows=table[table.split.eq(split)].set_index('model').loc[order]
         ax.barh(rows.index,rows.nrmse_percent);ax.invert_yaxis();ax.set_title(split);ax.set_xlabel('Daylight RMSE / AC rating (%)');ax.grid(axis='x',alpha=.2)

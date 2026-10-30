@@ -26,11 +26,14 @@ def evaluate(config, farm_id, baseline_path=None):
         measured_ac_mw=('measured_ac_mw', 'first'), ghi_w_m2=('ghi_w_m2', 'first'),
         split=('split', 'first'))
     paths = {'selected': directory / 'selected_parameters.json'}
+    # When `baseline_path`, set `paths['previous_baseline']` using `Path(baseline_path)`.
     if baseline_path:
         paths['previous_baseline'] = Path(baseline_path)
     predictions = {}
+    # Score complete four-view means on the same eligible physical quarters for each `(label, path)` in `paths.items()`.
     for label, path in paths.items():
         result = json.loads(path.read_text())
+        # Enforce the input contract: Model and requested farm differ.
         if int(result['farm_id']) != farm_id:
             raise ValueError('Model and requested farm differ')
         settings = selected_settings(config, farm, result)
@@ -45,11 +48,14 @@ def evaluate(config, farm_id, baseline_path=None):
     # Match the prior seasonal analysis, keeping low-irradiance and night out.
     comparable = comparable.loc[comparable.ghi_w_m2 > 20].copy()
     rows = []
+    # Score complete four-view means on the same eligible physical quarters for each `split` in `['train', 'validation', 'all']`.
     for split in ['train', 'validation', 'all']:
         subset = comparable if split == 'all' else comparable.loc[comparable['split'].eq(split)]
         reported_split = ({'train': 'pre_august_fit', 'validation': 'august_fit', 'all': 'all_fit'}[split]
                           if section.get('selection_scope', 'validation') == 'full_period' else split)
+        # Score complete four-view means on the same eligible physical quarters for each `(season, part)` in `subset.groupby('season', sort=True)`.
         for season, part in subset.groupby('season', sort=True):
+            # Score complete four-view means on the same eligible physical quarters for each `label` in `paths`.
             for label in paths:
                 error = (part[label] - part.measured_ac_mw).to_numpy(float)
                 rows.append({'model': label, 'split': reported_split, 'season': season,
@@ -74,13 +80,16 @@ def main():
     parser.add_argument('--baseline-root', help='Prior run containing farm_<id>/selected_parameters.json')
     args = parser.parse_args()
     config = load_config(args.config)
+    # Enforce the input contract: A single baseline file requires exactly one farm and no baseline root.
     if args.baseline_selected and (args.baseline_root or len(config['pv_realized_irradiance_search']['farm_ids']) != 1):
         raise ValueError('A single baseline file requires exactly one farm and no baseline root')
+    # Write seasonal diagnostics for the selected chain and optional baseline for each `farm_id` in `config['pv_realized_irradiance_search']['farm_ids']`.
     for farm_id in config['pv_realized_irradiance_search']['farm_ids']:
         baseline = (Path(args.baseline_root) / f'farm_{farm_id}' / 'selected_parameters.json'
                     if args.baseline_root else args.baseline_selected)
         print(evaluate(config, int(farm_id), baseline), flush=True)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

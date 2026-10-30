@@ -23,9 +23,11 @@ def main():
     section = config['pv_mayer_postprocessing']
     levels = np.arange(1, int(section['quantile_count']) + 1) / (int(section['quantile_count']) + 1)
     dest = root / 'baselines_all_eligible'
+    # Reject invalid input when `dest.exists()`.
     if dest.exists(): raise FileExistsError(dest)
     dest.mkdir()
     summaries = []
+    # Write the corresponding artifacts for `farm` from `section['farm_ids']`.
     for farm in section['farm_ids']:
         path = root / f'farm_{farm}' / 'evaluation_predictions.parquet'
         data = pd.read_parquet(path)
@@ -43,8 +45,10 @@ def main():
     write_json(dest / 'manifest.json', {'status': 'complete', 'farms': summaries,
         'scope': 'raw ensemble and both Gaussian methods on all common valid hours; independent of LQR bounds',
         'source_manifest_sha256': file_hash(root / 'manifest.json'), 'model_refits': False})
+    # Preserve existing outputs and report hours independently of linear quantile bounds for each `row` in `summaries`.
     for row in summaries: print(row, flush=True)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

@@ -21,6 +21,7 @@ def audit_neural_study(study_root: str | Path) -> dict:
     torch.set_num_threads(int(section["threads_per_worker"]))
     expected_names = {candidate["name"] for candidate in section["candidates"]}
     reports = []
+    # Check every farm/model and replay saved selected artifacts without targets for each `farm_id` in `section['farm_ids']`.
     for farm_id in section["farm_ids"]:
         farm = root/f"farm_{farm_id}"
         frame = pd.read_parquet(farm/"parquet"/"predictions.parquet")
@@ -28,36 +29,46 @@ def audit_neural_study(study_root: str | Path) -> dict:
         np.testing.assert_array_equal(frame.measured_ac_mw, corpus.measured_ac_mw)
         np.testing.assert_array_equal(frame.prediction_pvlib_mw, corpus.baseline_mw)
         pd.testing.assert_series_equal(frame.interval_start_utc, corpus.interval_start_utc)
+        # Enforce the input contract: Saved neural input violates forecast availability.
         if not (frame.forecast_available_at_utc <= frame.decision_cutoff_utc).all():
             raise ValueError("Saved neural input violates forecast availability")
         embargo = pd.DateOffset(days=int(section["split_embargo_days"]))
+        # Process each `(split, boundary)` in this collection.
         for split, boundary in (("train", "train_end_day_exclusive"), ("validation", "validation_end_day_exclusive")):
             cutoff = (pd.Timestamp(section[boundary])-embargo).tz_localize(section["delivery_timezone"]).tz_convert("UTC")
+            # Enforce the input contract: Saved fit/selection targets violate split embargo.
             if not (frame.loc[(frame.split == split) & frame.eligible, "target_available_at_utc"] <= cutoff).all():
                 raise ValueError("Saved fit/selection targets violate split embargo")
         selection = json.loads((farm/"json"/"model_selection.json").read_text())
         candidates = {row["name"]: row for row in selection["all_candidates"]}
+        # Enforce the input contract: Completed neural candidate set is incomplete.
         if set(candidates) != expected_names:
             raise ValueError("Completed neural candidate set is incomplete")
         chosen = min(candidates, key=lambda name: candidates[name]["validation_nrmse"])
+        # Enforce the input contract: Saved neural selection disagrees with prior validation.
         if chosen != selection["selected_candidate"] or selection["test_used_for_selection"]:
             raise ValueError("Saved neural selection disagrees with prior validation")
         np.testing.assert_array_equal(frame.prediction_selected_mw, frame[f"prediction_{chosen}_mw"])
         validation = frame.loc[(frame.split == "validation") & frame.eligible & frame.daylight]
         count = 0
+        # Check every farm/model and replay saved selected artifacts without targets for each `name` in `expected_names`.
         for name in expected_names:
             model, artifact = load_network(farm/"models"/f"{name}.pt", farm_id=farm_id)
+            # Enforce the input contract: Saved neural model is not on CPU.
             if any(parameter.device.type != "cpu" for parameter in model.parameters()):
                 raise ValueError("Saved neural model is not on CPU")
             rating = artifact["farm_metadata"]["ac_capacity_kw"]/1000
             values = frame[f"prediction_{name}_mw"].to_numpy()
+            # Enforce the input contract: Saved neural outputs violate the AC rating.
             if not np.isfinite(values).all() or np.any(values < 0) or np.any(values > rating+1e-7):
                 raise ValueError("Saved neural outputs violate the AC rating")
+            # Enforce the input contract: Common baseline evaluation mask contains invalid predictions.
             if not np.isfinite(frame.loc[frame.eligible, "prediction_pvlib_mw"]).all():
                 raise ValueError("Common baseline evaluation mask contains invalid predictions")
             residual = (validation[f"prediction_{name}_mw"]-validation.measured_ac_mw).to_numpy()/rating
             nrmse = float(np.sqrt(np.dot(balanced_weights(validation), residual**2)))
             np.testing.assert_allclose(nrmse, candidates[name]["validation_nrmse"], rtol=1e-5, atol=1e-7)
+            # Enforce the input contract: Neural artifact includes fitted physical inputs.
             if artifact["fitted_pvlib_parameters_used_as_neural_inputs"]:
                 raise ValueError("Neural artifact includes fitted physical inputs")
             count += 1
@@ -67,6 +78,7 @@ def audit_neural_study(study_root: str | Path) -> dict:
         target_free = sample.drop(columns=["measured_ac_mw"])
         prediction = predict_neural_frame(target_free, farm/"models"/"selected.pt", farm_id=farm_id)
         difference = float(np.max(abs(prediction-sample.prediction_selected_mw.to_numpy())))
+        # Enforce the input contract: Target-free saved neural inference differs from benchmark predictions.
         if difference > 1e-5:
             raise ValueError("Target-free saved neural inference differs from benchmark predictions")
         reports.append({"farm_id": farm_id, "model_count": count, "forecast_rows": len(frame),

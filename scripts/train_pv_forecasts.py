@@ -34,6 +34,7 @@ def main():
     options={name:value for name,value in {'workers':args.workers,'farm_ids':args.farms,
         'run_id':args.run_id,'resume':args.resume}.items() if value is not None}
     config=load_config(args.config,overrides={'pv_forecast_search':options})
+    # When `args.plan_only`, set `section` using `config['pv_forecast_search']`.
     if args.plan_only:
         section=config['pv_forecast_search']
         print(json.dumps({'workers':section['workers'],'reserved_cpu_cores':section['reserved_cpu_cores'],
@@ -46,4 +47,5 @@ def main():
         print(json.dumps(run_forecast_search(config,progress=lambda line:print(line,flush=True)),indent=2))
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__=='__main__':main()

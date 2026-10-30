@@ -17,6 +17,7 @@ from ...simulation.gme_oracle import _forecast_pv_at_cutoff
 def _common_example_days(root: Path, farm_ids: list[int], quantiles) -> list[str]:
     """Select common days by production level, independently of forecast errors."""
     daily = []
+    # Select common days by production level, independently of forecast errors for each `farm_id` in `farm_ids`.
     for farm_id in farm_ids:
         frame = pd.read_parquet(root / f"farm_{farm_id}" / "parquet" / "corpus.parquet")
         view = frame.loc[frame.auction == "DA"]
@@ -26,10 +27,13 @@ def _common_example_days(root: Path, farm_ids: list[int], quantiles) -> list[str
         rating = json.loads((root / f"farm_{farm_id}" / "json" / "summary.json").read_text())["ac_rating_mw"]
         daily.append((energy.loc[complete] / rating).rename(str(farm_id)))
     common = pd.concat(daily, axis=1).dropna().mean(axis=1).sort_index()
+    # Enforce the input contract: Too few common complete measurement days for trajectory examples.
     if len(common) < len(quantiles):
         raise ValueError("Too few common complete measurement days for trajectory examples")
     chosen = []
+    # Select common days by production level, independently of forecast errors for each `quantile` in `quantiles`.
     for quantile in quantiles:
+        # Enforce the input contract: Production quantiles must be between zero and one.
         if not 0 <= float(quantile) <= 1:
             raise ValueError("Production quantiles must be between zero and one")
         distance = (common - common.quantile(quantile)).abs().drop(index=chosen)
@@ -54,12 +58,14 @@ def plot_global_trajectories(study_root: str | Path, config_file: str | Path,
     original = json.loads((root / "json" / "study_config.json").read_text())
     farm_ids = list(map(int, original["pv_calibration"]["farm_ids"]))
     chosen = list(dates) if dates is not None else _common_example_days(root, farm_ids, quantiles)
+    # Plot three representative measured/forecast days per farm, with AC limits for each `folder` in `('plots', 'csv', 'json')`.
     for folder in ("plots", "csv", "json"):
         (root / folder / "trajectory_examples").mkdir(parents=True, exist_ok=True)
     result = {"dates": chosen, "selection": "common_complete_days_nearest_portfolio_normalized_energy_quantiles"
               if dates is None else "explicit_dates", "quantiles": list(quantiles) if dates is None else None,
               "configuration_source": str(config_file), "farms": {}}
     colors = {"DA": "tab:blue", "IDA1": "tab:orange", "IDA2": "tab:green", "IDA3": "tab:purple"}
+    # Write the corresponding artifacts for `farm_id` from `farm_ids`.
     for farm_id in farm_ids:
         config = load_config(config_file, overrides={"farm_id": farm_id, "market": {
             "valid_from": original["pv_calibration"]["start_day"],
@@ -78,6 +84,7 @@ def plot_global_trajectories(study_root: str | Path, config_file: str | Path,
                               index=pd.to_datetime(dataset.time.values, utc=True))
             power *= float(config["forecast"]["realized_power_scale_to_mw"])
             highest = rating
+            # Plot three representative measured/forecast days per farm, with AC limits for each `(axis, day)` in `zip(axes.flat, chosen)`.
             for axis, day in zip(axes.flat, chosen):
                 grid = calendar.delivery_grid(day)
                 # Include the true following-midnight sample, rather than
@@ -94,6 +101,7 @@ def plot_global_trajectories(study_root: str | Path, config_file: str | Path,
                     "measured_above_rating_intervals": int(np.sum(actual[:-1] > rating)),
                     "midnight_measurement_available": bool(np.isfinite(actual[-1]))}
                 highest = max(highest, float(np.nanmax(actual)))
+                # Plot three representative measured/forecast days per farm, with AC limits for each `event` in `calendar.schedule(day)`.
                 for event in calendar.schedule(day):
                     eligible = grid.starts[list(event.eligible_intervals)]
                     # The boundary follows the same weather vintage and model.
@@ -109,6 +117,7 @@ def plot_global_trajectories(study_root: str | Path, config_file: str | Path,
                     frame[f"{event.auction}_submission_cutoff_utc"] = event.submission_at
                     day_checks[f"{event.auction}_forecast_peak_mw"] = float(np.max(values))
                     day_checks[f"{event.auction}_forecast_above_rating_intervals"] = int(np.sum(values > rating + 1e-10))
+                    # Enforce the input contract: Farm `farm_id` `event.auction` forecast exceeds its AC rating.
                     if np.any(values > rating + 1e-10):
                         raise ValueError(f"Farm {farm_id} {event.auction} forecast exceeds its AC rating")
                     provenance.append({"delivery_day": day, "auction": event.auction,
@@ -121,6 +130,7 @@ def plot_global_trajectories(study_root: str | Path, config_file: str | Path,
                 axis.grid(alpha=.18)
                 rows.append(frame)
                 checks.append(day_checks)
+            # Plot three representative measured/forecast days per farm, with AC limits for each `axis` in `axes.flat`.
             for axis in axes.flat:
                 axis.set_ylim(0, highest * 1.09)
             axes.flat[-1].set_xlabel(f"Delivery time ({calendar.timezone}); final 00:00 is the following day")

@@ -23,6 +23,7 @@ def score_one(row):
     x = np.asarray(row['values'], float); y = float(row['observed_mw'])
     levels = row['levels']
     qs = np.arange(5,100,5,dtype=float)/100
+    # When `levels is None or (isinstance(levels, float) and np.isnan(levels))`, set `w` using `np.asarray(row['weights'], float)`.
     if levels is None or (isinstance(levels, float) and np.isnan(levels)):
         w = np.asarray(row['weights'], float)
         mean = float(w @ x); q = weighted_quantile(x, w, qs)
@@ -36,6 +37,7 @@ def score_one(row):
         crps = float(quantile_crps(x[None,:], levels, np.array([y]))[0])
         spread = float(np.sqrt(np.trapezoid((values-mean)**2, x=grid)))
     output = {'mean_mw': mean, 'median_mw': float(q[9]), 'crps_mw': crps, 'spread_mw': spread}
+    # Summarize one issued distribution with explicit tail convention for each `(level, value)` in `zip(qs, q)`.
     for level, value in zip(qs,q):
         name = f'q{round(level*100):02d}'
         output[name] = float(value)
@@ -43,6 +45,7 @@ def score_one(row):
         output[f'pinball_{name}_mw'] = float(max(level*residual,(level-1)*residual))
         output[f'below_{name}'] = int(y < value)
         output[f'below_equal_{name}'] = int(y <= value)
+    # Summarize one issued distribution with explicit tail convention for each `(lo, hi, width)` in `[(0, 18, 90), (1, 17, 80), (4, 14, 50)]`.
     for lo, hi, width in [(0,18,90),(1,17,80),(4,14,50)]:
         output[f'coverage_{width}'] = int(q[lo] <= y <= q[hi])
         output[f'width_{width}_mw'] = float(q[hi]-q[lo])
@@ -51,19 +54,24 @@ def score_one(row):
 
 def _summary(frame, rating, scope):
     rows=[]
+    # Perform summary for each `(method, part)` in `frame.groupby('method')`.
     for method, part in frame.groupby('method'):
         y = part.observed_mw.to_numpy(float)
         result = {'scope': scope, 'method': method, 'n': len(part)}
+        # Perform summary for each `name` in `('mean', 'median')`.
         for name in ('mean', 'median'):
             error = part[f'{name}_mw'].to_numpy(float)-y
+            # Process each `(label, value)` in this collection.
             for label, value in [('mae', np.mean(abs(error))), ('rmse', np.sqrt(np.mean(error**2))), ('bias', np.mean(error))]:
                 result[f'{name}_{label}_mw'] = float(value)
                 result[f'{name}_{label}_percent_capacity'] = float(100*value/rating)
         result['crps_mw'] = float(part.crps_mw.mean()); result['crps_percent_capacity'] = 100*result['crps_mw']/rating
+        # Perform summary for each `width` in `(50, 80, 90)`.
         for width in (50,80,90):
             result[f'coverage_{width}'] = float(part[f'coverage_{width}'].mean())
             result[f'width_{width}_mw'] = float(part[f'width_{width}_mw'].mean())
             result[f'width_{width}_percent_capacity'] = 100*result[f'width_{width}_mw']/rating
+        # Perform summary for each `level` in `range(5, 100, 5)`.
         for level in range(5,100,5):
             q = f'q{level:02d}'
             result[f'pinball_{q}_mw'] = float(part[f'pinball_{q}_mw'].mean())
@@ -78,11 +86,14 @@ def _plot_daily(part, destination, farm, auction, day):
     fig, ax = plt.subplots(figsize=(13,5))
     colors = {'equal_ensemble':'#1f77b4','online_ensemble_warm':'#36a3a3',
               'deterministic_quantiles':'#e69f00','online_combined_warm':'#d44739'}
+    # Perform plot daily for each `(method, color)` in `colors.items()`.
     for method, color in colors.items():
         x = part.loc[part.method.eq(method)].sort_values('interval_start_utc')
+        # Skip the current item when `x.empty`.
         if x.empty: continue
         t = pd.DatetimeIndex(x.interval_start_utc).tz_convert('Europe/Rome')
         ax.plot(t, x.mean_mw, label=method, color=color)
+        # Perform plot daily when `method == 'online_combined_warm'`.
         if method == 'online_combined_warm': ax.fill_between(t, x.q10, x.q90, color=color, alpha=.15, label='combined warm p10–p90')
     observed = part.loc[part.method.eq('equal_ensemble')].sort_values('interval_start_utc')
     t = pd.DatetimeIndex(observed.interval_start_utc).tz_convert('Europe/Rome')
@@ -97,25 +108,32 @@ def report(config, root):
     settings=config['pv_online_crps_study']; root=Path(root); summaries=[]; counts=[]
     expected={'equal_ensemble','online_ensemble_warm','online_ensemble_cold','deterministic_quantiles',
               'online_combined_warm','online_combined_cold','fixed_ensemble_quantiles'}
+    # Write the corresponding artifacts for `farm` from `settings['farms']`.
     for farm in settings['farms']:
         farm_root=root/f'farm_{farm}'; manifest=json.loads((farm_root/'prepared_manifest.json').read_text()); rating=manifest['rating_mw']
         prepared=pd.read_parquet(farm_root/'prepared.parquet')
+        # Write the corresponding artifacts for `auction` from `settings['auctions']`.
         for auction in settings['auctions']:
             folder=farm_root/auction; evaluation=json.loads((folder/'manifest.json').read_text())
             path=folder/'forecasts.parquet'
+            # Enforce the input contract: Forecast artifact changed.
             if file_hash(path) != evaluation['files']['forecasts']: raise ValueError('Forecast artifact changed')
             frame=pd.read_parquet(path); frame['interval_start_utc']=pd.to_datetime(frame.interval_start_utc,utc=True)
+            # Enforce the input contract: Missing methods for `farm` `auction`.
             if set(frame.method.unique()) != expected: raise ValueError(f'Missing methods for {farm} {auction}')
+            # Enforce the input contract: Duplicate forecast score row.
             if frame.duplicated(['interval_start_utc','method']).any(): raise ValueError('Duplicate forecast score row')
             valid=frame.eligible & np.isfinite(frame.observed_mw)
             eligible=frame.loc[valid].copy()
             counts_by_time=eligible.groupby('interval_start_utc').method.nunique()
             matched=eligible.loc[eligible.interval_start_utc.isin(counts_by_time[counts_by_time.eq(len(expected))].index)].copy()
+            # Enforce the input contract: No common observations for `farm` `auction`.
             if matched.empty: raise ValueError(f'No common observations for {farm} {auction}')
             lineage=prepared.loc[prepared.auction.eq(auction) & prepared['split'].eq('validation'),
                 ['interval_start_utc','forecast_cycle_utc','forecast_available_at_utc','source_trial']].rename(
                 columns={'forecast_cycle_utc':'ensemble_cycle_utc','forecast_available_at_utc':'ensemble_available_utc'})
             matched=matched.merge(lineage,on='interval_start_utc',how='left',validate='many_to_one')
+            # Enforce the input contract: Ensemble provenance missing or unavailable at auction.
             if matched.ensemble_available_utc.isna().any() or (matched.ensemble_available_utc > matched.decision_cutoff_utc).any():
                 raise ValueError('Ensemble provenance missing or unavailable at auction')
             scored=pd.DataFrame([score_one(row) for row in matched.to_dict('records')],index=matched.index)
@@ -125,7 +143,9 @@ def report(config, root):
             start=pd.Timedelta(settings['daylight_start']+':00').total_seconds()/60
             end=pd.Timedelta(settings['daylight_end']+':00').total_seconds()/60
             matched['daytime']=(clock>=start)&(clock<end)
+            # Score only observations shared by every requested method, then publish diagnostics for each `(scope, sub)` in `[('all_hours', matched), ('daytime', matched.loc[matched.daytime])]`.
             for scope, sub in [('all_hours',matched),('daytime',matched.loc[matched.daytime])]:
+                # Score only observations shared by every requested method, then publish diagnostics for each `item` in `_summary(sub, rating, scope)`.
                 for item in _summary(sub,rating,scope): summaries.append({'farm_id': int(farm),'auction':auction,**item})
             inputs=prepared.loc[prepared.auction.eq(auction) & prepared['split'].eq('validation')]
             counts.append({'farm_id':int(farm),'auction':auction,'matched_intervals':len(matched)//len(expected),
@@ -136,9 +156,11 @@ def report(config, root):
                 'eligible_intervals':int(eligible.interval_start_utc.nunique()),
                 'retrospective_intervals':int(matched.loc[matched.method.eq('equal_ensemble'),'retrospective_model'].sum())})
             matched.to_parquet(folder/'scored_matched.parquet',index=False)
+            # Score only observations shared by every requested method, then publish diagnostics for each `(day, part)` in `matched.groupby('delivery_day')`.
             for day, part in matched.groupby('delivery_day'):
                 _plot_daily(part,folder/'plots'/str(day)/'forecast.png',farm,auction,day)
             weight_rows=[]
+            # Score only observations shared by every requested method, then publish diagnostics for each `row` in `matched.loc[matched.method.str.startswith('online_')].itertuples()`.
             for row in matched.loc[matched.method.str.startswith('online_')].itertuples():
                 w=np.asarray(row.weights,float)
                 weight_rows.append({'delivery_day':row.delivery_day,'method':row.method,'block':row.block,
@@ -148,24 +170,30 @@ def report(config, root):
             weights=pd.DataFrame(weight_rows).groupby(['delivery_day','method','block'],as_index=False).mean()
             weights.to_csv(folder/'weight_summary.csv',index=False)
             fig,axes=plt.subplots(2,1,figsize=(11,7),sharex=True)
+            # Process each `(method, group)` in this collection.
             for method,group in weights.loc[weights.method.str.startswith('online_combined')].groupby('method'):
                 daily=group.groupby('delivery_day').mean(numeric_only=True)
+                # Score only observations shared by every requested method, then publish diagnostics for each `column` in `('ensemble_weight', 'deterministic_weight', 'quantile_weight')`.
                 for column in ('ensemble_weight','deterministic_weight','quantile_weight'):
                     axes[0].plot(daily.index,daily[column],label=f'{method}: {column}')
                 axes[1].plot(daily.index,daily.effective_experts,label=method)
             axes[0].set_ylabel('Mean weight'); axes[1].set_ylabel('Effective experts')
             axes[0].legend(fontsize=7,ncol=2); axes[1].legend(fontsize=8)
+            # Score only observations shared by every requested method, then publish diagnostics for each `ax` in `axes`.
             for ax in axes: ax.grid(alpha=.25)
             axes[0].set_title(f'Farm {farm} — {auction}: validation weight evolution')
             fig.autofmt_xdate(); fig.tight_layout(); fig.savefig(folder/'weight_evolution.png',dpi=120); plt.close(fig)
             # Reliability and spread-skill are tabular to retain ties and sample counts.
             reliability=[]; spread=[]
+            # Score only observations shared by every requested method, then publish diagnostics for each `(method, part)` in `matched.groupby('method')`.
             for method, part in matched.groupby('method'):
+                # Score only observations shared by every requested method, then publish diagnostics for each `q` in `range(5, 100, 5)`.
                 for q in range(5,100,5):
                     name=f'q{q:02d}'
                     reliability.append({'method':method,'quantile':q/100,'n':len(part),
                         'strict':float(part[f'below_{name}'].mean()),'inclusive':float(part[f'below_equal_{name}'].mean())})
                 rank=pd.qcut(part.spread_mw.rank(method='first'),q=min(5,len(part)),labels=False,duplicates='drop')
+                # Score only observations shared by every requested method, then publish diagnostics for each `(bin_id, group)` in `part.groupby(rank)`.
                 for bin_id, group in part.groupby(rank):
                     spread.append({'method':method,'bin':int(bin_id),'n':len(group),
                         'mean_spread_mw':float(group.spread_mw.mean()),
@@ -183,6 +211,7 @@ def report(config, root):
     lines=['# Online CRPS PV comparison','', 'Exploratory validation: 2026-08-20 to 2026-08-31. '
            'Candidate models were selected using these validation days; August 20 DA/IDA1/IDA2 use a retrospective source model.', '',
            '| Farm | Auction | Method | Matched intervals | CRPS (% AC) | Mean RMSE (% AC) |', '| --- | --- | --- | ---: | ---: | ---: |']
+    # Process each `row` in this collection.
     for row in metrics.loc[metrics.scope.eq('all_hours')].sort_values(['farm_id','auction','crps_mw']).itertuples():
         lines.append(f'| {row.farm_id} | {row.auction} | {row.method} | {row.n} | {row.crps_percent_capacity:.3f} | {row.mean_rmse_percent_capacity:.3f} |')
     lines += ['', 'Each comparison uses matched eligible intervals. Quantile CRPS uses numerical integration with constant tails; '

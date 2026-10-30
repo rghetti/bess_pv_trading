@@ -24,6 +24,7 @@ def main():
     levels = np.arange(1, int(settings['quantile_count']) + 1) / (int(settings['quantile_count']) + 1)
     methods = [('raw_ensemble', 'Raw ensemble'), ('cn_emos', 'Censored Gaussian EMOS'),
                ('cn_emos_b', 'Boosted censored EMOS'), ('linear_quantile', 'Rearranged linear quantiles')]
+    # Plot the median raw-ensemble error day for every farm on common hours for each `farm` in `settings['farm_ids']`.
     for farm in settings['farm_ids']:
         root = args.run_dir / 'rearranged_quantiles' / f'farm_{farm}'
         data = pd.read_parquet(root / 'evaluation_predictions.parquet')
@@ -31,12 +32,15 @@ def main():
         raw = data.loc[data.method.eq('raw_ensemble')].copy()
         raw['squared_error'] = (raw.mean_fraction_capacity - raw.observation_fraction_capacity) ** 2
         daily = raw.groupby('delivery_day').squared_error.mean().sort_values()
+        # Skip the current item when `daily.empty`.
         if daily.empty: continue
         day = daily.index[len(daily)//2]
         fig, axes = plt.subplots(2, 2, figsize=(11, 7), sharex=True, sharey=True, layout='constrained')
         rating = float(config['farms'][str(farm)]['ac_capacity_kw']) / 1000
+        # Plot the median raw-ensemble error day for every farm on common hours for each `(ax, (method, label))` in `zip(axes.flat, methods)`.
         for ax, (method, label) in zip(axes.flat, methods):
             part = data.loc[data.delivery_day.eq(day) & data.method.eq(method)].copy().set_index('hour_start_utc').sort_index()
+            # Skip the current item when `part.empty`.
             if part.empty: continue
             grid = pd.date_range(part.index.min(), part.index.max(), freq='h')
             part = part.reindex(grid)
@@ -57,5 +61,6 @@ def main():
         print(f'Farm {farm}: {target}', flush=True)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

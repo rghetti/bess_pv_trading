@@ -17,16 +17,22 @@ def report_neural_farm(frame, farm, methods, section, destination, diagnostics):
     data["month"] = pd.to_datetime(data.delivery_day).dt.strftime("%Y-%m")
     data["delivery_hour"] = pd.DatetimeIndex(data.interval_start_utc).tz_convert(section["delivery_timezone"]).hour
     rows = []
+    # Report untouched test data separately from training and validation scores for each `split` in `('train', 'validation', 'test')`.
     for split in ("train", "validation", "test"):
+        # Report untouched test data separately from training and validation scores for each `scope` in `('all_intervals', 'daylight')`.
         for scope in ("all_intervals", "daylight"):
             view = data.loc[data.eligible & (data.split == split)]
+            # When `scope == 'daylight'`, set `view` using `view.loc[view.daylight]`.
             if scope == "daylight":
                 view = view.loc[view.daylight]
+            # Report untouched test data separately from training and validation scores for each `auction` in `('ALL_BALANCED', 'DA', 'IDA1', 'IDA2', 'IDA3')`.
             for auction in ("ALL_BALANCED", "DA", "IDA1", "IDA2", "IDA3"):
                 group = view if auction == "ALL_BALANCED" else view.loc[view.auction == auction]
+                # Skip the current item when `group.empty`.
                 if group.empty:
                     continue
                 weights = balanced_weights(group)
+                # Report untouched test data separately from training and validation scores for each `method` in `methods`.
                 for method in methods:
                     prediction = group[f"prediction_{method}_mw"].to_numpy()
                     actual = group.measured_ac_mw.to_numpy()
@@ -41,6 +47,7 @@ def report_neural_farm(frame, farm, methods, section, destination, diagnostics):
                     scores["nrmse_percent_ac_rating"] = 100*scores["rmse_mw"]/farm.ac_capacity_mw
                     # Energy across overlapping views is deliberately not aggregated.
                     if auction == "ALL_BALANCED":
+                        # Process each `name` in this collection.
                         for name in ("paired_energy_bias_mwh", "measured_energy_mwh", "forecast_energy_mwh"):
                             scores.pop(name, None)
                     rows.append({"farm_id": farm.farm_id, "split": split, "scope": scope,
@@ -48,7 +55,9 @@ def report_neural_farm(frame, farm, methods, section, destination, diagnostics):
     metrics = pd.DataFrame(rows)
     metrics.to_csv(destination/"csv"/"metrics.csv", index=False)
     daily = []
+    # Report untouched test data separately from training and validation scores for each `((split, day, auction), group)` in `data.loc[data.eligible].groupby(['split', 'delivery_day', 'auction'])`.
     for (split, day, auction), group in data.loc[data.eligible].groupby(["split", "delivery_day", "auction"]):
+        # Report untouched test data separately from training and validation scores for each `method` in `methods`.
         for method in methods:
             error = group[f"prediction_{method}_mw"].to_numpy()-group.measured_ac_mw.to_numpy()
             daily.append({"split": split, "delivery_day": day, "auction": auction, "method": method,
@@ -64,8 +73,11 @@ def report_neural_farm(frame, farm, methods, section, destination, diagnostics):
     coverage.to_csv(destination/"csv"/"coverage.csv", index=False)
     grouped_rows = []
     test = data.loc[data.eligible & (data.split == "test")]
+    # Report untouched test data separately from training and validation scores for each `dimension` in `('month', 'delivery_hour')`.
     for dimension in ("month", "delivery_hour"):
+        # Report untouched test data separately from training and validation scores for each `((auction, value), group)` in `test.groupby(['auction', dimension])`.
         for (auction, value), group in test.groupby(["auction", dimension]):
+            # Report untouched test data separately from training and validation scores for each `method` in `methods`.
             for method in methods:
                 grouped_rows.append({"dimension": dimension, "value": str(value), "auction": auction,
                     "method": method, **error_metrics(group.measured_ac_mw, group[f"prediction_{method}_mw"], farm.ac_capacity_mw)})
@@ -97,6 +109,7 @@ def _farm_plots(data, metrics, diagnostics, farm, section, destination):
     from zoneinfo import ZoneInfo
     fig, axes = plt.subplots(2, 2, figsize=(13, 9), layout="constrained")
     test = metrics.loc[(metrics.split == "test") & (metrics.scope == "daylight")]
+    # Show test skill, training histories and complete daily forecast trajectories for each `(axis, auction)` in `zip(axes.flat, ('DA', 'IDA1', 'IDA2', 'IDA3'))`.
     for axis, auction in zip(axes.flat, ("DA", "IDA1", "IDA2", "IDA3")):
         group = test.loc[test.auction == auction].sort_values("rmse_mw")
         axis.barh(group.method, group.nrmse_percent_ac_rating,
@@ -105,7 +118,9 @@ def _farm_plots(data, metrics, diagnostics, farm, section, destination):
     fig.suptitle(f"Farm {farm.farm_id} — untouched test forecast accuracy")
     fig.savefig(destination/"plots"/"test_accuracy.png", dpi=150); plt.close(fig)
     fig, axis = plt.subplots(figsize=(11, 5), layout="constrained")
+    # Show test skill, training histories and complete daily forecast trajectories for each `item` in `diagnostics`.
     for item in diagnostics:
+        # When `'history' in item`, set `history` using `pd.DataFrame(item['history'])`.
         if "history" in item:
             history = pd.DataFrame(item["history"])
             axis.plot(history.epoch, 100*history.validation_nrmse, label=item["candidate"]["name"])
@@ -116,15 +131,19 @@ def _farm_plots(data, metrics, diagnostics, farm, section, destination):
     view = data.loc[(data.split == "test") & (data.auction == "DA") & data.eligible]
     energy = view.groupby("delivery_day").measured_ac_mw.sum()
     examples = []
+    # Show test skill, training histories and complete daily forecast trajectories for each `quantile` in `np.linspace(0.2, 0.8, int(section['representative_days']))`.
     for quantile in np.linspace(.2, .8, int(section["representative_days"])):
         distances = (energy-energy.quantile(quantile)).abs().drop(index=examples)
+        # Show test skill, training histories and complete daily forecast trajectories when `not distances.empty`.
         if not distances.empty:
             examples.append(distances.sort_values(kind="stable").index[0])
+    # Show test skill, training histories and complete daily forecast trajectories for each `day` in `examples`.
     for day in examples:
         fig, axes = plt.subplots(4, 1, figsize=(12, 11), sharex=True, sharey=True, layout="constrained")
         actual = data.loc[(data.delivery_day == day) & (data.auction == "DA")]
         midnight = pd.Timestamp(day).tz_localize(section["delivery_timezone"])+pd.DateOffset(days=1)
         next_actual = data.loc[(data.auction == "DA") & (data.interval_start_utc == midnight.tz_convert("UTC"))]
+        # Show test skill, training histories and complete daily forecast trajectories for each `(axis, auction)` in `zip(axes, ('DA', 'IDA1', 'IDA2', 'IDA3'))`.
         for axis, auction in zip(axes, ("DA", "IDA1", "IDA2", "IDA3")):
             group = data.loc[(data.delivery_day == day) & (data.auction == auction)]
             times = pd.DatetimeIndex(group.interval_start_utc).tz_convert(section["delivery_timezone"])
@@ -137,6 +156,7 @@ def _farm_plots(data, metrics, diagnostics, farm, section, destination):
                 measured = np.r_[measured, next_actual.measured_ac_mw.iloc[0]]
             axis.step(measured_times, measured, where="post", label="Measured AC", color="black", linewidth=1.6)
             extended = times.append(pd.DatetimeIndex([midnight]))
+            # Process each `(name, label, color)` in this collection.
             for name, label, color in (("pvlib", "Calibrated pvlib", "tab:orange"),
                                        ("selected", "Validation-selected neural", "tab:blue")):
                 axis.step(extended, np.r_[group[f"prediction_{name}_mw"], group[f"prediction_{name}_mw"].iloc[-1]],

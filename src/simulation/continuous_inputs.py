@@ -23,18 +23,25 @@ from .settlement import load_realized_imbalance_prices
 
 def _json_value(value: Any) -> Any:
     """Normalize scientific and clock metadata for stable source fingerprints."""
+    # Return `{str(key): _json_value(item) for key, item in value.items()}` when `isinstance(value, Mapping)`.
     if isinstance(value, Mapping):
         return {str(key): _json_value(item) for key, item in value.items()}
+    # Return `[_json_value(item) for item in value]` when `isinstance(value, (list, tuple))`.
     if isinstance(value, (list, tuple)):
         return [_json_value(item) for item in value]
+    # Return `[_json_value(item) for item in value.tolist()]` when `isinstance(value, np.ndarray)`.
     if isinstance(value, np.ndarray):
         return [_json_value(item) for item in value.tolist()]
+    # Return `_json_value(value.item())` when `isinstance(value, np.generic)`.
     if isinstance(value, np.generic):
         return _json_value(value.item())
+    # Return `value.isoformat()` when `isinstance(value, (datetime, date, pd.Timestamp))`.
     if isinstance(value, (datetime, date, pd.Timestamp)):
         return value.isoformat()
+    # Return `str(value)` when `isinstance(value, Path)`.
     if isinstance(value, Path):
         return str(value)
+    # Return `str(value)` when `isinstance(value, float) and (not np.isfinite(value))`.
     if isinstance(value, float) and not np.isfinite(value):
         return str(value)
     return value
@@ -57,6 +64,7 @@ def _frame_fingerprint(frame: pd.DataFrame) -> str:
 def _utc_index(starts) -> pd.DatetimeIndex:
     """Use one explicit UTC precision for request identity and cached slicing."""
     index = pd.DatetimeIndex(starts)
+    # Enforce the input contract: Continuous forecast starts must be unique increasing timezone-aware timestamps.
     if index.tz is None or index.hasnans or not index.is_unique or not index.is_monotonic_increasing:
         raise ValueError("Continuous forecast starts must be unique increasing timezone-aware timestamps")
     return index.tz_convert("UTC").as_unit("ns")
@@ -64,14 +72,18 @@ def _utc_index(starts) -> pd.DatetimeIndex:
 
 def _validate_bundle(bundle, cutoff: pd.Timestamp, starts: pd.DatetimeIndex) -> None:
     """Reject unavailable vintages and unresolved or ambiguously aligned forecasts."""
+    # Enforce the input contract: PV forecast available at `bundle.available_at` is after submission `cutoff`.
     if pd.Timestamp(bundle.available_at) > cutoff:
         raise ValueError(f"PV forecast available at {bundle.available_at} is after submission {cutoff}")
+    # Enforce the input contract: Continuous optimization currently requires one deterministic PV member.
     if len(bundle.members) != 1:
         raise ValueError("Continuous optimization currently requires one deterministic PV member")
     index = _utc_index(bundle.values.index)
     values = pd.to_numeric(bundle.values["pv_ac_mw"], errors="coerce").to_numpy(float)
+    # Enforce the input contract: Continuous PV forecast does not exactly cover the requested physical grid.
     if not index.equals(starts) or values.shape != (len(starts),):
         raise ValueError("Continuous PV forecast does not exactly cover the requested physical grid")
+    # Enforce the input contract: Continuous PV forecast must be finite and nonnegative.
     if not np.isfinite(values).all() or np.any(values < 0):
         raise ValueError("Continuous PV forecast must be finite and nonnegative")
 
@@ -100,14 +112,17 @@ class _PreparedForecasts:
     def __call__(self, cutoff, starts):
         """Return a copied slice; unpreflighted requests cannot alter pinned inputs."""
         cutoff = pd.Timestamp(cutoff)
+        # Enforce the input contract: Continuous forecast cutoff must include a timezone.
         if cutoff.tzinfo is None:
             raise ValueError("Continuous forecast cutoff must include a timezone")
         cutoff = cutoff.tz_convert("UTC")
         starts = _utc_index(starts)
         bundle = self._bundles.get(cutoff.isoformat())
+        # Enforce the input contract: Continuous forecast cutoff `cutoff.isoformat()` was not preflighted.
         if bundle is None:
             raise ValueError(f"Continuous forecast cutoff {cutoff.isoformat()} was not preflighted")
         positions = _utc_index(bundle.values.index).get_indexer(starts)
+        # Enforce the input contract: Continuous forecast request at `cutoff.isoformat()` exceeds preflighted intervals.
         if np.any(positions < 0):
             raise ValueError(f"Continuous forecast request at {cutoff.isoformat()} exceeds preflighted intervals")
         return replace(bundle, values=bundle.values.iloc[positions].copy(deep=True),
@@ -128,12 +143,15 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
         last = date.fromisoformat(str(settings["end_date"]))
     except (KeyError, TypeError, ValueError):
         raise ValueError("Continuous optimization requires ISO start_date and end_date delivery dates") from None
+    # Enforce the input contract: Continuous optimization end_date must not precede start_date.
     if last < first:
         raise ValueError("Continuous optimization end_date must not precede start_date")
     days = tuple(day.date().isoformat() for day in pd.date_range(first, last, freq="D"))
     calendar = AuctionCalendar.from_config(config)
+    # Enforce the input contract: Continuous market and price experiment timezones must agree.
     if calendar.timezone != config["gme_oracle_experiment"]["timezone"]:
         raise ValueError("Continuous market and price experiment timezones must agree")
+    # Enforce the input contract: Continuous optimization requires the latest available forecast at each reoptimization.
     if config["forecast"]["reoptimization_pv_policy"] != "latest_available_forecast_at_each_reoptimization":
         raise ValueError("Continuous optimization requires the latest available forecast at each reoptimization")
     # Actual execution state advances only when a quarter closes. A delayed
@@ -145,6 +163,7 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     battery = battery_parameters_from_config(config["battery"])
     plant = PlantParameters(**{key: config["plant"][key]
                               for key in ("farm_id", "poi_import_mw", "poi_export_mw")}, battery=battery)
+    # Enforce the input contract: Plant and PV forecast must identify the same farm.
     if plant.farm_id != int(config["forecast"]["farm_id"]):
         raise ValueError("Plant and PV forecast must identify the same farm")
     initial_energy, terminal_energy = _soc_energy_targets(config["state"], battery)
@@ -157,6 +176,7 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     full_starts = _utc_index(full_grid.starts)
     initial_requests: dict[str, tuple[pd.DatetimeIndex, Any]] = {}
     forecast_requests: dict[str, pd.DatetimeIndex] = {}
+    # Pin exact prices, common measured PV/fallbacks and every causal forecast when `progress`.
     if progress:
         progress(f"Preflighting continuous delivery inputs for {days[0]} through {days[-1]} (offline)")
 
@@ -166,6 +186,7 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
         study = daily["gme_oracle_experiment"]
         study["delivery_day"] = day
         study["price_database"] = str(config_path(config, study["price_database"]))
+        # Pin exact prices, common measured PV/fallbacks and every causal forecast for each `item` in `study['auction_datasets'].values()`.
         for item in study["auction_datasets"].values():
             item["native_interval_minutes"] = native_price_resolution_minutes(item["dataset"], date.fromisoformat(day))
         scheduled = calendar.schedule(day)
@@ -174,8 +195,10 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             schedule = tuple(event for event in scheduled if event.auction in prices and event.available)
             first_cutoff = min(pd.Timestamp(grid.starts[0]), *(event.submission_at for event in scheduled))
             initialization = config["forecast"].get("initialization_cutoff") if day == days[0] else None
+            # When `initialization is not None`, set `stamp` using `pd.Timestamp(initialization)`.
             if initialization is not None:
                 stamp = pd.Timestamp(initialization)
+                # Enforce the input contract: forecast.initialization_cutoff must precede the first submission and delivery.
                 if stamp.tzinfo is None or stamp > first_cutoff:
                     raise ValueError("forecast.initialization_cutoff must precede the first submission and delivery")
                 first_cutoff = stamp
@@ -195,6 +218,7 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             "daily_config": daily,
             "native_interval_minutes_by_auction": {auction: int(item["native_interval_minutes"])
                 for auction, item in study["auction_datasets"].items() if auction in prices}}
+        # Pin exact prices, common measured PV/fallbacks and every causal forecast for each `event` in `schedule`.
         for event in schedule:
             cutoff = event.submission_at.tz_convert("UTC")
             # Include the in-progress interval for its forecast-only remainder.
@@ -202,13 +226,16 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
                                  & (full_starts < pd.Timestamp(grid.ends[-1]))]
             key = cutoff.isoformat()
             forecast_requests[key] = forecast_requests.get(key, starts).union(starts)
+        # Pin exact prices, common measured PV/fallbacks and every causal forecast when `progress`.
         if progress:
             progress(f"Preflight {day}: {len(schedule)} available auctions, {len(grid.interval_ids)} delivery intervals")
 
     # Freeze union forecasts covering both current-day projection and next-day plan.
     forecasts = _PreparedForecasts()
+    # Pin exact prices, common measured PV/fallbacks and every causal forecast for each `(key, (starts, _))` in `initial_requests.items()`.
     for key, (starts, _) in initial_requests.items():
         forecast_requests[key] = forecast_requests.get(key, starts).union(starts)
+    # Pin exact prices, common measured PV/fallbacks and every causal forecast for each `(key, starts)` in `sorted(forecast_requests.items())`.
     for key, starts in sorted(forecast_requests.items()):
         initial = initial_requests.get(key)
         try:

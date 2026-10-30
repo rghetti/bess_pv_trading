@@ -14,34 +14,48 @@ def validate_neural_config(config: dict):
     section = config["pv_neural"]
     dates = [pd.Timestamp(section[name]) for name in (
         "start_day", "train_end_day_exclusive", "validation_end_day_exclusive", "end_day_exclusive")]
+    # Enforce the input contract: Neural split dates must be timezone-free local calendar dates.
     if any(value.tzinfo is not None or value != value.normalize() for value in dates):
         raise ValueError("Neural split dates must be timezone-free local calendar dates")
+    # Enforce the input contract: Neural train/validation/test boundaries must be strictly increasing.
     if any(a >= b for a, b in zip(dates, dates[1:])):
         raise ValueError("Neural train/validation/test boundaries must be strictly increasing")
+    # Enforce the input contract: This benchmark is explicitly CPU-only.
     if section["device"] != "cpu":
         raise ValueError("This benchmark is explicitly CPU-only")
+    # Enforce the input contract: Neural split_embargo_days must be a nonnegative integer.
     if section["split_embargo_days"] < 0 or int(section["split_embargo_days"]) != section["split_embargo_days"]:
         raise ValueError("Neural split_embargo_days must be a nonnegative integer")
+    # Process each `name` in this collection.
     for name in ("workers", "threads_per_worker", "interop_threads_per_worker", "max_epochs", "patience",
                  "batch_size", "prediction_batch_size", "minimum_training_days", "minimum_validation_days", "minimum_test_days"):
+        # Enforce the input contract: pv_neural.`name` must be a positive integer.
         if isinstance(section[name], bool) or int(section[name]) != section[name] or section[name] < 1:
             raise ValueError(f"pv_neural.{name} must be a positive integer")
+    # Enforce the input contract: Neural loss must be mse or huber.
     if section["loss"] not in {"mse", "huber"}:
         raise ValueError("Neural loss must be mse or huber")
+    # Enforce the input contract: Neural farm_ids must be nonempty and unique.
     if not section["farm_ids"] or len(set(section["farm_ids"])) != len(section["farm_ids"]):
         raise ValueError("Neural farm_ids must be nonempty and unique")
     names = []
+    # Require an ordered chronological split and bounded CPU resource settings for each `candidate` in `section['candidates']`.
     for candidate in section["candidates"]:
         name = candidate["name"]
+        # Enforce the input contract: Neural candidate names must be safe lowercase file identifiers.
         if not name or any(x not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for x in name):
             raise ValueError("Neural candidate names must be safe lowercase file identifiers")
+        # Enforce the input contract: Unsupported neural architecture or feature set.
         if candidate["architecture"] not in {"mlp", "residual", "tcn"} or candidate["features"] not in {"core", "weather"}:
             raise ValueError("Unsupported neural architecture or feature set")
+        # Enforce the input contract: Neural width/depth must be positive.
         if candidate["width"] < 1 or candidate["depth"] < 1:
             raise ValueError("Neural width/depth must be positive")
+        # Enforce the input contract: TCN kernel_size must be positive and odd.
         if candidate["architecture"] == "tcn" and (candidate["kernel_size"] < 1 or candidate["kernel_size"] % 2 == 0):
             raise ValueError("TCN kernel_size must be positive and odd")
         names.append(name)
+    # Enforce the input contract: Neural candidates must be nonempty with distinct names.
     if not names or len(set(names)) != len(names):
         raise ValueError("Neural candidates must be nonempty with distinct names")
 
@@ -62,9 +76,11 @@ def prepare_neural_corpus(config, farm_id, destination, progress=None):
     frame.loc[(frame.split == "train") & (frame.target_available_at_utc > cutoff), "eligible"] = False
     validation_cutoff = (pd.Timestamp(section["validation_end_day_exclusive"])-embargo).tz_localize(section["delivery_timezone"]).tz_convert("UTC")
     frame.loc[(frame.split == "validation") & (frame.target_available_at_utc > validation_cutoff), "eligible"] = False
+    # Reuse operational alignment and calibrated pvlib with raw weather retained for each `label` in `('train', 'validation', 'test')`.
     for label in ("train", "validation", "test"):
         observed = frame.loc[frame.eligible & frame.daylight & (frame.split == label)].delivery_day.nunique()
         minimum = section["minimum_training_days" if label == "train" else f"minimum_{label}_days"]
+        # Enforce the input contract: Farm `farm_id`: insufficient `label` coverage (`observed` days).
         if observed < minimum:
             raise ValueError(f"Farm {farm_id}: insufficient {label} coverage ({observed} days)")
     return frame, farm, settings, provenance
@@ -90,13 +106,16 @@ def feature_frame(frame: pd.DataFrame, feature_set: str, timezone: str, *,
     local = (starts + pd.Timedelta(minutes=7.5)).tz_convert(timezone)
     hour = local.hour + local.minute / 60 + local.second / 3600
     year_fraction = (local.dayofyear - 1 + hour / 24) / np.where(local.is_leap_year, 366, 365)
+    # Process each `(name, angle)` in this collection.
     for name, angle in (("hour", 2*np.pi*hour/24), ("annual", 2*np.pi*year_fraction),
                         ("month", 2*np.pi*(local.month-1)/12)):
         result[f"{name}_sin"] = np.sin(angle)
         result[f"{name}_cos"] = np.cos(angle)
+    # Use only forecast weather and deterministic geometry/time, never fitted PV when `include_national_holiday`.
     if include_national_holiday:
         from ..data.pv_calendar import italian_national_holiday
         result["italian_national_holiday"] = italian_national_holiday(starts, timezone)
+    # When `include_solar_geometry`, set `zenith` using `np.radians(frame.solar_zenith_deg.to_numpy())`.
     if include_solar_geometry:
         zenith = np.radians(frame.solar_zenith_deg.to_numpy())
         azimuth = np.radians(frame.solar_azimuth_deg.to_numpy())
@@ -121,6 +140,7 @@ def fit_preprocessor(features: pd.DataFrame, mask: np.ndarray, section: dict, *,
     mean = filled.mean(axis=0)
     scale = np.maximum(filled.std(axis=0), float(section["standardization_floor"]))
     output_columns = list(features)
+    # When `include_missing_indicators`, set `output_columns` using `[f'{name}__missing' for name in features]`.
     if include_missing_indicators:
         output_columns += [f"{name}__missing" for name in features]
     return {"columns": list(features), "median": median.tolist(), "mean": mean.tolist(),
@@ -132,6 +152,7 @@ def fit_preprocessor(features: pd.DataFrame, mask: np.ndarray, section: dict, *,
 
 def transform_features(features: pd.DataFrame, fitted: dict) -> np.ndarray:
     """Apply persisted train-only statistics and retain missingness indicators."""
+    # Enforce the input contract: Neural feature order disagrees with the fitted artifact.
     if list(features) != fitted["columns"]:
         raise ValueError("Neural feature order disagrees with the fitted artifact")
     values = features.to_numpy(dtype=float)
@@ -149,9 +170,11 @@ def transform_features(features: pd.DataFrame, fitted: dict) -> np.ndarray:
 def pack_sequences(frame: pd.DataFrame, features: np.ndarray, rating: float, *, minimum_length=0) -> dict:
     """Pack contiguous date/auction segments; excluded quarters are never represented."""
     groups=[];view_ids=[]
+    # Process each `(view_id, positions)` in this collection.
     for view_id,positions in enumerate(frame.groupby(["delivery_day", "auction"], sort=True).indices.values()):
         starts=pd.DatetimeIndex(frame.iloc[positions].interval_start_utc)
         steps=np.diff(starts.as_unit('ns').asi8)
+        # Enforce the input contract: Neural quarter-hour timestamps must be ordered and unique.
         if np.any(steps<=0) or np.any(steps%pd.Timedelta(minutes=15).value):
             raise ValueError('Neural quarter-hour timestamps must be ordered and unique')
         boundaries=np.flatnonzero(steps!=pd.Timedelta(minutes=15).value)+1
@@ -168,11 +191,14 @@ def pack_sequences(frame: pd.DataFrame, features: np.ndarray, rating: float, *, 
     indices = np.full(shape, -1, dtype=np.int64)
     split, keys = [], []
     auction_ids = {name: i for i, name in enumerate(("DA", "IDA1", "IDA2", "IDA3"))}
+    # Pack contiguous date/auction segments; excluded quarters are never represented for each `(i, positions)` in `enumerate(groups)`.
     for i, positions in enumerate(groups):
         sample = frame.iloc[positions]
+        # Enforce the input contract: A neural sequence must not cross split or weather-vintage boundaries.
         if sample.split.nunique() != 1 or sample.forecast_cycle_utc.nunique() != 1:
             raise ValueError("A neural sequence must not cross split or weather-vintage boundaries")
         starts = pd.DatetimeIndex(sample.interval_start_utc)
+        # Enforce the input contract: Neural sequence must preserve native quarter-hour adjacency.
         if len(starts) > 1 and not np.all(np.diff(starts.as_unit("ns").asi8) == pd.Timedelta(minutes=15).value):
             raise ValueError("Neural sequence must preserve native quarter-hour adjacency")
         size = len(positions)
@@ -196,9 +222,11 @@ def unpack_predictions(packed: dict, prediction: np.ndarray, rows: int, rating: 
     result = np.full(rows, np.nan)
     valid = packed["indices"] >= 0
     indices = packed["indices"][valid]
+    # Enforce the input contract: Neural sequence reconstruction changed the row population.
     if len(indices) != rows or len(np.unique(indices)) != rows:
         raise ValueError("Neural sequence reconstruction changed the row population")
     result[indices] = prediction[valid]*rating
+    # Enforce the input contract: Neural predictions violate the finite AC output contract.
     if not np.isfinite(result).all() or np.any(result < 0) or np.any(result > rating+1e-7):
         raise ValueError("Neural predictions violate the finite AC output contract")
     return result

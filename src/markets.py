@@ -80,11 +80,15 @@ class AuctionCalendar:
 
     def __post_init__(self) -> None:
         ZoneInfo(self.timezone)
+        # Enforce the input contract: Calendar validity end precedes start.
         if pd.Timestamp(self.valid_to) < pd.Timestamp(self.valid_from):
             raise ValueError("Calendar validity end precedes start")
+        # Enforce the input contract: Decision buffer must lie in [0, 60) minutes.
         if self.decision_buffer_minutes < 0 or self.decision_buffer_minutes >= 60:
             raise ValueError("Decision buffer must lie in [0, 60) minutes")
+        # Require a complete and parseable timing rule for each auction.
         for auction in ("DA", "IDA1", "IDA2", "IDA3"):
+            # Enforce the input contract: Missing explicit market rule/provenance for `auction`.
             if (auction not in self.gates or auction not in self.gate_day_offsets
                     or auction not in self.result_times or auction not in self.result_provenance
                     or auction not in self.delivery_start_times):
@@ -92,8 +96,10 @@ class AuctionCalendar:
             time.fromisoformat(self.gates[auction])
             time.fromisoformat(self.result_times[auction])
             delivery_start = self.delivery_start_times[auction]
+            # Validate the optional start time for auctions with restricted delivery products.
             if delivery_start is not None:
                 time.fromisoformat(delivery_start)
+            # Enforce the input contract: `auction` gate_day_offsets must be an integer number of local days.
             if isinstance(self.gate_day_offsets[auction], bool) or not isinstance(self.gate_day_offsets[auction], int):
                 raise ValueError(f"{auction} gate_day_offsets must be an integer number of local days")
 
@@ -106,6 +112,7 @@ class AuctionCalendar:
 
     def _date(self, delivery_day: str | date) -> date:
         day = date.fromisoformat(delivery_day) if isinstance(delivery_day, str) else delivery_day
+        # Enforce the input contract: Delivery day `day` outside configured auction-calendar validity `self.valid_from`..`self.valid_to`.
         if not date.fromisoformat(self.valid_from) <= day <= date.fromisoformat(self.valid_to):
             raise ValueError(f"Delivery day {day} outside configured auction-calendar validity {self.valid_from}..{self.valid_to}")
         return day
@@ -128,27 +135,34 @@ class AuctionCalendar:
         day = self._date(delivery_day)
         grid = self.delivery_grid(day)
         events = []
+        # Create rule-based events, allowing actual missing/delayed publications for each `auction` in `('DA', 'IDA1', 'IDA2', 'IDA3')`.
         for auction in ("DA", "IDA1", "IDA2", "IDA3"):
             event_day = day + timedelta(days=self.gate_day_offsets[auction])
             gate = self._local(event_day, self.gates[auction])
             result = self._local(event_day, self.result_times[auction])
             version = "GME-DTF03-rev14" if event_day >= date(2026, 1, 13) else "GME-DTF03-rev13"
             provenance = self.result_provenance[auction].replace("rev13", "rev14" if "rev14" in version else "rev13")
+            # When `recorded_results is not None and auction in recorded_results`, set `value` using `recorded_results[auction]`.
             if recorded_results is not None and auction in recorded_results:
                 value = recorded_results[auction]
                 result = None if value is None else pd.Timestamp(value)
+                # Create rule-based events, allowing actual missing/delayed publications when `result is not None`.
                 if result is not None:
+                    # Enforce the input contract: Recorded market publication requires explicit timezone.
                     if result.tzinfo is None:
                         raise ValueError("Recorded market publication requires explicit timezone")
                     result = result.tz_convert("UTC")
                 provenance = "recorded_publication" if result is not None else "missing_recorded_results"
+            # When `auction in cancelled`, set `result` using `None`.
             if auction in cancelled:
                 result = None
                 provenance = "cancelled_auction"
+            # Enforce the input contract: `auction` results cannot be known before its gate.
             if result is not None and result <= gate:
                 raise ValueError(f"{auction} results cannot be known before its gate")
             eligible = tuple(range(len(grid)))
             delivery_start = self.delivery_start_times[auction]
+            # Update `eligible` when this condition is met.
             if delivery_start is not None:
                 eligible = tuple(np.flatnonzero(
                     grid.starts >= self._local(day, delivery_start)).tolist())

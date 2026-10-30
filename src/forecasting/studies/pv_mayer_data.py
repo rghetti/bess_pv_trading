@@ -24,22 +24,29 @@ def check_coverage(config):
     """Check declared dates, real source cycles, measurement grid and auction validity."""
     s = config['pv_mayer_postprocessing']
     start, train_end, end = (pd.Timestamp(s[k]).normalize() for k in ('start_day', 'train_end_day', 'end_day'))
+    # Enforce the input contract: Expected start_day <= train_end_day < end_day.
     if not start <= train_end < end:
         raise ValueError('Expected start_day <= train_end_day < end_day')
     periods = sorted(s['dataset_periods'], key=lambda p: p['start_day'])
     days = pd.date_range(start, end, freq='D')
     routes = {}
+    # Associate each declared archive with its covered delivery days.
     for period in periods:
         a, b = pd.Timestamp(period['start_day']), pd.Timestamp(period['end_day'])
+        # Enforce the input contract: Ensemble archive has an inverted delivery window.
         if a > b:
             raise ValueError('Ensemble archive has an inverted delivery window')
+        # Assign each covered day once so overlapping archives cannot be mixed silently.
         for day in pd.date_range(max(a, start), min(b, end), freq='D'):
+            # Enforce the input contract: Overlapping ensemble archives on `day.date()`.
             if day in routes:
                 raise ValueError(f'Overlapping ensemble archives on {day.date()}')
             routes[day] = period['ensemble_zarr']
     missing_days = [str(day.date()) for day in days if day not in routes]
+    # Enforce the input contract: Incomplete declared ensemble coverage: `len(missing_days)` days; first `missing_days[:8]`.
     if missing_days and not s['allow_declared_gaps']:
         raise ValueError(f'Incomplete declared ensemble coverage: {len(missing_days)} days; first {missing_days[:8]}')
+    # Enforce the input contract: Declared windows must include both training and evaluation delivery days.
     if not routes or not any(day <= train_end for day in routes) or not any(day > train_end for day in routes):
         raise ValueError('Declared windows must include both training and evaluation delivery days')
     calendar = AuctionCalendar.from_config(config)
@@ -50,28 +57,39 @@ def check_coverage(config):
         det_cycles = set(pd.DatetimeIndex(pd.to_datetime(det.cycle_time.values, utc=True)))
         observed_times = set(pd.DatetimeIndex(pd.to_datetime(det.time.values, utc=True)))
         expected_ids = None
+        # Require consistent ensemble members, variable units and time semantics across stores.
         for path, store in stores.items():
             ids = tuple(map(str, store.member.values))
+            # Enforce the input contract: `path` does not contain `s['member_count']` distinct members.
             if len(ids) != int(s['member_count']) or len(set(ids)) != len(ids):
                 raise ValueError(f'{path} does not contain {s["member_count"]} distinct members')
+            # Enforce the input contract: Ensemble member labels/order differ between archives.
             if expected_ids is not None and ids != expected_ids:
                 raise ValueError('Ensemble member labels/order differ between archives')
             expected_ids = ids
+            # Compare every configured weather field with its deterministic counterpart.
             for field in config['forecast_mapping'].values():
+                # Enforce the input contract: Forecast field `field` missing from `path` or deterministic source.
                 if field not in store or field not in det:
                     raise ValueError(f'Forecast field {field} missing from {path} or deterministic source')
+                # Matching units and interval semantics are required for the shared predictor.
                 for attribute in ('units', 'temporal_semantics'):
+                    # Enforce the input contract: `path` `field` `attribute` differs from deterministic source.
                     if store[field].attrs.get(attribute) != det[field].attrs.get(attribute):
                         raise ValueError(f'{path} {field} {attribute} differs from deterministic source')
+        # Check every delivery day against the actual forecast, measurement and auction clocks.
         for day in sorted(routes):
             cycle = _cycle(day)
             store = stores[routes[day]]
+            # Enforce the input contract: Missing ensemble or deterministic cycle `cycle`.
             if cycle not in set(pd.DatetimeIndex(pd.to_datetime(store.cycle_time.values, utc=True))) or cycle not in det_cycles:
                 raise ValueError(f'Missing ensemble or deterministic cycle {cycle}')
             grid = local_delivery_starts(str(day.date()), s['timezone'])
+            # Enforce the input contract: Measurement time grid incomplete on `day.date()`.
             if not set(grid).issubset(observed_times):
                 raise ValueError(f'Measurement time grid incomplete on {day.date()}')
             da = next(e for e in calendar.schedule(str(day.date())) if e.auction == 'DA')
+            # Enforce the input contract: Forecast cycle unavailable at DA cutoff on `day.date()`.
             if cycle + pd.Timedelta(hours=float(config['source']['availability_lag_hours'])) > da.submission_at:
                 raise ValueError(f'Forecast cycle unavailable at DA cutoff on {day.date()}')
     return routes
@@ -81,14 +99,18 @@ def aggregate_hourly(quarters, members, rating, *, latency_minutes=0):
     """Average actual quarter values while retaining missing-target and bounds flags."""
     frame = quarters.copy()
     frame['interval_start_utc'] = pd.to_datetime(frame.interval_start_utc, utc=True)
+    # Enforce the input contract: Duplicate quarter-hour in an ensemble delivery day.
     if frame.interval_start_utc.duplicated().any():
         raise ValueError('Duplicate quarter-hour in an ensemble delivery day')
+    # Enforce the input contract: A requested ensemble member is missing.
     if any(name not in frame for name in members):
         raise ValueError('A requested ensemble member is missing')
     frame['hour_start_utc'] = frame.interval_start_utc.dt.floor('h')
     records = []
+    # Average actual quarter values while retaining missing-target and bounds flags for each `(hour, group)` in `frame.groupby('hour_start_utc', sort=True)`.
     for hour, group in frame.groupby('hour_start_utc', sort=True):
         expected = pd.date_range(hour, periods=4, freq='15min')
+        # Enforce the input contract: Incomplete or misaligned physical hour `hour`.
         if not pd.DatetimeIndex(group.interval_start_utc).equals(expected):
             raise ValueError(f'Incomplete or misaligned physical hour {hour}')
         target = group.measured_ac_mw.to_numpy(float)
@@ -129,6 +151,7 @@ def prepare_farm(config, farm_id, routes):
         det = stack.enter_context(xr.open_zarr(config_path(config, config['inputs']['zarr']), consolidated=True, chunks=None))
         stores = {p: stack.enter_context(xr.open_zarr(config_path(config, p), consolidated=True, chunks=None))
                   for p in set(routes.values())}
+        # Apply predict bundle for `(day, path)` from `sorted(routes.items())`.
         for day, path in sorted(routes.items()):
             date = str(day.date()); starts = local_delivery_starts(date, s['timezone']); cycle = _cycle(day)
             cutoff = pd.Timestamp(next(e for e in calendar.schedule(date) if e.auction == 'DA').submission_at)
@@ -139,18 +162,23 @@ def prepare_farm(config, farm_id, routes):
             columns['decision_cutoff_utc'] = cutoff
             ensemble = align_cycle(stores[path], farm_id, cycle, starts, config, True)
             deterministic = align_cycle(det, farm_id, cycle, starts, config, False)
+            # Predict each preserved member path and assemble unmatched raw hourly observations for each `source_frame` in `(target, ensemble.values, deterministic.values)`.
             for source_frame in (target, ensemble.values, deterministic.values):
                 source_digest.update(pd.util.hash_pandas_object(source_frame, index=True).values.tobytes())
+            # Apply predict bundle for `(bundle, control)` from `((deterministic, True), (ensemble, False))`.
             for bundle, control in ((deterministic, True), (ensemble, False)):
+                # Apply predict bundle for `member` from `bundle.members`.
                 for member in bundle.members:
                     view = bundle.values.loc[bundle.values.member.eq(member)].copy()
                     view['interval_start_utc'] = view.index; view['delivery_day'] = date; view['auction'] = 'DA'
                     view['forecast_cycle_utc'] = cycle
+                    # Enforce the input contract: Weather member `member` does not cover the delivery grid.
                     if not pd.DatetimeIndex(view.interval_start_utc).equals(starts):
                         raise ValueError(f'Weather member {member} does not cover the delivery grid')
                     # Predict only contiguous valid subsequences; never fill missing required weather.
                     weather_valid = np.isfinite(view[required_weather].to_numpy(float)).all(axis=1)
                     values = np.full(len(view), np.nan)
+                    # Update `values[weather_valid]` when this condition is met.
                     if weather_valid.any():
                         values[weather_valid] = predict_bundle(view.iloc[np.flatnonzero(weather_valid)].copy(), model, farm_id=farm_id)
                     columns['control_mw' if control else f'member_{member}'] = values

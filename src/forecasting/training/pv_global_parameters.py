@@ -18,6 +18,7 @@ def export_global_parameters(study_root: str | Path, destination: str | Path) ->
     output.mkdir(parents=True,exist_ok=True)
     config=read_json(root/"json"/"study_config.json")
     overrides={}
+    # Write the corresponding artifacts for `farm_id` from `config['pv_calibration']['farm_ids']`.
     for farm_id in config["pv_calibration"]["farm_ids"]:
         farm=root/f"farm_{farm_id}"
         summary=read_json(farm/"json"/"summary.json")
@@ -46,6 +47,7 @@ def export_global_parameters(study_root: str | Path, destination: str | Path) ->
             "bifacial":fit["bifacial_settings"],
             "output":{"method":"calibrated_scale","calibrated_coefficient":parameters["coefficient"],
                 "assumption_status":f"global_2025_fit_treated_as_prior_farm_metadata; source={artifact_path}"}}
+        # When `source['farm_metadata']['tracking_type_id'] in {1, 3}`, set `override['tracker']` using `{'gcr': parameters['gcr'], 'max_angle': parameters['max_angle']}`.
         if source["farm_metadata"]["tracking_type_id"] in {1,3}:
             override["tracker"]={"gcr":parameters["gcr"],"max_angle":parameters["max_angle"]}
         overrides[str(farm_id)]={"pv":override}
@@ -67,31 +69,39 @@ def compare_global_errors(study_root: str | Path, parameters_dir: str | Path) ->
     root, parameters = Path(study_root), Path(parameters_dir)
     config = read_json(root/"json"/"study_config.json")
     rows = []
+    # Compare old and promoted forecasts on identical raw targets, without refitting for each `farm_id` in `config['pv_calibration']['farm_ids']`.
     for farm_id in config["pv_calibration"]["farm_ids"]:
         artifact = read_json(parameters/f"farm_{farm_id}.json")
         method = artifact["fit"]["method"]
         rating = artifact["farm_metadata"]["ac_capacity_kw"] / 1000
+        # Process each `(phase, filename)` in this collection.
         for phase, filename in (("all_year_static_in_sample", "retrospective_predictions.parquet"),
                                 ("chronological_held_out_family", "predictions.parquet")):
             data = pd.read_parquet(root/f"farm_{farm_id}"/"parquet"/filename)
             data = data.loc[data.eligible & ((data.phase == "held_out") if phase.startswith("chronological") else True)]
+            # Compare old and promoted forecasts on identical raw targets, without refitting for each `scope` in `('all_intervals', 'daylight')`.
             for scope in ("all_intervals", "daylight"):
                 view = data.loc[data.daylight] if scope == "daylight" else data
+                # Compare old and promoted forecasts on identical raw targets, without refitting for each `auction` in `('ALL_BALANCED', 'DA', 'IDA1', 'IDA2', 'IDA3')`.
                 for auction in ("ALL_BALANCED", "DA", "IDA1", "IDA2", "IDA3"):
                     sample = view if auction == "ALL_BALANCED" else view.loc[view.auction == auction]
+                    # Skip the current item when `sample.empty`.
                     if sample.empty:
                         continue
                     weights = balanced_weights(sample)
                     row = {"farm_id": farm_id, "method": method, "comparison": phase, "scope": scope,
                            "auction": auction, "ac_rating_mw": rating, "pairs": len(sample),
                            "delivery_days": sample.delivery_day.nunique()}
+                    # Process each `(label, column)` in this collection.
                     for label, column in (("before", "prediction_fixed_mw"), ("after", f"prediction_{method}_mw")):
                         error = (sample[column] - sample.measured_ac_mw).to_numpy()
+                        # Enforce the input contract: Before/after errors must use the same finite evaluation mask.
                         if not np.isfinite(error).all():
                             raise ValueError("Before/after errors must use the same finite evaluation mask")
                         metrics = {"mean_abs_error": np.dot(weights, np.abs(error)),
                                    "min_abs_error": np.min(np.abs(error)), "max_abs_error": np.max(np.abs(error)),
                                    "rmse": np.sqrt(np.dot(weights, error ** 2)), "signed_bias": np.dot(weights, error)}
+                        # Compare old and promoted forecasts on identical raw targets, without refitting for each `(name, value)` in `metrics.items()`.
                         for name, value in metrics.items():
                             row[f"{name}_{label}_mw"] = float(value)
                             row[f"{name}_{label}_percent_ac"] = float(value / rating * 100)
@@ -123,7 +133,9 @@ def _plot_global_errors(table, output: Path):
                        & (table.scope == "daylight") & (table.auction == "ALL_BALANCED")]
     fig, axes = plt.subplots(2, 2, figsize=(13, 9), layout="constrained")
     names = ("mean_abs_error", "min_abs_error", "max_abs_error")
+    # Show nameplate-normalized mean/minimum/maximum errors for each farm for each `(axis, row)` in `zip(axes.flat, chosen.itertuples(index=False))`.
     for axis, row in zip(axes.flat, chosen.itertuples(index=False)):
+        # Show nameplate-normalized mean/minimum/maximum errors for each farm for each `(label, offset, color)` in `(('before', -0.18, 'grey'), ('after', 0.18, 'tab:blue'))`.
         for label, offset, color in (("before", -.18, "grey"), ("after", .18, "tab:blue")):
             values = [getattr(row, f"{name}_{label}_percent_ac") for name in names]
             bars = axis.bar(np.arange(len(names))+offset, values, width=.36, color=color,

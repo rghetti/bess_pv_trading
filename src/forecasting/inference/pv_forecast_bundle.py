@@ -24,6 +24,7 @@ def export_bundle(farm_directory,model_name,destination):
     farm_directory=Path(farm_directory);destination=Path(destination)
     metadata=json.loads((farm_directory/'json/trials'/f'{model_name}.json').read_text())
     artifact=Path(metadata['artifact'])
+    # Enforce the input contract: Source model checksum mismatch.
     if _sha(artifact)!=metadata['artifact_sha256']:raise ValueError('Source model checksum mismatch')
     provenance=json.loads((farm_directory/'json/input_provenance.json').read_text())
     config=json.loads((farm_directory.parent/'json/resolved_config.json').read_text())
@@ -43,6 +44,7 @@ def export_bundle(farm_directory,model_name,destination):
         'feature_contract':'weather/time; no proxy geometry, auction identity or elapsed age',
         'software':{'sklearn':metadata['sklearn_version'],'torch':metadata.get('torch_version')},
         'checksums':{model_path.name:_sha(model_path),baseline_path.name:_sha(baseline_path)}}
+    # Update `cache` when this condition is met.
     if metadata['specification']['family']=='neural':
         # Symmetric convolutions must retain the training tensor boundary,
         # including padding up to the longest DST delivery day in the corpus.
@@ -61,8 +63,11 @@ def predict_bundle(frame,bundle_directory,*,farm_id):
     """
     bundle_directory=Path(bundle_directory)
     manifest=json.loads((bundle_directory/'manifest.json').read_text())
+    # Enforce the input contract: Forecast bundle belongs to another farm.
     if int(farm_id)!=manifest['farm_id']:raise ValueError('Forecast bundle belongs to another farm')
+    # Predict AC MW from issue-time weather only; never read observed production for each `(name, expected)` in `manifest['checksums'].items()`.
     for name,expected in manifest['checksums'].items():
+        # Enforce the input contract: Forecast bundle checksum mismatch: `name`.
         if _sha(bundle_directory/name)!=expected:raise ValueError(f'Forecast bundle checksum mismatch: {name}')
     spec=manifest['specification'];rating=manifest['rating_mw']
     from ..training.pv_forecast_search import interpolate_forecast_gaps
@@ -75,6 +80,7 @@ def predict_bundle(frame,bundle_directory,*,farm_id):
     night=night_window_mask(pd.DatetimeIndex(frame.interval_start_utc),manifest['night_policy'])
     baseline_model=joblib.load(bundle_directory/manifest['baseline'])
     baseline=np.clip(baseline_model.predict(x),0,1);baseline[night]=0
+    # Predict AC MW from issue-time weather only; never read observed production when `spec['family'] == 'neural'`.
     if spec['family']=='neural':
         import torch
         from ..models.pv_residual_networks import WeatherResidualNetwork
@@ -83,6 +89,7 @@ def predict_bundle(frame,bundle_directory,*,farm_id):
         # Dummy target fields provide routing scaffolding; incoming measured values are ignored.
         inputs=frame.copy();inputs['measured_ac_mw']=np.nan;inputs['eligible']=False
         inputs['daylight']=~night;inputs['split']='prediction'
+        # When `'auction' not in inputs`, set `inputs['auction']` using `'DA'`.
         if 'auction' not in inputs:inputs['auction']='DA'
         packed=pack_sequences(inputs,x,rating)
         packed=_pad_sequence_contract(packed,manifest['sequence_length'])
@@ -94,9 +101,11 @@ def predict_bundle(frame,bundle_directory,*,farm_id):
         prediction=unpack_predictions(packed,values,len(frame),rating)
     else:
         artifact=joblib.load(bundle_directory/manifest['model']);fraction=artifact['model'].predict(x)
+        # When `spec['family'].endswith('_residual')`, set `fraction` using `baseline`.
         if spec['family'].endswith('_residual'):fraction+=baseline
         prediction=np.clip(fraction,0,1)*rating
     prediction[night]=0
+    # Enforce the input contract: Bundle inference produced nonfinite AC power.
     if not np.isfinite(prediction).all():raise ValueError('Bundle inference produced nonfinite AC power')
     return prediction
 
@@ -104,9 +113,12 @@ def predict_bundle(frame,bundle_directory,*,farm_id):
 def _pad_sequence_contract(packed,sequence_length):
     """Preserve trained convolution boundaries for single-day inference."""
     padding=int(sequence_length)-packed['indices'].shape[1]
+    # Enforce the input contract: Forecast sequence exceeds the trained sequence length.
     if padding<0:raise ValueError('Forecast sequence exceeds the trained sequence length')
+    # When `padding`, set `packed` using `dict(packed)`.
     if padding:
         packed=dict(packed)
+        # Preserve trained convolution boundaries for single-day inference for each `name` in `['x', 'y', 'mask', 'daylight', 'indices']`.
         for name in ['x','y','mask','daylight','indices']:
             widths=[(0,0),(0,padding)]+[(0,0)]*(packed[name].ndim-2)
             packed[name]=np.pad(packed[name],widths,constant_values=-1 if name=='indices' else 0)
@@ -117,16 +129,20 @@ def export_composite(definitions,name,destination,*,rating,timezone):
     """Export selected averages/corrections with their constituent prediction contracts."""
     destination=Path(destination);destination.mkdir(parents=True,exist_ok=True)
     definition=definitions[name]
+    # Return `export_bundle(definition['source'], definition['model'], destination)` when `definition['kind'] == 'static'`.
     if definition['kind']=='static':
         return export_bundle(definition['source'],definition['model'],destination)
     manifest={'schema':'weather_pv_composite_v1','name':name,'kind':definition['kind'],
         'rating_mw':rating,'timezone':timezone,'checksums':{}}
+    # When `definition['kind'] == 'static_mean'`, set `members` using `[]`.
     if definition['kind']=='static_mean':
         members=[]
+        # Export selected averages/corrections with their constituent prediction contracts for each `(number, member)` in `enumerate(definition['members'])`.
         for number,member in enumerate(definition['members']):
             child=f'member_{number}';export_composite(definitions,member,destination/child,rating=rating,timezone=timezone)
             members.append(child);manifest['checksums'][f'{child}/manifest.json']=_sha(destination/child/'manifest.json')
         manifest['members']=members
+    # Export selected averages/corrections with their constituent prediction contracts when `definition['kind'] == 'online_gain'`.
     elif definition['kind']=='online_gain':
         export_composite(definitions,definition['base'],destination/'base',rating=rating,timezone=timezone)
         shutil.copy2(definition['history'],destination/'history.parquet')
@@ -144,9 +160,13 @@ def predict_composite(frame,bundle_directory,*,farm_id,history=None):
     """Target-free prediction; optional observed history updates an adaptive bundle."""
     bundle_directory=Path(bundle_directory)
     manifest=json.loads((bundle_directory/'manifest.json').read_text())
+    # Return `predict_bundle(frame, bundle_directory, farm_id=farm_id)` when `manifest['schema'] == 'weather_pv_bundle_v1'`.
     if manifest['schema']=='weather_pv_bundle_v1':return predict_bundle(frame,bundle_directory,farm_id=farm_id)
+    # Target-free prediction; optional observed history updates an adaptive bundle for each `(name, expected)` in `manifest['checksums'].items()`.
     for name,expected in manifest['checksums'].items():
+        # Enforce the input contract: Composite checksum mismatch: `name`.
         if _sha(bundle_directory/name)!=expected:raise ValueError(f'Composite checksum mismatch: {name}')
+    # Return the selected result for this condition.
     if manifest['kind']=='static_mean':
         return np.mean([predict_composite(frame,bundle_directory/child,farm_id=farm_id)
             for child in manifest['members']],axis=0)

@@ -17,6 +17,7 @@ def paired_inputs(ensemble, deterministic, members_prediction, deterministic_pre
     base = deterministic[metadata].copy()
     base['deterministic_prediction'] = np.asarray(deterministic_prediction, float)
     base = base.set_index('interval_start_utc').sort_index()
+    # Enforce the input contract: Duplicate forecast or target keys.
     if base.index.has_duplicates or wide.index.has_duplicates:
         raise ValueError('Duplicate forecast or target keys')
     base = base.join(wide, how='left').reset_index()
@@ -37,6 +38,7 @@ def fit_calibrator(member_values, targets, times, rating, quantiles, alpha):
     features = summary_features(member_values, times, rating)
     target = np.asarray(targets, dtype=float) / rating
     valid = np.isfinite(features).all(axis=1) & np.isfinite(target)
+    # Enforce the input contract: Insufficient finite out-of-fold calibration intervals.
     if valid.sum() < 30:
         raise ValueError('Insufficient finite out-of-fold calibration intervals')
     scaler = StandardScaler().fit(features[valid])
@@ -97,17 +99,20 @@ def score_frame(frame, member_ids, levels, rating, label):
     valid = frame.eligible.to_numpy(bool) & np.isfinite(y) & np.isfinite(m).all(axis=1) & np.isfinite(frame.deterministic_prediction)
     z = frame.loc[valid].copy(); m = m[valid]; y = y[valid]
     rows = []
+    # Return the selected result for this condition.
     if not len(z):
         return pd.DataFrame([{'window': label, 'method': 'no_comparable_observations', 'n': 0}])
     points = {'deterministic': z.deterministic_prediction.to_numpy(float),
               'member_mean': m.mean(axis=1), 'member_median': np.median(m, axis=1)}
     qcolumns = [f'calibrated_q{int(round(100*q)):02d}' for q in levels]
     has_cal = all(col in z for col in qcolumns)
+    # When `has_cal`, set `q` using `z[qcolumns].to_numpy(float)`.
     if has_cal:
         q = z[qcolumns].to_numpy(float)
         good = np.isfinite(q).all(axis=1)
         points['calibrated_mean'] = np.where(good, quantile_mean(q, levels), np.nan)
         points['calibrated_median'] = q[:, list(levels).index(0.5)]
+    # Return paired point and probabilistic scores for one analysis window for each `(name, pred)` in `points.items()`.
     for name, pred in points.items():
         mask = np.isfinite(pred)
         err = pred[mask]-y[mask]
@@ -121,20 +126,24 @@ def score_frame(frame, member_ids, levels, rating, label):
     empirical_crps = float(np.mean(raw_crps(m, y)))
     rows.append({'window': label, 'method': 'raw_ensemble_distribution', 'n': len(z),
                  'crps_mw': empirical_crps, 'crps_percent_capacity': 100*empirical_crps/rating})
+    # Return paired point and probabilistic scores for one analysis window for each `width` in `(0.5, 0.8, 0.9)`.
     for width in (0.5, 0.8, 0.9):
         lo, hi = np.quantile(m, [(1-width)/2, 1-(1-width)/2], axis=1)
         rows[-1][f'coverage_{int(width*100)}'] = float(np.mean((y >= lo) & (y <= hi)))
         rows[-1][f'width_{int(width*100)}_mw'] = float(np.mean(hi-lo))
         rows[-1][f'width_{int(width*100)}_percent_capacity'] = float(100*np.mean(hi-lo)/rating)
+    # When `has_cal and good.any()`, set `(cq, cy)` using `(q[good], y[good])`.
     if has_cal and good.any():
         cq, cy = q[good], y[good]
         result = {'window': label, 'method': 'calibrated_quantiles', 'n': int(good.sum()),
                   'crps_mw': float(np.mean(quantile_crps(cq, levels, cy))), 'crps_method': 'quantile_curve_quadrature_constant_tails'}
         result['crps_percent_capacity'] = 100*result['crps_mw']/rating
+        # Return paired point and probabilistic scores for one analysis window for each `(j, tau)` in `enumerate(levels)`.
         for j, tau in enumerate(levels):
             residual = cy-cq[:, j]
             result[f'pinball_q{int(round(100*tau)):02d}_mw'] = float(np.mean(np.maximum(tau*residual, (tau-1)*residual)))
             result[f'pinball_q{int(round(100*tau)):02d}_percent_capacity'] = 100*result[f'pinball_q{int(round(100*tau)):02d}_mw']/rating
+        # Return paired point and probabilistic scores for one analysis window for each `width` in `(0.5, 0.8, 0.9)`.
         for width in (0.5, 0.8, 0.9):
             lo = list(levels).index(round((1-width)/2, 2)); hi = list(levels).index(round(1-(1-width)/2, 2))
             result[f'coverage_{int(width*100)}'] = float(np.mean((cy >= cq[:,lo]) & (cy <= cq[:,hi])))

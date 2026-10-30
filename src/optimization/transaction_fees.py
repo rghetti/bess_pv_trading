@@ -18,31 +18,40 @@ def build_transaction_fees(model, inputs, variables, gp):
     diagnostics = {"mode": settings.mode, "absolute_volume_variables": 0,
                    "exact_absolute_constraints": 0, "piecewise_constraints": 0,
                    "monthly_regimes": {}}
+    # Update `variables['transaction_fee_formulation']` when this condition is met.
     if settings.mode == "none" or (settings.mode == "flat" and settings.flat_eur_per_mwh == 0):
         variables["transaction_fee_formulation"] = diagnostics
         return costs
     state = inputs.market.transaction_fee_state or settings.initial_state
     months, representatives = {}, {}
+    # Use LP absolute values for flat bands and exact ABS/PWL at breakpoints for each `(auction, mask)` in `inputs.auction_eligibility.items()`.
     for auction, mask in inputs.auction_eligibility.items():
+        # Skip the current item when `not any(mask)`.
         if not any(mask):
             continue
         month = settings.month(inputs.auction_submission_times[auction])
         months.setdefault(month, []).append(auction)
         representatives[auction] = {t: t for t, enabled in enumerate(mask) if enabled}
+        # Process each `group` in this collection.
         for group in configured_auction_product_groups(inputs.grid, auction,
                 inputs.native_interval_minutes_by_auction.get(auction), inputs.market_timezone):
+            # Use LP absolute values for flat bands and exact ABS/PWL at breakpoints when `all((mask[t] for t in group))`.
             if all(mask[t] for t in group):
+                # Use LP absolute values for flat bands and exact ABS/PWL at breakpoints for each `t` in `group`.
                 for t in group:
                     representatives[auction][t] = group[0]
     absolute, monthly_costs = {}, {}
+    # Create the monthly gross, monthly transaction fee, gross trade variables for `(month, auctions)` from `months.items()`.
     for month, auctions in months.items():
         starting = settings.starting_volume(state, month)
         maximum = sum(max(inputs.plant.poi_import_mw, inputs.plant.poi_export_mw)
             * inputs.grid.delta_hours[t] for auction in auctions
             for t, enabled in enumerate(inputs.auction_eligibility[auction]) if enabled)
+        # Skip the current item when `maximum == 0`.
         if maximum == 0:
             continue
         knots = [0.0, maximum]
+        # Update `knots` when this condition is met.
         if settings.mode == "gme_real":
             knots = [0.0, *[threshold - starting for threshold in settings.tariff(month).thresholds_mwh
                 if starting < threshold < starting + maximum], maximum]
@@ -53,29 +62,37 @@ def build_transaction_fees(model, inputs, variables, gp):
         diagnostics["monthly_regimes"][month] = {
             "starting_volume_mwh": starting, "maximum_new_volume_mwh": maximum,
             "representation": "linear_band" if linear else "exact_abs_and_nonconvex_pwl"}
+        # Skip the current item when `linear and slopes[0] == 0`.
         if linear and slopes[0] == 0:
             continue  # A provably free horizon needs no new model variables.
+        # Create the gross trade, monthly gross, monthly transaction fee variables for `s` from `range(count)`.
         for s in range(count):
             signature = (month, tuple((auction, inputs.tree.bid_nodes[auction][s]) for auction in auctions))
+            # When `signature in monthly_costs`, set `costs[s]` using `monthly_costs[signature]`.
             if signature in monthly_costs:
                 costs[s] += monthly_costs[signature]
                 continue  # Later price/PV revelations cannot change identical trades' fee.
             volume = gp.LinExpr()
+            # Create the gross trade variables for `auction` from `auctions`.
             for auction in auctions:
                 owner = inputs.tree.bid_nodes[auction][s]
                 owner_mass = sum(float(inputs.scenarios.probabilities[index])
                     for index, node in enumerate(inputs.tree.bid_nodes[auction]) if node == owner)
+                # Create the gross trade variables for `(t, enabled)` from `enumerate(inputs.auction_eligibility[auction])`.
                 for t, enabled in enumerate(inputs.auction_eligibility[auction]):
+                    # Skip the current item when `not enabled`.
                     if not enabled:
                         continue
                     representative = representatives[auction][t]
                     key = (auction, owner, representative)
+                    # Create gross trade variables when `key not in absolute`.
                     if key not in absolute:
                         bound = max(inputs.plant.poi_import_mw, inputs.plant.poi_export_mw) * min(
                             inputs.grid.delta_hours[index] for index, source in representatives[auction].items()
                             if source == representative)
                         traded = variables["trades"][auction, owner, representative]
                         absolute[key] = model.addVar(ub=bound, name=f"gross_trade[{auction},{owner},{representative}]")
+                        # Use LP absolute values for flat bands and exact ABS/PWL at breakpoints when `not linear or owner_mass == 0`.
                         if not linear or owner_mass == 0:
                             model.addGenConstrAbs(absolute[key], traded,
                                 name=f"exact_gross_trade[{auction},{owner},{representative}]")
@@ -84,6 +101,7 @@ def build_transaction_fees(model, inputs, variables, gp):
                             model.addConstr(absolute[key] >= traded)
                             model.addConstr(absolute[key] >= -traded)
                     volume += absolute[key]
+            # When `linear`, set `monthly_costs[signature]` using `slopes[0] * volume`.
             if linear:
                 monthly_costs[signature] = slopes[0] * volume
             else:

@@ -40,6 +40,7 @@ def selected_settings(config, farm, result):
 def convert(inputs, config, farm, settings):
     """Apply the same physical chain to every saved weather member or deterministic view."""
     outputs = []
+    # Apply forecast pv for `((_, cycle_value), part)` from `inputs.groupby(['delivery_day', 'forecast_cycle_utc'], sort=True)`.
     for (_, cycle_value), part in inputs.groupby(['delivery_day', 'forecast_cycle_utc'], sort=True):
         part = part.copy().set_index('interval_start_utc', drop=False)
         members = tuple(map(str, part.member.drop_duplicates()))
@@ -65,6 +66,7 @@ def run_farm(config, ensemble_config, root, farm_id):
     ens = pd.read_parquet(source / 'ensemble_inputs.parquet')
     det = pd.read_parquet(source / 'deterministic_inputs.parquet')
     ids = sorted(map(str, ens.member.unique()), key=int)
+    # Enforce the input contract: Expected all 50 ensemble members.
     if len(ids) != 50:
         raise ValueError('Expected all 50 ensemble members')
     settings = selected_settings(config, farm, result)
@@ -72,6 +74,7 @@ def run_farm(config, ensemble_config, root, farm_id):
     converted = convert(ens, config, farm, settings)
     wide = converted.pivot(index='interval_start_utc', columns='member', values='pv_ac_mw').reindex(columns=ids)
     deterministic = convert(det, config, farm, settings)
+    # Enforce the input contract: Duplicate deterministic forecast timestamps.
     if deterministic.interval_start_utc.duplicated().any():
         raise ValueError('Duplicate deterministic forecast timestamps')
     base = det[['interval_start_utc', 'delivery_day']].drop_duplicates('interval_start_utc').set_index('interval_start_utc')
@@ -80,6 +83,7 @@ def run_farm(config, ensemble_config, root, farm_id):
                     f'farm_{farm_id}' / 'parquet' / 'corpus.parquet')
     power = pd.read_parquet(source_power, columns=['interval_start_utc', 'measured_ac_mw', 'eligible'])
     power = power.loc[power.eligible]
+    # Enforce the input contract: Curated power differs between views.
     if power.groupby('interval_start_utc').measured_ac_mw.nunique(dropna=False).gt(1).any():
         raise ValueError('Curated power differs between views')
     base = base.join(power.groupby('interval_start_utc').measured_ac_mw.first())
@@ -99,6 +103,7 @@ def run_farm(config, ensemble_config, root, farm_id):
     local = pd.DatetimeIndex(base.interval_start_utc).tz_convert('Europe/Rome')
     hours = local.hour + local.minute / 60
     tables = []
+    # Process each `(name, mask)` in this collection.
     for name, mask in [('all_hours', validation), ('daytime', validation & (hours >= 6) & (hours < 21.5))]:
         tables.append(score_frame(base.loc[mask], ids, levels, farm.ac_capacity_mw, name))
     summary = pd.concat(tables, ignore_index=True)
@@ -127,5 +132,6 @@ def main():
     pd.concat(scores, ignore_index=True).to_csv(root / 'forecast_ensemble_metrics.csv', index=False)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

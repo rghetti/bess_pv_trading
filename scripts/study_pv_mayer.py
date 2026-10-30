@@ -18,6 +18,7 @@ def main():
     parser.add_argument('--check-only', action='store_true')
     args = parser.parse_args()
     config = load_config(args.config)
+    # Apply check coverage when `args.check_only`.
     if args.check_only:
         try:
             routes = check_coverage(config)
@@ -32,5 +33,6 @@ def main():
         run(config)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

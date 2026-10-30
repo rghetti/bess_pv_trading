@@ -20,10 +20,13 @@ def main():
     parser.add_argument('--force', action='store_true', help='Recreate prepared input and pvlib artifacts')
     args = parser.parse_args()
     overrides = {}
+    # When `args.farms is not None`, set `overrides['farm_ids']` using `args.farms`.
     if args.farms is not None: overrides['farm_ids'] = args.farms
+    # When `args.workers is not None`, set `overrides['workers']` using `args.workers`.
     if args.workers is not None: overrides['workers'] = args.workers
     config = load_config(args.config, overrides={'pv_probabilistic_study': overrides})
     section = config['pv_probabilistic_study']
+    # Perform main when `args.plan_only`.
     if args.plan_only:
         from bess_pv_trading.forecasting.training.pv_probabilistic_search import trial_plan
         trials = trial_plan(section)
@@ -37,19 +40,25 @@ def main():
         return
     root = study_root(config)
     root.mkdir(parents=True, exist_ok=True)
+    # Perform main when `args.stage in {'prepare', 'all'}`.
     if args.stage in {'prepare', 'all'}:
+        # Perform main for each `farm` in `section['farm_ids']`.
         for farm in section['farm_ids']: prepare_farm(config, int(farm), force=args.force)
+    # Perform main when `args.stage in {'pvlib', 'all'}`.
     if args.stage in {'pvlib', 'all'}:
         from bess_pv_trading.forecasting.plotting.pv_probabilistic_reporting import evaluate_pvlib, write_pvlib_overview
+        # Perform main for each `farm` in `section['farm_ids']`.
         for farm in section['farm_ids']:
             pvlib_farm(config, int(farm), force=args.force)
             evaluate_pvlib(config, int(farm))
         write_pvlib_overview(config)
         from bess_pv_trading.forecasting.evaluation.pv_probabilistic_diagnostics import summarize_diagnostics
         summarize_diagnostics(config)
+    # Perform main when `args.stage in {'search', 'all'}`.
     if args.stage in {'search', 'all'}:
         from bess_pv_trading.forecasting.training.pv_probabilistic_search import run_search
         run_search(config)
+    # Perform main when `args.stage in {'report', 'all'}`.
     if args.stage in {'report', 'all'}:
         from bess_pv_trading.forecasting.plotting.pv_probabilistic_reporting import report_search
         report_search(config)
@@ -57,5 +66,6 @@ def main():
         summarize_diagnostics(config, include_winners=True)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

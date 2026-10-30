@@ -37,8 +37,11 @@ def prepare_farm(config, source_config, farm, output_root):
     trial_name = settings['farms'][farm]
     trial_root = root / 'trials' / trial_name
     result = json.loads((trial_root / 'result.json').read_text())
+    # Enforce the input contract: Incomplete source model: `trial_root`.
     if result['status'] != 'complete': raise ValueError(f'Incomplete source model: {trial_root}')
+    # Reconstruct fold predictors and preserve full provenance per auction interval for each `(name, sha)` in `result['files'].items()`.
     for name, sha in result['files'].items():
+        # Enforce the input contract: Source checksum mismatch: `trial_root / name`.
         if file_hash(trial_root / name) != sha: raise ValueError(f'Source checksum mismatch: {trial_root/name}')
     trial = result['trial']
     destination = Path(output_root) / f'farm_{farm}'
@@ -53,16 +56,20 @@ def prepare_farm(config, source_config, farm, output_root):
     all_days = []
     try:
         with threadpool_limits(limits=1):
+            # Reconstruct fold predictors and preserve full provenance per auction interval for each `(fold_number, fold)` in `enumerate(folds, 1)`.
             for fold_number, fold in enumerate(folds, 1):
                 marker = json.loads((trial_root / f'oof_fold_{fold_number}.json').read_text())
                 oof_path = trial_root / f'oof_fold_{fold_number}.parquet'
+                # Enforce the input contract: Source OOF fold checksum mismatch.
                 if marker['sha256'] != file_hash(oof_path): raise ValueError('Source OOF fold checksum mismatch')
                 model_path = destination / f'fold_{fold_number}.joblib'
                 identity_path = destination / f'fold_{fold_number}.json'
                 identity = {'source_model_identity': result['identity'], 'fold': fold,
                             'source_oof_sha256': marker['sha256']}
+                # When `model_path.exists() and identity_path.exists()`, set `saved` using `json.loads(identity_path.read_text())`.
                 if model_path.exists() and identity_path.exists():
                     saved = json.loads(identity_path.read_text())
+                    # Enforce the input contract: Fold model fingerprint mismatch; choose another run ID.
                     if saved['identity'] != identity or saved['sha256'] != file_hash(model_path):
                         raise ValueError('Fold model fingerprint mismatch; choose another run ID')
                     model = joblib.load(model_path)
@@ -76,16 +83,22 @@ def prepare_farm(config, source_config, farm, output_root):
             validation = pd.read_parquet(trial_root / 'predictions.parquet')
             all_days.append((validation, final_model, source['train_end_day'], 'saved_validation_model'))
             output = []
+            # Apply predict for `(paired, model, fit_end, label)` from `all_days`.
             for paired, model, fit_end, label in all_days:
+                # Apply predict for `(day, base)` from `paired.groupby('delivery_day', sort=True)`.
                 for day, base in paired.groupby('delivery_day', sort=True):
                     base = base.sort_values('interval_start_utc').reset_index(drop=True)
                     base['interval_start_utc'] = pd.to_datetime(base.interval_start_utc, utc=True)
                     grid = calendar.delivery_grid(day)
+                    # Enforce the input contract: Unexpected source delivery grid on `day`.
                     if not pd.DatetimeIndex(base.interval_start_utc).equals(grid.starts):
                         raise ValueError(f'Unexpected source delivery grid on {day}')
+                    # Apply predict for `event` from `calendar.schedule(day)`.
                     for event in calendar.schedule(day):
+                        # Skip the current item when `event.auction not in settings['auctions']`.
                         if event.auction not in settings['auctions']: continue
                         cycle = choose_cycle(data.cycle_time.values, event.submission_at, lag)
+                        # Enforce the input contract: No eligible deterministic cycle for `day` `event.auction`.
                         if cycle is None: raise ValueError(f'No eligible deterministic cycle for {day} {event.auction}')
                         aligned = align_cycle(data, farm, cycle, grid.starts, source_config, False)
                         frame = aligned.values.copy().reset_index(drop=True)
@@ -110,6 +123,7 @@ def prepare_farm(config, source_config, farm, output_root):
     finally:
         data.close()
     table = pd.concat(output, ignore_index=True)
+    # Enforce the input contract: Duplicate issued forecast.
     if table.duplicated(['auction', 'interval_start_utc']).any(): raise ValueError('Duplicate issued forecast')
     path = destination / 'prepared.parquet'
     temporary = path.with_suffix('.tmp.parquet')

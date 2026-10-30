@@ -30,9 +30,13 @@ EXTRA = ['dew_point_c', 'cloud_total_pct', 'cloud_low_pct', 'cloud_mid_pct', 'cl
 def trial_plan(section):
     """Enumerate all predeclared family/feature/parameter combinations."""
     trials=[]
+    # Enumerate all predeclared family/feature/parameter combinations for each `farm` in `section['farm_ids']`.
     for farm in section['farm_ids']:
+        # Enumerate all predeclared family/feature/parameter combinations for each `(family, parameters)` in `section['trial_parameters'].items()`.
         for family, parameters in section['trial_parameters'].items():
+            # Enumerate all predeclared family/feature/parameter combinations for each `features` in `section['feature_sets']`.
             for features in section['feature_sets']:
+                # Enumerate all predeclared family/feature/parameter combinations for each `(number, spec)` in `enumerate(parameters)`.
                 for number, spec in enumerate(parameters):
                     trials.append({'farm_id': int(farm), 'family': family, 'features': features,
                         'parameters': dict(spec), 'name': f'{family}_{features}_{number+1:02d}',
@@ -68,31 +72,39 @@ def fit_predictor(frame, trial, fit_end, rating, settings):
     x = data[features].to_numpy(float)
     y = data.measured_ac_mw.to_numpy(float) / rating
     valid = np.isfinite(x).all(axis=1) & np.isfinite(y) & data.eligible.to_numpy(bool)
+    # Enforce the input contract: No complete training member rows.
     if not valid.any(): raise ValueError('No complete training member rows')
     weights = interval_weights(data.interval_start_utc, valid)
     scaler = StandardScaler().fit(x[valid], sample_weight=weights[valid])
     family = trial['family']; params = dict(trial['parameters']); seed=trial['seed']
+    # Fit on past delivery days with each member sharing the target's weight when `family in {'mlp', 'tcn'}`.
     if family in {'mlp', 'tcn'}:
         from ..models.pv_probabilistic_neural import fit_neural
         model, training = fit_neural(data, features, scaler, y, weights, trial, settings, seed)
     else:
+        # Fit on past delivery days with each member sharing the target's weight when `family == 'ridge'`.
         if family == 'ridge':
             from sklearn.linear_model import Ridge
             model = Ridge(**params)
+        # Fit on past delivery days with each member sharing the target's weight when `family == 'huber'`.
         elif family == 'huber':
             from sklearn.linear_model import HuberRegressor
             model = HuberRegressor(**params, max_iter=500)
+        # Fit on past delivery days with each member sharing the target's weight when `family == 'extra_trees'`.
         elif family == 'extra_trees':
             from sklearn.ensemble import ExtraTreesRegressor
             model = ExtraTreesRegressor(**params, n_estimators=int(settings['tree_estimators']), n_jobs=1, random_state=seed)
+        # Fit on past delivery days with each member sharing the target's weight when `family == 'hist_gradient_boosting'`.
         elif family == 'hist_gradient_boosting':
             from sklearn.ensemble import HistGradientBoostingRegressor
             model = HistGradientBoostingRegressor(**params, max_iter=int(settings['boosting_iterations']),
                 learning_rate=float(settings['boosting_learning_rate']), early_stopping=False, random_state=seed)
+        # Fit on past delivery days with each member sharing the target's weight when `family == 'lightgbm'`.
         elif family == 'lightgbm':
             from lightgbm import LGBMRegressor
             model = LGBMRegressor(**params, n_estimators=int(settings['boosting_iterations']),
                 learning_rate=float(settings['boosting_learning_rate']), n_jobs=1, random_state=seed, verbosity=-1)
+        # Fit on past delivery days with each member sharing the target's weight when `family == 'catboost'`.
         elif family == 'catboost':
             from catboost import CatBoostRegressor
             model = CatBoostRegressor(**params, iterations=int(settings['boosting_iterations']),
@@ -116,9 +128,11 @@ def predict(model, frame, config):
     features = model['features']; x = frame[features].to_numpy(float)
     valid = np.isfinite(x).all(axis=1)
     pred = np.full(len(frame), np.nan)
+    # Evaluate one fitted predictor on a member or deterministic weather path when `model['family'] in {'mlp', 'tcn'}`.
     if model['family'] in {'mlp', 'tcn'}:
         from ..models.pv_probabilistic_neural import predict_neural
         pred = predict_neural(model['model'], frame, features, model['scaler'])
+    # When `valid.any()`, set `pred[valid]` using `model['model'].predict(model['scaler'].transform(x[valid]))`.
     elif valid.any():
         pred[valid] = model['model'].predict(model['scaler'].transform(x[valid]))
     pred = np.clip(pred * model['rating_mw'], 0, model['rating_mw'])
@@ -147,20 +161,28 @@ def run_trial(config, trial):
     root, ens, det, ids, rating = load_farm(config, farm)
     dest = root / 'trials' / trial['name']; dest.mkdir(parents=True, exist_ok=True)
     identity = _trial_identity(root, trial, section); result_path = dest / 'result.json'
+    # When `section['resume'] and result_path.exists()`, set `old` using `json.loads(result_path.read_text())`.
     if section['resume'] and result_path.exists():
         old = json.loads(result_path.read_text())
+        # Enforce the input contract: Resume fingerprint changed for `dest`.
         if old.get('identity') != identity: raise ValueError(f'Resume fingerprint changed for {dest}')
+        # Train chronological folds, calibrate out of fold, and score the final model for each `(name, expected)` in `old.get('files', {}).items()`.
         for name, expected in old.get('files', {}).items():
+            # Enforce the input contract: Resume artifact checksum changed: `dest / name`.
             if file_hash(dest / name) != expected: raise ValueError(f'Resume artifact checksum changed: {dest/name}')
+        # Return `{'trial': trial['name'], 'farm_id': farm, 'status': 'reused'}` when `old.get('status') == 'complete'`.
         if old.get('status') == 'complete': return {'trial': trial['name'], 'farm_id': farm, 'status': 'reused'}
     ens = add_time_features(ens); det = add_time_features(det)
     oof = []
     with threadpool_limits(limits=1):
+        # Apply predict for `(number, fold)` from `enumerate(section['calibration_folds'], 1)`.
         for number, fold in enumerate(section['calibration_folds'], 1):
             fold_path = dest / f'oof_fold_{number}.parquet'
             fold_marker = dest / f'oof_fold_{number}.json'
+            # When `section['resume'] and fold_path.exists() and fold_marker.exists()`, set `saved` using `json.loads(fold_marker.read_text())`.
             if section['resume'] and fold_path.exists() and fold_marker.exists():
                 saved = json.loads(fold_marker.read_text())
+                # Enforce the input contract: Out-of-fold checkpoint mismatch: `fold_path`.
                 if saved['identity'] != identity or saved['sha256'] != file_hash(fold_path):
                     raise ValueError(f'Out-of-fold checkpoint mismatch: {fold_path}')
                 frame = pd.read_parquet(fold_path)
@@ -182,8 +204,10 @@ def run_trial(config, trial):
             rating, levels, section['calibration_alpha'])
         model_path = dest / 'model.joblib'
         model_marker = dest / 'model_checkpoint.json'
+        # When `section['resume'] and model_path.exists() and model_marker.exists()`, set `saved` using `json.loads(model_marker.read_text())`.
         if section['resume'] and model_path.exists() and model_marker.exists():
             saved = json.loads(model_marker.read_text())
+            # Enforce the input contract: Model checkpoint mismatch: `model_path`.
             if saved['identity'] != identity or saved['sha256'] != file_hash(model_path):
                 raise ValueError(f'Model checkpoint mismatch: {model_path}')
             model = joblib.load(model_path)
@@ -221,7 +245,9 @@ def run_trial(config, trial):
 
 def _memory_available_gb():
     try:
+        # Perform memory available gb for each `line` in `Path('/proc/meminfo').read_text().splitlines()`.
         for line in Path('/proc/meminfo').read_text().splitlines():
+            # Return `int(line.split()[1]) / (1024 * 1024)` when `line.startswith('MemAvailable:')`.
             if line.startswith('MemAvailable:'): return int(line.split()[1])/(1024*1024)
     except OSError: pass
     return None
@@ -238,11 +264,15 @@ def run_search(config):
     cpus = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else (os.cpu_count() or 1)
     memory = _memory_available_gb()
     workers = min(int(section['workers']), max(1, cpus-int(section['reserved_cpu_cores'])))
+    # Update `workers` when this condition is met.
     if memory is not None: workers = min(workers, max(1, int(memory/float(section['estimated_worker_memory_gb']))))
     load = os.getloadavg()[0] if hasattr(os, 'getloadavg') else None
+    # Update `workers` when this condition is met.
     if section.get('respect_shared_load', True) and load is not None:
         workers = min(workers, max(1, cpus-int(section['reserved_cpu_cores'])-math.ceil(load)))
+    # Enforce the input contract: No CPU or memory available for a study worker.
     if workers < 1: raise ValueError('No CPU or memory available for a study worker')
+    # Process each `name` in this collection.
     for name in ('OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS'):
         os.environ[name] = '1'
     (root / 'resolved_config.yaml').write_text(yaml.safe_dump(config, sort_keys=False))
@@ -255,6 +285,7 @@ def run_search(config):
     failures=[]; completed=0
     with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context('spawn')) as executor:
         futures = {executor.submit(run_trial, config, trial): trial for trial in plan}
+        # Dispatch immutable candidates within the configured CPU and memory budget for each `future` in `as_completed(futures)`.
         for future in as_completed(futures):
             trial = futures[future]
             try:
@@ -266,4 +297,5 @@ def run_search(config):
                 print(f'FAILED farm {trial["farm_id"]} {trial["name"]}: {exc}', flush=True)
     write_json(root / 'search_status.json', {'completed': completed, 'total': len(plan), 'failures': failures,
                                              'status': 'complete' if not failures else 'partial'})
+    # Enforce the input contract: `len(failures)` model trials failed; details saved in search_failures.json.
     if failures: raise RuntimeError(f'{len(failures)} model trials failed; details saved in search_failures.json')

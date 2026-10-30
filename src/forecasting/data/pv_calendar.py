@@ -34,11 +34,13 @@ def italian_national_holiday(starts_utc: pd.DatetimeIndex, timezone: str) -> np.
     fixed = ((1, 1), (1, 6), (4, 25), (5, 1), (6, 2), (8, 15),
              (11, 1), (12, 8), (12, 25), (12, 26))
     holidays = []
+    # Flag Italy-wide public holidays on each local delivery date for each `year` in `np.unique(local.year)`.
     for year in np.unique(local.year):
         year = int(year)
         holidays.extend(date(year, month, day) for month, day in fixed)
         easter = _easter_sunday(year)
         holidays.extend((easter, easter + timedelta(days=1)))
+        # Flag Italy-wide public holidays on each local delivery date when `year >= 2026`.
         if year >= 2026:
             holidays.append(date(year, 10, 4))
     local_days = local.normalize().tz_localize(None)

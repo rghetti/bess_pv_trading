@@ -18,6 +18,7 @@ from ..evaluation.pv_probabilistic_metrics import paired_inputs, fit_calibrator,
 
 def vintage_description(section):
     """Describe issue-time semantics without implying retrospective inputs were available."""
+    # Return the selected result for this condition.
     if section.get('vintage_strategy', 'preceding_day') == 'same_day_retrospective':
         return ('The same-day 00 UTC cycle is used retrospectively after 00 UTC, with the preceding-day cycle filling '
                 'local midnight intervals before 00 UTC. Cycle availability is assumed six hours after issue, '
@@ -32,12 +33,15 @@ def load_farm(config, farm_id):
     root = study_root(config) / f'farm_{farm_id}'
     manifest = json.loads((root / 'input_manifest.json').read_text())
     validate_prepared_night_policy(manifest, config)
+    # Load checksum-matched inputs and configured farm AC rating for each `label` in `('ensemble', 'deterministic')`.
     for label in ('ensemble', 'deterministic'):
+        # Enforce the input contract: Saved weather input checksum mismatch.
         if file_hash(root / f'{label}_inputs.parquet') != manifest['files'][label]:
             raise ValueError('Saved weather input checksum mismatch')
     ens = pd.read_parquet(root / 'ensemble_inputs.parquet')
     det = pd.read_parquet(root / 'deterministic_inputs.parquet')
     ids = sorted(map(str, ens.member.unique()), key=int)
+    # Enforce the input contract: Expected 50 explicit members and one target per interval.
     if len(ids) != 50 or det.interval_start_utc.duplicated().any():
         raise ValueError('Expected 50 explicit members and one target per interval')
     rating = load_metadata(config_path(config, config['inputs']['metadata_parquet']), [farm_id])[farm_id].ac_capacity_mw
@@ -48,6 +52,7 @@ def _phys_predictions(root, label, inputs):
     """Join modeled power by exact interval/member key, rejecting mismatches."""
     pv = pd.read_parquet(root / f'{label}_pvlib.parquet')
     keys = ['interval_start_utc', 'member']
+    # Enforce the input contract: Duplicate PV conversion keys.
     if pv.duplicated(keys).any():
         raise ValueError('Duplicate PV conversion keys')
     merged = inputs[keys].merge(pv[keys + ['pv_ac_mw']], on=keys, how='left', validate='one_to_one')
@@ -66,6 +71,7 @@ def apply_calibrator(frame, ids, calibrator, levels, night_policy):
     q = np.full((len(frame), len(levels)), np.nan)
     raw = q.copy()
     adjustments = {'crossing_rows': 0, 'bounded_values': 0, 'total_rows': 0}
+    # Update `(q[valid], adjustments, raw[valid])` when this condition is met.
     if valid.any():
         q[valid], adjustments, raw[valid] = predict_calibrator(calibrator, frame.loc[valid, ids].to_numpy(float),
                                                     frame.loc[valid, 'interval_start_utc'], return_raw=True)
@@ -75,6 +81,7 @@ def apply_calibrator(frame, ids, calibrator, levels, night_policy):
     frame['calibrated_quantile_crossing'] = valid & np.any(np.diff(raw, axis=1) < 0, axis=1)
     frame['calibrated_out_of_bounds'] = valid & np.any((raw < 0) | (raw > calibrator['rating_mw']), axis=1)
     frame['calibrated_nighttime_zero'] = night
+    # Calibrate weather-valid rows without consulting targets or exclusion decisions for each `(j, level)` in `enumerate(levels)`.
     for j, level in enumerate(levels):
         frame[f'calibrated_raw_q{round(100*level):02d}'] = raw[:,j]
         frame[f'calibrated_q{round(100*level):02d}'] = q[:,j]
@@ -90,7 +97,9 @@ def scored_windows(frame, ids, levels, rating):
         'all_available_validation' if splits == {'validation'} else 'all_available_test' if splits == {'test'} else 'all_available_study')
     partitions = [(overall, frame), ('train_in_sample', frame[frame.split.eq('train')]),
                   ('validation_model_selection', frame[frame.split.eq('validation')]), ('test_held_out', frame[frame.split.eq('test')])]
+    # Score only the chronological partitions supplied by the caller for each `(name, subset)` in `partitions`.
     for name, subset in partitions:
+        # Score only the chronological partitions supplied by the caller when `len(subset)`.
         if len(subset): tables.append(score_frame(subset, ids, levels, rating, name))
     return pd.concat(tables, ignore_index=True)
 
@@ -102,6 +111,7 @@ def hourly_frame(frame, ids):
     x['hour_start_utc'] = pd.DatetimeIndex(x.interval_start_utc).floor('h')
     x['_one'] = 1
     columns = ids + ['measured_ac_mw', 'deterministic_prediction']
+    # Aggregate four paired quarter-hour trajectories before hourly scoring when `'calibrated_mean' in x`.
     if 'calibrated_mean' in x: columns.append('calibrated_mean')
     grouped = x.groupby(['delivery_day','split','hour_start_utc'], sort=True)
     out = grouped[columns].mean().reset_index()
@@ -116,13 +126,16 @@ def _hourly_scores(frame, ids, levels, rating):
     """Score hourly member trajectories; marginal quantiles are not averaged as trajectories."""
     hour = hourly_frame(frame, ids)
     results = scored_windows(hour, ids, levels, rating)
+    # When `'calibrated_mean' in hour`, set `extra` using `[]`.
     if 'calibrated_mean' in hour:
         extra = []
         splits = set(hour.split.unique())
         overall = 'all_january' if splits >= {'train','validation'} and hour.delivery_day.str.startswith('2026-01').all() else (
             'all_available_validation' if splits == {'validation'} else 'all_available_test' if splits == {'test'} else 'all_available_study')
+        # Process each `(name, subset)` in this collection.
         for name, subset in [(overall, hour), ('train_in_sample', hour[hour.split.eq('train')]),
                              ('validation_model_selection', hour[hour.split.eq('validation')]), ('test_held_out', hour[hour.split.eq('test')])]:
+            # Skip the current item when `not len(subset)`.
             if not len(subset): continue
             valid = np.isfinite(subset.calibrated_mean) & np.isfinite(subset.measured_ac_mw)
             err = subset.loc[valid, 'calibrated_mean'].to_numpy()-subset.loc[valid, 'measured_ac_mw'].to_numpy()
@@ -145,6 +158,7 @@ def daily_plot(frame, ids, levels, destination, title):
     m = f[ids].to_numpy(float)
     finite_rows = np.isfinite(m).any(axis=1)
     q10 = np.full(len(m), np.nan); median = q10.copy(); q90 = q10.copy(); mean = q10.copy()
+    # When `finite_rows.any()`, set `(q10[finite_rows], median[finite_rows], q90[finite_rows])` using `np.nanquantile(m[finite_rows], [0.1, 0.5, 0.9], axis=1)`.
     if finite_rows.any():
         q10[finite_rows], median[finite_rows], q90[finite_rows] = np.nanquantile(m[finite_rows], [0.1, 0.5, 0.9], axis=1)
         mean[finite_rows] = np.nanmean(m[finite_rows], axis=1)
@@ -156,7 +170,9 @@ def daily_plot(frame, ids, levels, destination, title):
     eligible = f.eligible.to_numpy(bool)
     ax.plot(t, np.where(eligible, f.measured_ac_mw, np.nan), color='black', linewidth=1.7, label='Curated measured AC')
     excluded = f.episode_excluded.to_numpy(bool)
+    # Plot target, same-cycle deterministic and ensemble paths for one local day when `excluded.any()`.
     if excluded.any(): ax.scatter(t[excluded], f.measured_ac_mw.to_numpy()[excluded], marker='x', color='red', label='Reviewed exclusion')
+    # Plot target, same-cycle deterministic and ensemble paths for one local day when `{'calibrated_q10', 'calibrated_q90'} <= set(f)`.
     if {'calibrated_q10', 'calibrated_q90'} <= set(f):
         ax.fill_between(t, f.calibrated_q10, f.calibrated_q90, color='#d86dbe', alpha=.16, label='Calibrated p10–p90')
         ax.plot(t, f.calibrated_q50, color='#a43787', linestyle=':', label='Calibrated median')
@@ -169,11 +185,14 @@ def evaluate_pvlib(config, farm_id):
     section = config['pv_probabilistic_study']; levels = list(map(float, section['quantiles']))
     root, ens, det, ids, rating = load_farm(config, farm_id)
     marker = json.loads((root / 'pvlib_manifest.json').read_text())
+    # Calibrate and report the prior-parameter physical baseline for each `label` in `('ensemble', 'deterministic')`.
     for label in ('ensemble', 'deterministic'):
+        # Enforce the input contract: pvlib checksum mismatch.
         if file_hash(root / f'{label}_pvlib.parquet') != marker['files'][label]: raise ValueError('pvlib checksum mismatch')
     frame = paired_inputs(ens, det, _phys_predictions(root, 'ensemble', ens), _phys_predictions(root, 'deterministic', det), ids)
     valid = comparable(frame, ids)
     calibration_dates = np.zeros(len(frame), dtype=bool)
+    # Calibrate and report the prior-parameter physical baseline for each `fold` in `section['calibration_folds']`.
     for fold in section['calibration_folds']:
         calibration_dates |= frame.delivery_day.between(fold['predict_start'], fold['predict_end']).to_numpy()
     calibration = valid & calibration_dates & frame.split.eq('train').to_numpy()
@@ -182,6 +201,7 @@ def evaluate_pvlib(config, farm_id):
     frame, adjustments = apply_calibrator(frame, ids, calibrator, levels, probabilistic_night_policy(config))
     # Keep held-out targets out of baseline reports until validation selections are frozen.
     stored = frame.copy()
+    # When `section.get('validation_end_day')`, set `stored.loc[stored.split.eq('test'), 'measured_ac_mw']` using `np.nan`.
     if section.get('validation_end_day'):
         stored.loc[stored.split.eq('test'), 'measured_ac_mw'] = np.nan
         stored.loc[stored.split.eq('test'), 'eligible'] = False
@@ -194,6 +214,7 @@ def evaluate_pvlib(config, farm_id):
     hourly, metrics = _hourly_scores(visible, ids, levels, rating)
     hourly.to_parquet(root / 'pvlib_hourly_predictions.parquet', index=False)
     metrics.to_csv(root / 'pvlib_hourly_metrics.csv', index=False)
+    # Calibrate and report the prior-parameter physical baseline for each `(day, part)` in `visible.groupby('delivery_day')`.
     for day, part in visible.groupby('delivery_day'):
         daily_plot(part, ids, levels, root / 'plots' / day / 'pvlib.png', f'Farm {farm_id} — {day} — farm-parameter pvlib')
     visible_valid = comparable(visible, ids)
@@ -211,10 +232,13 @@ def evaluate_pvlib(config, farm_id):
 def write_pvlib_overview(config):
     """Publish the physical baseline even when the later search is still running."""
     root = study_root(config); frames = []
+    # Publish the physical baseline even when the later search is still running for each `farm` in `config['pv_probabilistic_study']['farm_ids']`.
     for farm in config['pv_probabilistic_study']['farm_ids']:
         path = root / f'farm_{farm}' / 'pvlib_quarter_hour_metrics.csv'
+        # When `path.exists()`, set `values` using `pd.read_csv(path)`.
         if path.exists():
             values = pd.read_csv(path); values.insert(0, 'farm_id', int(farm)); frames.append(values)
+    # Enforce the input contract: No physical baseline scores are available.
     if not frames: raise ValueError('No physical baseline scores are available')
     table = pd.concat(frames, ignore_index=True)
     table.to_csv(root / 'pvlib_all_farms_quarter_hour_metrics.csv', index=False)
@@ -230,6 +254,7 @@ def write_pvlib_overview(config):
         'The first validation day is retrospective at its historical day-ahead gate. January 1 has a missing first local hour.', '',
         '| Farm | Prediction | Quarters | MAE (MW) | MAE (% AC) | RMSE (MW) | RMSE (% AC) | Bias (% AC) |',
         '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |']
+    # Publish the physical baseline even when the later search is still running for each `row` in `rows.itertuples()`.
     for row in rows.itertuples():
         lines.append(f'| {row.farm_id} | {row.method} | {int(row.n)} | {row.mae_mw:.5f} | {row.nmae_percent_capacity:.2f} | {row.rmse_mw:.5f} | {row.nrmse_percent_capacity:.2f} | {row.bias_percent_capacity:.2f} |')
     lines.extend(['', 'The raw ensemble uses equal empirical member weights; this is not a demonstrated calibrated probability distribution. '
@@ -244,23 +269,32 @@ def report_search(config):
     """Gather complete trials, select validation rankings and render winner plots."""
     section = config['pv_probabilistic_study']; levels = list(map(float, section['quantiles']))
     root = study_root(config); summaries=[]; ratings={}
+    # Gather complete trials, select validation rankings and render winner plots for each `farm` in `section['farm_ids']`.
     for farm in section['farm_ids']:
         farm_root, ens, det, ids, rating = load_farm(config, int(farm))
         ratings[int(farm)] = rating
+        # Gather complete trials, select validation rankings and render winner plots for each `result` in `sorted((farm_root / 'trials').glob('*/result.json'))`.
         for result in sorted((farm_root / 'trials').glob('*/result.json')):
             item = json.loads(result.read_text())
+            # Skip the current item when `item.get('status') != 'complete'`.
             if item.get('status') != 'complete': continue
+            # Gather complete trials, select validation rankings and render winner plots for each `metric` in `item['metrics']`.
             for metric in item['metrics']:
+                # Gather complete trials, select validation rankings and render winner plots when `metric['window'] == 'validation_model_selection'`.
                 if metric['window'] == 'validation_model_selection':
                     summaries.append({'farm_id': int(farm), 'trial': item['trial']['name'],
                                       'family': item['trial']['family'], **metric, 'trial_path': str(result.parent)})
+    # Enforce the input contract: No completed search trials to report.
     if not summaries: raise ValueError('No completed search trials to report')
     table = pd.DataFrame(summaries); table.to_csv(root / 'search_metrics.csv', index=False)
     rankings = []
+    # Write the corresponding artifacts for `(farm, group)` from `table.groupby('farm_id')`.
     for farm, group in table.groupby('farm_id'):
+        # Process each `(method, metric)` in this collection.
         for method, metric in [('member_mean', 'rmse_mw'), ('member_median', 'mae_mw'),
                                ('calibrated_quantiles', 'crps_mw')]:
             candidates = group.loc[group.method.eq(method) & group[metric].notna()].sort_values(metric)
+            # Gather complete trials, select validation rankings and render winner plots for each `(rank, row)` in `enumerate(candidates.itertuples(), 1)`.
             for rank, row in enumerate(candidates.itertuples(), 1):
                 rankings.append({'farm_id': int(farm), 'objective': metric, 'method': method,
                                  'rank': rank, 'trial': row.trial, 'family': row.family,
@@ -269,8 +303,10 @@ def report_search(config):
                                  'trial_path': row.trial_path})
         farm_rank = pd.DataFrame([x for x in rankings if x['farm_id'] == int(farm)])
         farm_rank.to_csv(root / f'farm_{farm}' / 'validation_rankings.csv', index=False)
+        # Gather complete trials, select validation rankings and render winner plots for each `trial_path` in `farm_rank.loc[farm_rank['rank'].eq(1), 'trial_path'].drop_duplicates()`.
         for trial_path in farm_rank.loc[farm_rank['rank'].eq(1), 'trial_path'].drop_duplicates():
             trial_path = Path(trial_path); p = pd.read_parquet(trial_path / 'predictions.parquet')
+            # Gather complete trials, select validation rankings and render winner plots for each `(day, part)` in `p.groupby('delivery_day')`.
             for day, part in p.groupby('delivery_day'):
                 daily_plot(part, ids, levels, root / f'farm_{farm}' / 'plots' / day / f'{trial_path.name}.png',
                     f'Farm {farm} — {day} — {trial_path.name} (validation-selected)')
@@ -282,6 +318,7 @@ def report_search(config):
     days = study_days(section)
     train_days = [x for x in days if delivery_split(x, section) == 'train']
     validation_days = [x for x in days if delivery_split(x, section) == 'validation']
+    # Enforce the input contract: Training and validation both need delivery days.
     if not train_days or not validation_days: raise ValueError('Training and validation both need delivery days')
     validation_start = validation_days[0].strftime('%Y-%m-%d')
     write_json(root / 'report_manifest.json', {'status': status, 'completed_trials': completed, 'expected_trials': expected,
@@ -308,6 +345,7 @@ def report_search(config):
         'The calibrated mean integrates a piecewise linear quantile curve with constant tails. '
         'Hourly quantiles are not calculated from marginal quarter-hour quantiles.', '',
         '| Farm | Objective | Selected candidate | Score (MW) | Score (% AC) |', '| --- | --- | --- | ---: | ---: |']
+    # Gather complete trials, select validation rankings and render winner plots for each `row` in `winners.itertuples()`.
     for row in winners.itertuples():
         lines.append(f'| {row.farm_id} | {row.method} / {row.objective} | {row.trial} | {row.value_mw:.5f} | {row.value_percent_capacity:.2f} |')
     lines.extend(['', 'Each farm folder contains pvlib metrics, paired predictions, calibration diagnostics, '
@@ -316,12 +354,15 @@ def report_search(config):
     lines.extend(['', '## Physical baseline on the validation period', '',
         '| Farm | Prediction | Quarters | MAE (MW) | MAE (% AC) | RMSE (MW) | RMSE (% AC) |',
         '| --- | --- | ---: | ---: | ---: | ---: | ---: |'])
+    # Gather complete trials, select validation rankings and render winner plots for each `farm` in `section['farm_ids']`.
     for farm in section['farm_ids']:
         path = root / f'farm_{farm}' / 'pvlib_quarter_hour_metrics.csv'
+        # Skip the current item when `not path.exists()`.
         if not path.exists(): continue
         baseline = pd.read_csv(path)
         baseline = baseline.loc[baseline.window.eq('validation_model_selection') & baseline.method.isin(
             ['deterministic', 'member_mean', 'member_median', 'calibrated_mean', 'calibrated_median'])]
+        # Gather complete trials, select validation rankings and render winner plots for each `item` in `baseline.itertuples()`.
         for item in baseline.itertuples():
             lines.append(f'| {farm} | {item.method} | {int(item.n)} | {item.mae_mw:.5f} | {item.nmae_percent_capacity:.2f} | {item.rmse_mw:.5f} | {item.nrmse_percent_capacity:.2f} |')
     (root / 'README.md').write_text('\n'.join(lines) + '\n')

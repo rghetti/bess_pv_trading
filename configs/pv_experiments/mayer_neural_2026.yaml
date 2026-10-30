@@ -1,0 +1,3 @@
+include: ../standard.yaml
+pv_mayer_neural:
+  run_id: paper_neural_baseline

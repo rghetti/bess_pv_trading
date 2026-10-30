@@ -24,8 +24,10 @@ def probabilistic_night_policy(config):
 def validate_prepared_night_policy(manifest, config):
     """Prevent old raw-target caches from masquerading as seasonal-treated inputs."""
     expected = config['pv_probabilistic_study'].get('night_target_treatment', 'preserve')
+    # Enforce the input contract: Prepared ensemble targets use a different night treatment; prepare a fresh run.
     if manifest.get('night_target_treatment', 'preserve') != expected:
         raise ValueError('Prepared ensemble targets use a different night treatment; prepare a fresh run')
+    # Enforce the input contract: Prepared ensemble targets use a different night policy; prepare a fresh run.
     if expected == 'zero' and manifest.get('night_policy') != probabilistic_night_policy(config):
         raise ValueError('Prepared ensemble targets use a different night policy; prepare a fresh run')
 
@@ -34,6 +36,7 @@ def file_hash(path):
     """Hash a source or saved artifact using bounded reads."""
     digest = hashlib.sha256()
     with Path(path).open('rb') as stream:
+        # Hash a source or saved artifact using bounded reads for each `part` in `iter(lambda: stream.read(1024 * 1024), b'')`.
         for part in iter(lambda: stream.read(1024 * 1024), b''):
             digest.update(part)
     return digest.hexdigest()
@@ -66,8 +69,10 @@ def _cycle(day):
 def day_vintage_segments(day, starts, strategy):
     """Select one preceding vintage or a retrospective same-day vintage with midnight fill."""
     previous = _cycle(day)
+    # Return `[(previous, starts)]` when `strategy == 'preceding_day'`.
     if strategy == 'preceding_day':
         return [(previous, starts)]
+    # Enforce the input contract: Unsupported forecast vintage strategy: `strategy`.
     if strategy != 'same_day_retrospective':
         raise ValueError(f'Unsupported forecast vintage strategy: {strategy}')
     current = pd.Timestamp(day).tz_localize('UTC')
@@ -77,18 +82,23 @@ def day_vintage_segments(day, starts, strategy):
 
 def study_periods(section):
     """Return explicitly configured, non-overlapping delivery-day archive windows."""
+    # Enforce the input contract: A held-out test stage is not implemented; leave validation_end_day null.
     if section.get('validation_end_day'):
         raise ValueError('A held-out test stage is not implemented; leave validation_end_day null')
+    # Enforce the input contract: Unsupported forecast vintage strategy.
     if section.get('vintage_strategy', 'preceding_day') not in {'preceding_day', 'same_day_retrospective'}:
         raise ValueError('Unsupported forecast vintage strategy')
     periods = section.get('dataset_periods') or [
         {'ensemble_zarr': section['ensemble_zarr'], 'start_day': section['start_day'], 'end_day': section['end_day']}]
     periods = sorted(periods, key=lambda p: p['start_day'])
     previous = None
+    # Return explicitly configured, non-overlapping delivery-day archive windows for each `period` in `periods`.
     for period in periods:
         start, end = pd.Timestamp(period['start_day']), pd.Timestamp(period['end_day'])
+        # Enforce the input contract: Invalid or out-of-range ensemble delivery window.
         if start > end or start < pd.Timestamp(section['start_day']) or end > pd.Timestamp(section['end_day']):
             raise ValueError('Invalid or out-of-range ensemble delivery window')
+        # Enforce the input contract: Ensemble delivery windows overlap.
         if previous is not None and start <= previous:
             raise ValueError('Ensemble delivery windows overlap')
         previous = end
@@ -105,20 +115,27 @@ def validate_study(section):
     """Reject overlapping, future-leaking or unrepresented day-level calibration folds."""
     days = study_days(section)
     day_strings = {d.strftime('%Y-%m-%d') for d in days}
+    # Enforce the input contract: The configured training endpoint is not a covered delivery day.
     if section['train_end_day'] not in day_strings:
         raise ValueError('The configured training endpoint is not a covered delivery day')
+    # Enforce the input contract: The study requires at least one validation delivery day.
     if not any(delivery_split(d, section) == 'validation' for d in days):
         raise ValueError('The study requires at least one validation delivery day')
     predicted = set()
+    # Reject overlapping, future-leaking or unrepresented day-level calibration folds for each `fold` in `section['calibration_folds']`.
     for fold in section['calibration_folds']:
+        # Enforce the input contract: Calibration folds must use past training days and predict only later training days.
         if not fold['fit_end'] < fold['predict_start'] <= fold['predict_end'] <= section['train_end_day']:
             raise ValueError('Calibration folds must use past training days and predict only later training days')
+        # Enforce the input contract: Calibration fit endpoint is not a covered delivery day.
         if fold['fit_end'] not in day_strings:
             raise ValueError('Calibration fit endpoint is not a covered delivery day')
         fold_days = {d.strftime('%Y-%m-%d') for d in pd.date_range(fold['predict_start'], fold['predict_end'])}
+        # Enforce the input contract: Calibration prediction windows must be covered and non-overlapping.
         if not fold_days <= day_strings or predicted & fold_days:
             raise ValueError('Calibration prediction windows must be covered and non-overlapping')
         predicted |= fold_days
+    # Enforce the input contract: At least one calibration prediction window is required.
     if not predicted: raise ValueError('At least one calibration prediction window is required')
     return days
 
@@ -126,7 +143,9 @@ def validate_study(section):
 def delivery_split(day, section):
     """Assign whole local delivery days to chronological training, validation or test."""
     value = pd.Timestamp(day).strftime('%Y-%m-%d')
+    # Return `'train'` when `value <= section['train_end_day']`.
     if value <= section['train_end_day']: return 'train'
+    # Return the selected result for this condition.
     if not section.get('validation_end_day') or value <= section['validation_end_day']: return 'validation'
     return 'test'
 
@@ -136,6 +155,7 @@ def _bundle(dataset, farm_id, cycle, config, ensemble):
     selected = dataset.sel(farm_id=farm_id, cycle_time=cycle.tz_localize(None).to_datetime64())
     leads = pd.to_timedelta(selected.lead_time.values)
     index = pd.DatetimeIndex(cycle + leads, name='valid_time')
+    # Enforce the input contract: Stored forecast valid times differ from cycle plus lead.
     if 'valid_time' in selected and not np.array_equal(
         pd.DatetimeIndex(pd.to_datetime(selected.valid_time.values, utc=True)).asi8, index.asi8
     ):
@@ -144,10 +164,13 @@ def _bundle(dataset, farm_id, cycle, config, ensemble):
     units = {name: selected[raw].attrs.get('units', '') for name, raw in mapping.items()}
     ids = list(map(str, selected.member.values)) if ensemble else ['deterministic']
     frames = []
+    # Construct one explicit member bundle without substituting forecast vintages for each `member` in `ids`.
     for member in ids:
         values = {}
+        # Construct one explicit member bundle without substituting forecast vintages for each `(canonical, raw)` in `mapping.items()`.
         for canonical, raw in mapping.items():
             array = selected[raw].sel(member=int(member)) if ensemble else selected[raw]
+            # Enforce the input contract: Unexpected dimensions for `raw`: `array.dims`.
             if array.dims != ('lead_time',):
                 raise ValueError(f'Unexpected dimensions for {raw}: {array.dims}')
             values[canonical] = np.asarray(array.values, dtype=float)
@@ -166,6 +189,7 @@ def align_cycle(dataset, farm_id, cycle, starts, config, ensemble):
     selected = dataset.sel(farm_id=farm_id, cycle_time=cycle.tz_localize(None).to_datetime64())
     leads = pd.to_timedelta(selected.lead_time.values)
     source = pd.DatetimeIndex(cycle + leads).as_unit('ns')
+    # Enforce the input contract: Stored forecast valid times differ from cycle plus lead.
     if 'valid_time' in selected and not np.array_equal(
         pd.DatetimeIndex(pd.to_datetime(selected.valid_time.values, utc=True)).as_unit('ns').asi8,
         source.asi8,
@@ -183,12 +207,16 @@ def align_cycle(dataset, farm_id, cycle, starts, config, ensemble):
             'available_at': np.tile(np.repeat(cycle + pd.Timedelta(hours=float(config['source']['availability_lag_hours'])), ntime), nmember),
             'lead_hours': np.tile((center_ns-cycle.value)/pd.Timedelta(hours=1).value, nmember)}
     flatten = lambda array: np.asarray(array).T.reshape(-1)
+    # Vectorize the existing hourly-mean and midpoint interpolation contract over members for each `(canonical, raw)` in `config['forecast_mapping'].items()`.
     for canonical, raw in config['forecast_mapping'].items():
         array = selected[raw]
+        # Vectorize the existing hourly-mean and midpoint interpolation contract over members when `ensemble`.
         if ensemble:
+            # Enforce the input contract: Invalid dimensions for `raw`.
             if set(array.dims) != {'lead_time', 'member'}: raise ValueError(f'Invalid dimensions for {raw}')
             raw_values = np.asarray(array.transpose('lead_time', 'member').values, dtype=float)
         else:
+            # Enforce the input contract: Invalid dimensions for `raw`.
             if array.dims != ('lead_time',): raise ValueError(f'Invalid dimensions for {raw}')
             raw_values = np.asarray(array.values, dtype=float)[:, None]
         neg = np.isfinite(raw_values) & (raw_values < 0) if canonical in config['policy']['nonnegative_forecasts'] else np.zeros_like(raw_values, dtype=bool)
@@ -196,15 +224,18 @@ def align_cycle(dataset, farm_id, cycle, starts, config, ensemble):
         kind = config['forecast_semantics'].get(canonical, config['forecast_semantics'].get('default', 'instantaneous'))
         data = np.full((ntime, nmember), np.nan); raw_data = data.copy()
         changed = np.zeros((ntime, nmember), dtype=bool)
+        # When `kind in {'hourly_mean', 'hourly_accumulation'}`, set `pos` using `np.searchsorted(source_ns, end_ns)`.
         if kind in {'hourly_mean', 'hourly_accumulation'}:
             pos = np.searchsorted(source_ns, end_ns)
             clamped = np.clip(pos, 0, len(source_ns)-1)
             valid = (pos < len(source_ns)) & (source_ns[clamped] == end_ns)
             data[valid] = values[clamped[valid]]; raw_data[valid] = raw_values[clamped[valid]]
             changed[valid] = neg[clamped[valid]]
+            # When `kind == 'hourly_accumulation'`, set `data` using `4.0`.
             if kind == 'hourly_accumulation': data /= 4.0; raw_data /= 4.0
             rows[f'{canonical}_source_start'] = np.tile(hourly_ends - pd.Timedelta(hours=1), nmember)
             rows[f'{canonical}_source_end'] = np.tile(hourly_ends, nmember)
+        # When `kind == 'instantaneous'`, set `right` using `np.searchsorted(source_ns, center_ns, side='left')`.
         elif kind == 'instantaneous':
             right = np.searchsorted(source_ns, center_ns, side='left')
             left = np.clip(right-1, 0, len(source_ns)-1); right_clip = np.clip(right, 0, len(source_ns)-1)
@@ -252,6 +283,7 @@ def source_fingerprint(config, farm_id):
                                               section.get('vintage_strategy', 'preceding_day'))])
     hasher = hashlib.sha256()
     paths = list(dict.fromkeys([p['ensemble_zarr'] for p in periods] + [config['inputs']['zarr']]))
+    # Hash all selected forecast and target values plus static and review inputs for each `source_path` in `paths`.
     for source_path in paths:
         path = config_path(config, source_path)
         ds = xr.open_zarr(path, consolidated=True, chunks=None)
@@ -260,15 +292,18 @@ def source_fingerprint(config, farm_id):
         cycles = pd.DatetimeIndex(ds.cycle_time.values)
         mask = np.isin(cycles.to_numpy(dtype='datetime64[ns]'), expected_cycles.astype('datetime64[ns]'))
         selection = ds.sel(farm_id=farm_id).isel(cycle_time=np.flatnonzero(mask))
+        # Hash all selected forecast and target values plus static and review inputs for each `name` in `sorted(config['forecast_mapping'].values())`.
         for name in sorted(config['forecast_mapping'].values()):
             arr = np.ascontiguousarray(selection[name].values)
             hasher.update(name.encode()); hasher.update(arr.tobytes())
+        # When `'power' in ds`, set `lo` using `start.tz_localize('Europe/Rome').tz_convert('UTC').tz_localize(None)`.
         if 'power' in ds:
             lo = start.tz_localize('Europe/Rome').tz_convert('UTC').tz_localize(None)
             hi = (end + pd.Timedelta(days=1)).tz_localize('Europe/Rome').tz_convert('UTC').tz_localize(None)
             target = ds.power.sel(farm_id=farm_id, time=slice(lo, hi)).values
             hasher.update(np.ascontiguousarray(target).tobytes())
         ds.close()
+    # Process each `path` in this collection.
     for path in (config['inputs']['metadata_parquet'], 'data/farms/metadata.parquet', config['pv_data_quality']['exclusions_csv']):
         hasher.update(file_hash(config_path(config, path)).encode())
     return hasher.hexdigest()
@@ -283,17 +318,22 @@ def prepare_farm(config, farm_id, *, force=False):
     manifest_path = root / 'input_manifest.json'
     fingerprint = source_fingerprint(config, farm_id)
     input_settings = {key: section.get(key) for key in ('ensemble_zarr', 'dataset_periods', 'start_day', 'train_end_day', 'validation_end_day', 'end_day', 'night_target_treatment')}
+    # When `section.get('vintage_strategy', 'preceding_day') != 'preceding_day'`, set `input_settings['vintage_strategy']` using `section['vintage_strategy']`.
     if section.get('vintage_strategy', 'preceding_day') != 'preceding_day':
         input_settings['vintage_strategy'] = section['vintage_strategy']
     settings_identity = hashlib.sha256(json.dumps({'section': input_settings, 'source': config['source'],
         'mapping': config['forecast_mapping'], 'semantics': config['forecast_semantics'],
         'policy': config['policy'], 'study_night_policy': probabilistic_night_policy(config),
         'pv': farm_settings(config, load_metadata(config_path(config, config['inputs']['metadata_parquet']), [farm_id])[farm_id])}, sort_keys=True, default=str).encode()).hexdigest()
+    # When `manifest_path.exists() and (not force)`, set `old` using `json.loads(manifest_path.read_text())`.
     if manifest_path.exists() and not force:
         old = json.loads(manifest_path.read_text())
+        # Enforce the input contract: Farm `farm_id` source or settings changed; choose a new run ID.
         if old['source_fingerprint'] != fingerprint or old['settings_fingerprint'] != settings_identity:
             raise ValueError(f'Farm {farm_id} source or settings changed; choose a new run ID')
+        # Save one farm's matched 00 UTC weather views and curated raw AC targets for each `label` in `('ensemble', 'deterministic')`.
         for label in ('ensemble', 'deterministic'):
+            # Enforce the input contract: Farm `farm_id` `label` input checksum changed.
             if file_hash(root / f'{label}_inputs.parquet') != old['files'][label]:
                 raise ValueError(f'Farm {farm_id} {label} input checksum changed')
         print(f'Farm {farm_id}: reusing matched inputs', flush=True)
@@ -303,30 +343,42 @@ def prepare_farm(config, farm_id, *, force=False):
     det = xr.open_zarr(config_path(config, config['inputs']['zarr']), consolidated=True, chunks=None)
     a = pd.read_parquet(config_path(config, 'data/farms/metadata.parquet')).sort_values('farm_id').reset_index(drop=True)
     b = pd.read_parquet(config_path(config, config['inputs']['metadata_parquet'])).sort_values('farm_id').reset_index(drop=True)
+    # Enforce the input contract: Ensemble and deterministic farm metadata differ.
     if not a.equals(b):
         raise ValueError('Ensemble and deterministic farm metadata differ')
     reference = next(iter(ensemble_stores.values()))
+    # Save one farm's matched 00 UTC weather views and curated raw AC targets for each `(path, ens)` in `ensemble_stores.items()`.
     for path, ens in ensemble_stores.items():
+        # Enforce the input contract: Expected the same 50 explicit member labels in `path`.
         if len(ens.member) != 50 or not np.array_equal(ens.member.values, reference.member.values):
             raise ValueError(f'Expected the same 50 explicit member labels in {path}')
+        # Save one farm's matched 00 UTC weather views and curated raw AC targets for each `raw` in `config['forecast_mapping'].values()`.
         for raw in config['forecast_mapping'].values():
+            # Save one farm's matched 00 UTC weather views and curated raw AC targets for each `attr` in `('units', 'temporal_semantics')`.
             for attr in ('units', 'temporal_semantics'):
+                # Enforce the input contract: Ensemble source `path` has incompatible `raw` `attr`.
                 if ens[raw].attrs.get(attr) != reference[raw].attrs.get(attr):
                     raise ValueError(f'Ensemble source {path} has incompatible {raw} {attr}')
+    # Save one farm's matched 00 UTC weather views and curated raw AC targets for each `period` in `periods`.
     for period in periods:
         cycles = set(pd.DatetimeIndex(ensemble_stores[period['ensemble_zarr']].cycle_time.values))
         missing = [str(cycle.tz_localize(None)) for day in pd.date_range(period['start_day'], period['end_day'])
                    for cycle, _ in day_vintage_segments(day, local_delivery_starts(day.strftime('%Y-%m-%d')),
                                                         section.get('vintage_strategy', 'preceding_day'))
                    if cycle.tz_localize(None) not in cycles]
+        # Enforce the input contract: Missing preceding 00 UTC cycles in `period['ensemble_zarr']`: `missing`.
         if missing: raise ValueError(f"Missing preceding 00 UTC cycles in {period['ensemble_zarr']}: {missing}")
     all_frames = {'ensemble': [], 'deterministic': []}
+    # Save one farm's matched 00 UTC weather views and curated raw AC targets for each `period` in `periods`.
     for period in periods:
         ens = ensemble_stores[period['ensemble_zarr']]
+        # Save one farm's matched 00 UTC weather views and curated raw AC targets for each `day` in `pd.date_range(period['start_day'], period['end_day'], freq='D')`.
         for day in pd.date_range(period['start_day'], period['end_day'], freq='D'):
             starts = local_delivery_starts(day.strftime('%Y-%m-%d'))
             target = _target_frame(det, farm_id, starts, config)
+            # Save one farm's matched 00 UTC weather views and curated raw AC targets for each `(label, dataset, ensemble)` in `(('ensemble', ens, True), ('deterministic', det, False))`.
             for label, dataset, ensemble in (('ensemble', ens, True), ('deterministic', det, False)):
+                # Process each `(cycle, segment_starts)` in this collection.
                 for cycle, segment_starts in day_vintage_segments(day, starts, section.get('vintage_strategy', 'preceding_day')):
                     aligned = align_cycle(dataset, farm_id, cycle, segment_starts, config, ensemble)
                     frame = aligned.values.copy()
@@ -338,26 +390,33 @@ def prepare_farm(config, farm_id, *, force=False):
                     frame['forecast_available_at_utc'] = aligned.available_at
                     frame['split'] = delivery_split(day, section)
                     all_frames[label].append(frame)
+            # Save one farm's matched 00 UTC weather views and curated raw AC targets when `day.day % 5 == 0 or day.strftime('%Y-%m-%d') == period['end_day']`.
             if day.day % 5 == 0 or day.strftime('%Y-%m-%d') == period['end_day']:
                 print(f'Farm {farm_id}: aligned through {day.date()}', flush=True)
+    # Save one farm's matched 00 UTC weather views and curated raw AC targets for each `store` in `ensemble_stores.values()`.
     for store in ensemble_stores.values(): store.close()
     det.close()
     ensemble_frame = pd.concat(all_frames['ensemble'], ignore_index=True)
     deterministic_frame = pd.concat(all_frames['deterministic'], ignore_index=True)
+    # Enforce the input contract: Duplicate ensemble or deterministic forecast interval.
     if ensemble_frame.duplicated(['interval_start_utc', 'member']).any() or deterministic_frame.interval_start_utc.duplicated().any():
         raise ValueError('Duplicate ensemble or deterministic forecast interval')
     grouped = ensemble_frame.groupby('interval_start_utc', sort=True).agg(
         members=('member', 'nunique'), cycle_count=('forecast_cycle_utc', 'nunique'),
         forecast_cycle_utc=('forecast_cycle_utc', 'first'),
         forecast_available_at_utc=('forecast_available_at_utc', 'first'))
+    # Enforce the input contract: Each interval must have exactly 50 members from one selected cycle.
     if not grouped.members.eq(50).all() or not grouped.cycle_count.eq(1).all():
         raise ValueError('Each interval must have exactly 50 members from one selected cycle')
     paired = grouped.join(deterministic_frame.set_index('interval_start_utc')[['forecast_cycle_utc', 'forecast_available_at_utc']],
                           how='outer', lsuffix='_ensemble', rsuffix='_deterministic', validate='one_to_one')
+    # Save one farm's matched 00 UTC weather views and curated raw AC targets for each `name` in `('forecast_cycle_utc', 'forecast_available_at_utc')`.
     for name in ('forecast_cycle_utc', 'forecast_available_at_utc'):
+        # Enforce the input contract: Ensemble and deterministic `name` mismatch.
         if not paired[f'{name}_ensemble'].equals(paired[f'{name}_deterministic']):
             raise ValueError(f'Ensemble and deterministic {name} mismatch')
     files = {}
+    # Write the corresponding artifacts for `(label, frame)` from `(('ensemble', ensemble_frame), ('deterministic', deterministic_frame))`.
     for label, frame in (('ensemble', ensemble_frame), ('deterministic', deterministic_frame)):
         path = root / f'{label}_inputs.parquet'
         frame.to_parquet(path, index=False)
@@ -391,22 +450,29 @@ def pvlib_farm(config, farm_id, *, force=False):
     settings = farm_settings(config, farm)
     night_policy = probabilistic_night_policy(config)
     marker = root / 'pvlib_manifest.json'
+    # When `marker.exists() and (not force)`, set `old` using `json.loads(marker.read_text())`.
     if marker.exists() and not force:
         old = json.loads(marker.read_text())
+        # Enforce the input contract: pvlib input fingerprints changed.
         if old['input_files'] != manifest['files']:
             raise ValueError('pvlib input fingerprints changed')
+        # Enforce the input contract: pvlib settings or night policy changed; prepare a fresh run.
         if old.get('pv_parameters') != settings or old.get('night_policy') != night_policy:
             raise ValueError('pvlib settings or night policy changed; prepare a fresh run')
+        # Apply identical configured physical conversion to all members and the deterministic forecast for each `label` in `('ensemble', 'deterministic')`.
         for label in ('ensemble', 'deterministic'):
+            # Enforce the input contract: pvlib `label` output checksum mismatch.
             if file_hash(root / f'{label}_pvlib.parquet') != old['files'][label]:
                 raise ValueError(f'pvlib {label} output checksum mismatch')
         print(f'Farm {farm_id}: reusing pvlib outputs', flush=True)
         return old
     output_files = {}
     mapping = config['forecast_mapping']
+    # Apply forecast pv for `label` from `('ensemble', 'deterministic')`.
     for label in ('ensemble', 'deterministic'):
         frame = pd.read_parquet(root / f'{label}_inputs.parquet')
         result = []
+        # Apply forecast pv for `((day, cycle_value), part)` from `frame.groupby(['delivery_day', 'forecast_cycle_utc'], sort=True)`.
         for (day, cycle_value), part in frame.groupby(['delivery_day', 'forecast_cycle_utc'], sort=True):
             cycle = pd.Timestamp(cycle_value)
             part = part.copy().set_index('interval_start_utc', drop=False)

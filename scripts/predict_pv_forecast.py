@@ -28,4 +28,5 @@ def main():
     args.output.parent.mkdir(parents=True,exist_ok=True);output.to_parquet(args.output,index=False)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__=='__main__':main()

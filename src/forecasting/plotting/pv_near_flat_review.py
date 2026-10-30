@@ -25,9 +25,11 @@ def find_candidates(frame, farm, section):
               'rtol': 0.0, 'native_minutes': 15}
     runs = plateau_runs(frame.power_kw.to_numpy(float), frame.interval_start_utc, policy)
     episodes = []
+    # Find anchor-bounded near-flat native runs before applying exclusions for each `positions` in `runs`.
     for positions in runs:
         part = frame.iloc[positions]
         retained = part.search_eligible & part.in_training
+        # Skip the current item when `not retained.any()`.
         if not retained.any():
             continue
         ghi = part.ghi_w_m2.dropna()
@@ -60,6 +62,7 @@ def find_candidates(frame, farm, section):
 def contiguous_spans(times, active):
     """Group adjacent active quarter-hours while preserving gaps and DST correctly."""
     positions = np.flatnonzero(np.asarray(active, dtype=bool))
+    # Return `[]` when `not len(positions)`.
     if not len(positions):
         return []
     boundaries = np.flatnonzero((np.diff(positions) != 1) |
@@ -73,10 +76,13 @@ def plot_day(day_frame, farm, section, destination, predictions=None):
     times = pd.DatetimeIndex(day_frame.interval_start_utc).tz_convert(section['timezone'])
     fig, (top, bottom) = plt.subplots(2, 1, figsize=(13, 7.4), sharex=True,
                                       gridspec_kw={'height_ratios': [2, 1]}, layout='constrained')
+    # Plot raw observations and make candidate versus previously excluded quarters visible for each `axis` in `(top, bottom)`.
     for axis in (top, bottom):
+        # Plot raw observations and make candidate versus previously excluded quarters visible for each `(start, end)` in `contiguous_spans(times, day_frame.episode_excluded)`.
         for start, end in contiguous_spans(times, day_frame.episode_excluded):
             axis.axvspan(start, end, color='0.65', alpha=.25, zorder=0)
     top.plot(times, day_frame.power_kw / 1000, color='black', lw=1.5, label='Raw measured AC power')
+    # Update `aligned` when this condition is met.
     if predictions is not None:
         aligned = predictions.reindex(pd.DatetimeIndex(day_frame.interval_start_utc).as_unit('ns'))
         top.plot(times, aligned.historical_ghi_prediction_mw, color='#cf4f17', linewidth=1.5,
@@ -84,12 +90,15 @@ def plot_day(day_frame, farm, section, destination, predictions=None):
         top.plot(times, aligned.forecast_weather_prediction_mw, color='#4c54b2', linewidth=1.5,
                  label='pvlib: D−1 00 UTC forecast weather')
     colors = {'strong_evidence': '#c02f36', 'linked_recurring': '#9b56a7', 'review_other': '#de8b26'}
+    # Plot raw observations and make candidate versus previously excluded quarters visible for each `(priority, color)` in `colors.items()`.
     for priority, color in colors.items():
         active = day_frame.priority.eq(priority) & day_frame.search_eligible & day_frame.in_training
+        # Plot raw observations and make candidate versus previously excluded quarters visible when `active.any()`.
         if active.any():
             top.scatter(times[active], day_frame.loc[active, 'power_kw'] / 1000,
                         color=color, s=24, zorder=4, label=priority.replace('_', ' ') + ': eligible')
     top.axhline(farm.ac_capacity_mw, color='0.5', linestyle='--', lw=.8, label='Installed AC capacity')
+    # Update `percent` when this condition is met.
     if predictions is not None:
         percent = top.secondary_yaxis('right', functions=(lambda x: 100*x/farm.ac_capacity_mw,
                                                         lambda x: x*farm.ac_capacity_mw/100))
@@ -118,6 +127,7 @@ def review_farm(config, section, root, farm, store):
     path = config_path(config, section['input_run']) / f'farm_{farm.farm_id}' / 'aligned_inputs.parquet'
     views = pd.read_parquet(path, columns=['interval_start_utc', 'eligible', 'split'])
     grouped = views.groupby('interval_start_utc', sort=True)
+    # Enforce the input contract: The four forecast views disagree on target eligibility or split.
     if grouped.eligible.nunique(dropna=False).gt(1).any() or grouped['split'].nunique().gt(1).any():
         raise ValueError('The four forecast views disagree on target eligibility or split')
     statuses = grouped.agg(search_eligible=('eligible', 'first'), split=('split', 'first'))
@@ -126,6 +136,7 @@ def review_farm(config, section, root, farm, store):
     frame['in_training'] = frame['split'].eq('train')
     episodes = find_candidates(frame, farm, section)
     frame['episode_id'], frame['priority'] = '', ''
+    # Assemble one farm's raw-day evidence and an unapproved decisions template for each `episode` in `episodes`.
     for episode in episodes:
         frame.loc[episode['positions'], 'episode_id'] = episode['episode_id']
         frame.loc[episode['positions'], 'priority'] = episode['priority']
@@ -137,6 +148,7 @@ def review_farm(config, section, root, farm, store):
     candidates = frame.loc[frame.local_day.isin(selected_days)].copy()
     candidates.to_csv(folder / 'review_intervals.csv', index=False)
     rows = []
+    # Assemble one farm's raw-day evidence and an unapproved decisions template for each `episode` in `episodes`.
     for episode in episodes:
         row = {key: value for key, value in episode.items() if key != 'positions'}
         row['start_local'] = row['start_utc'].tz_convert(section['timezone'])
@@ -150,9 +162,11 @@ def review_farm(config, section, root, farm, store):
                'priority', 'existing_excluded_quarters', 'eligible_training_quarters',
                'first_local_day', 'decision', 'review_notes']
     pd.DataFrame(rows, columns=columns).to_csv(folder / 'review_episodes.csv', index=False)
+    # Assemble one farm's raw-day evidence and an unapproved decisions template for each `(index, day)` in `enumerate(selected_days, start=1)`.
     for index, day in enumerate(selected_days, start=1):
         part = candidates.loc[candidates.local_day.eq(day)]
         plot_day(part, farm, section, folder / 'plots' / f'{day}.png')
+        # Assemble one farm's raw-day evidence and an unapproved decisions template when `index % 10 == 0 or index == len(selected_days)`.
         if index % 10 == 0 or index == len(selected_days):
             print(f'Farm {farm.farm_id}: plots {index}/{len(selected_days)}', flush=True)
     active = frame.search_eligible & frame.in_training & frame.episode_id.ne('')
@@ -168,12 +182,14 @@ def write_indexes(root, farm_ids):
     """Link every review day and expose the per-day candidate counts."""
     root_lines = ['# Near-flat review: farm indexes', '',
                   'Open a farm index for linked day plots and counts. Classification is review-only.', '']
+    # Write the corresponding artifacts for `farm` from `farm_ids`.
     for farm in farm_ids:
         folder = root / f'farm_{farm}'
         frame = pd.read_csv(folder / 'review_intervals.csv', keep_default_na=False)
         eligible = frame.loc[frame.search_eligible & frame.in_training & frame.priority.ne('')]
         counts = eligible.groupby(['local_day', 'priority']).size().unstack(fill_value=0)
         lines = [f'# Farm {farm} review days', '']
+        # Update `lines` when this condition is met.
         if (folder / 'model_overlay_manifest.json').exists():
             lines += ['The selected pvlib chain is shown on every day. Orange dashed: historical GHI and diffuse',
                       'fraction with the mean of four temperature/wind forecast views. Blue: preceding-day',
@@ -184,9 +200,11 @@ def write_indexes(root, farm_ids):
         lines += ['[Episode decisions template](review_episodes.csv) · [Quarter-hour evidence](review_intervals.csv)', '',
                  '| Local day and plot | Strong evidence | Linked recurring | Other candidates |',
                  '|---|---:|---:|---:|']
+        # Link every review day and expose the per-day candidate counts for each `(day, row)` in `counts.iterrows()`.
         for day, row in counts.iterrows():
             lines.append(f"| [{day}](plots/{day}.png) | {row.get('strong_evidence', 0)} | "
                          f"{row.get('linked_recurring', 0)} | {row.get('review_other', 0)} |")
+        # Link every review day and expose the per-day candidate counts when `counts.empty`.
         if counts.empty:
             lines.append('| No eligible candidate days | 0 | 0 | 0 |')
         (folder / 'INDEX.md').write_text('\n'.join(lines)+'\n')
@@ -200,14 +218,17 @@ def write_provenance(config, section, root):
     def file_digest(path):
         digest = hashlib.sha256()
         with path.open('rb') as stream:
+            # Perform file digest for each `block` in `iter(lambda: stream.read(1024 * 1024), b'')`.
             for block in iter(lambda: stream.read(1024 * 1024), b''):
                 digest.update(block)
         return digest.hexdigest()
     sources = {}
     with open_store(config) as store:
+        # Record fingerprints for the raw time series and the search eligibility inputs for each `farm` in `section['farm_ids']`.
         for farm in section['farm_ids']:
             selected = store.sel(farm_id=int(farm))
             digest = hashlib.sha256()
+            # Record fingerprints for the raw time series and the search eligibility inputs for each `name` in `('time', 'power', 'ghi')`.
             for name in ('time', 'power', 'ghi'):
                 array = np.ascontiguousarray(selected[name].values)
                 digest.update(name.encode()); digest.update(str(array.dtype).encode()); digest.update(array.tobytes())
@@ -236,23 +257,30 @@ def main():
     section = config['pv_near_flat_review']
     root = config_path(config, section['output_root']) / section['run_id']
     farms = load_metadata(config_path(config, config['inputs']['metadata_parquet']), section['farm_ids'])
+    # Create a new, non-overwriting review package without changing decisions or source data when `args.index_existing`.
     if args.index_existing:
+        # Enforce the input contract: Only a complete review package can be indexed.
         if not (root / 'manifest.json').exists():
             raise ValueError('Only a complete review package can be indexed')
         write_indexes(root, section['farm_ids'])
         write_provenance(config, section, root)
         return
+    # Create a new, non-overwriting review package without changing decisions or source data when `args.redraw_existing`.
     if args.redraw_existing:
+        # Enforce the input contract: Only a complete review package can be redrawn.
         if not (root / 'manifest.json').exists():
             raise ValueError('Only a complete review package can be redrawn')
+        # Enforce the input contract: Selected farm is not in the review configuration.
         if args.farm is not None and args.farm not in section['farm_ids']:
             raise ValueError('Selected farm is not in the review configuration')
+        # Create a new, non-overwriting review package without changing decisions or source data for each `farm_id` in `[args.farm] if args.farm is not None else section['farm_ids']`.
         for farm_id in ([args.farm] if args.farm is not None else section['farm_ids']):
             folder = root / f'farm_{farm_id}'
             frame = pd.read_csv(folder / 'review_intervals.csv', parse_dates=['interval_start_utc'],
                                 keep_default_na=False, na_values={'power_kw': [''], 'ghi_w_m2': ['']})
             overlay_path = folder / 'model_overlay_predictions.parquet'
             predictions = pd.read_parquet(overlay_path).set_index('interval_start_utc') if overlay_path.exists() else None
+            # Create a new, non-overwriting review package without changing decisions or source data for each `(day, part)` in `frame.groupby('local_day', sort=True)`.
             for day, part in frame.groupby('local_day', sort=True):
                 plot_day(part, farms[int(farm_id)], section, folder / 'plots' / f'{day}.png', predictions)
             print(f'Farm {farm_id}: redrew {frame.local_day.nunique()} plots', flush=True)
@@ -279,6 +307,7 @@ def main():
         'These thresholds are sensitivity settings, not an automatic exclusion decision.', '',
         '| Farm | Episodes | Plot days | Eligible candidate quarters | Strong | Linked | Other |',
         '|---|---:|---:|---:|---:|---:|---:|']
+    # Create a new, non-overwriting review package without changing decisions or source data for each `item` in `summary`.
     for item in summary:
         lines.append(f"| {item['farm_id']} | {item['episodes']} | {item['days']} | {item['eligible_candidate_quarters']} | {item['strong_eligible_quarters']} | {item['linked_eligible_quarters']} | {item['other_eligible_quarters']} |")
     lines.extend(['', 'For each farm, open `plots/` for daily PNGs, `review_episodes.csv` for a decisions template,',
@@ -290,5 +319,6 @@ def main():
     print(json.dumps(manifest, indent=2), flush=True)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

@@ -22,12 +22,15 @@ def main():
     section, refine = config['pv_realized_irradiance_search'], config['pv_realized_refinement']
     root = config_path(config, section['output_root']) / section['run_id']
     screen_path = ranking_path(root, section, screen=True)
+    # Resume refined fits and append scores to the frozen screen ranking when `not screen_path.exists()`.
     if not screen_path.exists():
         screen_path.write_bytes(ranking_path(root, section).read_bytes())
     ranking = pd.read_csv(screen_path)
     jobs = []
+    # Resume refined fits and append scores to the frozen screen ranking for each `farm` in `section['farm_ids']`.
     for farm in section['farm_ids']:
         top = ranking.loc[(ranking.farm_id == farm) & ranking.loss.ne('fixed')].head(int(refine['top_candidates_per_farm']))
+        # Resume refined fits and append scores to the frozen screen ranking for each `row` in `top.itertuples(index=False)`.
         for row in top.itertuples(index=False):
             path = root / f'farm_{farm}' / 'trials' / f'{int(row.trial_id):04d}.json'
             original = json.loads(path.read_text())
@@ -50,6 +53,7 @@ def main():
     with ProcessPoolExecutor(max_workers=int(refine['workers'])) as pool:
         pending = {pool.submit(run_trial, tuned, farm, trial, candidate, root): (farm, trial)
                    for farm, trial, candidate, tuned, _ in jobs}
+        # Resume refined fits and append scores to the frozen screen ranking for each `future` in `as_completed(pending)`.
         for future in as_completed(pending):
             result = future.result()
             results.append(result)
@@ -61,5 +65,6 @@ def main():
         ['farm_id', 'rmse_percent_capacity']).to_csv(ranking_path(root, section), index=False)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

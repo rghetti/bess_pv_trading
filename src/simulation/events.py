@@ -27,11 +27,13 @@ class Event:
 
     at: pd.Timestamp
     kind: EventKind
+    # Sequence breaks ties after timestamp and event priority; payload does not affect ordering.
     sequence: int = 0
     payload: Any = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         instant = pd.Timestamp(self.at)
+        # Enforce the input contract: Event timestamps must be timezone-aware.
         if instant.tzinfo is None:
             raise ValueError("Event timestamps must be timezone-aware")
         object.__setattr__(self, "at", instant.tz_convert("UTC"))
@@ -48,15 +50,18 @@ class EventEngine:
 
     def schedule(self, event: Event) -> None:
         """Add an event that cannot precede the current information state."""
+        # Enforce the input contract: Cannot schedule an event before the current event.
         if self.current is not None and event < self.current:
             raise ValueError("Cannot schedule an event before the current event")
         heapq.heappush(self._events, event)
 
     def run(self, handlers: dict[EventKind, Callable[[Event], None]]) -> None:
         """Process all scheduled events; handler exceptions stop the replay."""
+        # Continue until `self._events` is false.
         while self._events:
             self.current = heapq.heappop(self._events)
             handler = handlers.get(self.current.kind)
+            # Enforce the input contract: Missing handler for `self.current.kind.name`.
             if handler is None:
                 raise ValueError(f"Missing handler for {self.current.kind.name}")
             handler(self.current)

@@ -39,6 +39,7 @@ def weather_features(frame,feature_set,timezone,*,include_national_holiday=False
     features=feature_frame(frame,feature_set,timezone,include_solar_geometry=False,
         include_national_holiday=include_national_holiday)
     unknown=set(excluded_features)-set(features.columns)
+    # Enforce the input contract: Unknown excluded PV features: `sorted(unknown)`.
     if unknown:
         raise ValueError(f'Unknown excluded PV features: {sorted(unknown)}')
     return features.drop(columns=list(excluded_features))
@@ -52,6 +53,7 @@ def interpolate_forecast_gaps(frame,method='linear_per_view'):
     fills a boundary gap. A single available value is held constant. Original
     input frames are never mutated; remaining all-missing fields are reported.
     """
+    # Enforce the input contract: Unsupported forecast gap interpolation: `method`.
     if method not in {'linear_per_view','none'}:
         raise ValueError(f'Unsupported forecast gap interpolation: {method}')
     result=frame.copy()
@@ -64,6 +66,7 @@ def interpolate_forecast_gaps(frame,method='linear_per_view'):
     report={'method':method,'rows_before':before,'filled_by_feature':{name:0 for name in columns},
         'boundary_extrapolated_by_feature':{name:0 for name in columns},
         'unresolved_by_feature':{name:0 for name in columns},'view_count':0}
+    # When `method == 'none' or not columns`, set `report['rows_after']` using `before.copy()`.
     if method=='none' or not columns:
         report['rows_after']=before.copy()
         return result,report
@@ -71,39 +74,48 @@ def interpolate_forecast_gaps(frame,method='linear_per_view'):
     report['view_count']=len(grouped)
     weather_values={name:result[name].to_numpy(dtype=float,copy=True) for name in columns}
     utc_ns=pd.DatetimeIndex(result.interval_start_utc).asi8
+    # Interpolate short weather gaps within each delivery-day forecast vintage for each `positions` in `grouped.values()`.
     for positions in grouped.values():
         positions=np.asarray(positions,dtype=int)
+        # Skip the current item when `not any(((~np.isfinite(weather_values[name][positions])).any() for name in columns))`.
         if not any((~np.isfinite(weather_values[name][positions])).any() for name in columns):
             continue
         order=np.argsort(utc_ns[positions],kind='stable')
         positions=positions[order]
         x=(utc_ns[positions]-utc_ns[positions][0]).astype(np.float64)/1e9
+        # Interpolate short weather gaps within each delivery-day forecast vintage for each `name` in `columns`.
         for name in columns:
             values=weather_values[name][positions].copy()
             finite=np.isfinite(values)
             missing=~finite
+            # Skip the current item when `not missing.any()`.
             if not missing.any():
                 continue
             valid=np.flatnonzero(finite)
+            # When `not len(valid)`, set `report['unresolved_by_feature'][name]` using `int(missing.sum())`.
             if not len(valid):
                 report['unresolved_by_feature'][name]+=int(missing.sum())
                 continue
             filled=np.interp(x[missing],x[valid],values[valid])
             left=missing & (np.arange(len(values))<valid[0])
             right=missing & (np.arange(len(values))>valid[-1])
+            # When `len(valid) > 1`, set `left_positions` using `np.flatnonzero(left)`.
             if len(valid)>1:
                 left_positions=np.flatnonzero(left)
                 right_positions=np.flatnonzero(right)
                 missing_positions=np.flatnonzero(missing)
+                # When `len(left_positions)`, set `slope` using `(values[valid[1]] - values[valid[0]]) / (x[valid[1]] - x[valid[0]])`.
                 if len(left_positions):
                     slope=(values[valid[1]]-values[valid[0]])/(x[valid[1]]-x[valid[0]])
                     filled[np.searchsorted(missing_positions,left_positions)]=values[valid[0]]+slope*(x[left_positions]-x[valid[0]])
+                # Update `slope` when this condition is met.
                 if len(right_positions):
                     slope=(values[valid[-1]]-values[valid[-2]])/(x[valid[-1]]-x[valid[-2]])
                     filled[np.searchsorted(missing_positions,right_positions)]=values[valid[-1]]+slope*(x[right_positions]-x[valid[-1]])
             report['filled_by_feature'][name]+=int(missing.sum())
             report['boundary_extrapolated_by_feature'][name]+=int(left.sum()+right.sum())
             weather_values[name][positions[missing]]=filled
+    # Interpolate short weather gaps within each delivery-day forecast vintage for each `name` in `columns`.
     for name in columns:
         result[name]=weather_values[name]
     report['rows_after']={name:int((~np.isfinite(result[name].to_numpy(dtype=float))).sum()) for name in columns}
@@ -113,19 +125,24 @@ def interpolate_forecast_gaps(frame,method='linear_per_view'):
 def generate_trials(section,farm_id):
     """Sample finite YAML grids deterministically; do not inspect any model scores."""
     rng=np.random.default_rng(section['seed']+farm_id);trials=[]
+    # Sample finite YAML grids deterministically; do not inspect any model scores for each `(family, space)` in `(section['statistical_spaces'] or {}).items()`.
     for family,space in (section['statistical_spaces'] or {}).items():
+        # Sample finite YAML grids deterministically; do not inspect any model scores for each `number` in `range(section['statistical_trials_per_family'])`.
         for number in range(section['statistical_trials_per_family']):
             parameters={key:values[int(rng.integers(len(values)))] for key,values in space.items()}
             trials.append({'name':f'{family}_{number:02}', 'family':family,
                 'features':section['feature_sets'][number%len(section['feature_sets'])],
                 'parameters':parameters,'seed':section['seed']+farm_id+number})
+    # Sample finite YAML grids deterministically; do not inspect any model scores for each `architecture` in `section['neural_architectures']`.
     for architecture in section['neural_architectures']:
         space=section['neural_space']
         size_depth=[(width,depth) for width in space['width'] for depth in space['depth']]
         rng.shuffle(size_depth)
+        # Sample finite YAML grids deterministically; do not inspect any model scores for each `number` in `range(section['neural_trials_per_architecture'])`.
         for number in range(section['neural_trials_per_architecture']):
             spec={key:values[int(rng.integers(len(values)))] for key,values in space.items()
                 if key not in {'width','depth'}}
+            # When `size_depth`, set `(spec['width'], spec['depth'])` using `size_depth[number % len(size_depth)]`.
             if size_depth:
                 spec['width'],spec['depth']=size_depth[number%len(size_depth)]
             spec['architecture']=architecture
@@ -144,18 +161,25 @@ def _fit_statistical(x,y,train,weight,baseline,trial):
     from sklearn.pipeline import make_pipeline
     family=trial['family'];parameters=dict(trial['parameters']);transform=None
     target=y-baseline if family.endswith('_residual') else y
+    # When `family == 'ridge'`, set `model` using `Ridge(**parameters)`.
     if family=='ridge':
         model=Ridge(**parameters)
+    # When `family == 'ols'`, set `model` using `LinearRegression(**parameters)`.
     elif family=='ols':
         model=LinearRegression(**parameters)
+    # Update `model` when this condition is met.
     elif family.startswith('boosting'):
         model=HistGradientBoostingRegressor(random_state=trial['seed'],early_stopping=False,**parameters)
+    # Update `model` when this condition is met.
     elif family=='extra_trees':
         model=ExtraTreesRegressor(random_state=trial['seed'],n_jobs=1,**parameters)
+    # When `family == 'huber'`, set `model` using `HuberRegressor(**parameters)`.
     elif family=='huber':model=HuberRegressor(**parameters)
     else:
         alpha=parameters.pop('alpha')
+        # When `family.startswith('spline')`, set `transform` using `SplineTransformer(**parameters)`.
         if family.startswith('spline'):transform=SplineTransformer(**parameters)
+        # When `family.startswith('rbf')`, set `transform` using `RBFSampler(random_state=trial['seed'], **parameters)`.
         elif family.startswith('rbf'):transform=RBFSampler(random_state=trial['seed'],**parameters)
         else:raise ValueError(f'Unknown statistical family {family}')
         transformed=transform.fit_transform(x[train]);model=Ridge(alpha=alpha)
@@ -175,10 +199,14 @@ def _worker(job):
     started=time.perf_counter();trial=job['trial'];directory=Path(job['directory']);root=Path(job['output'])
     status=root/'json/trials'/f"{trial['name']}.json"
     prediction_path=root/'arrays'/f"{trial['name']}.npy"
+    # When `job['resume'] and status.exists()`, set `record` using `json.loads(status.read_text())`.
     if job['resume'] and status.exists():
         record=json.loads(status.read_text())
+        # Enforce the input contract: Trial identity mismatch on resume.
         if record['identity']!=job['identity']:raise ValueError('Trial identity mismatch on resume')
+        # Enforce the input contract: Prediction checksum mismatch.
         if _sha(prediction_path)!=record['prediction_sha256']:raise ValueError('Prediction checksum mismatch')
+        # Enforce the input contract: Model checksum mismatch.
         if _sha(record['artifact'])!=record['artifact_sha256']:raise ValueError('Model checksum mismatch')
         return record
     x=np.load(directory/f"x_{trial['features']}.npy",mmap_mode='r')
@@ -189,6 +217,7 @@ def _worker(job):
         'input_contract':'weather_time_known_holiday_no_proxy_geometry_no_auction_no_age',
         'train_last_target_utc':job['train_last_target_utc'],'reference_regression':str(directory/f"baseline_{trial['features']}.joblib")}
     with warnings.catch_warnings(record=True) as caught, threadpool_limits(limits=1):
+        # One isolated, single-threaded CPU fit with atomic reusable outputs when `trial['family'] == 'neural'`.
         if trial['family']=='neural':
             import torch
             from ..models.pv_residual_networks import fit_residual_network
@@ -206,6 +235,7 @@ def _worker(job):
             artifact=root/'models'/f"{trial['name']}.joblib"
             joblib.dump({'model':model,**metadata},artifact)
         prediction[np.load(directory/'night.npy')]=0
+    # Enforce the input contract: Model prediction violates the AC output contract.
     if not np.isfinite(prediction).all() or (prediction<0).any() or (prediction>job['rating']+1e-7).any():
         raise ValueError('Model prediction violates the AC output contract')
     np.save(prediction_path,prediction,allow_pickle=False)
@@ -234,28 +264,35 @@ def prepare_search(config,farm_id,root,identity,*,frame_override=None,sequence_l
         else int(prior.groupby(['delivery_day','auction']).size().max()))
     prior=frame[keys].merge(prior,on=keys,how='left',validate='one_to_one')
     frame=frame.reset_index(drop=True)
+    # Enforce the input contract: Frozen corpus/reference keys or raw targets disagree.
     if not frame[keys+['measured_ac_mw']].equals(prior[keys+['measured_ac_mw']]):
         raise ValueError('Frozen corpus/reference keys or raw targets disagree')
+    # Enforce the input contract: Unavailable forecast.
     if (frame.forecast_available_at_utc>frame.decision_cutoff_utc).any():raise ValueError('Unavailable forecast')
     rating=config['farms'][str(farm_id)]['ac_capacity_kw']/1000
     # All valid training quarters, including genuine night zeros, are retained.
     train=(frame.eligible & frame.split.eq('train')).to_numpy()
     validation=(frame.eligible & frame.daylight & frame.split.eq('validation')).to_numpy()
     test=(frame.eligible & frame.daylight & frame.split.eq('test')).to_numpy()
+    # Enforce the input contract: Training availability crosses the validation boundary.
     if frame.loc[train,'target_available_at_utc'].max()>=frame.loc[validation,'decision_cutoff_utc'].min():
         raise ValueError('Training availability crosses the validation boundary')
+    # Enforce the input contract: Validation availability crosses the test boundary.
     if frame.loc[validation,'target_available_at_utc'].max()>=frame.loc[test,'decision_cutoff_utc'].min():
         raise ValueError('Validation availability crosses the test boundary')
     directory=root/f'farm_{farm_id}';cache=directory/'cache'
+    # Process each `folder` in this collection.
     for folder in ['json/trials','arrays','models','parquet','csv','plots','cache']:(directory/folder).mkdir(parents=True,exist_ok=True)
     night=night_window_mask(pd.DatetimeIndex(frame.interval_start_utc),config['policy']['night'])
     weight=balanced_weights(frame.loc[train]);weight*=len(weight)
     y=frame.measured_ac_mw.to_numpy()/rating
+    # Reuse frozen vintages and masks; fit feature transforms on 2025 targets only for each `(name, value)` in `[('y', y), ('train', train), ('weights', weight), ('night', night)]`.
     for name,value in [('y',y),('train',train),('weights',weight),('night',night)]:np.save(cache/f'{name}.npy',value)
     # This feature population intentionally never consults proxy geometry.
     neural_frame=frame.copy();neural_frame['daylight']=~night
     interpolated_frame,interpolation_report=interpolate_forecast_gaps(
         frame,section['missing_weather_interpolation'])
+    # Apply fit for `feature` from `section['feature_sets']`.
     for feature in section['feature_sets']:
         values=weather_features(interpolated_frame,feature,config['pv_neural']['delivery_timezone'],
             include_national_holiday=section['include_national_holiday'],
@@ -298,6 +335,7 @@ def run_forecast_search(config,progress=print):
     """Search both farms with a shared chronology, bounded CPU use and resumable fits."""
     section=config['pv_forecast_search'];workers=int(section['workers'])
     available=len(os.sched_getaffinity(0)) if hasattr(os,'sched_getaffinity') else os.cpu_count()
+    # Enforce the input contract: Worker count must leave the configured CPU reserve and be at most 42.
     if not 1<=workers<=min(42,max(1,available-int(section['reserved_cpu_cores']))):
         raise ValueError('Worker count must leave the configured CPU reserve and be at most 42')
     output_root=config_path(config,section['output_root']);root=output_root/section['run_id']
@@ -308,17 +346,21 @@ def run_forecast_search(config,progress=print):
         'network_code_sha256':_sha(Path(__file__).resolve().parents[1]/'models/pv_residual_networks.py')}
     identity=hashlib.sha256(json.dumps(contract,sort_keys=True,default=str).encode()).hexdigest()
     previous=root/'json/identity.json'
+    # Enforce the input contract: Search configuration/code changed; disable resume or choose another run ID.
     if section['resume'] and previous.exists() and json.loads(previous.read_text())['identity']!=identity:
         raise ValueError('Search configuration/code changed; disable resume or choose another run ID')
     prepare_experiment_output(output_root,root,overwrite=config['experiment_outputs']['overwrite_existing'],resume=section['resume'])
     _write(previous,{'identity':identity,**contract});_write(root/'json/resolved_config.json',config)
+    # Process each `name` in this collection.
     for name in ['OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS']:
         os.environ[name]='1'
     jobs=[];farms={}
+    # Search both farms with a shared chronology, bounded CPU use and resumable fits for each `farm_id` in `section['farm_ids']`.
     for farm_id in section['farm_ids']:
         progress(f'Preparing farm {farm_id} without geometry, auction identity or aging inputs')
         frame,prior,directory,cache,rating,last=prepare_search(config,farm_id,root,identity)
         farms[farm_id]=(frame,prior,directory,rating)
+        # Search both farms with a shared chronology, bounded CPU use and resumable fits for each `trial` in `generate_trials(section, farm_id)`.
         for trial in generate_trials(section,farm_id):
             jobs.append({'farm_id':farm_id,'trial':trial,'directory':str(cache),'output':str(directory),
                 'rating':rating,'train_last_target_utc':last,'identity':identity,
@@ -326,10 +368,12 @@ def run_forecast_search(config,progress=print):
     progress(f'Launching {len(jobs)} model fits across {workers} single-threaded CPU workers')
     with ProcessPoolExecutor(max_workers=workers,mp_context=multiprocessing.get_context('spawn')) as pool:
         pending={pool.submit(_worker,job):job for job in jobs}
+        # Search both farms with a shared chronology, bounded CPU use and resumable fits for each `future` in `as_completed(pending)`.
         for future in as_completed(pending):
             job=pending[future];record=future.result()
             progress(f"Farm {job['farm_id']} {job['trial']['name']}: {record['runtime_seconds']:.1f}s")
     reports=[]
+    # Search both farms with a shared chronology, bounded CPU use and resumable fits for each `(farm_id, (frame, prior, directory, rating))` in `farms.items()`.
     for farm_id,(frame,prior,directory,rating) in farms.items():
         reports.append(report_search(config,farm_id,frame,prior,directory,rating))
     _write(root/'json/manifest.json',{'status':'complete','identity':identity,'farms':reports})
@@ -339,16 +383,21 @@ def run_forecast_search(config,progress=print):
 def report_search(config,farm_id,frame,prior,directory,rating):
     """Publish common-mask scores, monthly residuals and training-only-model artifacts."""
     predictions={name.removeprefix('prediction_').removesuffix('_mw'):prior[name].to_numpy() for name in prior if name.startswith('prediction_')}
+    # Publish common-mask scores, monthly residuals and training-only-model artifacts for each `trial` in `generate_trials(config['pv_forecast_search'], farm_id)`.
     for trial in generate_trials(config['pv_forecast_search'],farm_id):
         predictions[trial['name']]=np.load(directory/'arrays'/f"{trial['name']}.npy")
     rows=[];monthly=[]
+    # Apply score for `(name, prediction)` from `predictions.items()`.
     for name,prediction in predictions.items():
+        # Apply score for `split` from `['train', 'validation', 'test']`.
         for split in ['train','validation','test']:
             mask=(frame.eligible & frame.daylight & frame.split.eq(split)).to_numpy()
             rows.append({'model':name,'split':split,**score(frame,prediction,rating,mask)})
+        # Apply score for `((month, auction), positions)` from `frame.groupby([frame.delivery_day.str[:7], frame.auction]).indices.items()`.
         for (month,auction),positions in frame.groupby([frame.delivery_day.str[:7],frame.auction]).indices.items():
             mask=np.zeros(len(frame),dtype=bool);mask[positions]=True
             mask &= (frame.eligible & frame.daylight).to_numpy()
+            # Apply score when `mask.any()`.
             if mask.any():monthly.append({'model':name,'month':month,'auction':auction,**score(frame,prediction,rating,mask)})
     table=pd.DataFrame(rows);table.to_csv(directory/'csv/metrics.csv',index=False)
     pd.DataFrame(monthly).to_csv(directory/'csv/monthly_auction_metrics.csv',index=False)
@@ -357,6 +406,7 @@ def report_search(config,farm_id,frame,prior,directory,rating):
     ranking.to_csv(directory/'csv/validation_ranking.csv',index=False)
     selected=ranking.iloc[0].model
     saved=frame[['interval_start_utc','delivery_day','auction','split','eligible','daylight','measured_ac_mw']].copy()
+    # Publish common-mask scores, monthly residuals and training-only-model artifacts for each `(name, prediction)` in `predictions.items()`.
     for name,prediction in predictions.items():saved[f'prediction_{name}_mw']=prediction
     saved.to_parquet(directory/'parquet/predictions.parquet',index=False)
     report={'farm_id':farm_id,'selected_new_model':selected,'selection':'Jan-Apr 2026 validation balanced daylight NRMSE only',

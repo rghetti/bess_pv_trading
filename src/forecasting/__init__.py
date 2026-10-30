@@ -32,13 +32,16 @@ class _LegacyFinder(MetaPathFinder):
 
     def find_spec(self, fullname, path=None, target=None):
         prefix = __name__ + '.'
+        # Return `None` when `not fullname.startswith(prefix)`.
         if not fullname.startswith(prefix):
             return None
         short = fullname[len(prefix):]
+        # Return `None` when `'.' in short or short not in _LEGACY_MODULES`.
         if '.' in short or short not in _LEGACY_MODULES:
             return None
         return spec_from_loader(fullname, _LegacyLoader(f'{prefix}{_LEGACY_MODULES[short]}.{short}'))
 
 
+# Apply this branch only when its condition is met.
 if not any(isinstance(finder, _LegacyFinder) for finder in sys.meta_path):
     sys.meta_path.insert(0, _LegacyFinder())

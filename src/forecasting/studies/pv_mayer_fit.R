@@ -1,5 +1,6 @@
 # Fit censored Gaussian baselines and evaluate scores in the isolated R environment.
 args <- commandArgs(trailingOnly = TRUE)
+# Fail before fitting when the subprocess contract or reference packages are missing.
 if (length(args) != 3L) stop('Expected training CSV, prediction CSV and output directory')
 if (!requireNamespace('crch', quietly = TRUE) || !requireNamespace('scoringRules', quietly = TRUE)) stop('crch and scoringRules are required')
 train <- read.csv(args[1], check.names = FALSE)
@@ -12,10 +13,13 @@ writeLines(c(paste('R', getRversion()), paste('crch', packageVersion('crch')),
            file.path(out, 'r_versions_and_defaults.txt'))
 predictions <- list()
 status <- list()
+# Keep per-lead EMOS and the pooled boosted fit independently auditable.
 fit_one <- function(method, lead, fit_data, score_data) {
   name <- if (is.na(lead)) method else paste0(method, '_lead_', lead)
   tryCatch({
+    # A lead without observations cannot support an independently fitted model.
     if (!nrow(fit_data)) stop('No eligible fit rows')
+    # The paper fits basic EMOS by CRPS and boosted EMOS by likelihood.
     if (method == 'cn_emos') {
       model <- crch::crch(y ~ control + ens_mean | log_variance, data=fit_data,
                           left=0, right=1, dist='gaussian', link.scale='log', type='crps')
@@ -24,8 +28,10 @@ fit_one <- function(method, lead, fit_data, score_data) {
                           data=fit_data, left=0, right=1, dist='gaussian', link.scale='log',
                           type='ml', control=crch::crch.boost())
     }
+    # Do not export a checkpoint whose optimizer reported nonconvergence.
     if (!is.null(model$converged) && !isTRUE(model$converged)) stop('R optimizer did not converge')
     saveRDS(model, file.path(out, paste0(name, '.rds')))
+    # Predict and score only when evaluation cases exist for this fitted model.
     if (nrow(score_data)) {
       location <- as.numeric(predict(model, newdata=score_data, type='location'))
       scale <- as.numeric(predict(model, newdata=score_data, type='scale'))
@@ -37,13 +43,16 @@ fit_one <- function(method, lead, fit_data, score_data) {
     }
     status[[length(status)+1L]] <<- data.frame(method=method, lead=lead, fit_rows=nrow(fit_data), status='complete', detail='')
   }, error=function(e) {
+    # Record a failed fit instead of substituting another lead's model.
     status[[length(status)+1L]] <<- data.frame(method=method, lead=lead, fit_rows=nrow(fit_data), status='failed', detail=conditionMessage(e))
   })
 }
+# The logarithm of ensemble variance is undefined at zero, so exclude those cases.
 for (lead in sort(unique(c(train$lead, test$lead)))) {
   fit_one('cn_emos', lead, train[train$lead == lead & train$variance > 0, ],
           test[test$lead == lead & test$variance > 0, ])
 }
+# Boosted EMOS uses all eligible leads together as described in the paper.
 fit_one('cn_emos_b', NA_real_, train, test)
 result <- if (length(predictions)) do.call(rbind, predictions) else data.frame(row_id=integer(), method=character(), location=numeric(), scale=numeric(), crps=numeric())
 write.csv(result, file.path(out, 'predictions.csv'), row.names=FALSE, na='')

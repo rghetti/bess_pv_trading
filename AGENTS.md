@@ -54,6 +54,7 @@ we need to linearly interpolate it
 ## Code style guidelines
 
 <!-- Document language-specific conventions, formatting, naming, and design preferences. -->
+- Write new code for human review, with one statement per line and no semicolon-separated commands. Explain each logical block, especially loops and conditional branches, with an informative comment; document custom data classes and members when their meaning is not obvious from their names.
 - Use instructive names for the variables and include at each code block, on top of a docstring, also a short description of what that chunk of code does (coarsely, not at every line)
 - The working env is bess, activated by conda activate bess; do not ever change it or download
 packages in it without my explicit permission

@@ -28,34 +28,42 @@ def run(config):
     section=config['pv_cleaned_hpo']
     root=config_path(config,section['output_root'])/section['run_id']
     manifest=json.loads((root/'json/manifest.json').read_text())
+    # Enforce the input contract: HPO is not complete.
     if manifest['status']!='complete':raise ValueError('HPO is not complete')
     quality=config_path(config,config['pv_data_quality']['exclusions_csv'])
     identity=json.loads((root/'json/identity.json').read_text())
+    # Enforce the input contract: Authoritative CSV changed during HPO.
     if sha(quality)!=identity['exclusions_csv_sha256']:raise ValueError('Authoritative CSV changed during HPO')
     counts=[];checks=[];selected_rows=[];published=[];swap_scores=[]
     metrics=pd.read_csv(root/'csv/all_trial_metrics.csv')
     families=pd.read_csv(root/'csv/family_selections.csv')
     prepared=config_path(config,section['prepared_source_root'])
     farms=load_metadata(config_path(config,config['inputs']['metadata_parquet']),section['farm_ids'])
+    # Apply apply episode exclusions for `regime` from `section['input_regimes']`.
     for regime in section['input_regimes']:
+        # Apply apply episode exclusions for `farm` from `section['farm_ids']`.
         for farm in section['farm_ids']:
             folder=root/regime/f'farm_{farm}'
             source=prepared/regime/f'farm_{farm}'
             frame=pd.read_parquet(source/'parquet/corpus.parquet')
             marked=apply_episode_exclusions(frame,config,farm_id=farm)
+            # Enforce the input contract: An excluded feature/target instance survived HPO.
             if marked.episode_excluded.any():raise ValueError('An excluded feature/target instance survived HPO')
             packed=np.load(source/'cache/packed_core.npz')
             ix=packed['indices'][packed['indices']>=0]
             assert len(ix)==len(frame) and len(np.unique(ix))==len(frame)
             checks.append({'farm_id':farm,'regime':regime,'modeling_rows':len(frame),
                 'excluded_instances_retained':0,'neural_instances':len(ix)})
+            # Process each `(family, part)` in this collection.
             for family,part in metrics.loc[metrics.regime.eq(regime)&metrics.farm_id.eq(farm)
                     &metrics.split.eq('validation')&metrics.coverage.eq('observed_only')].groupby('family'):
                 count=part.model.nunique()
+                # Enforce the input contract: `farm`/`regime`/`family` has fewer than sixteen trials.
                 if family not in {'ols','pvlib_scale'} and count<section['trials_per_family']:
                     raise ValueError(f'{farm}/{regime}/{family} has fewer than sixteen trials')
                 counts.append({'farm_id':farm,'regime':regime,'family':family,'trials':count})
             selection=json.loads((folder/'json/selected.json').read_text())
+            # Process each `record` in this collection.
             for record in families.loc[families.farm_id.eq(farm)&families.regime.eq(regime)].itertuples():
                 bundle=folder/'bundles'/record.family
                 path=bundle/('physical_parameters.json' if record.family.startswith('pvlib_') else 'manifest.json')
@@ -69,13 +77,16 @@ def run(config):
                 content['farm_metadata']=asdict(farms[farm])
                 write(path,content)
             row={'farm_id':farm,'regime':regime,'family':selection['family'],'model':selection['model']}
+            # Check the sole CSV policy, freeze model provenance and copy operational winners for each `split` in `['train', 'validation', 'test']`.
             for split in ['train','validation','test']:
                 value=metrics.loc[metrics.farm_id.eq(farm)&metrics.regime.eq(regime)
                     &metrics.model.eq(selection['model'])&metrics.split.eq(split)&metrics.coverage.eq('observed_only')].iloc[0]
+                # Process each `metric` in this collection.
                 for metric in ['nrmse_percent','nmae_percent','bias_percent','rmse_mw','mae_mw',
                         'absolute_error_min_percent','absolute_error_max_percent']:
                     row[f'{split}_{metric}']=value[metric]
             selected_rows.append(row)
+            # When `regime == 'forecast'`, set `destination` using `root / 'selected_models' / f'farm_{farm}'`.
             if regime=='forecast':
                 destination=root/'selected_models'/f'farm_{farm}'
                 destination.mkdir(parents=True,exist_ok=True)
@@ -88,7 +99,9 @@ def run(config):
                 # Isolate input replacement without changing the selected model's fitted parameters.
                 satellite=pd.read_parquet(prepared/'satellite'/f'farm_{farm}/parquet/corpus.parquet')
                 keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
+                # Enforce the input contract: Input-swap populations differ.
                 if not frame[keys].equals(satellite[keys]):raise ValueError('Input-swap populations differ')
+                # When `selection['family'].startswith('pvlib_')`, set `physical` using `json.loads((destination / 'physical_parameters.json').read_text())`.
                 if selection['family'].startswith('pvlib_'):
                     physical=json.loads((destination/'physical_parameters.json').read_text())
                     metadata=load_metadata(config_path(config,config['inputs']['metadata_parquet']),[farm])[farm]
@@ -98,6 +111,7 @@ def run(config):
                     swapped=predict_bundle(satellite,destination,farm_id=farm)
                 np.save(folder/'arrays/selected_forecast_model_satellite_input.npy',swapped)
                 rating=config['farms'][str(farm)]['ac_capacity_kw']/1000
+                # Apply score for `split` from `['train', 'validation', 'test']`.
                 for split in ['train','validation','test']:
                     mask=(frame.eligible&frame.daylight&frame.split.eq(split)&~frame.satellite_ghi_interpolated).to_numpy()
                     swap_scores.append({'farm_id':farm,'model':selection['model'],'family':selection['family'],
@@ -118,6 +132,7 @@ def run(config):
     # Keep a compact review package beside the configurable study output.
     destination=root/'reports'
     destination.mkdir(parents=True,exist_ok=True)
+    # Process each `name` in this collection.
     for name in ['selected_model_summary.csv','completed_trials_by_family.csv','paired_forecast_vs_satellite.csv']:
         shutil.copy2(root/'csv'/name,destination/name)
     shutil.copy2(root/'json/acceptance_audit.json',destination/'acceptance_audit.json')
@@ -125,6 +140,7 @@ def run(config):
     return root
 
 
+# When `__name__ == '__main__'`, set `parser` using `argparse.ArgumentParser(description=__doc__)`.
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',required=True)

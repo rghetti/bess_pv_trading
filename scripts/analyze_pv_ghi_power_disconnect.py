@@ -41,11 +41,14 @@ def _crossfit(frame, rating, settings):
         [0.5,float(settings['model']['upper_quantile'])]}
     model_options={key:settings['model'][key] for key in
         ['max_iter','max_leaf_nodes','min_samples_leaf','learning_rate','l2_regularization']}
+    # Apply fit for `fold` from `[0, 1]`.
     for fold in [0,1]:
         train=eligible&(days!=fold)
         infer=valid&(days==fold)
+        # Enforce the input contract: Insufficient data for alternating-day reference fit.
         if train.sum()<100 or not infer.any():
             raise ValueError('Insufficient data for alternating-day reference fit')
+        # Apply fit for `quantile` from `prediction`.
         for quantile in prediction:
             model=HistGradientBoostingRegressor(loss='quantile',quantile=quantile,
                 random_state=int(settings['model']['seed']),**model_options)
@@ -59,13 +62,16 @@ def _episodes(frame, active, *, farm, kind, minimum, interval_minutes):
     times=pd.DatetimeIndex(frame.interval_start_utc)
     days=frame.delivery_day.to_numpy()
     selected=np.flatnonzero(active)
+    # Return `[]` when `not len(selected)`.
     if not len(selected):return []
     boundaries=np.flatnonzero((np.diff(selected)!=1)
         | ((times[selected[1:]]-times[selected[:-1]])!=pd.Timedelta(minutes=interval_minutes))
         | (days[selected[1:]]!=days[selected[:-1]]))+1
     groups=np.split(selected,boundaries)
     rows=[]
+    # Summarize uninterrupted physical quarters within one local delivery day for each `positions` in `groups`.
     for positions in groups:
+        # Skip the current item when `len(positions) < minimum`.
         if len(positions)<minimum:continue
         group=frame.iloc[positions]
         reference=group.reference_median_mw.to_numpy()
@@ -111,6 +117,7 @@ def _plot_day(frame, episode, *, farm, rating, output, timezone):
     bottom.plot(local,day.satellite_ghi_w_m2,color='black',label='Satellite GHI')
     bottom.plot(local,day.forecast_ghi,color='tab:orange',label='Forecast GHI (auction mean)')
     bottom.set(ylabel='GHI (W/m²)',xlabel=f'Delivery time, {timezone}')
+    # Show metered power, GHI-conditioned references, and weather evidence for each `axis` in `(top, bottom)`.
     for axis in (top,bottom):
         axis.axvspan(start,end,color='tab:red',alpha=0.13)
         axis.grid(alpha=0.2)
@@ -145,10 +152,12 @@ def _plot_matched_months(monthly, path):
     farms=monthly.farm_id.unique()
     fig,axes=plt.subplots(len(farms),1,figsize=(11,2.7*len(farms)),sharex=True,
         layout='constrained')
+    # Show same-weather monthly AC fractions without claiming a cause for each `(farm, axis)` in `zip(farms, np.atleast_1d(axes))`.
     for farm,axis in zip(farms,np.atleast_1d(axes)):
         subset=monthly.loc[monthly.farm_id.eq(farm)].copy()
         subset['year']=subset.month.str[:4]
         subset['calendar_month']=subset.month.str[5:7].astype(int)
+        # Show same-weather monthly AC fractions without claiming a cause for each `(year, group)` in `subset.groupby('year')`.
         for year,group in subset.groupby('year'):
             axis.plot(group.calendar_month,group.median_ac_fraction_of_rating,
                 marker='o',label=year)
@@ -173,9 +182,11 @@ def run(config):
     (output/'csv').mkdir(exist_ok=True)
     (output/'json/resolved_config.json').write_text(json.dumps(config,indent=2,default=str)+'\n')
     all_episodes=[];summaries=[];sensitivity=[];monthly_tables=[];fingerprints={}
+    # Write the corresponding artifacts for `farm` from `settings['farm_ids']`.
     for farm in settings['farm_ids']:
         source_file=source/f'farm_{farm}/parquet/physical_quarters.parquet'
         frame=pd.read_parquet(source_file).sort_values('interval_start_utc').reset_index(drop=True)
+        # Enforce the input contract: Farm `farm` physical-quarter source contains duplicate timestamps.
         if frame.interval_start_utc.duplicated().any():
             raise ValueError(f'Farm {farm} physical-quarter source contains duplicate timestamps')
         rating=config['farms'][str(farm)]['ac_capacity_kw']/1000
@@ -185,12 +196,14 @@ def run(config):
             settings['neural_prediction_column'],settings['pvlib_prediction_column']]
         predictions=pd.read_parquet(prediction_file,columns=prediction_columns)
         grouped=predictions.groupby('interval_start_utc',sort=True)
+        # Enforce the input contract: Farm `farm` auction views disagree on measured AC.
         if (grouped.measured_ac_mw.nunique(dropna=False)>1).any():
             raise ValueError(f'Farm {farm} auction views disagree on measured AC')
         compact=grouped.agg(measured_ac_check=('measured_ac_mw','first'),
             neural_forecast_mw=(settings['neural_prediction_column'],'mean'),
             pvlib_forecast_mw=(settings['pvlib_prediction_column'],'mean')).reset_index()
         frame=frame.merge(compact,on='interval_start_utc',how='left',validate='one_to_one')
+        # Enforce the input contract: Farm `farm` physical quarters do not align with forecast outputs.
         if (not np.allclose(frame.measured_ac_mw,frame.measured_ac_check,equal_nan=True)
                 or frame[['neural_forecast_mw','pvlib_forecast_mw']].isna().any().any()):
             raise ValueError(f'Farm {farm} physical quarters do not align with forecast outputs')
@@ -213,22 +226,28 @@ def run(config):
         episodes+=_episodes(frame,high,farm=farm,kind='high_power',minimum=minimum,interval_minutes=interval)
         all_episodes.extend(episodes)
         folder=output/f'farm_{farm}'
+        # Scan the frozen physical-quarter snapshots and save auditable candidates for each `name` in `['csv', 'parquet', 'plots']`.
         for name in ['csv','parquet','plots']:(folder/name).mkdir(parents=True,exist_ok=True)
         frame.to_parquet(folder/'parquet/physical_reference.parquet',index=False)
         pd.DataFrame(episodes).to_csv(folder/'csv/candidate_episodes.csv',index=False)
+        # Process each `(number, episode)` in this collection.
         for number,episode in enumerate(sorted(episodes,key=lambda row:row['indicative_gap_mwh'],reverse=True)[:settings['plot_top_per_farm']]):
             _plot_day(frame,episode,farm=farm,rating=rating,
                 output=folder/'plots'/f"{number+1:02d}_{episode['kind']}_{episode['delivery_day']}.png",
                 timezone=settings['timezone'])
         focus_days=settings['focus_days_by_farm'].get(str(farm),
             settings['focus_days_by_farm'].get(farm,[]))
+        # Scan the frozen physical-quarter snapshots and save auditable candidates for each `day` in `focus_days`.
         for day in focus_days:
             candidates=[episode for episode in episodes if episode['delivery_day']==day]
+            # When `candidates`, set `selected` using `max(candidates, key=lambda row: row['indicative_gap_mwh'])`.
             if candidates:
                 selected=max(candidates,key=lambda row:row['indicative_gap_mwh'])
                 _plot_day(frame,selected,farm=farm,rating=rating,
                     output=folder/'plots'/f'focus_{day}.png',timezone=settings['timezone'])
+        # Scan the frozen physical-quarter snapshots and save auditable candidates for each `ratio` in `settings['ratio_sensitivity']`.
         for ratio in settings['ratio_sensitivity']:
+            # Scan the frozen physical-quarter snapshots and save auditable candidates for each `duration` in `settings['duration_sensitivity_intervals']`.
             for duration in settings['duration_sensitivity_intervals']:
                 selected=base&(actual<=median*ratio)&((median-actual)>=rating*settings['gap_min_fraction_of_rating'])
                 rows=_episodes(frame,selected,farm=farm,kind='low_power',minimum=duration,interval_minutes=interval)
@@ -245,6 +264,7 @@ def run(config):
         summaries.append(summary)
         print(summary,flush=True)
     table=pd.DataFrame(all_episodes)
+    # When `not table.empty`, set `table` using `table.sort_values('indicative_gap_mwh', ascending=False)`.
     if not table.empty:
         table=table.sort_values('indicative_gap_mwh',ascending=False)
         local_days=pd.to_datetime(table.delivery_day).dt.tz_localize(settings['timezone'])
@@ -259,6 +279,7 @@ def run(config):
         starts=pd.to_datetime(table.start_utc,utc=True)
         ends=pd.to_datetime(table.end_utc,utc=True)
         overlap=[]
+        # Scan the frozen physical-quarter snapshots and save auditable candidates for each `(index, row)` in `table.iterrows()`.
         for index,row in table.iterrows():
             other=(table.kind.eq('low_power')&table.farm_id.ne(row.farm_id)
                 & table.delivery_day.eq(row.delivery_day)
@@ -287,6 +308,7 @@ def run(config):
     return output
 
 
+# When `__name__ == '__main__'`, set `parser` using `argparse.ArgumentParser(description=__doc__)`.
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',required=True)

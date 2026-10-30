@@ -30,12 +30,16 @@ from bess_pv_trading.reporting.artifacts import prepare_experiment_output
 def episodes(frame,mask,reason,minimum):
     """Summarize contiguous candidate quarters separately by day and forecast vintage."""
     rows=[]
+    # Summarize contiguous candidate quarters separately by day and forecast vintage for each `((_, auction), positions)` in `frame.groupby(['delivery_day', 'auction'], sort=False).indices.items()`.
     for (_,auction),positions in frame.groupby(['delivery_day','auction'],sort=False).indices.items():
         selected=np.asarray(positions)[np.asarray(mask)[positions]]
+        # Skip the current item when `not len(selected)`.
         if not len(selected):continue
         times=pd.DatetimeIndex(frame.iloc[selected].interval_start_utc)
         cuts=np.flatnonzero(np.diff(times.as_unit('ns').asi8)!=pd.Timedelta(minutes=15).value)+1
+        # Summarize contiguous candidate quarters separately by day and forecast vintage for each `group` in `np.split(selected, cuts)`.
         for group in np.split(selected,cuts):
+            # Skip the current item when `len(group) < minimum`.
             if len(group)<minimum:continue
             p=frame.iloc[group]
             rows.append({'farm_id':int(frame.attrs['farm_id']),'reason':reason,'status':'review_candidate_only',
@@ -59,6 +63,7 @@ def plot_profile(frame,raw,profile,folder,rating,config,pre,feature_columns):
     utc=grid.tz_convert('UTC');s=sample.set_index('interval_start_utc').reindex(utc)
     r=raw.reindex(utc);base=folder/'plots'/f'{day}_{auction}'
     fig,axes=plt.subplots(3,1,figsize=(13,9),sharex=True,layout='constrained')
+    # Compare one exact forecast vintage with raw evidence, plus all weather-input changes for each `axis` in `axes[:2]`.
     for axis in axes[:2]:
         axis.plot(grid,r.measured_ac_mw,color='black',label='Measured AC (raw review context)')
         axis.axhline(rating,color='gray',linestyle=':',label='AC rating')
@@ -75,6 +80,7 @@ def plot_profile(frame,raw,profile,folder,rating,config,pre,feature_columns):
     axes[2].scatter(grid[filled],s.loc[filled,'satellite_ghi_input_w_m2'],color='purple',s=12,label='Interpolated GHI')
     axes[2].set(ylabel='GHI W/m²',xlabel=config['pv_neural']['delivery_timezone'])
     excluded=r.episode_excluded.fillna(False).to_numpy(dtype=bool)
+    # Compare one exact forecast vintage with raw evidence, plus all weather-input changes for each `axis` in `axes`.
     for axis in axes:
         axis.fill_between(grid,0,1,where=excluded,transform=axis.get_xaxis_transform(),color='gray',alpha=.12,
             label='CSV-excluded: context only, no predictions or scoring')
@@ -106,6 +112,7 @@ def farm_job(config,farm,root):
     data=config_path(config,config['pv_timing_ablation']['data_root'])
     frame=pd.read_parquet(data/f'farm_{farm}/parquet/corpus.parquet')
     published=config_path(config,section['models_root'])/f'farm_{farm}'/section['model_folder']
+    # When `(published / 'selection.json').exists()`, set `selection` using `json.loads((published / 'selection.json').read_text())`.
     if (published/'selection.json').exists():
         selection=json.loads((published/'selection.json').read_text())
         row=pd.Series({'family':selection['primary_family'],'model':selection['model']})
@@ -115,6 +122,7 @@ def farm_job(config,farm,root):
     else:
         saved=pd.read_parquet(study/f'farm_{farm}/parquet/predictions.parquet')
         keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
+        # Enforce the input contract: Diagnostic instance population changed.
         if not frame[keys].equals(saved[keys]):raise ValueError('Diagnostic instance population changed')
         table=pd.read_csv(study/'csv/paired_and_tuned_comparison.csv')
         row=table.loc[table.farm_id.eq(farm)&table.split.eq('validation')&table.variant.eq('tuned_timing')].sort_values('nrmse_percent').iloc[0]
@@ -141,13 +149,17 @@ def farm_job(config,farm,root):
         'italian_national_holiday','lead_hours','cycle_hour_sin','cycle_hour_cos']
     weather=[name for name in features if name not in deterministic]
     frame['weather_delta_sigma']=np.nan;frame['ac_delta_percent']=np.nan;frame['ghi_delta']=np.nan
+    # Diagnose fixed model predictions and observed-GHI substitutions without fitting for each `name` in `weather`.
     for name in weather:frame[f'delta_{name}']=np.nan
+    # Diagnose fixed model predictions and observed-GHI substitutions without fitting for each `(_, positions)` in `frame.groupby(['delivery_day', 'auction'], sort=False).indices.items()`.
     for _,positions in frame.groupby(['delivery_day','auction'],sort=False).indices.items():
         positions=np.asarray(positions);times=pd.DatetimeIndex(frame.iloc[positions].interval_start_utc)
         adjacent=np.r_[False,np.diff(times.as_unit('ns').asi8)==pd.Timedelta(minutes=15).value]
         changes=np.diff(transformed[positions],axis=0,prepend=np.full((1,transformed.shape[1]),np.nan))
+        # Diagnose fixed model predictions and observed-GHI substitutions without fitting for each `name` in `weather`.
         for name in weather:frame.loc[positions,f'delta_{name}']=np.where(adjacent,changes[:,features.columns.get_loc(name)],np.nan)
         frame.loc[positions,'weather_delta_sigma']=np.max(np.abs(changes[:,[features.columns.get_loc(n) for n in weather]]),axis=1)
+        # Process each `(source, target, scale)` in this collection.
         for source,target,scale in [('measured_ac_mw','ac_delta_percent',100/rating),('satellite_ghi_input_w_m2','ghi_delta',1)]:
             value=frame.iloc[positions][source].to_numpy();difference=np.diff(value,prepend=np.nan)*scale
             frame.loc[positions,target]=np.where(adjacent,difference,np.nan)
@@ -165,9 +177,11 @@ def farm_job(config,farm,root):
     profiles=[];contributions=[]
     frame['score_eligible']=frame.eligible&frame.daylight&~frame.satellite_ghi_interpolated
     frame['squared_error']=(frame.neural_mw-frame.measured_ac_mw)**2/rating**2
+    # Diagnose fixed model predictions and observed-GHI substitutions without fitting for each `split` in `section['splits']`.
     for split in section['splits']:
         part=frame.loc[frame.score_eligible&frame.split.eq(split)].copy()
         weights=balanced_weights(part);error=part.squared_error.to_numpy();total=float(weights@error)
+        # Process each `(label, mask)` in this collection.
         for label,mask in [('ghi_disagreement',part.ghi_error.abs().ge(threshold)),
             ('ghi_agreement',part.ghi_error.abs().lt(threshold)),('stable_weather_jump',part.stable_weather_jump_candidate),
             ('low_power_candidate',part.low_power_candidate)]:
@@ -177,6 +191,7 @@ def farm_job(config,farm,root):
                 'weighted_squared_error_share':float(weights@(error*mask)/total),
                 'overall_nrmse_percent':float(np.sqrt(total)*100)})
         part['weighted_squared_error']=weights*error
+        # Diagnose fixed model predictions and observed-GHI substitutions without fitting for each `((day, auction), group)` in `part.groupby(['delivery_day', 'auction'])`.
         for (day,auction),group in part.groupby(['delivery_day','auction']):
             err=group.neural_mw-group.measured_ac_mw;oracle=group.neural_satellite_mw-group.measured_ac_mw
             profiles.append({'farm_id':farm,'split':split,'delivery_day':day,'auction':auction,
@@ -189,6 +204,7 @@ def farm_job(config,farm,root):
                 'stable_weather_jump_quarters':int(group.stable_weather_jump_candidate.sum()),
                 'low_power_candidate_quarters':int(group.low_power_candidate.sum())})
     folder=root/f'farm_{farm}'
+    # Diagnose fixed model predictions and observed-GHI substitutions without fitting for each `sub` in `['csv', 'json', 'plots', 'parquet']`.
     for sub in ['csv','json','plots','parquet']:(folder/sub).mkdir(parents=True,exist_ok=True)
     ranking=pd.DataFrame(profiles).sort_values('nrmse_percent',ascending=False)
     ranking.to_csv(folder/'csv/profile_ranking.csv',index=False)
@@ -200,17 +216,23 @@ def farm_job(config,farm,root):
         'satellite_ghi_w_m2':history.ghi.values,'eligible':True})
     raw=apply_episode_exclusions(raw,config,farm_id=farm).set_index('interval_start_utc')
     chosen=[]
+    # Diagnose fixed model predictions and observed-GHI substitutions without fitting for each `item` in `section['focus_profiles_by_farm'].get(str(farm), [])`.
     for item in section['focus_profiles_by_farm'].get(str(farm),[]):
         chosen+=ranking.loc[ranking.delivery_day.eq(item['delivery_day'])&ranking.auction.eq(item['auction'])].to_dict('records')
+    # Diagnose fixed model predictions and observed-GHI substitutions without fitting for each `split` in `section['splits']`.
     for split in section['splits']:
         part=ranking.loc[ranking.split.eq(split)]
         chosen+=part.drop_duplicates('delivery_day').head(section['worst_profiles_per_split']).to_dict('records')
+    # Process each `item` in this collection.
     for item in sorted(candidate,key=lambda r:r['max_ac_jump_percent'],reverse=True)[:section['candidate_plots_per_farm']]:
         match=ranking.loc[ranking.delivery_day.eq(item['delivery_day'])&ranking.auction.eq(item['auction'])]
+        # When `len(match)`, set `chosen` using `match.head(1).to_dict('records')`.
         if len(match):chosen+=match.head(1).to_dict('records')
     seen=set()
+    # Diagnose fixed model predictions and observed-GHI substitutions without fitting for each `profile` in `chosen`.
     for profile in chosen:
         key=(profile['delivery_day'],profile['auction'])
+        # Skip the current item when `key in seen`.
         if key in seen:continue
         seen.add(key);plot_profile(frame,raw,profile,folder,rating,config,manifest['preprocessor'],weather)
     write(folder/'json/provenance.json',{'family':row.family,'model':row.model,'bundle_manifest_sha256':sha(bundle/'manifest.json'),
@@ -224,6 +246,7 @@ def farm_job(config,farm,root):
 def run(config):
     """Run four independent post-fit diagnostic audits using local data only."""
     section=config['pv_retrained_error_diagnostics'];root=config_path(config,section['output_root'])/section['run_id']
+    # Return `render_cached_profiles(config, root)` when `section['plots_only']`.
     if section['plots_only']:
         return render_cached_profiles(config,root)
     prepare_experiment_output(config_path(config,section['output_root']),root,overwrite=config['experiment_outputs']['overwrite_existing'])
@@ -231,8 +254,10 @@ def run(config):
     results=[]
     with ProcessPoolExecutor(max_workers=section['workers'],mp_context=multiprocessing.get_context('spawn')) as pool:
         futures=[pool.submit(farm_job,config,farm,root) for farm in section['farm_ids']]
+        # Run four independent post-fit diagnostic audits using local data only for each `future` in `as_completed(futures)`.
         for future in as_completed(futures):results.append(future.result())
     (root/'csv').mkdir(exist_ok=True)
+    # Write the corresponding artifacts for `(index, name)` from `enumerate(['profile_ranking', 'error_contributions', 'review_candidates'])`.
     for index,name in enumerate(['profile_ranking','error_contributions','review_candidates']):
         pd.DataFrame([row for result in results for row in result[index]]).to_csv(root/'csv'/f'{name}.csv',index=False)
     write(root/'json/manifest.json',{'status':'complete','purpose':'Post-fit evidence, not exclusion or fault classification',
@@ -244,9 +269,12 @@ def run(config):
 def render_cached_profiles(config,root,worst_days=0):
     """Render requested profile cases from cached diagnostics without rerunning inference."""
     section=config['pv_retrained_error_diagnostics']
+    # Enforce the input contract: A completed diagnostic run is required.
     if not (root/'json/manifest.json').exists():raise ValueError('A completed diagnostic run is required')
+    # Apply apply episode exclusions for `farm` from `section['farm_ids']`.
     for farm in section['farm_ids']:
         cases=list(section['focus_profiles_by_farm'].get(str(farm),[]))
+        # Skip the current item when `not cases and (not worst_days)`.
         if not cases and not worst_days:continue
         folder=root/f'farm_{farm}';frame=pd.read_parquet(folder/'parquet/diagnostic_instances.parquet')
         provenance=json.loads((folder/'json/provenance.json').read_text())
@@ -259,6 +287,7 @@ def render_cached_profiles(config,root,worst_days=0):
             'satellite_ghi_w_m2':history.ghi.values,'eligible':True})
         raw=apply_episode_exclusions(raw,config,farm_id=farm).set_index('interval_start_utc')
         ranking=pd.read_csv(folder/'csv/profile_ranking.csv')
+        # When `worst_days`, set `test` using `ranking.loc[ranking.split.eq('test')].copy()`.
         if worst_days:
             test=ranking.loc[ranking.split.eq('test')].copy()
             daily=test.groupby('delivery_day').nrmse_percent.apply(
@@ -266,6 +295,7 @@ def render_cached_profiles(config,root,worst_days=0):
             ).rename('mean_auction_view_nrmse_percent').sort_values(ascending=False)
             chosen=daily.head(worst_days)
             selected_rows=[]
+            # Render requested profile cases from cached diagnostics without rerunning inference for each `(day, score)` in `chosen.items()`.
             for day,score in chosen.items():
                 profile=test.loc[test.delivery_day.eq(day)].sort_values('nrmse_percent',ascending=False).iloc[0]
                 selected_rows.append({'farm_id':farm,'delivery_day':day,
@@ -277,21 +307,27 @@ def render_cached_profiles(config,root,worst_days=0):
             pd.DataFrame(selected_rows).to_csv(folder/'csv/worst_test_days.csv',index=False)
         weather=[name.removeprefix('delta_') for name in frame if name.startswith('delta_')]
         rating=config['farms'][str(farm)]['ac_capacity_kw']/1000
+        # Render requested profile cases from cached diagnostics without rerunning inference for each `case` in `cases`.
         for case in cases:
             selected=ranking.loc[ranking.delivery_day.eq(case['delivery_day'])&ranking.auction.eq(case['auction'])]
+            # Enforce the input contract: No retained profile for `farm`: `case`.
             if selected.empty:raise ValueError(f'No retained profile for {farm}: {case}')
             plot_profile(frame,raw,selected.iloc[0].to_dict(),folder,rating,config,model['preprocessor'],weather)
         print(f'Farm {farm}: rendered {len(cases)} focused profile/feature plot pairs',flush=True)
 
 
+# When `__name__ == '__main__'`, set `parser` using `argparse.ArgumentParser(description=__doc__)`.
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--config',required=True)
     parser.add_argument('--plots-only',action='store_true')
     parser.add_argument('--worst-days',type=int,default=0,
         help='Additionally plot this many worst distinct held-out days per farm, selecting each day\'s worst auction view.')
     args=parser.parse_args();config=load_config(args.config)
+    # When `args.plots_only`, set `config['pv_retrained_error_diagnostics']['plots_only']` using `True`.
     if args.plots_only:config['pv_retrained_error_diagnostics']['plots_only']=True
+    # Process this part of the workflow when `args.worst_days < 0`.
     if args.worst_days < 0: parser.error('--worst-days must be nonnegative')
+    # When `config['pv_retrained_error_diagnostics']['plots_only']`, set `section` using `config['pv_retrained_error_diagnostics']`.
     if config['pv_retrained_error_diagnostics']['plots_only']:
         section=config['pv_retrained_error_diagnostics']
         root=config_path(config,section['output_root'])/section['run_id']

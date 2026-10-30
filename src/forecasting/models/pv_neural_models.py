@@ -48,11 +48,14 @@ class PVNetwork(nn.Module):
         self.month_embedding = nn.Embedding(12, month_dim)
         self.auction_embedding = nn.Embedding(4, auction_dim) if auction_dim else None
         self.stem = nn.Sequential(nn.Linear(input_features+month_dim+auction_dim, width), nn.GELU())
+        # Update `self.body` when this condition is met.
         if self.architecture == "mlp":
             self.body = nn.Sequential(*[layer for _ in range(depth-1) for layer in
                 (nn.Linear(width, width), nn.GELU(), nn.Dropout(dropout))])
+        # When `self.architecture == 'residual'`, set `self.body` using `nn.Sequential(*[ResidualBlock(width, dropout) for _ in range(depth)])`.
         elif self.architecture == "residual":
             self.body = nn.Sequential(*[ResidualBlock(width, dropout) for _ in range(depth)])
+        # Update `self.body` when this condition is met.
         elif self.architecture == "tcn":
             self.body = nn.Sequential(*[TemporalBlock(width, candidate["kernel_size"], 2**i, dropout)
                                         for i in range(depth)])
@@ -62,10 +65,12 @@ class PVNetwork(nn.Module):
 
     def forward(self, x, month, auction, daylight):
         parts = [x, self.month_embedding(month)]
+        # Perform forward when `self.auction_embedding is not None`.
         if self.auction_embedding is not None:
             parts.append(self.auction_embedding(auction))
         embedded = torch.cat(parts, dim=-1)
         hidden = self.stem(embedded)
+        # When `self.architecture == 'tcn'`, set `hidden` using `self.body(hidden.transpose(1, 2)).transpose(1, 2)`.
         if self.architecture == "tcn":
             hidden = self.body(hidden.transpose(1, 2)).transpose(1, 2)
         else:

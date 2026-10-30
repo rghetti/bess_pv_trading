@@ -14,6 +14,7 @@ from ...data import FarmMetadata, night_window_mask
 
 def source_azimuth(angle, positive_direction):
     """Translate the declared south-zero source orientation to pvlib degrees."""
+    # Enforce the input contract: Source azimuth positive direction must be explicitly east or west.
     if positive_direction not in {"east", "west"}:
         raise ValueError("Source azimuth positive direction must be explicitly east or west")
     return (180 + (-1 if positive_direction == "east" else 1) * np.asarray(angle)) % 360
@@ -24,6 +25,7 @@ def parameter_defaults(settings: dict) -> dict[str, float]:
     output = settings["output"]
     coefficient = (output.get("calibrated_coefficient") if output["method"] == "calibrated_scale"
                    else output["pv_output_efficiency"])
+    # When `coefficient is None`, set `coefficient` using `output['pv_output_efficiency']`.
     if coefficient is None:
         coefficient = output["pv_output_efficiency"]
     return {"coefficient": float(coefficient), "u0": float(settings["temperature"]["u0"]),
@@ -39,8 +41,10 @@ def parameter_settings(settings: dict, parameters: dict, *, transposition=None, 
     result["output"].update(method="calibrated_scale", calibrated_coefficient=parameters["coefficient"])
     result["temperature"].update({key: parameters[key] for key in ("u0", "u1") if key in parameters})
     result["tracker"].update({key: parameters[key] for key in ("gcr", "max_angle") if key in parameters})
+    # When `transposition is not None`, set `result['transposition_model']` using `transposition`.
     if transposition is not None:
         result["transposition_model"] = transposition
+    # When `bifacial is not None`, set `result.setdefault('bifacial', {})['enabled']` using `bifacial`.
     if bifacial is not None:
         result.setdefault("bifacial", {})["enabled"] = bifacial
     return result
@@ -71,6 +75,7 @@ class PhysicalPVModel:
         self.airmass = np.asarray(pvlib.atmosphere.get_relative_airmass(self.zenith))
         limit = settings["output"].get("ac_limit_mw")
         self.ac_limit = min(float(limit), farm.ac_capacity_mw) if limit is not None else farm.ac_capacity_mw
+        # Enforce the input contract: Configured AC limit must be positive.
         if self.ac_limit <= 0:
             raise ValueError("Configured AC limit must be positive")
         self._irradiance_cache: OrderedDict = OrderedDict()
@@ -81,22 +86,29 @@ class PhysicalPVModel:
         tracker = settings["tracker"]
         rear = settings.get("bifacial", {})
         bifacial = bool(rear.get("enabled", False))
+        # Enforce the input contract: Explicit bifacial irradiance requires tracking_type_id 3.
         if bifacial and farm.tracking_type_id != 3:
             raise ValueError("Explicit bifacial irradiance requires tracking_type_id 3")
         model = settings.get("transposition_model", "isotropic")
+        # Enforce the input contract: Unsupported PV transposition model.
         if model not in {"isotropic", "haydavies", "perez-driesse"}:
             raise ValueError("Unsupported PV transposition model")
         key = (parameters["gcr"], parameters["max_angle"], model, bifacial,
                rear.get("bifaciality"), rear.get("height_to_pitch_ratio"), settings.get("albedo"))
+        # Return `self._irradiance_cache[key]` when `key in self._irradiance_cache`.
         if key in self._irradiance_cache:
             return self._irradiance_cache[key]
+        # When `farm.tracking_type_id == 0`, set `tilt` using `np.full(len(self.ghi), farm.surface_tilt_deg)`.
         if farm.tracking_type_id == 0:
             tilt = np.full(len(self.ghi), farm.surface_tilt_deg)
             azimuth = np.full(len(self.ghi), source_azimuth(farm.source_azimuth_deg,
                 settings.get("source_azimuth_positive", "unconfirmed")))
+        # Cache geometry-dependent POA across repeated scale/thermal evaluations when `farm.tracking_type_id in {1, 3}`.
         elif farm.tracking_type_id in {1, 3}:
+            # Enforce the input contract: Unresolved tracker axis geometry requires acknowledged configured assumptions.
             if not tracker.get("assumptions_acknowledged", False):
                 raise ValueError("Unresolved tracker axis geometry requires acknowledged configured assumptions")
+            # Enforce the input contract: Bifacial farm requires explicit front-side-only approximation or rear-side modeling.
             if farm.tracking_type_id == 3 and not bifacial and not settings.get("bifacial_front_side_only_enabled", False):
                 raise ValueError("Bifacial farm requires explicit front-side-only approximation or rear-side modeling")
             orientation = pvlib.tracking.singleaxis(self.zenith, self.azimuth,
@@ -106,13 +118,17 @@ class PhysicalPVModel:
             azimuth = np.where(self.zenith >= 90, float(tracker["axis_azimuth"]), np.asarray(orientation["surface_azimuth"]))
         else:
             raise ValueError(f"Unsupported tracking ID {farm.tracking_type_id}")
+        # Cache geometry-dependent POA across repeated scale/thermal evaluations when `bifacial`.
         if bifacial:
+            # Enforce the input contract: Infinite-sheds irradiance supports isotropic or haydavies.
             if model not in {"isotropic", "haydavies"}:
                 raise ValueError("Infinite-sheds irradiance supports isotropic or haydavies")
             height_ratio = float(rear["height_to_pitch_ratio"])
+            # Enforce the input contract: Bifacial row geometry would intersect the ground.
             if height_ratio <= parameters["gcr"] * np.sin(np.radians(parameters["max_angle"])) / 2:
                 raise ValueError("Bifacial row geometry would intersect the ground")
             bifaciality = float(rear["bifaciality"])
+            # Enforce the input contract: Bifaciality must be between zero and one.
             if not 0 <= bifaciality <= 1:
                 raise ValueError("Bifaciality must be between zero and one")
             irradiance = pvlib.bifacial.infinite_sheds.get_irradiance(tilt, azimuth,
@@ -135,6 +151,7 @@ class PhysicalPVModel:
         dark = (self.ghi == 0) & (self.dni == 0) & (self.dhi == 0)
         result = tuple(np.where(dark, 0, x) for x in (poa, thermal_poa, front, back)) + (tilt, azimuth)
         self._irradiance_cache[key] = result
+        # Cache geometry-dependent POA across repeated scale/thermal evaluations when `len(self._irradiance_cache) > 2`.
         if len(self._irradiance_cache) > 2:
             self._irradiance_cache.popitem(last=False)
         return result
@@ -144,16 +161,21 @@ class PhysicalPVModel:
         parameters = parameters or parameter_defaults(self.settings)
         settings = self.settings
         temperature, dc, output = settings["temperature"], settings["dc"], settings["output"]
+        # Enforce the input contract: PV requires the acknowledged Faiman temperature model.
         if temperature.get("model") != "faiman" or not temperature.get("wind_as_module_proxy_acknowledged"):
             raise ValueError("PV requires the acknowledged Faiman temperature model")
+        # Enforce the input contract: Only PVWatts DC is supported.
         if dc.get("model") != "pvwatts":
             raise ValueError("Only PVWatts DC is supported")
         reference = float(dc["reference_conversion_efficiency"])
         transformer = float(output["transformer_efficiency"])
+        # Enforce the input contract: PV DC reference conversion efficiency requires 0<eta<=1.
         if not 0 < reference <= 1:
             raise ValueError("PV DC reference conversion efficiency requires 0<eta<=1")
+        # Enforce the input contract: PV transformer efficiency requires 0<eta<=1 and assumption provenance.
         if not 0 < transformer <= 1 or not output.get("transformer_assumption_status"):
             raise ValueError("PV transformer efficiency requires 0<eta<=1 and assumption provenance")
+        # Enforce the input contract: Invalid PV scale or thermal parameters.
         if parameters["coefficient"] <= 0 or parameters["u0"] <= 0 or parameters["u1"] < 0:
             raise ValueError("Invalid PV scale or thermal parameters")
         poa, thermal, front, back, tilt, azimuth = self.irradiance(parameters)
@@ -167,6 +189,7 @@ class PhysicalPVModel:
         raw = modeled * parameters["coefficient"] * transformer
         before_mask = np.minimum(raw, self.ac_limit)
         ac = np.where(self.night & (before_mask > 0), 0, before_mask)
+        # Return `ac` when `not diagnostics`.
         if not diagnostics:
             return ac
         return {"surface_tilt_deg": tilt, "surface_azimuth_deg": azimuth,

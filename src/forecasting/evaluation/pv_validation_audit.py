@@ -19,6 +19,7 @@ def _score(frame,prediction,rating,mask):
     """Score the same finite daylight rows with equal day/auction-view weight."""
     part=frame.loc[mask]
     error=(prediction[mask]-part.measured_ac_mw.to_numpy())/rating
+    # Enforce the input contract: Nonfinite predictions on the common evaluation mask.
     if not np.isfinite(error).all():
         raise ValueError('Nonfinite predictions on the common evaluation mask')
     weights=balanced_weights(part)
@@ -61,6 +62,7 @@ def _plot_day(frame,prediction,*,farm,day,rating,timezone,path,
     from zoneinfo import ZoneInfo
     views=frame.loc[frame.delivery_day.eq(day)].copy()
     views['forecast_ac_mw']=np.asarray(prediction)[views.index]
+    # When `comparison_prediction is not None`, set `views['comparison_ac_mw']` using `np.asarray(comparison_prediction)[views.index]`.
     if comparison_prediction is not None:
         views['comparison_ac_mw']=np.asarray(comparison_prediction)[views.index]
     physical=views.groupby('interval_start_utc',sort=True).agg(
@@ -68,6 +70,7 @@ def _plot_day(frame,prediction,*,farm,day,rating,timezone,path,
         satellite_ghi_w_m2=('satellite_ghi_w_m2','first')).reset_index()
     boundary=(pd.Timestamp(day).tz_localize(timezone)+pd.DateOffset(days=1)).tz_convert('UTC')
     next_point=frame.loc[frame.interval_start_utc.eq(boundary)]
+    # Update `physical` when this condition is met.
     if not next_point.empty:
         physical=pd.concat([physical,pd.DataFrame([{
             'interval_start_utc':boundary,
@@ -77,6 +80,7 @@ def _plot_day(frame,prediction,*,farm,day,rating,timezone,path,
     figure,axes=plt.subplots(3 if comparison else 2,1,
         figsize=(13,11 if comparison else 8),sharex=True,layout='constrained')
     power_axes=axes[:2] if comparison else axes[:1]
+    # Compare AC predictors with measured power and weather with satellite GHI for each `axis` in `power_axes`.
     for axis in power_axes:
         axis.plot(physical.interval_start_utc,physical.measured_ac_mw,
             color='black',lw=2,label='Measured AC')
@@ -84,23 +88,29 @@ def _plot_day(frame,prediction,*,farm,day,rating,timezone,path,
         axis.set_ylabel('AC power (MW)')
     axes[-1].plot(physical.interval_start_utc,physical.satellite_ghi_w_m2,
         color='black',lw=2,label='Satellite GHI (diagnostic)')
+    # Compare AC predictors with measured power and weather with satellite GHI for each `(auction, curve)` in `views.groupby('auction')`.
     for auction,curve in views.groupby('auction'):
         axes[0].plot(curve.interval_start_utc,curve.forecast_ac_mw,lw=1,
             label=f'{auction} {forecast_label}')
+        # Compare AC predictors with measured power and weather with satellite GHI when `comparison`.
         if comparison:
             axes[1].plot(curve.interval_start_utc,curve.comparison_ac_mw,lw=1,
                 label=f'{auction} {comparison_label}')
         axes[-1].plot(curve.interval_start_utc,curve.forecast_ghi,lw=1,
             label=f'{auction} GHI forecast')
+    # Update `upper` when this condition is met.
     if comparison:
         upper=max(rating,physical.measured_ac_mw.max(),
             views.forecast_ac_mw.max(),views.comparison_ac_mw.max())
+        # Compare AC predictors with measured power and weather with satellite GHI for each `axis` in `power_axes`.
         for axis in power_axes:axis.set_ylim(-.03*upper,1.05*upper)
     axes[-1].set_ylabel('GHI (W/m²)')
     axes[-1].set_xlabel(f'Delivery time, {timezone}')
     axes[-1].xaxis.set_major_formatter(mdates.DateFormatter('%H:%M',tz=ZoneInfo(timezone)))
+    # Compare AC predictors with measured power and weather with satellite GHI for each `axis` in `axes`.
     for axis in axes:axis.grid(alpha=.2);axis.legend(ncol=3,fontsize=8)
     title=f'Farm {farm}, {day}: measured AC and {forecast_label.lower()}'
+    # When `comparison`, set `title` using `f' versus {comparison_label.lower()}'`.
     if comparison:title+=f' versus {comparison_label.lower()}'
     figure.suptitle(title)
     figure.savefig(path,dpi=150);plt.close(figure)
@@ -114,12 +124,14 @@ def run_validation_error_audit(config,progress=print):
         overwrite=config['experiment_outputs']['overwrite_existing'])
     (output/'resolved_config.yaml').write_text(yaml.safe_dump(config,sort_keys=False))
     summaries=[]
+    # Apply apply episode exclusions for `farm` from `section['farm_ids']`.
     for farm in section['farm_ids']:
         source_spec=section['farm_sources'][str(farm)]
         source=config_path(config,source_spec['root'])/f'farm_{farm}/parquet'
         corpus=source/'corpus.parquet';prior=source/source_spec['predictions_file']
         frame=pd.read_parquet(corpus);saved=pd.read_parquet(prior)
         keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
+        # Enforce the input contract: Audit source keys or raw AC differ.
         if not frame[keys].equals(saved[keys]):raise ValueError('Audit source keys or raw AC differ')
         prediction=saved[source_spec['prediction_column']].to_numpy(dtype=float)
         curated=apply_episode_exclusions(frame,config,farm_id=farm)
@@ -139,9 +151,11 @@ def run_validation_error_audit(config,progress=print):
             excluded_auction_views=('auction','size'),
             excluded_physical_quarters=('interval_start_utc','nunique'))
         daily=daily.join(counts,on='delivery_day')
+        # Audit the configured frozen predictors without refitting or editing raw data for each `name` in `['excluded_auction_views', 'excluded_physical_quarters']`.
         for name in ['excluded_auction_views','excluded_physical_quarters']:
             daily[name]=daily[name].fillna(0).astype(int)
         folder=output/f'farm_{farm}'
+        # Audit the configured frozen predictors without refitting or editing raw data for each `name` in `['csv', 'json', 'plots']`.
         for name in ['csv','json','plots']:(folder/name).mkdir(parents=True,exist_ok=True)
         daily.sort_values('delivery_day').to_csv(folder/'csv/daily_error.csv',index=False)
         summary={'farm_id':farm,'split':split,'prediction_column':source_spec['prediction_column'],
@@ -156,7 +170,9 @@ def run_validation_error_audit(config,progress=print):
                 for path in [corpus,prior]},
             'interpretation':'Outage mask changes evaluation population; scores are from unchanged frozen models.'}
         (folder/'json/summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+        # Audit the configured frozen predictors without refitting or editing raw data when `section['save_plots']`.
         if section['save_plots']:
+            # Audit the configured frozen predictors without refitting or editing raw data for each `day` in `dict.fromkeys(summary['top_days_before'] + summary['top_days_after'])`.
             for day in dict.fromkeys(summary['top_days_before']+summary['top_days_after']):
                 _plot_day(frame,prediction,farm=farm,day=day,rating=rating,
                     timezone=config['pv_neural']['delivery_timezone'],

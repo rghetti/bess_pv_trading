@@ -13,9 +13,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-dir', required=True, type=Path)
     args = parser.parse_args()
+    # Keep the original fit outputs intact and create a separate report for each `result` in `rearrange_existing(args.run_dir)`.
     for result in rearrange_existing(args.run_dir):
         print(result, flush=True)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

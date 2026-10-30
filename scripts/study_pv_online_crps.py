@@ -27,7 +27,9 @@ def main():
     source = load_config(config_path(config, settings['source_config']))
     root = config_path(config, settings['output_root']) / settings['run_id']
     workers = min(args.workers or settings['workers'], settings['workers'], 42)
+    # Enforce the input contract: workers must be positive.
     if workers < 1: raise ValueError('workers must be positive')
+    # Perform main when `args.plan_only`.
     if args.plan_only:
         print(json.dumps({'settings': settings, 'source': settings['source_config'],
                           'workers_max': workers, 'output': str(root),
@@ -43,28 +45,36 @@ def main():
                     'market': source['market'], 'source': source['source'], 'policy': source['policy'],
                     'code_sha256': code, 'validation_use': 'model selection; not an independent test'}
     manifest_path = root / 'study_manifest.json'
+    # Perform main when `manifest_path.exists()`.
     if manifest_path.exists():
+        # Enforce the input contract: Study configuration or code changed; use a new run ID.
         if json.loads(manifest_path.read_text()) != json.loads(json.dumps(run_manifest, default=str)):
             raise ValueError('Study configuration or code changed; use a new run ID')
     else:
         write_json(manifest_path, run_manifest)
+    # Perform main when `args.stage in ('prepare', 'all')`.
     if args.stage in ('prepare', 'all'):
         with ProcessPoolExecutor(max_workers=min(workers, len(settings['farms'])), mp_context=multiprocessing.get_context('fork')) as executor:
             futures = {executor.submit(prepare_farm, config, source, int(farm), root): farm for farm in settings['farms']}
+            # Perform main for each `future` in `as_completed(futures)`.
             for future in as_completed(futures):
                 print(f'Prepared farm {futures[future]}: {future.result()["rows"]} intervals', flush=True)
+    # Perform main when `args.stage in ('evaluate', 'all')`.
     if args.stage in ('evaluate', 'all'):
         from bess_pv_trading.forecasting.online.pv_online_crps_evaluate import evaluate_farm_auction
         jobs = [(int(farm), auction) for farm in settings['farms'] for auction in settings['auctions']]
         with ProcessPoolExecutor(max_workers=min(workers, len(jobs)), mp_context=multiprocessing.get_context('fork')) as executor:
             futures = {executor.submit(evaluate_farm_auction, config, source, farm, auction, root): (farm, auction)
                        for farm, auction in jobs}
+            # Perform main for each `future` in `as_completed(futures)`.
             for future in as_completed(futures):
                 print(f'Evaluated {futures[future]}: {future.result()}', flush=True)
+    # Perform main when `args.stage in ('report', 'all')`.
     if args.stage in ('report', 'all'):
         from bess_pv_trading.forecasting.plotting.pv_online_crps_report import report
         print(report(config, root), flush=True)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

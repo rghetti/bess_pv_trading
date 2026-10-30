@@ -29,13 +29,17 @@ def _partial_recovery_mask(physical,*,rating,max_fraction,max_intervals,interval
     cadence=pd.Timedelta(minutes=interval_minutes)
     marked=np.zeros(len(physical),dtype=bool)
     position=1
+    # Continue until `position < len(physical) - 1` is false.
     while position<len(physical)-1:
+        # When `outage[position] or not outage[position - 1]`, set `position` using `1`.
         if outage[position] or not outage[position-1]:
             position+=1;continue
         start=position
+        # Continue until `position < len(physical) and (not outage[position]) and (days[position] == days[start])` is false.
         while position<len(physical) and not outage[position] and days[position]==days[start]:
             position+=1
         end=position
+        # Update `marked[start:end]` when this condition is met.
         if (end<len(physical) and end-start<=max_intervals and outage[end]
                 and days[start-1]==days[start]==days[end]
                 and ((times[start:end+1]-times[start-1:end])==cadence).all()
@@ -54,6 +58,7 @@ def _episode_rows(physical,selected,*,farm,kind,status,minimum_intervals,interva
     cadence=pd.Timedelta(minutes=interval_minutes)
     episodes=[];first=None
     def finish(end):
+        # Perform finish when `first is None or end - first < minimum_intervals`.
         if first is None or end-first<minimum_intervals:return
         group=physical.iloc[first:end]
         episodes.append({'farm_id':farm,'issue':kind,'status':status,
@@ -66,12 +71,16 @@ def _episode_rows(physical,selected,*,farm,kind,status,minimum_intervals,interva
             'mean_forecast_ghi_w_m2':float(group.forecast_ghi.mean()),
             'automatic_excluded_quarters':int(group.outage_excluded.sum()),
             'manual_excluded_quarters':int(group.review_excluded.sum())})
+    # Summarize contiguous native intervals without bridging gaps or local days for each `(position, value)` in `enumerate(active)`.
     for position,value in enumerate(active):
         continuous=(position>0 and starts[position]-starts[position-1]==cadence
             and days[position]==days[position-1])
+        # Summarize contiguous native intervals without bridging gaps or local days when `value`.
         if value:
+            # Summarize contiguous native intervals without bridging gaps or local days when `first is None or not continuous`.
             if first is None or not continuous:
                 finish(position);first=position
+        # Summarize contiguous native intervals without bridging gaps or local days when `first is not None`.
         elif first is not None:
             finish(position);first=None
     finish(len(physical))
@@ -83,17 +92,22 @@ def run_pv_quality_review(config,progress=print):
     section=config['pv_data_quality_review']
     source=config_path(config,section['source_root'])
     output_root=config_path(config,section['output_root']);output=output_root/section['run_id']
+    # Enforce the input contract: PV quality source cannot reside in its output directory.
     if source.resolve().is_relative_to(output.resolve()):
         raise ValueError('PV quality source cannot reside in its output directory')
+    # Write curation evidence without adding candidate flags to the exclusion mask when `section['save_plots']`.
     if section['save_plots']:
+        # Write curation evidence without adding candidate flags to the exclusion mask for each `farm` in `section['farm_ids']`.
         for farm in section['farm_ids']:
             prediction_path=source/f'farm_{farm}/parquet'/section['plot_prediction_file']
+            # Reject invalid input when `not prediction_path.is_file()`.
             if not prediction_path.is_file():
                 raise FileNotFoundError(prediction_path)
     prepare_experiment_output(output_root,output,
         overwrite=config['experiment_outputs']['overwrite_existing'])
     (output/'resolved_config.yaml').write_text(yaml.safe_dump(config,sort_keys=False))
     all_episodes=[];summaries=[]
+    # Apply apply episode exclusions for `farm` from `section['farm_ids']`.
     for farm in section['farm_ids']:
         path=source/f'farm_{farm}/parquet/corpus.parquet'
         frame=pd.read_parquet(path)
@@ -129,11 +143,13 @@ def run_pv_quality_review(config,progress=print):
                     section['weather_ghi_disagreement_w_m2']),
                 'weather_input',section['weather_disagreement_minimum_intervals'])}
         farm_episodes=[]
+        # Write curation evidence without adding candidate flags to the exclusion mask for each `(kind, (mask, status, minimum))` in `issue_masks.items()`.
         for kind,(mask,status,minimum) in issue_masks.items():
             farm_episodes.extend(_episode_rows(physical,mask,farm=farm,kind=kind,
                 status=status,minimum_intervals=minimum,interval_minutes=interval))
         episodes=pd.DataFrame(farm_episodes,columns=EPISODE_COLUMNS)
         folder=output/f'farm_{farm}'
+        # Write curation evidence without adding candidate flags to the exclusion mask for each `name` in `['csv', 'json', 'parquet', 'plots']`.
         for name in ['csv','json','parquet','plots']:(folder/name).mkdir(parents=True,exist_ok=True)
         physical.to_parquet(folder/'parquet/physical_quarters.parquet',index=False)
         episodes.to_csv(folder/'csv/candidate_episodes.csv',index=False)
@@ -141,6 +157,7 @@ def run_pv_quality_review(config,progress=print):
             if not episodes.empty else pd.DataFrame(columns=['issue','status','episodes']))
         by_kind.to_csv(folder/'csv/episode_counts.csv',index=False)
         plateau=episodes.loc[episodes.issue.eq('nonzero_plateau')].copy()
+        # When `not plateau.empty`, set `bucket` using `section['plateau_level_rounding_kw']`.
         if not plateau.empty:
             bucket=section['plateau_level_rounding_kw']
             plateau['rounded_level_kw']=(np.round(
@@ -162,18 +179,22 @@ def run_pv_quality_review(config,progress=print):
             'input_sha256':hashlib.sha256(path.read_bytes()).hexdigest(),
             'status':'Only intervals in pv_data_quality.exclusions_csv change model populations; candidates are evidence only.'}
         (folder/'json/summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+        # When `section['save_plots']`, set `prediction_path` using `source / f'farm_{farm}/parquet' / section['plot_prediction_file']`.
         if section['save_plots']:
             prediction_path=source/f'farm_{farm}/parquet'/section['plot_prediction_file']
             column=section['plot_prediction_column']
             comparison_column=section['plot_pvlib_column']
             keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
             saved=pd.read_parquet(prediction_path,columns=[*keys,column,comparison_column])
+            # Enforce the input contract: Farm `farm` PV plot predictions do not align with measured AC corpus.
             if not frame[keys].equals(saved[keys]):
                 raise ValueError(f'Farm {farm} PV plot predictions do not align with measured AC corpus')
             prediction=saved[column].to_numpy(dtype=float)
             comparison_prediction=saved[comparison_column].to_numpy(dtype=float)
+            # Enforce the input contract: Farm `farm` PV plot predictions are nonfinite in daylight.
             if not np.isfinite(prediction[frame.daylight.to_numpy(dtype=bool)]).all():
                 raise ValueError(f'Farm {farm} PV plot predictions are nonfinite in daylight')
+            # Enforce the input contract: Farm `farm` pvlib plot predictions are nonfinite in daylight.
             if not np.isfinite(comparison_prediction[frame.daylight.to_numpy(dtype=bool)]).all():
                 raise ValueError(f'Farm {farm} pvlib plot predictions are nonfinite in daylight')
             summary['plot_prediction']={'file':str(prediction_path),
@@ -183,10 +204,13 @@ def run_pv_quality_review(config,progress=print):
                 'sha256':hashlib.sha256(prediction_path.read_bytes()).hexdigest()}
             (folder/'json/summary.json').write_text(json.dumps(summary,indent=2)+'\n')
             days=list(section['focus_days'])
+            # Update `days` when this condition is met.
             if not episodes.empty:
                 days+=episodes.loc[episodes.status.eq('review_candidate')].nlargest(
                     section['plot_top_candidate_days'],'physical_quarters').delivery_day.tolist()
+            # Write curation evidence without adding candidate flags to the exclusion mask for each `day` in `dict.fromkeys(days)`.
             for day in dict.fromkeys(days):
+                # Skip the current item when `not frame.delivery_day.eq(day).any()`.
                 if not frame.delivery_day.eq(day).any():continue
                 _plot_day(frame,prediction,farm=farm,day=day,rating=rating,
                     timezone=config['pv_neural']['delivery_timezone'],

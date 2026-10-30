@@ -8,8 +8,10 @@ def weighted_crps(values, weights, target):
     """Score the issued discrete distribution, including all ordered pairs."""
     x = np.asarray(values, dtype=float)
     w = np.asarray(weights, dtype=float)
+    # Enforce the input contract: CRPS inputs must be finite aligned vectors and a finite target.
     if x.ndim != 1 or w.shape != x.shape or not np.isfinite(x).all() or not np.isfinite(target):
         raise ValueError('CRPS inputs must be finite aligned vectors and a finite target')
+    # Enforce the input contract: CRPS weights must be a probability vector.
     if not np.isfinite(w).all() or (w < 0).any() or not np.isclose(w.sum(), 1):
         raise ValueError('CRPS weights must be a probability vector')
     return float(w @ np.abs(x-target) - .5 * w @ np.abs(x[:, None]-x[None, :]) @ w)
@@ -26,6 +28,7 @@ def weighted_quantile(values, weights, levels):
 class MLPoly:
     """Maintain cumulative linearized regrets and adaptive ML-Poly weights."""
     def __init__(self, size):
+        # Enforce the input contract: At least one expert is required.
         if size < 1: raise ValueError('At least one expert is required')
         self.regret = np.zeros(size)
         self.squared_regret = np.zeros(size)
@@ -35,6 +38,7 @@ class MLPoly:
         """Use the issued snapshot when feedback arrives, including delayed feedback."""
         x = np.asarray(issued_values, dtype=float)
         w = np.asarray(issued_weights, dtype=float)
+        # Enforce the input contract: Expert set changed.
         if len(x) != len(self.weights): raise ValueError('Expert set changed')
         weighted_crps(x, w, target)  # Validate before changing learner state.
         gradient = np.abs(x-target) - np.abs(x[:, None]-x[None, :]) @ w

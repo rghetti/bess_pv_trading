@@ -1,0 +1,4 @@
+include: ../standard.yaml
+pv_physical_pilot_comparison:
+  run_id: deterministic_cycles_validation_test_2026
+  splits: [validation, test]

@@ -28,6 +28,7 @@ def main():
     levels = list(map(float, previous['pv_probabilistic_study']['quantiles']))
     qcols = [f'calibrated_q{round(100*x):02d}' for x in levels]
     collected = []
+    # Score previous saved models and the new chain on common curated observations for each `farm_id` in `section['farm_ids']`.
     for farm_id in section['farm_ids']:
         farm = load_metadata(config_path(config, config['inputs']['metadata_parquet']), [farm_id])[farm_id]
         selection = rankings.loc[(rankings.farm_id == farm_id) & rankings.objective.eq('crps_mw') &
@@ -44,6 +45,7 @@ def main():
         training = (january.delivery_day.str.startswith('2026-01') & january.eligible & new_january.eligible &
                     np.isfinite(january.measured_ac_mw) & np.isfinite(january[ids]).all(axis=1))
         eligible_january = january.loc[training]
+        # Enforce the input contract: January calibration targets differ.
         if not np.allclose(eligible_january.measured_ac_mw, new_january.loc[training].measured_ac_mw):
             raise ValueError('January calibration targets differ')
         calibrator = fit_calibrator(eligible_january[ids].to_numpy(float), eligible_january.measured_ac_mw,
@@ -52,7 +54,9 @@ def main():
         recalibrated, _ = apply_calibrator(old.reset_index(), ids, calibrator, levels, config['policy']['night'])
         frames['previous_physical_january_calibration'] = recalibrated.set_index('interval_start_utc')
         common = None
+        # Score previous saved models and the new chain on common curated observations for each `(name, frame)` in `frames.items()`.
         for name, frame in frames.items():
+            # Enforce the input contract: Duplicate forecast interval in `name`.
             if frame.index.has_duplicates:
                 raise ValueError(f'Duplicate forecast interval in {name}')
             mask = (frame.eligible & np.isfinite(frame.measured_ac_mw) &
@@ -60,12 +64,15 @@ def main():
                     frame.delivery_day.between('2026-08-20', '2026-08-31'))
             common = frame.index[mask] if common is None else common.intersection(frame.index[mask])
         targets = frames['new_physical'].loc[common, 'measured_ac_mw']
+        # Score previous saved models and the new chain on common curated observations for each `(name, frame)` in `frames.items()`.
         for name, frame in frames.items():
+            # Enforce the input contract: Matched forecasts do not share identical observed power.
             if not np.allclose(frame.loc[common, 'measured_ac_mw'], targets, equal_nan=True):
                 raise ValueError('Matched forecasts do not share identical observed power')
             part = frame.loc[common].copy().reset_index()
             local = pd.DatetimeIndex(part.interval_start_utc).tz_convert('Europe/Rome')
             hour = local.hour + local.minute / 60
+            # Process each `(label, mask)` in this collection.
             for label, mask in [('all_hours', np.ones(len(part), dtype=bool)),
                                 ('daytime', (hour >= 6) & (hour < 21.5))]:
                 scored = score_frame(part.loc[mask], ids, levels, farm.ac_capacity_mw, label)
@@ -83,5 +90,6 @@ def main():
         'Different calibration histories mean this is not a controlled head-to-head comparison of the underlying conversions.\n')
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

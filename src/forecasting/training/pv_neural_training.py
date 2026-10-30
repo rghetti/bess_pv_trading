@@ -45,6 +45,7 @@ def predict_network(model, tensors, batch_size: int) -> np.ndarray:
     model.eval()
     pieces = []
     with torch.no_grad():
+        # Predict all input views in deterministic order, without consulting targets for each `start` in `range(0, len(tensors['x']), batch_size)`.
         for start in range(0, len(tensors["x"]), batch_size):
             positions = slice(start, start+batch_size)
             pieces.append(_forward(model, tensors, positions).numpy())
@@ -56,14 +57,17 @@ def _validation_mse(model, tensors, positions, batch_size):
     model.eval()
     total, count = 0., 0
     with torch.no_grad():
+        # Accumulate validation error without including padded or unobserved rows for each `start` in `range(0, len(positions), batch_size)`.
         for start in range(0, len(positions), batch_size):
             chosen = positions[start:start+batch_size]
             mask = tensors["mask"][chosen]
             valid = mask.sum(dim=1) > 0
+            # When `valid.any()`, set `value` using `view_mse(_forward(model, tensors, chosen), tensors['y'][chosen], mask)`.
             if valid.any():
                 value = view_mse(_forward(model, tensors, chosen), tensors["y"][chosen], mask)
                 total += float(value)*int(valid.sum())
                 count += int(valid.sum())
+    # Enforce the input contract: No finite daylight validation targets.
     if not count:
         raise ValueError("No finite daylight validation targets")
     return total/count
@@ -83,11 +87,13 @@ def fit_network(packed: dict, candidate: dict, section: dict, *, seed: int, prog
     validation = np.flatnonzero((packed["split"] == "validation") & packed["mask"].any(axis=1))
     best, best_epoch, best_state, stale = float("inf"), 0, None, 0
     history = []
+    # Select epochs on validation only and retain the best immutable CPU weights for each `epoch` in `range(1, int(section['max_epochs']) + 1)`.
     for epoch in range(1, int(section["max_epochs"])+1):
         model.train()
         order = rng.permutation(train)
         total_loss, batches = 0., 0
         batch_size = int(candidate.get("batch_size", section["batch_size"]))
+        # Select epochs on validation only and retain the best immutable CPU weights for each `start` in `range(0, len(order), batch_size)`.
         for start in range(0, len(order), batch_size):
             positions = order[start:start+batch_size]
             target, mask = tensors["y"][positions], tensors["mask"][positions]
@@ -95,6 +101,7 @@ def fit_network(packed: dict, candidate: dict, section: dict, *, seed: int, prog
             residual = prediction-target
             error = residual**2
             loss_name = candidate.get("loss", section["loss"])
+            # When `loss_name == 'huber'`, set `delta` using `float(candidate.get('huber_delta', section['huber_delta']))`.
             if loss_name == "huber":
                 delta = float(candidate.get("huber_delta", section["huber_delta"]))
                 error = torch.where(abs(residual) <= delta, error, 2*delta*abs(residual)-delta**2)
@@ -108,15 +115,19 @@ def fit_network(packed: dict, candidate: dict, section: dict, *, seed: int, prog
         score = _validation_mse(model, tensors, validation, int(section["prediction_batch_size"]))
         history.append({"epoch": epoch, "training_loss": total_loss/max(batches, 1),
                         "validation_nrmse": float(np.sqrt(score))})
+        # When `score < best - float(section['minimum_improvement'])`, set `(best, best_epoch, stale)` using `(score, epoch, 0)`.
         if score < best-float(section["minimum_improvement"]):
             best, best_epoch, stale = score, epoch, 0
             best_state = deepcopy(model.state_dict())
         else:
             stale += 1
+        # Select epochs on validation only and retain the best immutable CPU weights when `progress and (epoch == 1 or epoch % 20 == 0)`.
         if progress and (epoch == 1 or epoch % 20 == 0):
             progress(f"{candidate['name']}: epoch {epoch}, validation NRMSE={100*np.sqrt(score):.3f}% AC")
+        # Stop processing when `stale >= int(section['patience'])`.
         if stale >= int(section["patience"]):
             break
+    # Enforce the input contract: Neural training did not produce a finite validation checkpoint.
     if best_state is None or not np.isfinite(best):
         raise ValueError("Neural training did not produce a finite validation checkpoint")
     model.load_state_dict(best_state)
@@ -148,8 +159,10 @@ def save_network(model, path: Path, metadata: dict):
 def load_network(path: Path, *, farm_id=None):
     """Load only checked CPU tensors; farm-specific normalization cannot be mixed."""
     metadata = json.loads(path.with_suffix(".json").read_text())
+    # Enforce the input contract: Neural artifact belongs to a different farm.
     if farm_id is not None and int(metadata["farm_metadata"]["farm_id"]) != int(farm_id):
         raise ValueError("Neural artifact belongs to a different farm")
+    # Enforce the input contract: Neural weights checksum mismatch.
     if hashlib.sha256(path.read_bytes()).hexdigest() != metadata["weights_sha256"]:
         raise ValueError("Neural weights checksum mismatch")
     network = PVNetwork(len(metadata["preprocessor"]["output_columns"]),

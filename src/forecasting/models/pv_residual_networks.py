@@ -23,20 +23,25 @@ class WeatherResidualNetwork(nn.Module):
         width, depth = int(spec['width']), int(spec['depth'])
         dropout = float(spec['dropout'])
         self.stem = nn.Sequential(nn.Linear(inputs, width), nn.GELU())
+        # Update `self.body` when this condition is met.
         if self.architecture in {'residual_mlp', 'mixture_experts'}:
             self.body = nn.Sequential(*[layer for _ in range(depth) for layer in
                 (nn.Linear(width,width), nn.GELU(), nn.Dropout(dropout))])
             outputs = int(spec['experts']) if self.architecture == 'mixture_experts' else 1
             self.head = nn.Linear(width,outputs)
+            # When `self.architecture == 'mixture_experts'`, set `self.gate` using `nn.Linear(inputs, outputs)`.
             if self.architecture == 'mixture_experts':self.gate = nn.Linear(inputs,outputs)
+        # Temporal convolution variants share the same dilated feature extractor.
         elif self.architecture in {'residual_tcn','direct_tcn'}:
             from ..models.pv_neural_models import TemporalBlock
             self.body = nn.Sequential(*[TemporalBlock(width,int(spec['kernel_size']),2**i,dropout) for i in range(depth)])
             self.head = nn.Linear(width,1)
+        # Update `self.body` when this condition is met.
         elif self.architecture == 'bigru':
             self.body = nn.GRU(width,width,num_layers=depth,bidirectional=True,
                 dropout=dropout if depth>1 else 0,batch_first=True)
             self.head = nn.Linear(2*width,1)
+        # Update `layer` when this condition is met.
         elif self.architecture == 'transformer':
             layer = nn.TransformerEncoderLayer(width,int(spec['heads']),
                 dim_feedforward=2*width,dropout=dropout,batch_first=True,activation='gelu')
@@ -48,20 +53,25 @@ class WeatherResidualNetwork(nn.Module):
     def forward(self,x,baseline,daylight,valid):
         """Padding never changes a retained forecast prefix or another day/view."""
         hidden = self.stem(x)
+        # When `self.architecture == 'bigru'`, set `lengths` using `valid.sum(1).cpu()`.
         if self.architecture == 'bigru':
             lengths = valid.sum(1).cpu()
             packed = nn.utils.rnn.pack_padded_sequence(hidden,lengths,batch_first=True,enforce_sorted=False)
             hidden,_ = self.body(packed)
             hidden,_ = nn.utils.rnn.pad_packed_sequence(hidden,batch_first=True,total_length=x.shape[1])
+        # When `self.architecture == 'transformer'`, set `hidden` using `self.body(hidden, src_key_padding_mask=~valid)`.
         elif self.architecture == 'transformer':
             hidden = self.body(hidden,src_key_padding_mask=~valid)
+        # When `self.architecture in {'residual_tcn', 'direct_tcn'}`, set `hidden` using `self.body(hidden.transpose(1, 2)).transpose(1, 2)`.
         elif self.architecture in {'residual_tcn','direct_tcn'}:
             hidden = self.body(hidden.transpose(1,2)).transpose(1,2)
         else:hidden = self.body(hidden)
         correction = self.head(hidden)
+        # When `self.architecture == 'mixture_experts'`, set `correction` using `(correction * self.gate(x).softmax(-1)).sum(-1)`.
         if self.architecture == 'mixture_experts':
             correction = (correction*self.gate(x).softmax(-1)).sum(-1)
         else:correction = correction.squeeze(-1)
+        # Return `torch.sigmoid(correction) * daylight` when `self.architecture == 'direct_tcn'`.
         if self.architecture == 'direct_tcn':return torch.sigmoid(correction)*daylight
         return torch.clamp(baseline+correction,0,1)*daylight
 
@@ -83,6 +93,7 @@ def fit_residual_network(packed,baseline,train_groups,validation_groups,spec,sec
     sequence_weights=np.divide(counts,totals[view_ids],out=np.zeros(len(counts)),where=totals[view_ids]>0)
     tensors['sequence_weight']=torch.as_tensor(sequence_weights,dtype=torch.float32)
     model=WeatherResidualNetwork(packed['x'].shape[-1],spec)
+    # When `spec['architecture'] == 'direct_tcn'`, set `known` using `tensors['y'][train_groups][tensors['mask'][train_groups]]`.
     if spec['architecture']=='direct_tcn':
         known=tensors['y'][train_groups][tensors['mask'][train_groups]]
         eps=torch.finfo(known.dtype).eps
@@ -94,12 +105,15 @@ def fit_residual_network(packed,baseline,train_groups,validation_groups,spec,sec
             tensors['daylight'][positions],tensors['valid'][positions])
     def loss_values(prediction,target,mask,loss):
         error=prediction-target
+        # When `loss == 'huber'`, set `delta` using `section['huber_delta']`.
         if loss=='huber':
             delta=section['huber_delta'];error=torch.where(error.abs()<=delta,error**2,2*delta*error.abs()-delta**2)
         else:error=error**2
         return ((error*mask).sum(1)/mask.sum(1).clamp(min=1))
+    # Apply predict for `epoch` from `range(1, int(section['max_epochs']) + 1)`.
     for epoch in range(1,int(section['max_epochs'])+1):
         model.train();order=rng.permutation(train_groups)
+        # Apply predict for `start` from `range(0, len(order), batch)`.
         for start in range(0,len(order),batch):
             ix=order[start:start+batch];prediction=predict(ix)
             weights=tensors['sequence_weight'][ix]
@@ -108,17 +122,22 @@ def fit_residual_network(packed,baseline,train_groups,validation_groups,spec,sec
             nn.utils.clip_grad_norm_(model.parameters(),section['gradient_clip_norm']);optimizer.step()
         model.eval();scores=[]
         with torch.no_grad():
+            # Apply predict for `start` from `range(0, len(validation_groups), batch)`.
             for start in range(0,len(validation_groups),batch):
                 ix=validation_groups[start:start+batch]
                 scores.extend(loss_values(predict(ix),tensors['y'][ix],tensors['mask'][ix],'mse').tolist())
         score=float(np.average(scores,weights=sequence_weights[validation_groups]));history.append({'epoch':epoch,'validation_nrmse':float(np.sqrt(score))})
+        # When `score < best - section['minimum_improvement']`, set `best` using `score`.
         if score<best-section['minimum_improvement']:
             best=score;state=deepcopy(model.state_dict());stale=0
         else:stale+=1
+        # Stop processing when `stale >= section['patience']`.
         if stale>=section['patience']:break
+    # Enforce the input contract: No finite neural validation checkpoint.
     if state is None:raise ValueError('No finite neural validation checkpoint')
     model.load_state_dict(state);model.eval();pieces=[]
     with torch.no_grad():
+        # Apply predict for `start` from `range(0, len(base), batch)`.
         for start in range(0,len(base),batch):pieces.append(predict(slice(start,start+batch)).numpy())
     prediction=unpack_predictions(packed,np.concatenate(pieces),len(baseline),rating)
     return model,prediction,{'history':history,'epochs':epoch,'validation_nrmse':float(np.sqrt(best)),

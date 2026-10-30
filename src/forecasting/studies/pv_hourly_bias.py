@@ -18,6 +18,7 @@ from ..data.pv_outages import modeling_instances
 
 def completed_bucket_statistics(frame, prediction, *, timezone, history_start_day, bucket_hours):
     """Count each measured physical quarter once and release days after midnight."""
+    # Enforce the input contract: bucket_hours must divide the 24-hour local clock.
     if 24 % bucket_hours:
         raise ValueError('bucket_hours must divide the 24-hour local clock')
     eligible=frame.eligible.to_numpy(dtype=bool) if 'eligible' in frame else np.ones(len(frame),dtype=bool)
@@ -25,6 +26,7 @@ def completed_bucket_statistics(frame, prediction, *, timezone, history_start_da
         ['delivery_day','interval_start_utc','target_available_at_utc','measured_ac_mw']].copy()
     data['reference']=np.asarray(prediction,dtype=float)[eligible]
     grouped=data.groupby(['delivery_day','interval_start_utc'],sort=True)
+    # Enforce the input contract: Overlapping auction views disagree on measured AC.
     if (grouped.measured_ac_mw.nunique(dropna=False)>1).any():
         raise ValueError('Overlapping auction views disagree on measured AC')
     unique=grouped.agg(reference=('reference','mean'),target=('measured_ac_mw','first'),
@@ -48,9 +50,11 @@ def completed_bucket_statistics(frame, prediction, *, timezone, history_start_da
 def causal_bucket_prediction(frame,prediction,statistics,*,timezone,bucket_hours,
                              window_days,ridge_pseudo_intervals,minimum_days,rating):
     """Apply a regularized additive correction known at each issuance cutoff."""
+    # Enforce the input contract: Invalid causal correction settings.
     if window_days<1 or ridge_pseudo_intervals<0 or minimum_days<1:
         raise ValueError('Invalid causal correction settings')
     result=np.asarray(prediction,dtype=float).copy()
+    # Return `np.clip(result, 0, rating)` when `statistics.empty`.
     if statistics.empty:return np.clip(result,0,rating)
     count=24//bucket_hours
     totals=statistics.pivot(index='available',columns='bucket',values='residual_sum')
@@ -60,10 +64,12 @@ def causal_bucket_prediction(frame,prediction,statistics,*,timezone,bucket_hours
     cumulative=totals.cumsum().to_numpy();population=intervals.cumsum().to_numpy()
     available=pd.DatetimeIndex(totals.index).as_unit('ns').asi8
     buckets=pd.DatetimeIndex(frame.interval_start_utc).tz_convert(timezone).hour.to_numpy()//bucket_hours
+    # Apply a regularized additive correction known at each issuance cutoff for each `(cutoff, positions)` in `frame.groupby('decision_cutoff_utc', sort=False).indices.items()`.
     for cutoff,positions in frame.groupby('decision_cutoff_utc',sort=False).indices.items():
         moment=pd.Timestamp(cutoff).value
         last=available.searchsorted(moment,side='right')-1
         first=available.searchsorted(moment-pd.Timedelta(days=window_days).value,side='left')-1
+        # Skip the current item when `last < 0 or last - first < minimum_days`.
         if last<0 or last-first<minimum_days:continue
         residual=cumulative[last]-(cumulative[first] if first>=0 else 0)
         observed=population[last]-(population[first] if first>=0 else 0)
@@ -79,8 +85,10 @@ def run_hourly_bias_study(config,progress=print):
     source=config_path(config,section['source_root'])
     output_root=config_path(config,section['output_root'])
     output=output_root/section['run_id']
+    # Enforce the input contract: pv_hourly_bias_study.bucket_hours must divide 24.
     if not 1<=section['bucket_hours']<=24 or 24%section['bucket_hours']:
         raise ValueError('pv_hourly_bias_study.bucket_hours must divide 24')
+    # Enforce the input contract: The study input cannot be below its output directory.
     if source.resolve().is_relative_to(output.resolve()):
         raise ValueError('The study input cannot be below its output directory')
     prepare_experiment_output(output_root,output,
@@ -88,14 +96,17 @@ def run_hourly_bias_study(config,progress=print):
     (output/'resolved_config.json').write_text(json.dumps(config,indent=2,default=str)+'\n')
     (output/'resolved_config.yaml').write_text(yaml.safe_dump(config,sort_keys=False))
     summaries=[]
+    # Apply score for `farm` from `section['farm_ids']`.
     for farm in section['farm_ids']:
         directory=output/f'farm_{farm}'
+        # Choose regularization on validation and report the reused holdout for each `name` in `['csv', 'json', 'parquet', 'plots']`.
         for name in ['csv','json','parquet','plots']:(directory/name).mkdir(parents=True,exist_ok=True)
         corpus=source/f'farm_{farm}/parquet/corpus.parquet'
         prior=source/f'farm_{farm}/parquet/comparison_predictions.parquet'
         frame=modeling_instances(pd.read_parquet(corpus),config,farm_id=farm)
         saved=pd.read_parquet(prior).loc[frame.index]
         keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
+        # Enforce the input contract: Forecast and corpus keys/targets differ.
         if not frame[keys].equals(saved[keys]):raise ValueError('Forecast and corpus keys/targets differ')
         prediction=saved[f"prediction_{section['reference_model']}"].to_numpy()
         rating=config['farms'][str(farm)]['ac_capacity_kw']/1000
@@ -105,7 +116,9 @@ def run_hourly_bias_study(config,progress=print):
         statistics.to_parquet(directory/'parquet/completed_bucket_statistics.parquet',index=False)
         validation=(frame.eligible&frame.daylight&frame.split.eq('validation')).to_numpy()
         rows=[];candidates={}
+        # Apply score for `window` from `section['window_days']`.
         for window in section['window_days']:
+            # Apply score for `ridge` from `section['ridge_pseudo_intervals']`.
             for ridge in section['ridge_pseudo_intervals']:
                 label=f'window_{window}_ridge_{ridge:g}'
                 proposed=causal_bucket_prediction(frame,prediction,statistics,
@@ -113,6 +126,7 @@ def run_hourly_bias_study(config,progress=print):
                     window_days=window,ridge_pseudo_intervals=ridge,
                     minimum_days=section['minimum_days'],rating=rating)
                 candidates[label]=proposed
+                # Apply score for `split` from `['validation', 'test']`.
                 for split in ['validation','test']:
                     mask=(frame.eligible&frame.daylight&frame.split.eq(split)).to_numpy()
                     rows.append({'model':label,'window_days':window,'ridge_pseudo_intervals':ridge,
@@ -136,23 +150,28 @@ def run_hourly_bias_study(config,progress=print):
         (directory/'json/selection.json').write_text(json.dumps(summary,indent=2)+'\n')
         months=frame.delivery_day.str[:7]
         monthly=[]
+        # Apply score for `month` from `sorted(months[months.ge(section['history_start_day'][:7])].unique())`.
         for month in sorted(months[months.ge(section['history_start_day'][:7])].unique()):
             mask=(frame.eligible&frame.daylight&months.eq(month)).to_numpy()
+            # Apply score for `(label, curve)` from `[('previous', prediction), ('corrected', chosen)]`.
             for label,curve in [('previous',prediction),('corrected',chosen)]:
                 monthly.append({'month':month,'model':label,**score(frame,curve,rating,mask)})
         pd.DataFrame(monthly).to_csv(directory/'csv/monthly_metrics.csv',index=False)
+        # Choose regularization on validation and report the reused holdout when `section['save_plots']`.
         if section['save_plots']:
             import matplotlib
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
             figure,axes=plt.subplots(2,1,figsize=(12,7),sharex=True,layout='constrained')
             values=pd.DataFrame(monthly)
+            # Choose regularization on validation and report the reused holdout for each `(label, color)` in `[('previous', 'tab:gray'), ('corrected', 'tab:blue')]`.
             for label,color in [('previous','tab:gray'),('corrected','tab:blue')]:
                 rows=values[values.model.eq(label)]
                 axes[0].plot(rows.month,rows.nrmse_percent,color=color,label=label,marker='o')
                 axes[1].plot(rows.month,rows.bias_percent,color=color,label=label,marker='o')
             axes[0].set_ylabel('Daylight RMSE / AC rating (%)')
             axes[1].set_ylabel('Signed bias / AC rating (%)')
+            # Choose regularization on validation and report the reused holdout for each `axis` in `axes`.
             for axis in axes:axis.grid(alpha=.2);axis.legend()
             axes[1].tick_params(axis='x',rotation=45)
             figure.savefig(directory/'plots/monthly_error_comparison.png',dpi=150)

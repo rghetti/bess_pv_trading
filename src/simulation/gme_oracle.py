@@ -39,6 +39,7 @@ from .settlement import expected_realized_kpis, load_realized_imbalance_prices, 
 def _apply_actual_settlement(config, grid, dispatch, summary, destination):
     """Price completed execution without exposing actual settlement prices to planning."""
     prices, provenance = load_realized_imbalance_prices(config, grid)
+    # Return `(dispatch, summary, provenance)` when `prices is None`.
     if prices is None:
         return dispatch, summary, provenance
     settled, kpis = settle_realized_dispatch(dispatch,
@@ -74,8 +75,10 @@ def _counterfactual_reoptimization_settlement(plans, dispatch, realized_pv,
     """
     required = {"expected_grid_mw", "charge_mw", "discharge_mw", "curtailment_mw",
                 "soc_start_mwh", "interval_start_utc", "interval_end_utc", "interval_id"}
+    # Return `(pd.DataFrame(), pd.DataFrame())` when `plans.empty or not required.issubset(plans.columns)`.
     if plans.empty or not required.issubset(plans.columns):
         return pd.DataFrame(), pd.DataFrame()
+    # Return the selected result for this condition.
     if not {"realized_imbalance_cashflow_eur", "net_position_mwh"}.issubset(dispatch.columns):
         return pd.DataFrame(), pd.DataFrame()
     indexed = dispatch.set_index("interval_id")
@@ -83,16 +86,19 @@ def _counterfactual_reoptimization_settlement(plans, dispatch, realized_pv,
     groups = {auction: plans.loc[plans.auction == auction].sort_values("interval_start_utc")
               for auction in auctions}
     groups = {auction: frame for auction, frame in groups.items() if not frame.empty}
+    # Return `(pd.DataFrame(), pd.DataFrame())` when `not groups`.
     if not groups:
         return pd.DataFrame(), pd.DataFrame()
     common_ids = set.intersection(*(set(frame.interval_id) for frame in groups.values()))
     detailed = []
     aging = DegradationSettings(0.0)
+    # Price each auction snapshot as an open-loop plan against measured PV for each `(auction, frame)` in `groups.items()`.
     for auction, frame in groups.items():
         first = frame.iloc[0]
         start = pd.Timestamp(first.interval_start_utc).to_pydatetime()
         state = PhysicalState(start, float(first.soc_start_mwh),
                               origin="counterfactual_snapshot_soc")
+        # Price each auction snapshot as an open-loop plan against measured PV for each `row` in `frame.itertuples(index=False)`.
         for row in frame.itertuples(index=False):
             index = interval_index[row.interval_id]
             pv = float(realized_pv[index])
@@ -128,6 +134,7 @@ def _counterfactual_reoptimization_settlement(plans, dispatch, realized_pv,
                 "final_contract_imbalance_cashflow_eur": final_position_imbalance * price})
     details = pd.DataFrame(detailed)
     summaries = []
+    # Price each auction snapshot as an open-loop plan against measured PV for each `(auction, frame)` in `details.groupby('auction', sort=False)`.
     for auction, frame in details.groupby("auction", sort=False):
         comparable = frame.loc[frame.common_comparison_horizon]
         summaries.append({"auction": auction,
@@ -177,6 +184,7 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
               for auction, curve in actual_prices.items()}
     eligibility = {}
     eligible_indices = {}
+    # Solve the ex-post market MILP with effective PV and clearing prices known for each `event` in `schedule`.
     for event in schedule:
         mask = np.zeros(intervals, dtype=bool)
         mask[list(event.eligible_intervals)] = True
@@ -209,6 +217,7 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
     trade = config["trading"]
     fees = transaction_fees_from_config(config)
     terminal_minimum = config["state"].get("terminal_minimum_mwh")
+    # When `'terminal_minimum_mwh' not in config['state']`, set `terminal_minimum` using `terminal_minimum_energy_mwh(config['state'], plant.battery)`.
     if "terminal_minimum_mwh" not in config["state"]:
         terminal_minimum = terminal_minimum_energy_mwh(config["state"], plant.battery)
     inputs = OptimizationInput(
@@ -239,16 +248,20 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
         result = solve_model(built, settings)
     finally:
         built.model.dispose()
+    # Solve the ex-post market MILP with effective PV and clearing prices known when `timing_records is not None`.
     if timing_records is not None:
         timing_records.append(solve_timing(result.diagnostics, category=artifact_name, status=result.status))
         write_json(destination / "json/optimization_timing.json", optimization_timing_report(timing_records))
+    # Enforce the input contract: Perfect-information PV benchmark failed: `result.status`: `result.message`.
     if not result.has_incumbent:
         raise RuntimeError(f"Perfect-information PV benchmark failed: {result.status}: {result.message}")
     validation = validate_solution(inputs, result)
+    # Enforce the input contract: Perfect-information solution failed independent validation: `validation.violations`.
     if not validation.valid:
         raise RuntimeError(f"Perfect-information solution failed independent validation: {validation.violations}")
 
     rows = []
+    # Solve the ex-post market MILP with effective PV and clearing prices known for each `(index, interval_id)` in `enumerate(grid.interval_ids)`.
     for index, interval_id in enumerate(grid.interval_ids):
         row = {
             "interval_id": interval_id,
@@ -270,6 +283,7 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
                                       + result.arrays["discharge_mw"][0, index])
                                      * grid.delta_hours[index]),
         }
+        # Solve the ex-post market MILP with effective PV and clearing prices known for each `auction` in `actual_prices`.
         for auction in actual_prices:
             quantity = result.trades.get((auction, root.node_id, interval_id), 0.0)
             row[f"{auction}_trade_mwh"] = float(quantity)
@@ -345,6 +359,7 @@ def _plot_perfect_information_schedule(destination, grid, feedback, perfect,
     axes[3].axhline(0, color="black", linewidth=0.8)
     axes[3].set_ylabel("Optimal − executed\nbattery MW")
     axes[3].set_xlabel(f"Delivery time ({timezone})")
+    # Compare optimal and executed dispatch/SOC through the delivery boundary for each `axis` in `axes`.
     for axis in axes:
         axis.grid(alpha=0.2)
         axis.legend(loc="best")
@@ -383,6 +398,7 @@ def _plot_battery_incremental_value(destination, grid, bess, pv_only, timezone,
     axes[2].axhline(0, color="black", linewidth=0.7)
     axes[2].set_ylabel("Battery dispatch\nMW")
     axes[2].set_xlabel(f"Delivery time ({timezone})")
+    # Compare ex-post optimal plant schedules with and without storage for each `axis` in `axes`.
     for axis in axes:
         axis.grid(alpha=0.2)
         axis.legend(loc="best")
@@ -396,6 +412,7 @@ def _plot_battery_incremental_value(destination, grid, bess, pv_only, timezone,
 
 def _plot_settlement(destination, dispatch, summary, timezone):
     """Show native quarter-hour prices, signed energy errors and cumulative cash flow."""
+    # Show native quarter-hour prices, signed energy errors and cumulative cash flow when `summary['imbalance_settlement_status'] != 'priced'`.
     if summary["imbalance_settlement_status"] != "priced":
         return
     import matplotlib
@@ -417,6 +434,7 @@ def _plot_settlement(destination, dispatch, summary, timezone):
     axes[2].set_xlabel(f"Delivery time ({timezone})")
     axes[0].set_title("Realized settlement prices applied only to executed quarter-hour deviations")
     axes[0].set_xlim(times.iloc[0], ends.iloc[-1])
+    # Show native quarter-hour prices, signed energy errors and cumulative cash flow for each `axis` in `axes`.
     for axis in axes:
         axis.axhline(0, color="black", linewidth=0.6)
         axis.grid(alpha=0.2)
@@ -428,6 +446,7 @@ def _plot_settlement(destination, dispatch, summary, timezone):
     values = [summary["components"]["auction_revenue_eur"], summary["realized_imbalance_cashflow_eur"],
         -summary["components"]["degradation_eur"], -summary["components"].get("transaction_fee_eur", 0.0)]
     colors = ["tab:blue", "tab:green" if values[1] >= 0 else "tab:red", "tab:red", "tab:red"]
+    # Show native quarter-hour prices, signed energy errors and cumulative cash flow when `summary['components']['import_fee_eur']`.
     if summary["components"]["import_fee_eur"]:
         labels.append("Grid import fees")
         values.append(-summary["components"]["import_fee_eur"])
@@ -466,66 +485,82 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
     provenance: dict[str, Any] = {}
     skipped: list[dict] = []
     policy = study.get("missing_auction_policy")
+    # Enforce the input contract: Unsupported missing_auction_policy; choose skip_if_no_products_fail_if_partial.
     if policy != "skip_if_no_products_fail_if_partial":
         raise ValueError("Unsupported missing_auction_policy; choose skip_if_no_products_fail_if_partial")
     canceled = set(config.get("market", {}).get("cancelled_auctions", []))
     participating = auction_subset(study.get("participating_auctions")
         if study.get("participating_auctions") is not None else list(study["auction_datasets"]),
                                    "gme_oracle_experiment.participating_auctions")
+    # Enforce the input contract: Every participating auction requires its dataset configuration.
     if set(participating) - set(study["auction_datasets"]):
         raise ValueError("Every participating auction requires its dataset configuration")
     event_by_name = {event.auction: event for event in events}
     delivery_day = first.tz_convert(timezone).date()
+    # Load exact native prices; skip documented cancellations and reject gaps for each `(auction, item)` in `study['auction_datasets'].items()`.
     for auction, item in study["auction_datasets"].items():
+        # Load exact native prices; skip documented cancellations and reject gaps when `auction not in participating`.
         if auction not in participating:
             skipped.append({"auction": auction, "reason": "not_participating"})
             continue
+        # Enforce the input contract: No market schedule exists for configured auction `auction`.
         if auction not in event_by_name:
             raise ValueError(f"No market schedule exists for configured auction {auction}")
         event = event_by_name[auction]
         native_resolution = native_price_resolution_minutes(item["dataset"], delivery_day)
         configured_resolution = item.get("native_interval_minutes")
+        # Enforce the input contract: `auction` requires native `native_resolution`-minute prices on `delivery_day`; update the experiment YAML.
         if configured_resolution is not None and int(configured_resolution) != native_resolution:
             raise ValueError(f"{auction} requires native {native_resolution}-minute prices on {delivery_day}; update the experiment YAML")
         expected_resolution = native_resolution
+        # Load exact native prices; skip documented cancellations and reject gaps when `auction in canceled`.
         if auction in canceled:
             skipped.append({"auction": auction, "reason": "configured_cancelled_auction"})
             continue
         frame, sources = load_api_cache_records(study["price_database"],
             provider=study["provider"], dataset=item["dataset"], zone=study["zone"],
             start=first, end=stop, verify_checksums=True)
+        # Load exact native prices; skip documented cancellations and reject gaps when `frame.empty`.
         if frame.empty:
+            # Apply this branch only when its condition is met.
             if any(delivery_day.isoformat() in source.get("cancelled_delivery_days", [])
                    for source in sources):
                 skipped.append({"auction": auction, "dataset": item["dataset"],
                                 "reason": "documented_cancelled_auction"})
                 continue
             raise ValueError(f"{auction} has no native prices for {delivery_day}; missing data do not establish auction cancellation")
+        # Enforce the input contract: `auction` price snapshot lacks price_eur_mwh.
         if "price_eur_mwh" not in frame:
             raise ValueError(f"{auction} price snapshot lacks price_eur_mwh")
         frame = frame.copy()
         frame["product_start"] = pd.to_datetime(frame["product_start"], utc=True)
         frame["product_end"] = pd.to_datetime(frame["product_end"], utc=True)
         frame = frame.loc[(frame.product_start >= first) & (frame.product_end <= stop)]
+        # Enforce the input contract: `auction` has duplicate native delivery products.
         if frame.duplicated("product_start").any():
             raise ValueError(f"{auction} has duplicate native delivery products")
         declared = pd.to_numeric(frame.get("native_interval_minutes", expected_resolution), errors="coerce")
+        # Enforce the input contract: `auction` cached native resolution differs from the experiment YAML.
         if np.any(pd.Series(declared).dropna().to_numpy(dtype=int) != expected_resolution):
             raise ValueError(f"{auction} cached native resolution differs from the experiment YAML")
         expected = _expected_product_starts(grid, event.eligible_intervals,
                                             expected_resolution, timezone)
         observed_starts = pd.DatetimeIndex(frame.product_start).sort_values()
+        # Enforce the input contract: `auction` has no native prices contained in `delivery_day`; check product alignment.
         if not len(observed_starts):
             raise ValueError(f"{auction} has no native prices contained in {delivery_day}; check product alignment")
+        # Update `absent` when this condition is met.
         if not observed_starts.as_unit("ns").equals(expected.sort_values().as_unit("ns")):
             absent = expected.difference(observed_starts)
             extra = observed_starts.difference(expected)
             raise ValueError(f"{auction} price curve is partial or misaligned: missing={len(absent)}, unexpected={len(extra)}; no interpolation is allowed")
         prices = pd.to_numeric(frame.set_index("product_start").reindex(expected).price_eur_mwh,
                                 errors="coerce")
+        # Enforce the input contract: `auction` contains missing/nonfinite prices in an otherwise present auction.
         if prices.isna().any() or not np.isfinite(prices.to_numpy(dtype=float)).all():
             raise ValueError(f"{auction} contains missing/nonfinite prices in an otherwise present auction")
         curve = np.full(len(grid.interval_ids), np.nan, dtype=float)
+        # Load exact native prices; skip documented cancellations and reject gaps for each `(product_start, price)` in `prices.items()`.
         for product_start, price in prices.items():
             product_end = product_start + pd.Timedelta(minutes=expected_resolution)
             mask = np.asarray([(start >= product_start and start < product_end)
@@ -533,6 +568,7 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
             curve[mask] = float(price)
         eligible = np.zeros(len(grid.interval_ids), dtype=bool)
         eligible[list(event.eligible_intervals)] = True
+        # Enforce the input contract: `auction` did not map every eligible physical interval.
         if not np.isfinite(curve[eligible]).all():
             raise ValueError(f"{auction} did not map every eligible physical interval")
         # Noneligible intervals are never traded; finite placeholders are required
@@ -553,6 +589,7 @@ def _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts):
     forecast_settings = config["forecast"]
     farm_id = int(forecast_settings["farm_id"])
     cutoff = pd.Timestamp(cutoff)
+    # Enforce the input contract: PV decision cutoff must include a timezone.
     if cutoff.tzinfo is None:
         raise ValueError("PV decision cutoff must include a timezone")
     starts = pd.DatetimeIndex(starts)
@@ -566,6 +603,7 @@ def _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts):
     forecast = pd.to_numeric(pv.values["pv_ac_mw"], errors="coerce").to_numpy(dtype=float, copy=True)
     missing = ~np.isfinite(forecast)
     night = np.zeros(len(forecast), dtype=bool)
+    # Update `local` when this condition is met.
     if config.get("policy", {}).get("night", {}).get("enabled", True):
         local = starts.tz_convert(config["policy"]["night"].get("timezone", calendar.timezone))
         minute = local.hour * 60 + local.minute
@@ -573,10 +611,13 @@ def _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts):
         end_h, end_m = map(int, config["policy"]["night"].get("end", "05:00").split(":"))
         start, end = start_h * 60 + start_m, end_h * 60 + end_m
         night = (minute >= start) | (minute < end) if start > end else (minute >= start) & (minute < end)
+    # Convert the latest eligible weather cycle on the requested remaining grid when `missing.any()`.
     if missing.any():
+        # Enforce the input contract: PV forecast has `int(missing.sum())` unresolved intervals; the configured policy only permits explicit nighttime zero fill.
         if forecast_settings["missing_forecast_policy"] != "zero_only_when_policy_marks_night" or np.any(missing & ~night):
             raise ValueError(f"PV forecast has {int(missing.sum())} unresolved intervals; the configured policy only permits explicit nighttime zero fill")
         forecast[missing] = 0.0
+    # Enforce the input contract: PV forecast must be a finite nonnegative AC trajectory.
     if not np.isfinite(forecast).all() or np.any(forecast < 0):
         raise ValueError("PV forecast must be a finite nonnegative AC trajectory")
     pv.values["pv_ac_mw"] = forecast
@@ -614,18 +655,23 @@ def _load_pv(config: dict[str, Any], calendar: AuctionCalendar, grid, *, decisio
                     index=pd.DatetimeIndex(pd.to_datetime(rows.time, utc=True)))
     raw = raw[~raw.index.duplicated(keep="last")].reindex(pd.DatetimeIndex(grid.starts))
     scale = float(forecast_settings["realized_power_scale_to_mw"])
+    # Enforce the input contract: realized_power_scale_to_mw must be finite and positive.
     if not np.isfinite(scale) or scale <= 0:
         raise ValueError("realized_power_scale_to_mw must be finite and positive")
     actual = raw.to_numpy(dtype=float) * scale
     actual_missing = ~np.isfinite(actual)
     missing_actual_policy = forecast_settings["missing_realized_power_policy"]
     maximum_missing = int(forecast_settings["maximum_missing_realized_intervals"])
+    # Enforce the input contract: Realized PV has `int(actual_missing.sum())` missing intervals, exceeding configured maximum `maximum_missing`.
     if int(actual_missing.sum()) > maximum_missing:
         raise ValueError(f"Realized PV has {int(actual_missing.sum())} missing intervals, exceeding configured maximum {maximum_missing}")
+    # Create the initial PV forecast and the separate realized execution series when `actual_missing.any()`.
     if actual_missing.any():
+        # Enforce the input contract: Missing measured PV execution inputs require an explicit configured fallback.
         if missing_actual_policy != "use_frozen_pv_forecast":
             raise ValueError("Missing measured PV execution inputs require an explicit configured fallback")
         actual[actual_missing] = forecast[actual_missing]
+    # Enforce the input contract: Realized AC PV must be finite and nonnegative after configured fallback.
     if not np.isfinite(actual).all() or np.any(actual < -1e-9):
         raise ValueError("Realized AC PV must be finite and nonnegative after configured fallback")
     actual = np.maximum(actual, 0.0)
@@ -646,10 +692,12 @@ def _load_pv(config: dict[str, Any], calendar: AuctionCalendar, grid, *, decisio
 
 def _pv_forecast_curves(plans: pd.DataFrame, timezone: str):
     """Group auction snapshots by weather cycle, keeping only forecasted intervals."""
+    # Return `[]` when `'pv_ac_forecast_mw' not in plans or plans.empty`.
     if "pv_ac_forecast_mw" not in plans or plans.empty:
         return []
     rows = plans if "pv_forecast_vintage_utc" in plans else plans.assign(pv_forecast_vintage_utc=None)
     curves = []
+    # Group auction snapshots by weather cycle, keeping only forecasted intervals for each `(vintage, group)` in `rows.groupby('pv_forecast_vintage_utc', sort=False, dropna=False)`.
     for vintage, group in rows.groupby("pv_forecast_vintage_utc", sort=False, dropna=False):
         auctions = " / ".join(dict.fromkeys(group.auction))
         cycle = (pd.Timestamp(vintage).tz_convert(timezone).strftime("%d/%m %H:%M %Z")
@@ -671,6 +719,7 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
 
     local = pd.DatetimeIndex(grid.starts).tz_convert(timezone)
     local_ends = pd.DatetimeIndex(grid.ends).tz_convert(timezone)
+    # When `len(plans) and 'interval_end_utc' not in plans`, set `end_by_start` using `dict(zip(pd.DatetimeIndex(grid.starts), grid.ends))`.
     if len(plans) and "interval_end_utc" not in plans:
         # Older saved plans still have exact ends available from the delivery grid.
         end_by_start = dict(zip(pd.DatetimeIndex(grid.starts), grid.ends))
@@ -680,6 +729,7 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
 
     def plot_pv_forecasts(axis):
         """Use identical cycle labels and colors in all PV comparison figures."""
+        # Use identical cycle labels and colors in all PV comparison figures for each `(index, (label, selected))` in `enumerate(forecast_curves)`.
         for index, (label, selected) in enumerate(forecast_curves):
             times = pd.to_datetime(selected.interval_start_utc, utc=True).dt.tz_convert(timezone)
             ends = pd.to_datetime(selected.interval_end_utc, utc=True).dt.tz_convert(timezone)
@@ -687,21 +737,26 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
                       color=f"C{index}", linewidth=1.5, label=label)
 
     fig, axis = plt.subplots(figsize=(12, 5), layout="constrained")
+    # Save the auction-price panels, four decision trajectories, and realized SOC for each `auction` in `('DA', 'IDA1', 'IDA2')`.
     for auction in ("DA", "IDA1", "IDA2"):
+        # Save the auction-price panels, four decision trajectories, and realized SOC when `auction in prices`.
         if auction in prices:
             plot_interval_series(axis, local, local_ends, prices[auction], label=auction)
     axis.set_title("MGP, MI-A1 and MI-A2 clearing prices")
     axis.set_ylabel("EUR/MWh")
     axis.set_xlabel(f"Delivery time ({timezone})")
     axis.grid(alpha=0.2)
+    # Save the auction-price panels, four decision trajectories, and realized SOC when `axis.lines`.
     if axis.lines:
         axis.legend(ncol=3)
     axis.set_xlim(local[0], local_ends[-1])
+    # Save the auction-price panels, four decision trajectories, and realized SOC when `axis.lines`.
     if axis.lines:
         fig.savefig(destination / "prices_da_ida1_ida2.png", dpi=140)
     plt.close(fig)
 
     fig, axis = plt.subplots(figsize=(12, 5), layout="constrained")
+    # When `'IDA3' in prices`, set `values` using `np.where(eligibility['IDA3'], prices['IDA3'], np.nan)`.
     if "IDA3" in prices:
         values = np.where(eligibility["IDA3"], prices["IDA3"], np.nan)
         plot_interval_series(axis, local, local_ends, values, label="MI-A3")
@@ -709,9 +764,11 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
     axis.set_ylabel("EUR/MWh")
     axis.set_xlabel(f"Delivery time ({timezone})")
     axis.grid(alpha=0.2)
+    # Save the auction-price panels, four decision trajectories, and realized SOC when `axis.lines`.
     if axis.lines:
         axis.legend()
     axis.set_xlim(local[0], local_ends[-1])
+    # Save the auction-price panels, four decision trajectories, and realized SOC when `'IDA3' in prices`.
     if "IDA3" in prices:
         fig.savefig(destination / "prices_ida3.png", dpi=140)
     plt.close(fig)
@@ -733,8 +790,10 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
         "IDA3": "reoptimization_IDA3.png",
     }
     event_by_auction = {event.auction: event for event in auction_events}
+    # Save the auction-price panels, four decision trajectories, and realized SOC for each `(auction, filename)` in `auction_plot_names.items()`.
     for auction, filename in auction_plot_names.items():
         selected = plans.loc[plans.auction == auction]
+        # Skip the current item when `selected.empty`.
         if selected.empty:
             continue  # Canceled or unavailable auctions have no decision to plot.
         plan_times = pd.to_datetime(selected.interval_start_utc, utc=True).dt.tz_convert(timezone)
@@ -749,18 +808,23 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
             dispatch.pv_ac_mw, color="black", linewidth=2, label="Realized PV")
         axes[0].set_ylabel("PV power (MW AC)")
         event = event_by_auction.get(auction)
+        # When `event is not None`, set `gate_local` using `event.gate_at.tz_convert(timezone)`.
         if event is not None:
             gate_local = event.gate_at.tz_convert(timezone)
+            # Save the auction-price panels, four decision trajectories, and realized SOC when `local[0] <= gate_local <= local_ends[-1]`.
             if local[0] <= gate_local <= local_ends[-1]:
                 axes[0].axvline(gate_local, color="tab:red", linestyle=":",
                     linewidth=1.2, label=f"{auction} gate closes {gate_local:%H:%M}")
             eligible = np.flatnonzero(eligibility.get(auction, np.zeros(len(local), dtype=bool)))
+            # When `len(eligible)`, set `delivery_start` using `local[eligible[0]]`.
             if len(eligible):
                 delivery_start = local[eligible[0]]
+                # Save the auction-price panels, four decision trajectories, and realized SOC when `local[0] < delivery_start <= local_ends[-1]`.
                 if local[0] < delivery_start <= local_ends[-1]:
                     axes[0].axvline(delivery_start, color="tab:purple", linestyle="-.",
                         linewidth=1.2, label=f"{auction} products start {delivery_start:%H:%M}")
                     plan_start = plan_times.min()
+                    # Save the auction-price panels, four decision trajectories, and realized SOC when `plan_start < delivery_start`.
                     if plan_start < delivery_start:
                         axes[0].axvspan(plan_start, delivery_start, color="tab:orange",
                             alpha=0.08, label="Physical plan before this auction's products")
@@ -777,6 +841,7 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
         axes[1].axhline(0, color="grey", linewidth=0.7)
         axes[1].set_ylabel("Battery power (MW AC)\npositive = discharge")
         axes[1].set_xlabel(f"Delivery time ({timezone})")
+        # Save the auction-price panels, four decision trajectories, and realized SOC for each `axis` in `axes`.
         for axis in axes:
             axis.grid(alpha=0.2)
             axis.legend()
@@ -784,6 +849,7 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
         fig.savefig(destination / filename, dpi=140)
         plt.close(fig)
 
+    # When `forecast_curves`, set `(fig, axis)` using `plt.subplots(figsize=(12, 5), layout='constrained')`.
     if forecast_curves:
         fig, axis = plt.subplots(figsize=(12, 5), layout="constrained")
         plot_pv_forecasts(axis)
@@ -807,9 +873,12 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
     plot_boundary_series(axis, starts, ends, dispatch.energy_start_mwh * scale,
               dispatch.energy_end_mwh * scale, color="black", linewidth=2.2,
               label="Executed SOC")
+    # Save the auction-price panels, four decision trajectories, and realized SOC when `len(plans)`.
     if len(plans):
+        # Save the auction-price panels, four decision trajectories, and realized SOC for each `auction` in `('DA', 'IDA1', 'IDA2', 'IDA3')`.
         for auction in ("DA", "IDA1", "IDA2", "IDA3"):
             selected = plans.loc[plans.auction == auction]
+            # Update `times` when this condition is met.
             if len(selected):
                 times = pd.to_datetime(selected.interval_start_utc, utc=True).dt.tz_convert(timezone)
                 plan_ends = pd.to_datetime(selected.interval_end_utc, utc=True).dt.tz_convert(timezone)
@@ -826,6 +895,7 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
     fig.savefig(destination / "soc_evolution.png", dpi=140)
     plt.close(fig)
 
+    # When `'grid_target_mw' in dispatch and 'requested_charge_mw' in dispatch`, set `(fig, axes)` using `plt.subplots(3, 1, figsize=(13, 9), sharex=True, layout='constrained')`.
     if "grid_target_mw" in dispatch and "requested_charge_mw" in dispatch:
         fig, axes = plt.subplots(3, 1, figsize=(13, 9), sharex=True, layout="constrained")
         plot_pv_forecasts(axes[0])
@@ -841,6 +911,7 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
         axes[2].set_ylabel("BESS MW\npositive = discharge")
         axes[2].set_xlabel(f"Delivery time ({timezone})")
         axes[0].set_title("Physical execution feedback using realized interval-average PV")
+        # Save the auction-price panels, four decision trajectories, and realized SOC for each `item` in `axes`.
         for item in axes:
             item.grid(alpha=0.2)
             item.legend()
@@ -855,11 +926,13 @@ def _soc_energy_targets(state: Mapping[str, Any], battery: BatteryParameters
     initial = float(state["initial_soc_percent"])
     terminal = state["terminal_soc_percent"]
     percentages = [initial] + ([] if terminal is None else [float(terminal)])
+    # Enforce the input contract: Initial/terminal SOC percentages must be finite and between 0 and 100.
     if any(not np.isfinite(value) or not 0 <= value <= 100 for value in percentages):
         raise ValueError("Initial/terminal SOC percentages must be finite and between 0 and 100")
     initial_energy = battery.capacity_mwh * initial / 100.0
     terminal_energy = None if terminal is None else battery.capacity_mwh * float(terminal) / 100.0
     targets = [initial_energy] + ([] if terminal_energy is None else [terminal_energy])
+    # Enforce the input contract: Configured initial/terminal SOC lies outside battery energy bounds.
     if any(not battery.energy_min_mwh <= value <= battery.maximum_energy for value in targets):
         raise ValueError("Configured initial/terminal SOC lies outside battery energy bounds")
     return initial_energy, terminal_energy
@@ -868,6 +941,7 @@ def _soc_energy_targets(state: Mapping[str, Any], battery: BatteryParameters
 def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     """Run the single-day GME price oracle with causally available PV updates."""
     study = config["gme_oracle_experiment"]
+    # Enforce the input contract: Unknown auction_planning_mode.
     if study.get("auction_planning_mode", "integrated") not in {"integrated", "current_auction_only"}:
         raise ValueError("Unknown auction_planning_mode")
     study["participating_auctions"] = list(auction_subset(study.get("participating_auctions")
@@ -884,19 +958,23 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     rolling_pv = pv_policy == "latest_available_forecast_at_each_reoptimization"
     first_information_cutoff = min([pd.Timestamp(grid.starts[0]), *(event.submission_at for event in schedule)])
     initialization_cutoff = config["forecast"].get("initialization_cutoff")
+    # When `initialization_cutoff is not None`, set `initialization_cutoff` using `pd.Timestamp(initialization_cutoff)`.
     if initialization_cutoff is not None:
         initialization_cutoff = pd.Timestamp(initialization_cutoff)
+        # Enforce the input contract: forecast.initialization_cutoff must be timezone-aware and precede delivery and first participation.
         if initialization_cutoff.tzinfo is None or initialization_cutoff > first_information_cutoff:
             raise ValueError("forecast.initialization_cutoff must be timezone-aware and precede delivery and first participation")
     forecast, realized_pv, pv_bundle, pv_provenance = _load_pv(config, calendar, grid,
         decision_cutoff=(initialization_cutoff if initialization_cutoff is not None else
                          first_information_cutoff if rolling_pv else None))
+    # Enforce the input contract: The initial PV vintage is not available before initial delivery control/auction submission.
     if pv_bundle.available_at > first_information_cutoff:
         raise ValueError("The initial PV vintage is not available before initial delivery control/auction submission")
 
     battery = battery_parameters_from_config(config["battery"])
     plant_fields = {"farm_id", "poi_import_mw", "poi_export_mw"}
     plant = PlantParameters(**{key: config["plant"][key] for key in plant_fields}, battery=battery)
+    # Enforce the input contract: Plant and PV forecast must identify the same farm.
     if plant.farm_id != int(config["forecast"]["farm_id"]):
         raise ValueError("Plant and PV forecast must identify the same farm")
     study_state = config["state"]
@@ -932,9 +1010,11 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         "kwargs": kwargs, "forecast_available_at": pv_bundle.available_at,
         "pv_forecast_vintage": pv_bundle.forecast_vintage, "pv_forecast_policy": pv_policy,
         "execution_pv_assumption": "measured AC generation after each interval closes; frozen forecast fills only configured missing measured intervals"}
+    # Run the single-day GME price oracle with causally available PV updates when `rolling_pv`.
     if rolling_pv:
         def latest_pv_forecast(cutoff, starts):
             """Reuse the initial conversion only for the identical initial request."""
+            # Return the selected result for this condition.
             if (pd.Timestamp(cutoff) == pd.Timestamp(pv_provenance["forecast_cutoff_utc"])
                     and starts.equals(pd.DatetimeIndex(grid.starts))):
                 return pv_bundle
@@ -947,10 +1027,13 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     day_output = root / run_id / f"farm_{plant.farm_id}" / day
     prepare_experiment_output(root, day_output,
         overwrite=config["experiment_outputs"].get("overwrite_existing", True))
+    # Run the single-day GME price oracle with causally available PV updates for each `folder` in `('csv', 'json')`.
     for folder in ("csv", "json"):
         (day_output / folder).mkdir()
+    # Run the single-day GME price oracle with causally available PV updates when `config['experiment_outputs'].get('plots', True)`.
     if config["experiment_outputs"].get("plots", True):
         (day_output / "plots").mkdir()
+    # Run the single-day GME price oracle with causally available PV updates when `config['experiment_outputs'].get('save_model_files', True)`.
     if config["experiment_outputs"].get("save_model_files", True):
         (day_output / "models").mkdir()
     oracle_dir = day_output / "oracle"
@@ -963,8 +1046,10 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         config, grid, dispatch, summary, day_output)
     dispatch.to_csv(oracle_dir / "dispatch.csv", index=False)
     write_json(oracle_dir / "summary.json", summary)
+    # Run the single-day GME price oracle with causally available PV updates when `config['outputs']['plots']`.
     if config["outputs"]["plots"]:
         _plot_settlement(day_output, dispatch, summary, study["timezone"])
+        # Run the single-day GME price oracle with causally available PV updates when `summary['imbalance_settlement_status'] == 'priced'`.
         if summary["imbalance_settlement_status"] == "priced":
             from ..reporting.plots import plot_dispatch
             plot_dispatch(dispatch, actual_prices, summary, oracle_dir / "dispatch.png", timezone=study["timezone"])
@@ -974,14 +1059,17 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     frozen_enabled = frozen_settings.get("enabled", False)
     frozen_summary = pd.DataFrame()
     frozen_records = []
+    # Update `(frozen_summary, frozen_dispatch, frozen_t...` when this condition is met.
     if frozen_enabled:
         frozen_summary, frozen_dispatch, frozen_trades = simulate_frozen_auction_plans(
             config, grid, plant, schedule, actual_prices, plans, dispatch, ledger, summary)
+        # Update `frozen_records` when this condition is met.
         if not frozen_summary.empty:
             frozen_records = frozen_summary.astype(object).where(pd.notna(frozen_summary), None).to_dict("records")
             frozen_summary.to_csv(day_output / "csv/reoptimization_frozen_plan_summary.csv", index=False)
             frozen_dispatch.to_csv(day_output / "csv/reoptimization_frozen_plan_dispatch.csv", index=False)
             frozen_trades.to_csv(day_output / "csv/reoptimization_frozen_plan_trades.csv", index=False)
+            # Run the single-day GME price oracle with causally available PV updates when `config['outputs']['plots'] and frozen_settings.get('plots', True)`.
             if config["outputs"]["plots"] and frozen_settings.get("plots", True):
                 plot_frozen_plan_comparison(frozen_summary,
                     day_output / "plots/reoptimization_value.png")
@@ -995,6 +1083,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     reoptimization_settlements, reoptimization_settlement_intervals = (
         _counterfactual_reoptimization_settlement(plans, dispatch, realized_pv,
             grid, plant, tuple(actual_prices)))
+    # Run the single-day GME price oracle with causally available PV updates when `not reoptimization_settlements.empty`.
     if not reoptimization_settlements.empty:
         reoptimization_settlements.to_csv(
             day_output / "reoptimization_imbalance_settlements.csv", index=False)
@@ -1008,6 +1097,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     pv_only_diagnostics = None
     pv_only_objective = None
     battery_incremental_value = None
+    # Update `no_bess` when this condition is met.
     if include_pv_only:
         no_bess = replace(battery, capacity_mwh=0.0, max_power_mw=0.0,
                           energy_min_mwh=0.0, energy_max_mwh=0.0)
@@ -1065,16 +1155,20 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         "comparison_scope": "feasible perfect-information incumbent compared with feedback-controller realized profit under the same configured assets, POI, auction products, effective PV trajectory and actual auction prices",
         "effective_pv_fallback_intervals": perfect_fallback_intervals})
     perfect_schedule.to_csv(day_output / "csv/perfect_pv_counterfactual_schedule.csv", index=False)
+    # Run the single-day GME price oracle with causally available PV updates when `include_pv_only`.
     if include_pv_only:
         pv_only_schedule.to_csv(day_output / "csv/perfect_pv_only_counterfactual_schedule.csv", index=False)
     write_json(day_output / "json/perfect_pv_counterfactual.json", perfect_diagnostics)
+    # Run the single-day GME price oracle with causally available PV updates when `include_pv_only`.
     if include_pv_only:
         write_json(day_output / "json/perfect_pv_only_counterfactual.json", pv_only_diagnostics)
+    # Run the single-day GME price oracle with causally available PV updates when `config['outputs']['plots']`.
     if config["outputs"]["plots"]:
         _plot_perfect_information_schedule(
             day_output / "plots/perfect_pv_counterfactual_comparison.png",
             grid, dispatch, perfect_schedule, battery, study["timezone"],
             objective_eur=perfect_objective, feedback_profit_eur=feedback_profit)
+        # Run the single-day GME price oracle with causally available PV updates when `include_pv_only`.
         if include_pv_only:
             _plot_battery_incremental_value(
                 day_output / "plots/perfect_pv_battery_incremental_value.png",
@@ -1082,6 +1176,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
                 bess_objective_eur=perfect_objective,
                 pv_only_objective_eur=pv_only_objective)
     eligibility = {}
+    # Run the single-day GME price oracle with causally available PV updates for each `event` in `schedule`.
     for event in schedule:
         mask = np.zeros(len(grid.interval_ids), dtype=bool)
         mask[list(event.eligible_intervals)] = True
@@ -1102,6 +1197,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     pv_frame["realized_minus_forecast_mw"] = realized_pv - active_forecast
     pv_frame["interval_id"] = grid.interval_ids
     pv_frame.to_csv(day_output / "pv_forecast_and_realized.csv", index_label="interval_start_utc")
+    # Run the single-day GME price oracle with causally available PV updates when `config['outputs']['plots']`.
     if config["outputs"]["plots"]:
         _plot_experiment(day_output, grid, actual_prices, plans, dispatch, study["timezone"], eligibility,
             battery_capacity_mwh=battery.capacity_mwh,
@@ -1127,6 +1223,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     model_variables = [int(item["variables"]) for item in decision_data if item.get("variables") is not None]
     model_constraints = [int(item["constraints"]) for item in decision_data if item.get("constraints") is not None]
     trade_volumes = {}
+    # Run the single-day GME price oracle with causally available PV updates for each `auction` in `actual_prices`.
     for auction in actual_prices:
         selected = ledger.loc[ledger.auction == auction] if "auction" in ledger else pd.DataFrame()
         quantities = pd.to_numeric(selected.get("quantity_mwh", pd.Series(dtype=float)), errors="coerce")
@@ -1323,33 +1420,43 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     manifest["artifacts"].extend([
         "csv/perfect_pv_counterfactual_schedule.csv",
         "json/perfect_pv_counterfactual.json", "json/optimization_timing.json"])
+    # Run the single-day GME price oracle with causally available PV updates when `frozen_enabled`.
     if frozen_enabled:
         manifest["artifacts"].append("json/reoptimization_frozen_plan_baselines.json")
+        # Run the single-day GME price oracle with causally available PV updates when `not frozen_summary.empty`.
         if not frozen_summary.empty:
             manifest["artifacts"].extend([
                 "csv/reoptimization_frozen_plan_summary.csv",
                 "csv/reoptimization_frozen_plan_dispatch.csv",
                 "csv/reoptimization_frozen_plan_trades.csv"])
+        # Run the single-day GME price oracle with causally available PV updates when `(day_output / 'plots/reoptimization_value.png').is_file()`.
         if (day_output / "plots/reoptimization_value.png").is_file():
             manifest["artifacts"].append("plots/reoptimization_value.png")
+    # Run the single-day GME price oracle with causally available PV updates when `config['experiment_outputs'].get('save_model_files', True)`.
     if config["experiment_outputs"].get("save_model_files", True):
         manifest["artifacts"].append("models/perfect_pv_counterfactual.lp")
+    # Run the single-day GME price oracle with causally available PV updates when `include_pv_only`.
     if include_pv_only:
         manifest["artifacts"].extend([
             "csv/perfect_pv_only_counterfactual_schedule.csv",
             "json/perfect_pv_only_counterfactual.json"])
+        # Run the single-day GME price oracle with causally available PV updates when `config['experiment_outputs'].get('save_model_files', True)`.
         if config["experiment_outputs"].get("save_model_files", True):
             manifest["artifacts"].append("models/perfect_pv_only_counterfactual.lp")
+    # Run the single-day GME price oracle with causally available PV updates when `config['outputs']['plots']`.
     if config["outputs"]["plots"]:
         manifest["artifacts"].append("plots/perfect_pv_counterfactual_comparison.png")
+        # Run the single-day GME price oracle with causally available PV updates when `include_pv_only`.
         if include_pv_only:
             manifest["artifacts"].append("plots/perfect_pv_battery_incremental_value.png")
     manifest["artifacts"].extend(
         f"reoptimization_{auction}.png" for auction in actual_prices
         if (day_output / f"reoptimization_{auction}.png").exists())
+    # Run the single-day GME price oracle with causally available PV updates when `not reoptimization_settlements.empty`.
     if not reoptimization_settlements.empty:
         manifest["artifacts"].extend(["reoptimization_imbalance_settlements.csv",
                                       "reoptimization_imbalance_intervals.csv"])
+    # Run the single-day GME price oracle with causally available PV updates when `summary['imbalance_settlement_status'] == 'priced'`.
     if summary["imbalance_settlement_status"] == "priced":
         manifest["artifacts"].extend(["imbalance_prices.csv", "imbalance_settlement.png",
                                       "realized_profit_breakdown.png"])

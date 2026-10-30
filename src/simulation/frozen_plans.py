@@ -17,6 +17,7 @@ from .settlement import settle_realized_dispatch
 
 def plot_frozen_plan_comparison(summaries, destination):
     """Show whole-day frozen profits and signed gains from later reoptimization."""
+    # Return `False` when `summaries.empty or summaries.reoptimization_gain_eur.isna().any()`.
     if summaries.empty or summaries.reoptimization_gain_eur.isna().any():
         return False
     import matplotlib
@@ -44,6 +45,7 @@ def plot_frozen_plan_comparison(summaries, destination):
     axes[2].set_ylabel("Final stored energy (MWh)")
     axes[2].set_xlabel("Last auction whose plan is allowed to change")
     axes[0].set_title("Value of later auction reoptimization with the same physical feedback")
+    # Show whole-day frozen profits and signed gains from later reoptimization for each `axis` in `axes`.
     for axis in axes:
         axis.grid(axis="y", alpha=0.2)
         axis.set_axisbelow(True)
@@ -57,8 +59,10 @@ def _actual_boundary(config, grid, dispatch, first):
     """Carry actual state and aging history; do not reset to forecast snapshot SOC."""
     prefix = dispatch.iloc[:first]
     segments = config["state"].get("cycle_segment_energy_mwh")
+    # When `first and 'cycle_segment_energy_end_mwh' in prefix`, set `segments` using `prefix.iloc[-1].cycle_segment_energy_end_mwh`.
     if first and "cycle_segment_energy_end_mwh" in prefix:
         segments = prefix.iloc[-1].cycle_segment_energy_end_mwh
+        # When `isinstance(segments, str)`, set `segments` using `ast.literal_eval(segments)`.
         if isinstance(segments, str):
             segments = ast.literal_eval(segments)
     return PhysicalState(
@@ -81,18 +85,23 @@ def simulate_frozen_auction_plans(config, grid, plant, schedule, actual_prices,
     helpers handle measured PV, SOC protection, executed wear and gross trade fees.
     No solver, forecast provider, API, or database is called by this simulation.
     """
+    # Return `(pd.DataFrame(), pd.DataFrame(), pd.DataFrame())` when `len(schedule) < 2`.
     if len(schedule) < 2:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     dispatch = dispatch.reset_index(drop=True)
+    # Enforce the input contract: Frozen-plan reference dispatch must match the complete delivery grid.
     if list(dispatch.interval_id) != list(grid.interval_ids):
         raise ValueError("Frozen-plan reference dispatch must match the complete delivery grid")
+    # Enforce the input contract: Frozen-plan reference dispatch and ledger require unique product keys.
     if dispatch.interval_id.duplicated().any() or ledger.duplicated(["auction", "interval_id"]).any():
         raise ValueError("Frozen-plan reference dispatch and ledger require unique product keys")
     required = {"interval_id", "interval_start_utc", "interval_end_utc", "optimizer_cutoff_utc",
                 "charge_mw", "discharge_mw", "curtailment_mw", "snapshot_scenario_count",
                 "planned_net_position_mwh", *(f"planned_trade_{event.auction}_mwh" for event in schedule)}
+    # Enforce the input contract: Frozen-plan baselines require complete auction trade snapshots; rerun the reference experiment.
     if not required.issubset(plans.columns):
         raise ValueError("Frozen-plan baselines require complete auction trade snapshots; rerun the reference experiment")
+    # Enforce the input contract: Frozen-plan baselines require deterministic snapshot plans, not a selected stochastic leaf.
     if not plans.snapshot_scenario_count.eq(1).all():
         raise ValueError("Frozen-plan baselines require deterministic snapshot plans, not a selected stochastic leaf")
     interval_index = {product: index for index, product in enumerate(grid.interval_ids)}
@@ -109,17 +118,22 @@ def simulate_frozen_auction_plans(config, grid, plant, schedule, actual_prices,
     summaries, trajectories, all_trades = [], [], []
     selected = config.get("reoptimization_baseline", {}).get("freeze_after_auctions")
 
+    # Freeze every snapshot except the last active auction and execute its suffix for each `(frozen_index, event)` in `enumerate(schedule[:-1])`.
     for frozen_index, event in enumerate(schedule[:-1]):
+        # Skip the current item when `selected is not None and event.auction not in selected`.
         if selected is not None and event.auction not in selected:
             continue
         started = perf_counter()
         snapshot = plans.loc[plans.auction == event.auction].copy()
         snapshot = snapshot.sort_values("interval_start_utc")
+        # Enforce the input contract: Frozen-plan snapshot for `event.auction` is missing or duplicated.
         if snapshot.empty or snapshot.interval_id.duplicated().any():
             raise ValueError(f"Frozen-plan snapshot for {event.auction} is missing or duplicated")
         first = interval_index[snapshot.interval_id.iloc[0]]
+        # Enforce the input contract: Frozen-plan snapshot for `event.auction` must cover the entire residual suffix.
         if list(snapshot.interval_id) != list(grid.interval_ids[first:]):
             raise ValueError(f"Frozen-plan snapshot for {event.auction} must cover the entire residual suffix")
+        # Enforce the input contract: Frozen-plan snapshot interval boundaries do not match delivery.
         if (not pd.DatetimeIndex(pd.to_datetime(snapshot.interval_start_utc, utc=True)).equals(
                 pd.DatetimeIndex(grid.starts[first:]))
             or not pd.DatetimeIndex(pd.to_datetime(snapshot.interval_end_utc, utc=True)).equals(
@@ -127,18 +141,24 @@ def simulate_frozen_auction_plans(config, grid, plant, schedule, actual_prices,
             raise ValueError("Frozen-plan snapshot interval boundaries do not match delivery")
         snapshot_by_product = snapshot.set_index("interval_id")
         rows = []
+        # Freeze every snapshot except the last active auction and execute its suffix for each `(auction_index, auction_event)` in `enumerate(schedule)`.
         for auction_index, auction_event in enumerate(schedule):
             auction = auction_event.auction
+            # Freeze every snapshot except the last active auction and execute its suffix for each `index` in `auction_event.eligible_intervals`.
             for index in auction_event.eligible_intervals:
                 product = grid.interval_ids[index]
+                # Freeze every snapshot except the last active auction and execute its suffix when `auction_index <= frozen_index`.
                 if auction_index <= frozen_index:
+                    # Enforce the input contract: Missing fixed `auction` commitment for `product`.
                     if (auction, product) not in reference_trades.index:
                         raise ValueError(f"Missing fixed {auction} commitment for {product}")
                     quantity = float(reference_trades.loc[(auction, product), "quantity_mwh"])
                 else:
+                    # Enforce the input contract: A future frozen order is absent from its snapshot.
                     if product not in snapshot_by_product.index:
                         raise ValueError("A future frozen order is absent from its snapshot")
                     quantity = float(snapshot_by_product.loc[product, f"planned_trade_{auction}_mwh"])
+                # Enforce the input contract: A frozen trade cannot affect a product before its submission.
                 if auction_event.submission_at > pd.Timestamp(grid.starts[index]):
                     raise ValueError("A frozen trade cannot affect a product before its submission")
                 rows.append({"auction": auction, "interval_id": product,
@@ -154,10 +174,12 @@ def simulate_frozen_auction_plans(config, grid, plant, schedule, actual_prices,
         # Prefix delivery cannot change after a freeze, including financial positions.
         if not np.allclose(frozen_positions.iloc[:first], dispatch.net_position_mwh.iloc[:first]):
             raise ValueError("Frozen future trades changed an already executed position")
+        # Enforce the input contract: Frozen auction trades do not reconcile to the snapshot's planned net position.
         if not np.allclose(frozen_positions.iloc[first:], snapshot.planned_net_position_mwh):
             raise ValueError("Frozen auction trades do not reconcile to the snapshot's planned net position")
         frozen_dispatch = dispatch.copy()
         state = _actual_boundary(config, grid, dispatch, first)
+        # Freeze every snapshot except the last active auction and execute its suffix for each `(offset, row)` in `enumerate(snapshot.itertuples(index=False))`.
         for offset, row in enumerate(snapshot.itertuples(index=False)):
             index = first + offset
             target = float(frozen_positions.iloc[index] / grid.delta_hours[index])
@@ -166,16 +188,20 @@ def simulate_frozen_auction_plans(config, grid, plant, schedule, actual_prices,
                 requested_charge_mw=float(row.charge_mw), requested_discharge_mw=float(row.discharge_mw),
                 requested_curtailment_mw=float(row.curtailment_mw), plant=plant,
                 degradation_settings=aging, dispatch_policy=policy, grid_target_mw=target)
+            # Freeze every snapshot except the last active auction and execute its suffix for each `(key, value)` in `executed.items()`.
             for key, value in executed.items():
+                # When `key == 'cycle_segment_energy_end_mwh'`, set `value` using `str(list(value))`.
                 if key == "cycle_segment_energy_end_mwh":
                     value = str(list(value))
                 frozen_dispatch.loc[index, key] = value
             frozen_dispatch.loc[index, "import_fee_eur"] = max(0.0, -executed["grid_mw"]) * grid.delta_hours[index] * import_fee
+            # Process each `(source, destination)` in this collection.
             for source, destination in (("pv_ac_forecast_mw", "pv_ac_forecast_mw"),
                     ("pv_forecast_vintage_utc", "pv_forecast_vintage_utc"),
                     ("pv_forecast_available_at_utc", "pv_forecast_available_at_utc"),
                     ("soc_end_mwh", "planned_energy_end_mwh"),
                     ("optimizer_cutoff_utc", "plan_cutoff_utc")):
+                # When `hasattr(row, source)`, set `frozen_dispatch.loc[index, destination]` using `getattr(row, source)`.
                 if hasattr(row, source):
                     frozen_dispatch.loc[index, destination] = getattr(row, source)
             frozen_dispatch.loc[index, "active_plan_auction"] = event.auction
@@ -221,6 +247,7 @@ def simulate_frozen_auction_plans(config, grid, plant, schedule, actual_prices,
             "comparison_scope": "Full delivery day; identical executed prefix and prior commitments, remaining auction quantities and battery commands frozen at this snapshot, same realized PV and physical feedback; no residual-energy valuation"})
         trajectories.append(frozen_dispatch)
         all_trades.append(frozen_ledger)
+    # Return `(pd.DataFrame(), pd.DataFrame(), pd.DataFrame())` when `not summaries`.
     if not summaries:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
     return pd.DataFrame(summaries), pd.concat(trajectories, ignore_index=True), pd.concat(all_trades, ignore_index=True)

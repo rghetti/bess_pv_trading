@@ -15,10 +15,13 @@ from ..models.pv_physical import PhysicalPVModel, parameter_defaults
 def available_methods(section: dict, farm) -> list[str]:
     """Do not construct tracker or rear-side calibration variables for fixed farms."""
     result = []
+    # Do not construct tracker or rear-side calibration variables for fixed farms for each `name` in `section['methods']`.
     for name in section["methods"]:
         family = name.split("_")[0]
+        # Skip the current item when `family == 'tracker' and farm.tracking_type_id not in {1, 3}`.
         if family == "tracker" and farm.tracking_type_id not in {1, 3}:
             continue
+        # Skip the current item when `family == 'bifacial' and farm.tracking_type_id != 3`.
         if family == "bifacial" and farm.tracking_type_id != 3:
             continue
         result.append(name)
@@ -34,6 +37,7 @@ def balanced_weights(frame: pd.DataFrame) -> np.ndarray:
 
 def loss_values(residual, loss: str, delta: float):
     """Use squared error or a continuous Huber loss in nameplate-normalized units."""
+    # Return `residual ** 2` when `loss == 'mse'`.
     if loss == "mse":
         return residual ** 2
     absolute = np.abs(residual)
@@ -60,8 +64,10 @@ def fit_one(frame: pd.DataFrame, farm, settings: dict, section: dict, method: st
     started = time.perf_counter()
     family, loss = method.rsplit("_", 1)
     names = ["coefficient"]
+    # When `family in {'thermal', 'tracker', 'bifacial'}`, set `names` using `['u0', 'u1']`.
     if family in {"thermal", "tracker", "bifacial"}:
         names += ["u0", "u1"]
+    # When `family == 'tracker'`, set `names` using `['gcr', 'max_angle']`.
     if family == "tracker":
         names += ["gcr", "max_angle"]
     model_settings = fit_settings(settings, method, transposition)
@@ -82,6 +88,7 @@ def fit_one(frame: pd.DataFrame, farm, settings: dict, section: dict, method: st
         nonlocal evaluations
         evaluations += 1
         residual = model.evaluate(parameters(vector)) / farm.ac_capacity_mw - observed
+        # Return `1e+20` when `not np.isfinite(residual).all()`.
         if not np.isfinite(residual).all():
             return 1e20
         value = np.dot(weights, loss_values(residual, loss, float(section["huber_delta"])))
@@ -90,6 +97,7 @@ def fit_one(frame: pd.DataFrame, farm, settings: dict, section: dict, method: st
     # Always include the configured assumptions; random starts explore only bounds.
     initial = np.clip(prior, lower, upper)
     trials = []
+    # Update `answer` when this condition is met.
     if len(names) == 1:
         answer = minimize_scalar(lambda x: objective(np.array([x])), bounds=tuple(bounds[0]),
             method="bounded", options={"xatol": float(section["optimizer_ftol"]),
@@ -99,6 +107,7 @@ def fit_one(frame: pd.DataFrame, farm, settings: dict, section: dict, method: st
         rng = np.random.default_rng(seed)
         starts = [initial] + [rng.uniform(lower, upper) for _ in range(int(section["multistarts"])-1)]
         candidates = []
+        # Fit the complete clipped physical forward model with deterministic starts for each `start` in `starts`.
         for start in starts:
             # Unit-box coordinates prevent the output multiplier's gradient from
             # hiding the much smaller temperature/geometry gradients.
@@ -112,15 +121,18 @@ def fit_one(frame: pd.DataFrame, farm, settings: dict, section: dict, method: st
     # A numerical budget stop is recorded, and cannot make the accepted iterate
     # worse than its configured starting point on the fitting objective.
     candidates.append((initial, False, "configured_start_reference"))
+    # Fit the complete clipped physical forward model with deterministic starts for each `(vector, success, message)` in `candidates`.
     for vector, success, message in candidates:
         trials.append({"parameters": parameters(vector), "objective": objective(vector),
                        "converged": success, "message": message})
     best = min(trials, key=lambda item: item["objective"])
+    # Enforce the input contract: Physical calibration produced no finite candidate.
     if best["objective"] >= 1e19:
         raise ValueError("Physical calibration produced no finite candidate")
     vector = np.array([best["parameters"][name] for name in names])
     base_prediction = model.evaluate(best["parameters"]) / farm.ac_capacity_mw
     columns = []
+    # Fit the complete clipped physical forward model with deterministic starts for each `(position, name)` in `enumerate(names)`.
     for position, name in enumerate(names):
         changed = vector.copy()
         step = width[position] * 1e-5
@@ -164,6 +176,7 @@ def predict_fit(frame: pd.DataFrame, farm, settings: dict, night_policy: dict, f
     model = PhysicalPVModel(frame.set_index("interval_start_utc"), farm, configured, night_policy)
     prediction = model.evaluate(fit["parameters"])
     prediction[model.night & ~np.isfinite(prediction)] = 0.0
+    # Enforce the input contract: Candidate forecast is missing on the frozen evaluation mask.
     if not np.isfinite(prediction[frame.eligible.to_numpy()]).all():
         raise ValueError("Candidate forecast is missing on the frozen evaluation mask")
     return prediction
@@ -186,8 +199,10 @@ def select_and_refit(corpus: pd.DataFrame, issue, farm, settings: dict, section:
     validation_day = (local_midnight-pd.DateOffset(days=int(section["validation_days"]))).date().isoformat()
     available = corpus.loc[(corpus.target_available_at_utc <= issue) & (corpus.delivery_day < last_day)]
     validation = available.loc[available.delivery_day >= validation_day]
+    # Enforce the input contract: PV calibration validation has no eligible daylight observations.
     if validation.loc[validation.eligible & validation.daylight].empty:
         raise ValueError("PV calibration validation has no eligible daylight observations")
+    # When `method == 'fixed'`, set `fit` using `fixed_fit(settings)`.
     if method == "fixed":
         fit = fixed_fit(settings)
         score = validation_score(validation, validation.baseline_mw.to_numpy(), farm.ac_capacity_mw)
@@ -199,13 +214,16 @@ def select_and_refit(corpus: pd.DataFrame, issue, farm, settings: dict, section:
                     if family != "bifacial" or x in {"isotropic", "haydavies"}])
     regularizations = [0.0] if family == "scale" else section["regularization_values"]
     candidates, seen = [], set()
+    # Process each `(window, transposition, regularization)` in this collection.
     for window, transposition, regularization in itertools.product(section["training_windows_days"], models, regularizations):
         history = available if window is None else available.loc[available.delivery_day >=
             (local_midnight-pd.DateOffset(days=int(window))).date().isoformat()]
         train = history.loc[(history.delivery_day < validation_day) & history.eligible & history.daylight]
+        # Apply this branch only when its condition is met.
         if train.delivery_day.nunique() < int(section["minimum_training_days"]) or len(train) < int(section["minimum_pairs"]):
             continue
         key = (train.delivery_day.min(), train.delivery_day.max(), transposition, regularization)
+        # Skip the current item when `key in seen`.
         if key in seen:
             continue
         seen.add(key)
@@ -214,6 +232,7 @@ def select_and_refit(corpus: pd.DataFrame, issue, farm, settings: dict, section:
         predicted = predict_fit(validation, farm, settings, section["night_policy"], fitted)
         score = validation_score(validation, predicted, farm.ac_capacity_mw)
         candidates.append({"window_days": window, "validation_nrmse": score, "fit": fitted})
+    # Enforce the input contract: PV calibration `method` has insufficient earlier training history.
     if not candidates:
         raise ValueError(f"PV calibration {method} has insufficient earlier training history")
     best = min(candidates, key=lambda item: (item["validation_nrmse"], item["fit"]["regularization"] != 0))

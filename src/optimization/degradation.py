@@ -21,38 +21,49 @@ def degradation_settings_from_config(config: Mapping[str, Any]) -> DegradationSe
     model = section.pop("model", "throughput")
     mode = {"throughput": "constant_throughput", "constant_throughput": "constant_throughput",
             "xu_segmented": "xu_segmented"}.get(model)
+    # Enforce the input contract: Unknown degradation model `model`.
     if mode is None:
         raise ValueError(f"Unknown degradation model {model!r}")
     # Published pack prices and reference cycle life can determine the linear
     # wear rate. Keep their source metadata in YAML rather than solver settings.
     economics = section.pop("replacement_economics", None)
     lifetime = section.pop("throughput_lifetime", None)
+    # Parse either a complete application config or its degradation section when `economics is not None or lifetime is not None`.
     if economics is not None or lifetime is not None:
+        # Enforce the input contract: Replacement/lifetime degradation requires the full battery configuration.
         if "battery" not in config:
             raise ValueError("Replacement/lifetime degradation requires the full battery configuration")
         battery = battery_parameters_from_config(config["battery"])
+        # Enforce the input contract: Replacement/lifetime degradation requires positive battery capacity.
         if battery.capacity_mwh <= 0:
             raise ValueError("Replacement/lifetime degradation requires positive battery capacity")
+    # Parse either a complete application config or its degradation section when `economics is not None`.
     if economics is not None:
+        # Enforce the input contract: Specify replacement_economics or replacement_cost_eur, not both.
         if section.get("replacement_cost_eur") is not None:
             raise ValueError("Specify replacement_economics or replacement_cost_eur, not both")
         price = float(economics["pack_price_usd_per_kwh"])
         fx = float(economics["usd_per_eur"])
         additional = float(economics["additional_replacement_eur_per_kwh"])
         salvage = float(economics["salvage_fraction"])
+        # Enforce the input contract: Invalid replacement pack price, FX, additional cost or salvage fraction.
         if (not all(np.isfinite(value) for value in (price, fx, additional, salvage))
                 or price <= 0 or fx <= 0 or additional < 0 or not 0 <= salvage < 1):
             raise ValueError("Invalid replacement pack price, FX, additional cost or salvage fraction")
         section["replacement_cost_eur"] = (
             (price / fx + additional) * battery.capacity_mwh * 1000 * (1 - salvage))
+    # Parse either a complete application config or its degradation section when `lifetime is not None`.
     if lifetime is not None:
+        # Enforce the input contract: throughput_lifetime is only supported by throughput degradation.
         if mode != "constant_throughput":
             raise ValueError("throughput_lifetime is only supported by throughput degradation")
+        # Enforce the input contract: Specify throughput_lifetime or a direct throughput cost, not both.
         if section.get("cost_eur_per_mwh_throughput") is not None:
             raise ValueError("Specify throughput_lifetime or a direct throughput cost, not both")
         cycles = float(lifetime["cycle_life"])
         depth = float(lifetime["reference_depth_of_discharge"])
         replacement = section.get("replacement_cost_eur")
+        # Enforce the input contract: Throughput lifetime requires positive cycles/replacement cost and 0<DoD<=1.
         if (not np.isfinite(cycles) or cycles <= 0 or not np.isfinite(depth)
                 or not 0 < depth <= 1 or replacement is None
                 or not np.isfinite(replacement) or replacement <= 0):
@@ -71,14 +82,17 @@ def xu_segment_parameters(battery: BatteryParameters, settings: DegradationSetti
     E_rate is nameplate internal energy, including energy outside operational SoC
     limits. Eta_dis belongs in both the AC marginal coefficient and energy balance.
     """
+    # Enforce the input contract: Xu segment parameters require Xu mode and positive battery capacity.
     if settings.mode != "xu_segmented" or battery.capacity_mwh <= 0:
         raise ValueError("Xu segment parameters require Xu mode and positive battery capacity")
+    # Enforce the input contract: Xu segmented model currently requires zero self discharge.
     if battery.self_discharge_per_hour:
         raise ValueError("Xu segmented model currently requires zero self discharge")
     depth = np.linspace(0.0, 1.0, settings.segment_count + 1)
     stress = settings.stress_coefficient * depth ** settings.stress_exponent
     capacities = np.full(settings.segment_count, battery.capacity_mwh / settings.segment_count)
     marginal = float(settings.replacement_cost_eur) * np.diff(stress) / (battery.eta_discharge * capacities)
+    # Enforce the input contract: Xu marginal cycle aging costs must be finite and nondecreasing.
     if not np.all(np.isfinite(marginal)) or np.any(np.diff(marginal) < -1e-10):
         raise ValueError("Xu marginal cycle aging costs must be finite and nondecreasing")
     return capacities, marginal
@@ -88,11 +102,14 @@ def initial_segment_energy(state: PhysicalState, battery: BatteryParameters,
                            settings: DegradationSettings) -> np.ndarray:
     """Use carried segment memory, or initialize once by Xu appendix Eq. (39)."""
     capacities, _ = xu_segment_parameters(battery, settings)
+    # When `state.cycle_segment_energy_mwh is not None`, set `values` using `np.asarray(state.cycle_segment_energy_mwh, dtype=float)`.
     if state.cycle_segment_energy_mwh is not None:
         values = np.asarray(state.cycle_segment_energy_mwh, dtype=float)
+        # Enforce the input contract: Xu segment energy shape or capacity differs from configured segments.
         if values.shape != capacities.shape or np.any(values > capacities + 1e-8):
             raise ValueError("Xu segment energy shape or capacity differs from configured segments")
         return values.copy()
+    # Enforce the input contract: A carried Xu state requires cycle_segment_energy_mwh; aging history cannot reset.
     if state.cumulative_throughput_mwh or state.cumulative_degradation_eur or state.origin != "known_delivery_start_assumption":
         raise ValueError("A carried Xu state requires cycle_segment_energy_mwh; aging history cannot reset")
     # Initial charge is assigned to shallowest segments; subsequent discharge
@@ -110,10 +127,13 @@ def evaluate_xu_dispatch(*, battery: BatteryParameters, settings: DegradationSet
     """
     charge, discharge, duration = (np.asarray(value, dtype=float) for value in
                                   (charge_mw, discharge_mw, delta_hours))
+    # Enforce the input contract: Xu dispatch and durations must be matching one-dimensional vectors.
     if charge.ndim != 1 or charge.shape != discharge.shape or charge.shape != duration.shape:
         raise ValueError("Xu dispatch and durations must be matching one-dimensional vectors")
+    # Enforce the input contract: Xu dispatch requires finite nonnegative powers and positive durations.
     if not all(np.all(np.isfinite(value)) for value in (charge, discharge, duration)) or np.any(charge < -1e-8) or np.any(discharge < -1e-8) or np.any(duration <= 0):
         raise ValueError("Xu dispatch requires finite nonnegative powers and positive durations")
+    # Enforce the input contract: Xu dispatch cannot charge and discharge simultaneously.
     if np.any(np.minimum(charge, discharge) > 1e-8):
         raise ValueError("Xu dispatch cannot charge and discharge simultaneously")
     capacities, costs = xu_segment_parameters(battery, settings)
@@ -127,6 +147,7 @@ def evaluate_xu_dispatch(*, battery: BatteryParameters, settings: DegradationSet
         amount_in = max(0.0, charge[t]) * battery.eta_charge * hours
         amount_out = max(0.0, discharge[t]) * hours / battery.eta_discharge
         energy[t + 1] = energy[t]
+        # Replay the appendix's greedy policy numerically, without a solver for each `j` in `range(settings.segment_count)`.
         for j in range(settings.segment_count):
             stored = min(amount_in, max(0.0, capacities[j] - energy[t, j]))
             removed = min(amount_out, max(0.0, energy[t, j]))
@@ -135,6 +156,7 @@ def evaluate_xu_dispatch(*, battery: BatteryParameters, settings: DegradationSet
             segment_discharge[t, j] = removed * battery.eta_discharge / hours
             amount_in -= stored
             amount_out -= removed
+        # Enforce the input contract: Xu dispatch exceeds available segment energy or headroom.
         if max(amount_in, amount_out) > 1e-7:
             raise ValueError("Xu dispatch exceeds available segment energy or headroom")
     interval_cost = np.sum(segment_discharge * costs[None, :] * duration[:, None], axis=1)
@@ -151,17 +173,21 @@ def rainflow_discharge_depths(energy_mwh: np.ndarray, capacity_mwh: float) -> np
     state. It neglects pre-history, so use it for an explicitly initialized trace.
     """
     values = np.asarray(energy_mwh, dtype=float)
+    # Enforce the input contract: Rainflow input requires finite one-dimensional energy and positive capacity.
     if values.ndim != 1 or not len(values) or not np.all(np.isfinite(values)) or not np.isfinite(capacity_mwh) or capacity_mwh <= 0:
         raise ValueError("Rainflow input requires finite one-dimensional energy and positive capacity")
     points = values[np.r_[True, np.diff(values) != 0]]
+    # When `len(points) > 2`, set `keep` using `np.r_[True, np.diff(points)[:-1] * np.diff(points)[1:] < 0, True]`.
     if len(points) > 2:
         keep = np.r_[True, np.diff(points)[:-1] * np.diff(points)[1:] < 0, True]
         points = points[keep]
     residue = list(points)
     depths = []
     index = 0
+    # Continue until `index + 3 < len(residue)` is false.
     while index + 3 < len(residue):
         left, middle, right = (abs(residue[index + j + 1] - residue[index + j]) for j in range(3))
+        # Independently count full and discharge-residue depths by paper Section II-C when `middle <= left and middle <= right`.
         if middle <= left and middle <= right:
             depths.append(middle / capacity_mwh)
             del residue[index + 1:index + 3]
@@ -178,10 +204,12 @@ def advance_degradation_state(*, state: PhysicalState, battery: BatteryParameter
                               origin: str = "simulated_carried_state") -> tuple[PhysicalState, float]:
     """Carry realized or committed-command aging without rebuilding cycle history."""
     hours = (end - state.timestamp).total_seconds() / 3600
+    # Enforce the input contract: Degradation state must advance over a positive interval.
     if hours <= 0:
         raise ValueError("Degradation state must advance over a positive interval")
     throughput = hours * (charge_mw + discharge_mw)
     segments = None
+    # Update `trajectory` when this condition is met.
     if settings.mode == "xu_segmented":
         trajectory = evaluate_xu_dispatch(battery=battery, settings=settings, state=state,
             charge_mw=np.array([charge_mw]), discharge_mw=np.array([discharge_mw]),
@@ -189,6 +217,7 @@ def advance_degradation_state(*, state: PhysicalState, battery: BatteryParameter
         segments = tuple(float(value) for value in trajectory["segment_energy_mwh"][-1])
         aging = trajectory["degradation_eur"]
     else:
+        # Enforce the input contract: Xu cycle segment history cannot be silently discarded by a throughput model.
         if state.cycle_segment_energy_mwh is not None:
             raise ValueError("Xu cycle segment history cannot be silently discarded by a throughput model")
         aging = throughput * settings.cost_eur_per_mwh_throughput
@@ -210,14 +239,18 @@ def build_xu_degradation(model: Any, inputs: OptimizationInput,
     count, intervals = np.shape(inputs.scenarios.pv_ac_mw)
     charge, discharge, energy = {}, {}, {}
     charge_priority, discharge_priority = {}, {}
+    # Build the xu charge sum, xu discharge sum, xu charge priority, xu discharge priority constraints for `t` from `range(intervals)`.
     for t in range(intervals):
+        # Build the xu charge sum, xu discharge sum, xu charge priority, xu discharge priority constraints for `owner` from `sorted({row[t] for row in inputs.tree.control_nodes})`.
         for owner in sorted({row[t] for row in inputs.tree.control_nodes}):
+            # Create the xu charge, xu discharge variables for `j` from `range(settings.segment_count)`.
             for j in range(settings.segment_count):
                 suffix = f"n{owner},t{t},j{j}"
                 charge[t, owner, j] = model.addVar(ub=battery.max_power_mw, name=f"xu_charge[{suffix}]")
                 discharge[t, owner, j] = model.addVar(ub=battery.max_power_mw, name=f"xu_discharge[{suffix}]")
             model.addConstr(gp.quicksum(charge[t, owner, j] for j in range(settings.segment_count)) == variables["charge"][t, owner], name=f"xu_charge_sum[n{owner},t{t}]")
             model.addConstr(gp.quicksum(discharge[t, owner, j] for j in range(settings.segment_count)) == variables["discharge"][t, owner], name=f"xu_discharge_sum[n{owner},t{t}]")
+            # Build the xu charge priority, xu discharge priority constraints for `j` from `range(settings.segment_count - 1)`.
             for j in range(settings.segment_count - 1):
                 suffix = f"n{owner},t{t},j{j}"
                 charge_priority[t, owner, j] = model.addVar(vtype=gp.GRB.BINARY, name=f"xu_charge_deeper[{suffix}]")
@@ -226,18 +259,25 @@ def build_xu_degradation(model: Any, inputs: OptimizationInput,
                 # when charging, or empty when discharging. Tails prevent skips.
                 model.addConstr(gp.quicksum(charge[t, owner, k] for k in range(j + 1, settings.segment_count)) <= battery.max_power_mw * charge_priority[t, owner, j], name=f"xu_charge_priority[{suffix}]")
                 model.addConstr(gp.quicksum(discharge[t, owner, k] for k in range(j + 1, settings.segment_count)) <= battery.max_power_mw * discharge_priority[t, owner, j], name=f"xu_discharge_priority[{suffix}]")
+    # Build the xu energy sum, xu initial, xu balance, xu fill first constraints for `s` from `range(count)`.
     for s in range(count):
+        # Build the xu energy sum constraints for `t` from `range(intervals + 1)`.
         for t in range(intervals + 1):
+            # Create the xu energy variables for `j` from `range(settings.segment_count)`.
             for j in range(settings.segment_count):
                 energy[s, t, j] = model.addVar(ub=float(capacity[j]), name=f"xu_energy[s{s},boundary{t},j{j}]")
             model.addConstr(gp.quicksum(energy[s, t, j] for j in range(settings.segment_count)) == variables["energy"][s, t], name=f"xu_energy_sum[s{s},boundary{t}]")
+        # Build the xu initial constraints for `j` from `range(settings.segment_count)`.
         for j in range(settings.segment_count):
             model.addConstr(energy[s, 0, j] == float(initial[j]), name=f"xu_initial[s{s},j{j}]")
+        # Build the xu balance, xu fill first, xu empty first constraints for `(t, duration)` from `enumerate(inputs.grid.delta_hours)`.
         for t, duration in enumerate(inputs.grid.delta_hours):
             owner = inputs.tree.control_nodes[s][t]
+            # Build the xu balance, xu fill first, xu empty first constraints for `j` from `range(settings.segment_count)`.
             for j in range(settings.segment_count):
                 suffix = f"s{s},t{t},j{j}"
                 model.addConstr(energy[s, t + 1, j] == energy[s, t, j] + duration * (battery.eta_charge * charge[t, owner, j] - discharge[t, owner, j] / battery.eta_discharge), name=f"xu_balance[{suffix}]")
+                # Apply the xu fill first, xu empty first constraint when `j < settings.segment_count - 1`.
                 if j < settings.segment_count - 1:
                     model.addConstr(energy[s, t + 1, j] >= float(capacity[j]) * charge_priority[t, owner, j], name=f"xu_fill_first[{suffix}]")
                     model.addConstr(energy[s, t + 1, j] <= float(capacity[j]) * (1 - discharge_priority[t, owner, j]), name=f"xu_empty_first[{suffix}]")

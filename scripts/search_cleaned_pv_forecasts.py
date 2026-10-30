@@ -36,20 +36,26 @@ from bess_pv_trading.reporting.artifacts import prepare_experiment_output
 def trials(config,farm_id):
     """Sample unique configurations, using at least sixteen per tunable family."""
     section=config['pv_cleaned_hpo'];count=int(section['trials_per_family'])
+    # Enforce the input contract: This study requires at least 16 HPO trials per tunable family.
     if count<16:raise ValueError('This study requires at least 16 HPO trials per tunable family')
     rng=np.random.default_rng(section['seed']+farm_id)
     result=[]
+    # Sample unique configurations, using at least sixteen per tunable family for each `(family, space)` in `section['statistical_spaces'].items()`.
     for family,space in section['statistical_spaces'].items():
         combinations=list(itertools.product(*space.values()))
+        # Enforce the input contract: `family`: fewer than 16 unique available trials.
         if len(combinations)<count:raise ValueError(f'{family}: fewer than 16 unique available trials')
         chosen=rng.choice(len(combinations),count,replace=False)
+        # Sample unique configurations, using at least sixteen per tunable family for each `(number, index)` in `enumerate(chosen)`.
         for number,index in enumerate(chosen):
             result.append({'name':f'{family}_{number:02d}','family':family,
                 'features':section['feature_sets'][number%len(section['feature_sets'])],
                 'parameters':dict(zip(space,combinations[index])),'seed':section['seed']+farm_id+number})
+    # Sample unique configurations, using at least sixteen per tunable family for each `architecture` in `section['neural_architectures']`.
     for architecture in section['neural_architectures']:
         space=section['neural_space'];combinations=list(itertools.product(*space.values()))
         chosen=rng.choice(len(combinations),count,replace=False)
+        # Sample unique configurations, using at least sixteen per tunable family for each `(number, index)` in `enumerate(chosen)`.
         for number,index in enumerate(chosen):
             parameters=dict(zip(space,combinations[index]));parameters['architecture']=architecture
             result.append({'name':f'{architecture}_{number:02d}','family':'neural',
@@ -64,8 +70,10 @@ def physical_job(job):
     from threadpoolctl import threadpool_limits
     directory=Path(job['output']);path=directory/'json/physical'/f'{job["name"]}.json'
     array=directory/'arrays'/f'{job["name"]}.npy'
+    # When `job['resume'] and path.exists()`, set `record` using `json.loads(path.read_text())`.
     if job['resume'] and path.exists():
         record=json.loads(path.read_text())
+        # Enforce the input contract: Physical HPO resume mismatch.
         if record['identity']!=job['identity'] or record['prediction_sha256']!=sha(array):
             raise ValueError('Physical HPO resume mismatch')
         return record
@@ -91,12 +99,17 @@ def physical_trials(config,farm_id,farm,settings,source,directory,identity):
     section=config['pv_cleaned_hpo'];count=section['trials_per_family']
     rng=np.random.default_rng(section['seed']+farm_id)
     jobs=[]
+    # Search physical transposition, loss and regularization with unique configurations for each `family` in `section['physical_families']`.
     for family in section['physical_families']:
+        # Skip the current item when `family == 'tracker' and farm.tracking_type_id not in {1, 3}`.
         if family=='tracker' and farm.tracking_type_id not in {1,3}:continue
+        # Skip the current item when `family == 'bifacial' and farm.tracking_type_id != 3`.
         if family=='bifacial' and farm.tracking_type_id!=3:continue
         models=[x for x in section['transposition_models'] if family!='bifacial' or x!='perez-driesse']
         grid=list(itertools.product(models,section['physical_losses'],section['physical_regularizations']))
+        # Enforce the input contract: `family`: insufficient unique physical configurations.
         if len(grid)<count:raise ValueError(f'{family}: insufficient unique physical configurations')
+        # Search physical transposition, loss and regularization with unique configurations for each `(number, index)` in `enumerate(rng.choice(len(grid), count, replace=False))`.
         for number,index in enumerate(rng.choice(len(grid),count,replace=False)):
             transposition,loss,regularization=grid[index]
             jobs.append({'name':f'pvlib_{family}_{number:02d}','family':f'pvlib_{family}',
@@ -104,6 +117,7 @@ def physical_trials(config,farm_id,farm,settings,source,directory,identity):
     # Scale-only has no further equipment or architecture hyperparameters to tune.
     jobs.append({'name':'pvlib_scale','family':'pvlib_scale','method':'scale_mse',
         'transposition':settings['transposition_model'],'regularization':0.0})
+    # Search physical transposition, loss and regularization with unique configurations for each `job` in `jobs`.
     for job in jobs:
         job.update({'farm':farm,'settings':settings,'source':str(source),'output':str(directory),
             'identity':identity,'resume':section['resume'],'seed':section['seed']+farm_id,
@@ -117,20 +131,27 @@ def report(config,root,source,identity):
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     section=config['pv_cleaned_hpo'];rows=[];selections=[];monthly=[];daily=[];diagnostics=[];periods=[]
+    # Apply score for `(regime, farm_id)` from `itertools.product(section['input_regimes'], section['farm_ids'])`.
     for regime,farm_id in itertools.product(section['input_regimes'],section['farm_ids']):
         folder=root/regime/f'farm_{farm_id}';base=source/regime/f'farm_{farm_id}'
         frame=pd.read_parquet(base/'parquet/corpus.parquet')
         rating=config['farms'][str(farm_id)]['ac_capacity_kw']/1000
         candidates=[]
+        # Select by prior validation, report every family and export its reusable winner for each `spec` in `trials(config, farm_id)`.
         for spec in trials(config,farm_id):
             candidates.append((spec['name'],spec['parameters'].get('architecture',spec['family'])))
+        # Select by prior validation, report every family and export its reusable winner for each `path` in `(folder / 'json/physical').glob('*.json')`.
         for path in (folder/'json/physical').glob('*.json'):
             record=json.loads(path.read_text());candidates.append((record['name'],record['family']))
+        # Apply score for `(name, family)` from `candidates`.
         for name,family in candidates:
             prediction=np.load(folder/'arrays'/f'{name}.npy')
+            # Apply score for `split` from `['train', 'validation', 'test']`.
             for split in ['train','validation','test']:
+                # Apply score for `coverage` from `['observed_only', 'including_interpolation']`.
                 for coverage in ['observed_only','including_interpolation']:
                     mask=(frame.eligible&frame.daylight&frame.split.eq(split)).to_numpy(copy=True)
+                    # When `coverage == 'observed_only'`, set `mask` using `~frame.satellite_ghi_interpolated.to_numpy()`.
                     if coverage=='observed_only':mask&=~frame.satellite_ghi_interpolated.to_numpy()
                     scores=score(frame,prediction,rating,mask)
                     error=np.abs(prediction[mask]-frame.loc[mask,'measured_ac_mw'].to_numpy())/rating*100
@@ -147,12 +168,14 @@ def report(config,root,source,identity):
         predictions=frame[['interval_start_utc','delivery_day','auction','split','eligible','daylight',
             'measured_ac_mw','satellite_ghi_w_m2','satellite_ghi_input_w_m2','satellite_ghi_interpolated',
             'dubious_excluded','outage_excluded','plateau_flag']].copy()
+        # Apply predict bundle for `row` from `family_winners.itertuples()`.
         for row in family_winners.itertuples():
             name=row.model;prediction=np.load(folder/'arrays'/f'{name}.npy')
             predictions[f'prediction_{row.family}_mw']=prediction
             selection={'regime':regime,'farm_id':farm_id,'family':row.family,'model':name,
                 'validation_nrmse_percent':row.nrmse_percent,'overall_winner':name==chosen}
             selections.append(selection)
+            # Select by prior validation, report every family and export its reusable winner when `row.family.startswith('pvlib_')`.
             if row.family.startswith('pvlib_'):
                 write(folder/'bundles'/row.family/'physical_parameters.json',{
                     **selection,**json.loads((folder/'json/physical'/f'{name}.json').read_text()),
@@ -161,15 +184,19 @@ def report(config,root,source,identity):
                 export_bundle(folder,name,folder/'bundles'/row.family)
                 replay=predict_bundle(frame,folder/'bundles'/row.family,farm_id=farm_id)
                 difference=float(np.max(np.abs(replay-prediction)))
+                # Enforce the input contract: Selected bundle replay mismatch.
                 if difference>section['replay_tolerance_mw']:raise ValueError('Selected bundle replay mismatch')
                 diagnostics.append({**selection,'replay_max_error_mw':difference})
             mask=frame.eligible&frame.daylight&~frame.satellite_ghi_interpolated
+            # Apply score for `((month, auction), positions)` from `frame.groupby([frame.delivery_day.str[:7], frame.auction]).indices.items()`.
             for (month,auction),positions in frame.groupby([frame.delivery_day.str[:7],frame.auction]).indices.items():
                 eligible=np.zeros(len(frame),dtype=bool);eligible[positions]=True;eligible&=mask.to_numpy()
+                # Apply score when `eligible.any()`.
                 if eligible.any():monthly.append({**selection,'month':month,'auction':auction,
                     **score(frame,prediction,rating,eligible)})
             data=frame.loc[mask,['delivery_day','auction','split']].copy()
             data['error_mw']=prediction[mask]-frame.loc[mask,'measured_ac_mw'].to_numpy()
+            # Select by prior validation, report every family and export its reusable winner for each `((day, auction, split), part)` in `data.groupby(['delivery_day', 'auction', 'split'])`.
             for (day,auction,split),part in data.groupby(['delivery_day','auction','split']):
                 daily.append({**selection,'delivery_day':day,'auction':auction,'split':split,
                     'rmse_percent':float(np.sqrt(np.mean(part.error_mw**2))/rating*100),
@@ -179,17 +206,21 @@ def report(config,root,source,identity):
         local=pd.DatetimeIndex(frame.interval_start_utc).tz_convert(config['pv_neural']['delivery_timezone'])
         hour=local.hour+local.minute/60
         labels=np.select([hour<9,hour<12,hour<15],['before_09','09_to_12','12_to_15'],default='after_15')
+        # Apply score for `row` from `family_winners.itertuples()`.
         for row in family_winners.itertuples():
             values=predictions[f'prediction_{row.family}_mw'].to_numpy()
+            # Apply score for `(split, label)` from `itertools.product(['train', 'validation', 'test'], np.unique(labels))`.
             for split,label in itertools.product(['train','validation','test'],np.unique(labels)):
                 mask=(frame.eligible&frame.daylight&~frame.satellite_ghi_interpolated&frame.split.eq(split)).to_numpy()
                 mask=mask&(labels==label)
+                # Apply score when `mask.any()`.
                 if mask.any():periods.append({'regime':regime,'farm_id':farm_id,'model':row.model,
                     'family':row.family,'split':split,'period':label,**score(frame,values,rating,mask)})
         # Representative DA curves are views only; removed quarters appear as visible gaps.
         for split in ['validation','test']:
             eligible=frame.eligible&frame.daylight&frame.split.eq(split)&frame.auction.eq('DA')
             days=frame.loc[eligible,'delivery_day'].drop_duplicates().to_list()
+            # Select by prior validation, report every family and export its reusable winner for each `day` in `[days[len(days) // 4], days[len(days) // 2], days[3 * len(days) // 4]]`.
             for day in [days[len(days)//4],days[len(days)//2],days[3*len(days)//4]]:
                 part=predictions.loc[predictions.delivery_day.eq(day)&predictions.auction.eq('DA')]
                 start=pd.Timestamp(day).tz_localize(config['pv_neural']['delivery_timezone'])
@@ -198,8 +229,10 @@ def report(config,root,source,identity):
                 fig,ax=plt.subplots(figsize=(12,5),layout='constrained')
                 ax.plot(grid,part.measured_ac_mw,color='black',label='Measured AC (excluded quarters omitted)')
                 winner_family=ranking.iloc[0].family
+                # Process each `family` in this collection.
                 for family in dict.fromkeys([winner_family,'pvlib_thermal','direct_tcn','ridge','extra_trees','boosting_direct']):
                     column=f'prediction_{family}_mw'
+                    # Select by prior validation, report every family and export its reusable winner when `column in part`.
                     if column in part:ax.plot(grid,part[column],label=family,alpha=.8)
                 ax.axhline(rating,color='gray',linestyle=':',label='Installed AC rating')
                 ax.set(ylabel='AC power (MW)',xlabel=config['pv_neural']['delivery_timezone'],
@@ -217,6 +250,7 @@ def report(config,root,source,identity):
         ax.set_title(f'Farm {farm_id}, {regime} GHI: validation-selected family winners on May–August')
         ax.figure.tight_layout();ax.figure.savefig(folder/'plots/family_test_comparison.png',dpi=140);plt.close(ax.figure)
         print(f'Selected farm {farm_id}/{regime}: {chosen} ({ranking.iloc[0].nrmse_percent:.3f}% validation nRMSE)',flush=True)
+    # Select by prior validation, report every family and export its reusable winner for each `directory` in `['csv', 'json', 'plots']`.
     for directory in ['csv','json','plots']:(root/directory).mkdir(exist_ok=True)
     pd.DataFrame(rows).to_csv(root/'csv/all_trial_metrics.csv',index=False)
     pd.DataFrame(selections).to_csv(root/'csv/family_selections.csv',index=False)
@@ -228,6 +262,7 @@ def report(config,root,source,identity):
     summary=summary.loc[summary.overall_winner&summary.coverage.eq('observed_only')]
     summary.to_csv(root/'csv/overall_winners.csv',index=False)
     paired=[];daily_table=pd.DataFrame(daily)
+    # Select by prior validation, report every family and export its reusable winner for each `farm_id` in `section['farm_ids']`.
     for farm_id in section['farm_ids']:
         selected=pd.DataFrame(selections)
         op=selected.loc[selected.farm_id.eq(farm_id)&selected.regime.eq('forecast')&selected.overall_winner].iloc[0]
@@ -240,6 +275,7 @@ def report(config,root,source,identity):
         days=sorted(common.delivery_day.unique());rng=np.random.default_rng(section['seed']+farm_id)
         blocks=[common.loc[common.delivery_day.eq(day)] for day in days]
         draws=[];length=int(section['bootstrap_block_days'])
+        # Select by prior validation, report every family and export its reusable winner for each `_` in `range(section['bootstrap_repetitions'])`.
         for _ in range(section['bootstrap_repetitions']):
             starts=rng.integers(0,len(days),int(np.ceil(len(days)/length)))
             indices=[(start+j)%len(days) for start in starts for j in range(length)][:len(days)]
@@ -260,13 +296,17 @@ def run(config,plan_only=False):
     """Launch independent HPO trials while enforcing the shared CPU budget."""
     section=config['pv_cleaned_hpo'];workers=int(section['workers'])
     available=len(os.sched_getaffinity(0))
+    # Enforce the input contract: HPO must use at most 42 CPUs and leave the configured reserve.
     if not 1<=workers<=min(42,max(1,available-section['reserved_cpu_cores'])):
         raise ValueError('HPO must use at most 42 CPUs and leave the configured reserve')
+    # Process each `name` in this collection.
     for name in ['OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','NUMEXPR_NUM_THREADS']:os.environ[name]='1'
     source=config_path(config,section['prepared_source_root']);root=config_path(config,section['output_root'])/section['run_id']
+    # Launch independent HPO trials while enforcing the shared CPU budget when `plan_only`.
     if plan_only:
         print(json.dumps({'workers':workers,'trial_counts':{farm:len(trials(config,farm)) for farm in section['farm_ids']},
             'regimes':section['input_regimes'],'physical_trials_per_family':section['trials_per_family']},indent=2));return
+    # Enforce the input contract: Run the paired cleaned benchmark first.
     if not (source/'json/manifest.json').exists():raise ValueError('Run the paired cleaned benchmark first')
     identity_config=deepcopy(config);identity_config['pv_cleaned_hpo'].pop('resume',None)
     contract={'config':identity_config,'prepared_identity':json.loads((source/'json/identity.json').read_text())['identity'],
@@ -275,8 +315,10 @@ def run(config,plan_only=False):
         'network_code':sha(Path(__file__).parents[1]/'src/forecasting/models/pv_residual_networks.py')}
     identity=digest(contract)
     previous=root/'json/identity.json'
+    # Enforce the input contract: HPO identity changed; disable resume explicitly.
     if section['resume'] and previous.exists() and json.loads(previous.read_text())['identity']!=identity:
         raise ValueError('HPO identity changed; disable resume explicitly')
+    # Launch independent HPO trials while enforcing the shared CPU budget when `section['resume'] and (root / 'json/manifest.json').exists()`.
     if section['resume'] and (root/'json/manifest.json').exists():
         print(f'Completed matching study already exists: {root}');return
     prepare_experiment_output(config_path(config,section['output_root']),root,
@@ -284,8 +326,10 @@ def run(config,plan_only=False):
     write(previous,{'identity':identity,**contract});write(root/'json/resolved_config.json',config)
     jobs=[];counts=[];population_checks=[]
     farms=load_metadata(config_path(config,config['inputs']['metadata_parquet']),section['farm_ids'])
+    # Apply apply episode exclusions for `(regime, farm_id)` from `itertools.product(section['input_regimes'], section['farm_ids'])`.
     for regime,farm_id in itertools.product(section['input_regimes'],section['farm_ids']):
         base=source/regime/f'farm_{farm_id}';folder=root/regime/f'farm_{farm_id}'
+        # Process each `name` in this collection.
         for name in ['json/trials','json/physical','models','arrays','csv','parquet','plots','bundles']:(folder/name).mkdir(parents=True,exist_ok=True)
         # Reuse immutable prepared arrays. Exported bundles copy all their dependencies.
         if not (folder/'cache').exists():(folder/'cache').symlink_to((base/'cache').resolve(),target_is_directory=True)
@@ -298,14 +342,17 @@ def run(config,plan_only=False):
         keys=['interval_start_utc','delivery_day','auction']
         actual=pd.read_parquet(base/'parquet/corpus.parquet',columns=keys)
         expected=marked.loc[~marked.episode_excluded,keys].reset_index(drop=True)
+        # Enforce the input contract: `regime`/`farm_id`: prepared instances disagree with authoritative CSV.
         if not actual.equals(expected):raise ValueError(f'{regime}/{farm_id}: prepared instances disagree with authoritative CSV')
         cache_rows=len(np.load(base/'cache/y.npy',mmap_mode='r'))
+        # Enforce the input contract: Neural/regression cache still contains excluded instances.
         if cache_rows!=len(actual):raise ValueError('Neural/regression cache still contains excluded instances')
         population_checks.append({'farm_id':farm_id,'regime':regime,'retained_instances':len(actual),
             'excluded_instances':int(marked.episode_excluded.sum()),'csv_is_sole_quality_source':True})
         frame=pd.read_parquet(base/'parquet/corpus.parquet',columns=['split','eligible','target_available_at_utc'])
         last=str(frame.loc[frame.eligible&frame.split.eq('train'),'target_available_at_utc'].max())
         specifications=trials(config,farm_id)
+        # Launch independent HPO trials while enforcing the shared CPU budget for each `trial` in `specifications`.
         for trial in specifications:
             jobs.append(('learned',{'farm_id':farm_id,'trial':trial,'directory':str(base/'cache'),'output':str(folder),
                 'rating':rating,'train_last_target_utc':last,'identity':identity,'resume':section['resume'],
@@ -322,6 +369,7 @@ def run(config,plan_only=False):
     with ProcessPoolExecutor(max_workers=workers,mp_context=multiprocessing.get_context('spawn')) as pool:
         futures={pool.submit(_worker if kind=='learned' else physical_job,job):(kind,job) for kind,job in jobs}
         completed=0
+        # Launch independent HPO trials while enforcing the shared CPU budget for each `future` in `as_completed(futures)`.
         for future in as_completed(futures):
             kind,job=futures[future];completed+=1
             try:record=future.result()
@@ -331,6 +379,7 @@ def run(config,plan_only=False):
                 print(f'[{completed}/{len(jobs)}] FAILED: {failures[-1]}',flush=True)
                 continue
             print(f'[{completed}/{len(jobs)}] {job["output"]}: {job.get("name",job.get("trial",{}).get("name"))} complete',flush=True)
+    # Enforce the input contract: `len(failures)` HPO trials failed; inspect failures.json and resume.
     if failures:raise RuntimeError(f'{len(failures)} HPO trials failed; inspect failures.json and resume')
     summary=report(config,root,source,identity)
     write(root/'json/manifest.json',{'status':'complete','identity':identity,'total_trials':len(jobs),
@@ -340,6 +389,7 @@ def run(config,plan_only=False):
     print(root,flush=True)
 
 
+# When `__name__ == '__main__'`, set `parser` using `argparse.ArgumentParser(description=__doc__)`.
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',required=True)

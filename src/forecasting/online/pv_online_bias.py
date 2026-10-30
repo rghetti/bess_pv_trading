@@ -36,11 +36,13 @@ def causal_gain_prediction(frame,prediction,history,*,window_days,minimum_days,g
     """Issue one constant gain per cutoff using only already observed calibration days."""
     prediction=np.asarray(prediction);gains=np.ones(len(frame),dtype=float)
     available=pd.DatetimeIndex(history.available).as_unit('ns').asi8
+    # Issue one constant gain per cutoff using only already observed calibration days for each `(cutoff, positions)` in `frame.groupby('decision_cutoff_utc', sort=False).indices.items()`.
     for cutoff,positions in frame.groupby('decision_cutoff_utc',sort=False).indices.items():
         moment=pd.Timestamp(cutoff)
         upper=available.searchsorted(moment.value,side='right')
         lower=available.searchsorted((moment-pd.Timedelta(days=window_days)).value,side='left')
         known=history.iloc[lower:upper]
+        # When `len(known) >= minimum_days and known.xx.sum() > 0`, set `gain` using `np.clip(known.xy.sum() / known.xx.sum(), *gain_bounds)`.
         if len(known)>=minimum_days and known.xx.sum()>0:
             gain=np.clip(known.xy.sum()/known.xx.sum(),*gain_bounds)
             gains[positions]=gain

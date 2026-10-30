@@ -16,24 +16,33 @@ def sustained_daylight_zero_mask(times,power,ghi,*,minimum_intervals,
                                  minimum_ghi_w_m2,interval_minutes,
                                  daylight=None,day_keys=None,expand_full_daylight_run=False):
     """Anchor a contiguous zero-AC run in measured high GHI, then mask daylight."""
+    # Enforce the input contract: minimum_intervals must be an integer of at least two.
     if (isinstance(minimum_intervals,bool) or int(minimum_intervals)!=minimum_intervals
             or minimum_intervals<2):
         raise ValueError('minimum_intervals must be an integer of at least two')
+    # Enforce the input contract: Outage cadence and GHI threshold must be nonnegative.
     if interval_minutes<=0 or minimum_ghi_w_m2<0:
         raise ValueError('Outage cadence and GHI threshold must be nonnegative')
     index=pd.DatetimeIndex(times)
+    # Enforce the input contract: Outage detection needs sorted unique timezone-aware UTC times.
     if index.tz is None or not index.is_monotonic_increasing or index.has_duplicates:
         raise ValueError('Outage detection needs sorted unique timezone-aware UTC times')
+    # When `str(index.tz) not in {'UTC', 'datetime.timezone.utc'}`, set `index` using `index.tz_convert('UTC')`.
     if str(index.tz) not in {'UTC','datetime.timezone.utc'}:
         index=index.tz_convert('UTC')
     power=np.asarray(power,dtype=float);ghi=np.asarray(ghi,dtype=float)
+    # Enforce the input contract: Outage timestamps, measured AC and satellite GHI must align.
     if len(index)!=len(power) or len(index)!=len(ghi):
         raise ValueError('Outage timestamps, measured AC and satellite GHI must align')
+    # When `daylight is None`, set `daylight` using `np.isfinite(ghi) & (ghi >= minimum_ghi_w_m2)`.
     if daylight is None:daylight=np.isfinite(ghi)&(ghi>=minimum_ghi_w_m2)
     daylight=np.asarray(daylight,dtype=bool)
+    # Enforce the input contract: Outage daylight mask must align with timestamps.
     if len(daylight)!=len(index):raise ValueError('Outage daylight mask must align with timestamps')
+    # When `day_keys is None`, set `day_keys` using `index.date.astype(str)`.
     if day_keys is None:day_keys=index.date.astype(str)
     day_keys=np.asarray(day_keys)
+    # Enforce the input contract: Outage delivery-day keys must align with timestamps.
     if len(day_keys)!=len(index):raise ValueError('Outage delivery-day keys must align with timestamps')
     zero=(power==0)
     anchor=np.isfinite(ghi)&(ghi>=minimum_ghi_w_m2)
@@ -41,17 +50,22 @@ def sustained_daylight_zero_mask(times,power,ghi,*,minimum_intervals,
     cadence=pd.Timedelta(minutes=interval_minutes)
     start=None
     def close_run(end):
+        # Update `marked[start:end]` when this condition is met.
         if (start is not None and end-start>=minimum_intervals
                 and anchor[start:end].sum()>=minimum_intervals):
             marked[start:end]=(daylight[start:end] if expand_full_daylight_run
                 else anchor[start:end])
+    # Anchor a contiguous zero-AC run in measured high GHI, then mask daylight for each `(position, active)` in `enumerate(zero)`.
     for position,active in enumerate(zero):
         continuous=(position>0 and index[position]-index[position-1]==cadence
             and day_keys[position]==day_keys[position-1])
+        # Anchor a contiguous zero-AC run in measured high GHI, then mask daylight when `active`.
         if active:
+            # Anchor a contiguous zero-AC run in measured high GHI, then mask daylight when `start is None or not continuous`.
             if start is None or not continuous:
                 close_run(position)
                 start=position
+        # Anchor a contiguous zero-AC run in measured high GHI, then mask daylight when `start is not None`.
         elif start is not None:
             close_run(position)
             start=None
@@ -66,19 +80,26 @@ def apply_episode_exclusions(frame,config,*,farm_id=None):
     are review-time evidence only. Every runtime exclusion must be in the CSV.
     """
     result=frame.copy()
+    # Process each `name` in this collection.
     for name in ['episode_excluded','outage_excluded','dubious_excluded','review_excluded']:
         result[name]=False
     path=config.get('pv_data_quality',{}).get('exclusions_csv')
+    # Return `result` when `not path`.
     if not path:return result
+    # Enforce the input contract: farm_id is required for CSV episode exclusions.
     if farm_id is None:raise ValueError('farm_id is required for CSV episode exclusions')
     decisions=pd.read_csv(config_path(config,path))
     required={'farm_id','start_utc','end_utc','decision','reason'}
+    # Enforce the input contract: Malformed PV exclusions CSV.
     if not required.issubset(decisions):raise ValueError('Malformed PV exclusions CSV')
     starts=pd.DatetimeIndex(result.interval_start_utc)
     selected=np.zeros(len(result),dtype=bool)
+    # Process each `row` in this collection.
     for row in decisions.loc[decisions.farm_id.astype(str).eq(str(farm_id))].itertuples(index=False):
+        # Skip the current item when `str(row.decision).lower() != 'exclude'`.
         if str(row.decision).lower()!='exclude':continue
         lower=pd.Timestamp(row.start_utc);upper=pd.Timestamp(row.end_utc)
+        # Enforce the input contract: PV episode boundaries must be ordered and timezone-aware.
         if lower.tzinfo is None or upper.tzinfo is None or upper<lower:
             raise ValueError('PV episode boundaries must be ordered and timezone-aware')
         active=(starts>=lower)&(starts<=upper)
@@ -100,14 +121,17 @@ def run_outage_curation(config,progress=print):
     section=config['pv_outage_export']
     source=config_path(config,section['source_root'])
     output_root=config_path(config,section['output_root']);output=output_root/section['run_id']
+    # Enforce the input contract: Outage export source cannot reside inside its output.
     if source.resolve().is_relative_to(output.resolve()):
         raise ValueError('Outage export source cannot reside inside its output')
     prepare_experiment_output(output_root,output,
         overwrite=config['experiment_outputs']['overwrite_existing'])
     (output/'resolved_config.yaml').write_text(yaml.safe_dump(config,sort_keys=False))
     summaries=[]
+    # Apply apply episode exclusions for `farm` from `section['farm_ids']`.
     for farm in section['farm_ids']:
         path=source/f'farm_{farm}/parquet/corpus.parquet'
+        # Reject invalid input when `not path.exists()`.
         if not path.exists():raise FileNotFoundError(path)
         original=pd.read_parquet(path)
         curated=apply_episode_exclusions(original,config,farm_id=farm)
@@ -151,6 +175,7 @@ def modeling_instances(frame,config,*,farm_id):
     regression targets, neural sequence members, validation or test instances.
     """
     marked=apply_episode_exclusions(frame,config,farm_id=farm_id)
+    # Return `marked` when `not config['pv_data_quality'].get('remove_excluded_instances', False)`.
     if not config['pv_data_quality'].get('remove_excluded_instances',False):return marked
     removed=marked.episode_excluded
     return marked.loc[~removed].copy()

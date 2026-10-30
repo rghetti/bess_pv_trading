@@ -30,6 +30,7 @@ def plot_farm(config, root, farm_id):
     settings = selected_settings(config, farm, result)
     frame = pd.read_parquet(root / f'farm_{farm_id}' / 'aligned_inputs.parquet')
     use = frame.eligible
+    # When `section.get('selection_scope', 'validation') != 'full_period'`, set `use` using `frame['split'].eq('train')`.
     if section.get('selection_scope', 'validation') != 'full_period':
         use &= frame['split'].eq('train')
     frame = frame.loc[use].copy().reset_index(drop=True)
@@ -51,18 +52,21 @@ def plot_farm(config, root, farm_id):
                             section.get('night_policy', config['policy']['night']))
     params = parameter_defaults(settings)
     frame['predicted_mw'] = model.evaluate(params)
+    # Enforce the input contract: Selected chain produced nonfinite predictions on eligible rows.
     if not np.isfinite(frame.predicted_mw).all():
         raise ValueError('Selected chain produced nonfinite predictions on eligible rows')
     by_interval = frame.groupby('interval_start_utc').agg(
         prediction_mean=('predicted_mw', 'mean'), prediction_min=('predicted_mw', 'min'),
         prediction_max=('predicted_mw', 'max'), observed=('measured_ac_mw', 'first'),
         vintage_count=('forecast_cycle_utc', 'nunique'), ghi_interpolated=('ghi_interpolated', 'first'))
+    # When `'measured_ac_raw_mw' in frame`, set `by_interval['observed_raw']` using `frame.groupby('interval_start_utc').measured_ac_raw_mw.first()`.
     if 'measured_ac_raw_mw' in frame:
         by_interval['observed_raw'] = frame.groupby('interval_start_utc').measured_ac_raw_mw.first()
     local = by_interval.index.tz_convert(section['delivery_timezone'])
     by_interval['day'] = local.strftime('%Y-%m-%d')
     by_interval['hour'] = local.hour + local.minute / 60
     by_interval['square_error'] = (by_interval.prediction_mean-by_interval.observed)**2
+    # Update `daylight` when this condition is met.
     if 'night_policy' in section:
         daylight = by_interval.loc[~night_window_mask(by_interval.index, section['night_policy'])]
     else:
@@ -72,8 +76,10 @@ def plot_farm(config, root, farm_id):
     daily['rmse_percent_capacity'] = 100 * np.sqrt(daily.mse) / farm.ac_capacity_mw
     daily = daily.sort_values(['rmse_percent_capacity', 'day'])
     daily.to_csv(root / f'farm_{farm_id}' / 'training_day_ranking.csv')
+    # When `'night_policy' in section`, set `expected` using `{}`.
     if 'night_policy' in section:
         expected = {}
+        # Evaluate one selected chain and rank fitting days by daytime mean-prediction RMSE for each `day` in `daily.index`.
         for day in daily.index:
             midnight = pd.Timestamp(day, tz=section['delivery_timezone'])
             grid = pd.date_range(midnight, midnight + pd.DateOffset(days=1),
@@ -82,6 +88,7 @@ def plot_farm(config, root, farm_id):
         daily['expected_non_night_intervals'] = pd.Series(expected)
         daily.to_csv(root / f'farm_{farm_id}' / 'training_day_ranking.csv')
         complete = daily.loc[daily.daytime_intervals.eq(daily.expected_non_night_intervals)]
+        # Enforce the input contract: Farm `farm_id` has fewer than three fully covered non-night days.
         if len(complete) < 3:
             raise ValueError(f'Farm {farm_id} has fewer than three fully covered non-night days')
         selected = ([('best', day) for day in complete.head(3).index] +
@@ -94,6 +101,7 @@ def plot_farm(config, root, farm_id):
                     [('best_complete', day) for day in complete.head(3).index])
         folder = root / f'farm_{farm_id}' / 'training_day_plots' / f'trial_{int(chosen.trial_id)}'
     folder.mkdir(parents=True, exist_ok=True)
+    # Evaluate one selected chain and rank fitting days by daytime mean-prediction RMSE for each `(kind, day)` in `selected`.
     for kind, day in selected:
         midnight = pd.Timestamp(day, tz=section['delivery_timezone'])
         grid = pd.date_range(midnight, midnight + pd.DateOffset(days=1),
@@ -102,6 +110,7 @@ def plot_farm(config, root, farm_id):
         part = by_interval.reindex(grid)
         local_index = part.index.tz_convert(section['delivery_timezone'])
         fig, ax = plt.subplots(figsize=(12, 5))
+        # Apply this branch only when its condition is met.
         if ('observed_raw' in part and
                 (part.observed_raw.notna() & part.observed.notna() & part.observed_raw.ne(part.observed)).any()):
             ax.plot(local_index, part.observed_raw, color='tab:orange', linestyle='--',
@@ -130,9 +139,11 @@ def main():
     config = load_config(args.config)
     section = config['pv_realized_irradiance_search']
     root = config_path(config, section['output_root']) / section['run_id']
+    # Write selected parameters and six per-farm profile plots for each `farm` in `section['farm_ids']`.
     for farm in section['farm_ids']:
         plot_farm(config, root, int(farm))
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

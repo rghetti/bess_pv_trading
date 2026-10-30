@@ -42,6 +42,7 @@ def _tune_candidates(neural: dict, tuning: dict, farm_id: int):
     groups = {(row["architecture"], row["features"]): row for row in neural["candidates"]
               if tuning["include_core_and_extended_features"] or row["features"] == "weather"}
     result = []
+    # Generate a reproducible random search, anchoring each feature/architecture at its default for each `(group_number, ((architecture, features), baseline))` in `enumerate(sorted(groups.items()))`.
     for group_number, ((architecture, features), baseline) in enumerate(sorted(groups.items())):
         rng = np.random.default_rng(int(tuning["seed"])+farm_id*1009+group_number)
         depths = space["mlp_depths"] if architecture == "mlp" else (
@@ -51,6 +52,7 @@ def _tune_candidates(neural: dict, tuning: dict, farm_id: int):
         def candidate_from(values, trial):
             candidate = {"architecture": architecture, "features": features,
                 "name": f"{architecture}_{features}_{trial:02d}", **values}
+            # When `architecture == 'tcn'`, set `candidate['kernel_size']` using `values.get('kernel_size', baseline['kernel_size'])`.
             if architecture == "tcn":
                 candidate["kernel_size"] = values.get("kernel_size", baseline["kernel_size"])
             return candidate
@@ -60,13 +62,16 @@ def _tune_candidates(neural: dict, tuning: dict, farm_id: int):
             "loss": neural["loss"], "huber_delta": neural["huber_delta"],
             "month_embedding_dim": neural["month_embedding_dim"],
             "auction_embedding_dim": neural["auction_embedding_dim"]}
+        # When `architecture == 'tcn'`, set `default_values['kernel_size']` using `baseline['kernel_size']`.
         if architecture == "tcn":
             default_values["kernel_size"] = baseline["kernel_size"]
         group = [candidate_from(default_values, 0)]
         seen = {digest(default_values)}
         attempts = 0
+        # Continue until `len(group) < int(tuning['trials_per_architecture_feature'])` is false.
         while len(group) < int(tuning["trials_per_architecture_feature"]):
             attempts += 1
+            # Enforce the input contract: The configured neural search space has too few unique settings.
             if attempts > 10000:
                 raise ValueError("The configured neural search space has too few unique settings")
             values = {"width": draw(space["widths"]), "depth": draw(depths),
@@ -75,9 +80,11 @@ def _tune_candidates(neural: dict, tuning: dict, farm_id: int):
                 "loss": draw(space["losses"]), "huber_delta": draw(space["huber_deltas"]),
                 "month_embedding_dim": draw(space["month_embedding_dims"]),
                 "auction_embedding_dim": draw(space["auction_embedding_dims"])}
+            # When `architecture == 'tcn'`, set `values['kernel_size']` using `draw(space['tcn_kernel_sizes'])`.
             if architecture == "tcn":
                 values["kernel_size"] = draw(space["tcn_kernel_sizes"])
             key = digest(values)
+            # Generate a reproducible random search, anchoring each feature/architecture at its default when `key not in seen`.
             if key not in seen:
                 seen.add(key)
                 group.append(candidate_from(values, len(group)))
@@ -91,6 +98,7 @@ def _prepare_arrays(frame: pd.DataFrame, farm, neural: dict, tuning: dict, farm_
     validation_mask = (frame.eligible & frame.daylight & (frame.split == "validation")).to_numpy()
     feature_names = ["core", "weather"] if tuning["include_core_and_extended_features"] else ["weather"]
     views, preprocessors = {}, {}
+    # Freeze train-only feature processing and compact CPU arrays once per farm for each `feature_name` in `feature_names`.
     for feature_name in feature_names:
         features = feature_frame(frame, feature_name, neural["delivery_timezone"])
         preprocessor = fit_preprocessor(features, train_mask, neural)
@@ -98,6 +106,7 @@ def _prepare_arrays(frame: pd.DataFrame, farm, neural: dict, tuning: dict, farm_
         packed = pack_sequences(frame, x, farm.ac_capacity_mw)
         array_dir = cache_dir/f"farm_{farm.farm_id}"/feature_name
         array_dir.mkdir(parents=True, exist_ok=True)
+        # Freeze train-only feature processing and compact CPU arrays once per farm for each `name` in `('x', 'y', 'mask', 'daylight', 'month', 'auction', 'indices', 'split')`.
         for name in ("x", "y", "mask", "daylight", "month", "auction", "indices", "split"):
             _save_array(array_dir, name, packed[name])
         _save_array(array_dir, "x_flat", x)
@@ -134,16 +143,22 @@ def _regression_trials(tuning: dict):
     settings = tuning["regression"]
     trials = []
     feature_sets = ("core", "weather") if tuning["include_core_and_extended_features"] else ("weather",)
+    # Enumerate conventional weighted least-squares and shrinkage candidates for each `features` in `feature_sets`.
     for features in feature_sets:
         trials.append({"family": "ols", "features": features, "alpha": 0.0, "l1_ratio": 0.0})
+        # Enumerate conventional weighted least-squares and shrinkage candidates for each `alpha` in `settings['ridge_alphas']`.
         for alpha in settings["ridge_alphas"]:
             trials.append({"family": "ridge", "features": features, "alpha": float(alpha), "l1_ratio": 0.0})
+        # Enumerate conventional weighted least-squares and shrinkage candidates for each `alpha` in `settings['lasso_alphas']`.
         for alpha in settings["lasso_alphas"]:
             trials.append({"family": "lasso", "features": features, "alpha": float(alpha), "l1_ratio": 1.0})
+        # Enumerate conventional weighted least-squares and shrinkage candidates for each `alpha` in `settings['elastic_net_alphas']`.
         for alpha in settings["elastic_net_alphas"]:
+            # Enumerate conventional weighted least-squares and shrinkage candidates for each `ratio` in `settings['elastic_net_l1_ratios']`.
             for ratio in settings["elastic_net_l1_ratios"]:
                 trials.append({"family": "elastic_net", "features": features,
                     "alpha": float(alpha), "l1_ratio": float(ratio)})
+    # Enumerate conventional weighted least-squares and shrinkage candidates for each `trial` in `trials`.
     for trial in trials:
         alpha_text = f"{trial['alpha']:.0e}".replace("-", "m").replace("+", "")
         ratio_text = f"_{trial['l1_ratio']:0.1f}" if trial["family"] == "elastic_net" else ""
@@ -157,15 +172,20 @@ def _soft_threshold(value: float, threshold: float) -> float:
 
 def _solve_regression(gram, rhs, family: str, alpha: float, l1_ratio: float, max_iterations: int, tolerance: float):
     """Solve a weighted OLS, Ridge, Lasso, or Elastic Net problem from sufficient statistics."""
+    # Return `(np.linalg.pinv(gram, rcond=1e-10) @ rhs, 0)` when `family == 'ols'`.
     if family == "ols":
         return np.linalg.pinv(gram, rcond=1e-10)@rhs, 0
+    # Return `(np.linalg.solve(gram + alpha * np.eye(len(rhs)), rhs), 0)` when `family == 'ridge'`.
     if family == "ridge":
         return np.linalg.solve(gram+alpha*np.eye(len(rhs)), rhs), 0
     diagonal = np.diag(gram)+alpha*(1-l1_ratio)
     beta = np.zeros_like(rhs)
+    # Solve a weighted OLS, Ridge, Lasso, or Elastic Net problem from sufficient statistics for each `iteration` in `range(1, max_iterations + 1)`.
     for iteration in range(1, max_iterations+1):
         largest_change = 0.0
+        # Solve a weighted OLS, Ridge, Lasso, or Elastic Net problem from sufficient statistics for each `column` in `range(len(beta))`.
         for column in range(len(beta)):
+            # When `diagonal[column] <= 1e-20`, set `beta[column]` using `0.0`.
             if diagonal[column] <= 1e-20:
                 beta[column] = 0.0
                 continue
@@ -173,6 +193,7 @@ def _solve_regression(gram, rhs, family: str, alpha: float, l1_ratio: float, max
             updated = _soft_threshold(partial, alpha*l1_ratio)/diagonal[column]
             largest_change = max(largest_change, abs(updated-beta[column]))
             beta[column] = updated
+        # Return `(beta, iteration)` when `largest_change <= tolerance`.
         if largest_change <= tolerance:
             return beta, iteration
     return beta, max_iterations
@@ -201,11 +222,14 @@ def _regression_worker(job: dict):
 
 def _execute_job(job: dict):
     """Resume or execute one independent CPU training task."""
+    # Return the selected result for this condition.
     if job["kind"] == "neural":
         return ("neural", job["farm_id"], job["candidate"]["name"], _neural_worker(job))
     path = Path(job["result_path"])
+    # When `path.exists()`, set `saved` using `json.loads(path.read_text())`.
     if path.exists():
         saved = json.loads(path.read_text())
+        # Return `('regression', job['farm_id'], job['trial']['name'], saved['record'])` when `saved.get('fingerprint') == job['fingerprint']`.
         if saved.get("fingerprint") == job["fingerprint"]:
             return ("regression", job["farm_id"], job["trial"]["name"], saved["record"])
     record = _regression_worker(job)
@@ -218,17 +242,21 @@ def _neural_worker(job: dict):
     global _WORKER_CPU_SETTINGS
     from ..training.pv_neural_training import configure_cpu, fit_network, load_network, save_network
     requested_settings = (job["threads"], job["interop_threads"], job["neural"]["deterministic"])
+    # Train one neural configuration on a single CPU thread when `_WORKER_CPU_SETTINGS is None`.
     if _WORKER_CPU_SETTINGS is None:
         configure_cpu(job["neural"] | {"threads_per_worker": job["threads"],
                                         "interop_threads_per_worker": job["interop_threads"]})
         _WORKER_CPU_SETTINGS = requested_settings
+    # Enforce the input contract: A reused worker cannot change its PyTorch CPU thread settings.
     elif _WORKER_CPU_SETTINGS != requested_settings:
         raise ValueError("A reused worker cannot change its PyTorch CPU thread settings")
     path = Path(job["model_path"])
     fingerprint = job["trial_fingerprint"]
+    # Train one neural configuration on a single CPU thread when `path.exists() and path.with_suffix('.json').exists()`.
     if path.exists() and path.with_suffix(".json").exists():
         try:
             _, metadata = load_network(path, farm_id=job["farm_id"])
+            # Return `metadata['diagnostics']` when `metadata.get('tuning_fingerprint') == fingerprint`.
             if metadata.get("tuning_fingerprint") == fingerprint:
                 return metadata["diagnostics"]
         except (OSError, ValueError, KeyError, RuntimeError):
@@ -267,6 +295,7 @@ def _comparison_plot(frame: pd.DataFrame, output: Path, end_day: str):
     fig, axes = plt.subplots(2, 2, figsize=(14, 10), layout="constrained")
     preferred = ["pvlib", "selected", "best_mlp", "best_residual", "best_tcn",
                  "best_ols", "best_ridge", "best_lasso", "best_elastic_net"]
+    # Plot validation and untouched test comparisons without ranking on test for each `(axis, (farm, group))` in `zip(axes.flat, frame.groupby('farm_id'))`.
     for axis, (farm, group) in zip(axes.flat, frame.groupby("farm_id")):
         group = group.set_index("method").reindex(preferred).dropna().reset_index()
         colors = ["tab:orange" if method == "pvlib" else
@@ -286,20 +315,29 @@ def validate_tuning_config(config: dict):
     """Reject incomplete searches and accidental non-CPU training configurations."""
     validate_neural_config(config)
     tuning = config["pv_neural_tuning"]
+    # Enforce the input contract: pv_neural_tuning.workers must be null or a positive integer.
     if tuning["workers"] is not None and int(tuning["workers"]) < 1:
         raise ValueError("pv_neural_tuning.workers must be null or a positive integer")
+    # Enforce the input contract: pv_neural_tuning.reserved_cpu_cores must be nonnegative.
     if int(tuning["reserved_cpu_cores"]) < 0:
         raise ValueError("pv_neural_tuning.reserved_cpu_cores must be nonnegative")
+    # Process each `name` in this collection.
     for name in ("threads_per_worker", "interop_threads_per_worker", "trials_per_architecture_feature"):
+        # Enforce the input contract: pv_neural_tuning.`name` must be positive.
         if int(tuning[name]) < 1:
             raise ValueError(f"pv_neural_tuning.{name} must be positive")
+    # Reject incomplete searches and accidental non-CPU training configurations for each `(key, values)` in `tuning['search_space'].items()`.
     for key, values in tuning["search_space"].items():
+        # Enforce the input contract: Neural tuning search space `key` must not be empty.
         if not values:
             raise ValueError(f"Neural tuning search space {key} must not be empty")
     regression = tuning["regression"]
+    # Process each `key` in this collection.
     for key in ("ridge_alphas", "lasso_alphas", "elastic_net_alphas", "elastic_net_l1_ratios"):
+        # Enforce the input contract: Regression tuning values `key` must be nonempty and nonnegative.
         if not regression[key] or any(float(value) < 0 for value in regression[key]):
             raise ValueError(f"Regression tuning values {key} must be nonempty and nonnegative")
+    # Enforce the input contract: Elastic Net l1 ratios must lie in [0, 1].
     if any(float(value) > 1 for value in regression["elastic_net_l1_ratios"]):
         raise ValueError("Elastic Net l1 ratios must lie in [0, 1]")
 
@@ -314,6 +352,7 @@ def run_neural_tuning(config: dict, progress=None):
     logical_cpus = os.cpu_count() or 1
     available_workers = max(1, logical_cpus-int(tuning["reserved_cpu_cores"]))
     workers = min(int(tuning["workers"] or available_workers), available_workers)
+    # When `tuning['run_id']`, set `run_id` using `str(tuning['run_id'])`.
     if tuning["run_id"]:
         run_id = str(tuning["run_id"])
     else:
@@ -321,9 +360,12 @@ def run_neural_tuning(config: dict, progress=None):
     root = config_path(config, tuning["output_root"])/run_id
     config_path_json = root/"json"/"study_config.json"
     config_hash = digest(config)
+    # Tune all farm/model trials in parallel, then report held-out test performance when `root.exists()`.
     if root.exists():
+        # Enforce the input contract: Tuning output exists with different settings; choose a fresh run ID.
         if not tuning["resume"] or not config_path_json.exists() or digest(json.loads(config_path_json.read_text())) != config_hash:
             raise ValueError("Tuning output exists with different settings; choose a fresh run ID")
+    # Tune all farm/model trials in parallel, then report held-out test performance for each `folder` in `('json', 'csv', 'plots')`.
     for folder in ("json", "csv", "plots"):
         (root/folder).mkdir(parents=True, exist_ok=True)
     _write(config_path_json, config)
@@ -335,12 +377,16 @@ def run_neural_tuning(config: dict, progress=None):
     farm_contexts = {}
     source_root = config_path(config, neural["output_root"])
     source_id = tuning.get("source_corpus_run_id")
+    # Write the corresponding artifacts for `farm_id` from `neural['farm_ids']`.
     for farm_id in neural["farm_ids"]:
         farm_dir = root/f"farm_{farm_id}"
+        # Tune all farm/model trials in parallel, then report held-out test performance for each `folder` in `('csv', 'json', 'parquet', 'plots', 'models', 'models/trials')`.
         for folder in ("csv", "json", "parquet", "plots", "models", "models/trials"):
             (farm_dir/folder).mkdir(parents=True, exist_ok=True)
+        # When `source_id`, set `source_dir` using `source_root / source_id / f'farm_{farm_id}'`.
         if source_id:
             source_dir = source_root/source_id/f"farm_{farm_id}"
+            # Enforce the input contract: Configured source corpus is missing: `source_dir`.
             if not (source_dir/"parquet"/"corpus.parquet").exists():
                 raise FileNotFoundError(f"Configured source corpus is missing: {source_dir}")
         else:
@@ -358,8 +404,10 @@ def run_neural_tuning(config: dict, progress=None):
                      for farm_id in map(int, neural["farm_ids"])}
     jobs, neural_job_keys, regression_jobs = [], {}, {}
     regression_trials = _regression_trials(tuning)
+    # Tune all farm/model trials in parallel, then report held-out test performance for each `(farm_id, context)` in `farm_contexts.items()`.
     for farm_id, context in farm_contexts.items():
         farm_dir, provenance = context["farm_dir"], context["provenance"]
+        # Tune all farm/model trials in parallel, then report held-out test performance for each `(trial_number, candidate)` in `enumerate(nn_candidates[farm_id])`.
         for trial_number, candidate in enumerate(nn_candidates[farm_id]):
             trial_path = farm_dir/"models"/"trials"/f"{candidate['name']}.pt"
             trial_fingerprint = digest({"config": config_hash, "code": code_fingerprint,
@@ -374,6 +422,7 @@ def run_neural_tuning(config: dict, progress=None):
                 "preprocessor": context["preprocessors"][candidate["features"]],
                 "source_fingerprint": provenance["source_fingerprint"]})
             neural_job_keys[(farm_id, candidate["name"])] = (trial_path, trial_fingerprint)
+        # Tune all farm/model trials in parallel, then report held-out test performance for each `trial` in `regression_trials`.
         for trial in regression_trials:
             array_dir = cache_dir/f"farm_{farm_id}"/trial["features"]
             result_path = farm_dir/"json"/"regression_trials"/f"{trial['name']}.json"
@@ -389,29 +438,36 @@ def run_neural_tuning(config: dict, progress=None):
     # Cap numpy/BLAS thread pools so each independent configuration owns one CPU.
     variables = ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS")
     previous = {name: os.environ.get(name) for name in variables}
+    # Tune all farm/model trials in parallel, then report held-out test performance for each `name` in `variables`.
     for name in variables:
         os.environ[name] = str(tuning["threads_per_worker"])
     records = []
     try:
         with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("spawn")) as pool:
             futures = [pool.submit(_execute_job, job) for job in jobs]
+            # Tune all farm/model trials in parallel, then report held-out test performance for each `(number, future)` in `enumerate(as_completed(futures), 1)`.
             for number, future in enumerate(as_completed(futures), 1):
                 record = future.result()
                 records.append(record)
+                # Apply this branch only when its condition is met.
                 if progress and (number == 1 or number % max(1, workers) == 0 or number == len(futures)):
                     progress(f"PV tuning: completed {number}/{len(futures)} fits; latest {record[0]} farm {record[1]} {record[2]}")
     finally:
+        # Tune all farm/model trials in parallel, then report held-out test performance for each `(name, value)` in `previous.items()`.
         for name, value in previous.items():
+            # Tune all farm/model trials in parallel, then report held-out test performance when `value is None`.
             if value is None:
                 os.environ.pop(name, None)
             else:
                 os.environ[name] = value
 
     results_by_farm = {int(farm): {"neural": [], "regression": []} for farm in neural["farm_ids"]}
+    # Tune all farm/model trials in parallel, then report held-out test performance for each `(kind, farm_id, name, record)` in `records`.
     for kind, farm_id, name, record in records:
         results_by_farm[farm_id][kind].append(record)
     root_test_rows = []
     farm_audits = []
+    # Write the corresponding artifacts for `(farm_id, context)` from `farm_contexts.items()`.
     for farm_id, context in farm_contexts.items():
         farm, frame, farm_dir = context["farm"], context["frame"].copy(), context["farm_dir"]
         neural_results = results_by_farm[farm_id]["neural"]
@@ -422,19 +478,24 @@ def run_neural_tuning(config: dict, progress=None):
             if item["candidate"]["architecture"] == architecture), key=lambda item: item["validation_nrmse"])
             for architecture in ("mlp", "residual", "tcn")}
         selected_regression = {}
+        # Tune all farm/model trials in parallel, then report held-out test performance for each `family` in `('ols', 'ridge', 'lasso', 'elastic_net')`.
         for family in ("ols", "ridge", "lasso", "elastic_net"):
             eligible = [item for item in regression_results if item["family"] == family and item["converged"]]
+            # Enforce the input contract: No converged `family` model for farm `farm_id`.
             if not eligible:
                 raise ValueError(f"No converged {family} model for farm {farm_id}")
             selected_regression[family] = min(eligible, key=lambda item: item["validation_nrmse"])
         prediction_cache = {}
+        # Process each `item` in this collection.
         for item in {selected_neural["candidate"]["name"]: selected_neural,
                      **{row["candidate"]["name"]: row for row in selected_by_arch.values()}}.values():
             name = item["candidate"]["name"]
+            # Skip the current item when `name in prediction_cache`.
             if name in prediction_cache:
                 continue
             path, expected_fingerprint = neural_job_keys[(farm_id, name)]
             model, metadata = load_network(path, farm_id=farm_id)
+            # Enforce the input contract: A selected neural tuning artifact has a stale fingerprint.
             if metadata.get("tuning_fingerprint") != expected_fingerprint:
                 raise ValueError("A selected neural tuning artifact has a stale fingerprint")
             packed = {key: np.load(cache_dir/f"farm_{farm_id}"/item["candidate"]["features"]/f"{key}.npy",
@@ -445,10 +506,12 @@ def run_neural_tuning(config: dict, progress=None):
         frame["prediction_selected_mw"] = prediction_cache[selected_neural["candidate"]["name"]]
         selected_methods = {"pvlib": {"family": "calibrated_pvlib", "model": "fixed_global_2025_parameters"},
             "selected": {"family": "best_neural", "model": selected_neural["candidate"]["name"]}}
+        # Tune all farm/model trials in parallel, then report held-out test performance for each `(architecture, item)` in `selected_by_arch.items()`.
         for architecture, item in selected_by_arch.items():
             method = {"mlp": "best_mlp", "residual": "best_residual", "tcn": "best_tcn"}[architecture]
             frame[f"prediction_{method}_mw"] = prediction_cache[item["candidate"]["name"]]
             selected_methods[method] = {"family": architecture, "model": item["candidate"]["name"]}
+        # Tune all farm/model trials in parallel, then report held-out test performance for each `(family, item)` in `selected_regression.items()`.
         for family, item in selected_regression.items():
             method = f"best_{family}"
             array_dir = cache_dir/f"farm_{farm_id}"/item["features"]
@@ -477,6 +540,7 @@ def run_neural_tuning(config: dict, progress=None):
         chosen_diagnostics = [neural_by_name[item["candidate"]["name"]] for item in selected_by_arch.values()]
         from ..plotting.pv_neural_reporting import report_neural_farm
         summary = report_neural_farm(frame, farm, methods, neural, farm_dir, chosen_diagnostics)
+        # Tune all farm/model trials in parallel, then report held-out test performance for each `(method, details)` in `selected_methods.items()`.
         for method, details in selected_methods.items():
             metrics = _metrics(frame, method, farm)
             metrics["selected_model"] = details.get("model")
@@ -492,6 +556,7 @@ def run_neural_tuning(config: dict, progress=None):
                 and (frame[f"prediction_{method}_mw"] <= farm.ac_capacity_mw+1e-7).all()) for method in methods),
             "forecast_availability_respected": bool((frame.forecast_available_at_utc <= frame.decision_cutoff_utc).all()),
             "test_delivery_days": int(frame.loc[frame.split == "test", "delivery_day"].nunique())}
+        # Enforce the input contract: Hyperparameter tuning audit failed for farm `farm_id`.
         if not audit["selected_neural_is_validation_minimum"] or not audit["baseline_equals_aligned_calibrated_pvlib"] or not audit["all_outputs_ac_bounded"] or not audit["forecast_availability_respected"]:
             raise ValueError(f"Hyperparameter tuning audit failed for farm {farm_id}")
         _write(farm_dir/"json"/"tuning_audit.json", audit)

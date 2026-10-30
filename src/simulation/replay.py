@@ -27,25 +27,33 @@ def condition_and_slice(inputs: OptimizationInput, *, first_interval: int,
     never creates information from latent future paths.
     """
     scenario = inputs.scenarios
+    # Condition an explicit finite tree using only already published prices when `observed_prices`.
     if observed_prices:
+        # Enforce the input contract: Conditioning observations requires an aware decision_cutoff.
         if decision_cutoff is None or decision_cutoff.tzinfo is None:
             raise ValueError("Conditioning observations requires an aware decision_cutoff")
+        # Condition an explicit finite tree using only already published prices for each `auction` in `observed_prices`.
         for auction in observed_prices:
             key = f"auction:{auction}"
             available = [node.observation_available_at[key] for node in inputs.tree.nodes
                          if key in node.observation_available_at]
+            # Enforce the input contract: Cannot condition on unpublished `auction` prices.
             if not available or min(available) > decision_cutoff:
                 raise ValueError(f"Cannot condition on unpublished {auction} prices")
     keep = np.ones(len(scenario.scenario_ids), dtype=bool)
+    # Condition an explicit finite tree using only already published prices for each `(auction, observed)` in `observed_prices.items()`.
     for auction, observed in observed_prices.items():
         values = scenario.auction_prices_eur_per_mwh[auction]
         keep &= np.all(np.isclose(values, np.asarray(observed)[None, :], atol=1e-9), axis=1)
+    # When `oracle_leaf is not None`, set `keep` using `np.arange(len(keep)) == oracle_leaf`.
     if oracle_leaf is not None:
         keep &= np.arange(len(keep)) == oracle_leaf
     indexes = np.flatnonzero(keep)
+    # Enforce the input contract: Observed results lie outside the supplied finite scenario tree.
     if not len(indexes):
         raise ValueError("Observed results lie outside the supplied finite scenario tree")
     weights = scenario.probabilities[indexes].copy()
+    # Enforce the input contract: Observed history has zero probability in the supplied tree.
     if weights.sum() <= 0:
         raise ValueError("Observed history has zero probability in the supplied tree")
     weights /= weights.sum()
@@ -94,26 +102,35 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
     settlement. It is never given to the planner as a pre-interval observation.
     This is an idealized interval simulator, not a hardware telemetry model.
     """
+    # Enforce the input contract: Execution state timestamp differs from interval start.
     if state.timestamp != start:
         raise ValueError("Execution state timestamp differs from interval start")
+    # Enforce the input contract: Execution interval must have positive duration.
     if end <= start:
         raise ValueError("Execution interval must have positive duration")
+    # Enforce the input contract: Unknown execution dispatch_policy.
     if dispatch_policy not in {"follow_battery_plan", "track_committed_grid"}:
         raise ValueError("Unknown execution dispatch_policy")
+    # Enforce the input contract: Execution grid target must be finite.
     if grid_target_mw is not None and not np.isfinite(grid_target_mw):
         raise ValueError("Execution grid target must be finite")
+    # Enforce the input contract: Grid tracking requires a committed grid_target_mw.
     if dispatch_policy == "track_committed_grid" and grid_target_mw is None:
         raise ValueError("Grid tracking requires a committed grid_target_mw")
     magnitudes = (requested_charge_mw, requested_discharge_mw,
                   requested_curtailment_mw, degradation_eur_per_mwh)
+    # Enforce the input contract: Execution commands and degradation must be finite and nonnegative.
     if any(not np.isfinite(value) or value < 0 for value in magnitudes):
         raise ValueError("Execution commands and degradation must be finite and nonnegative")
+    # Enforce the input contract: Execution needs eligible nonnegative AC availability.
     if not np.isfinite(pv_ac_mw) or pv_ac_mw < 0:
         raise ValueError("Execution needs eligible nonnegative AC availability")
+    # Enforce the input contract: Specify degradation_settings or a legacy throughput coefficient, not both.
     if degradation_settings is not None and degradation_eur_per_mwh:
         raise ValueError("Specify degradation_settings or a legacy throughput coefficient, not both")
     aging_settings = degradation_settings or DegradationSettings(degradation_eur_per_mwh)
     battery = plant.battery
+    # Enforce the input contract: Execution starts outside battery energy bounds.
     if not battery.energy_min_mwh <= state.energy_mwh <= battery.maximum_energy:
         raise ValueError("Execution starts outside battery energy bounds")
     duration = (end - start).total_seconds() / 3600
@@ -122,12 +139,14 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         max(0.0, battery.maximum_energy - retained) / (duration * battery.eta_charge)))
     discharge = max(0.0, min(requested_discharge_mw, battery.max_power_mw,
         max(0.0, retained - battery.energy_min_mwh) * battery.eta_discharge / duration))
+    # Enforce the input contract: Execution cannot charge and discharge simultaneously.
     if charge > 1e-8 and discharge > 1e-8:
         raise ValueError("Execution cannot charge and discharge simultaneously")
     curtailment = min(pv_ac_mw, max(0.0, requested_curtailment_mw))
     safety_adjustment = (abs(charge-requested_charge_mw) + abs(discharge-requested_discharge_mw)
                          + abs(curtailment-requested_curtailment_mw))
     bounded = (charge, discharge, curtailment)
+    # When `dispatch_policy == 'track_committed_grid'`, set `available_grid` using `pv_ac_mw - curtailment + discharge - charge`.
     if dispatch_policy == "track_committed_grid":
         # Release scheduled curtailment before spending additional stored energy.
         available_grid = pv_ac_mw - curtailment + discharge - charge
@@ -150,6 +169,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         reduction = min(charge, -plant.poi_import_mw - grid)
         charge -= reduction
         grid += reduction
+    # When `grid > plant.poi_export_mw`, set `reduction` using `min(discharge, grid - plant.poi_export_mw)`.
     if grid > plant.poi_export_mw:
         reduction = min(discharge, grid - plant.poi_export_mw)
         discharge -= reduction
@@ -158,6 +178,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         grid = min(grid, plant.poi_export_mw)
     safety_adjustment += sum(abs(a-b) for a,b in zip((charge,discharge,curtailment),before_poi))
     energy = retained + battery.eta_charge * charge * duration - discharge * duration / battery.eta_discharge
+    # Enforce the input contract: Execution would violate battery energy bounds.
     if energy < battery.energy_min_mwh-1e-8 or energy > battery.maximum_energy+1e-8:
         raise ValueError("Execution would violate battery energy bounds")
     energy = min(battery.maximum_energy, max(battery.energy_min_mwh, energy))
@@ -178,6 +199,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         "grid_tracking_error_mw": None if grid_target_mw is None else grid-grid_target_mw,
         "feedback_adjustment_mw": feedback_adjustment,
         "safety_adjustment_mw": safety_adjustment}
+    # When `next_state.cycle_segment_energy_mwh is not None`, set `record['cycle_segment_energy_end_mwh']` using `next_state.cycle_segment_energy_mwh`.
     if next_state.cycle_segment_energy_mwh is not None:
         record["cycle_segment_energy_end_mwh"] = next_state.cycle_segment_energy_mwh
     return next_state, record

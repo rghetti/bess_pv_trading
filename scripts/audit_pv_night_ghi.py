@@ -25,6 +25,7 @@ def main():
     end = pd.Timestamp(section['end_exclusive'], tz=policy['timezone']).tz_convert('UTC')
     rows = []
     with open_store(config) as store:
+        # Report all raw quarter-hours without changing targets or excluding data for each `farm_id` in `section['farm_ids']`.
         for farm_id in section['farm_ids']:
             source = store.sel(farm_id=int(farm_id))
             times = pd.DatetimeIndex(pd.to_datetime(source.time.values, utc=True))
@@ -33,6 +34,7 @@ def main():
             night = night_window_mask(times, policy) & inside
             ghi = np.asarray(source.ghi.values, dtype=float)
             power = np.asarray(source.power.values, dtype=float)
+            # Report all raw quarter-hours without changing targets or excluding data for each `month` in `range(1, 13)`.
             for month in range(1, 13):
                 selected = night & (local.month == month)
                 finite = np.isfinite(ghi)
@@ -61,5 +63,6 @@ def main():
     print(output / 'monthly_raw_ghi_audit.csv')
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

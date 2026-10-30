@@ -12,6 +12,7 @@ _package = _import_util.module_from_spec(_spec)
 _sys.modules[_spec.name] = _package
 _spec.loader.exec_module(_package)
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == "__main__":
     from bess_pv_trading.cli import main
 

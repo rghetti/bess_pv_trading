@@ -16,6 +16,7 @@ from ..data.pv_outages import apply_episode_exclusions
 def interpolate_instantaneous_midpoints(hourly_values, horizon):
     """Interpolate within each vintage at quarter-hour interval midpoints."""
     values = np.asarray(hourly_values, dtype=float)
+    # Enforce the input contract: One hourly value is required for every horizon endpoint.
     if values.ndim != 2 or values.shape[1] != horizon + 1:
         raise ValueError('One hourly value is required for every horizon endpoint')
     steps = np.arange(horizon * 4)
@@ -26,6 +27,7 @@ def interpolate_instantaneous_midpoints(hourly_values, horizon):
 
 def treat_night_targets(frame, night_policy, treatment):
     """Preserve measured AC and record zero treatment without creating missing targets."""
+    # Enforce the input contract: Unsupported night target treatment: `treatment`.
     if treatment not in {'zero', 'preserve'}:
         raise ValueError(f'Unsupported night target treatment: {treatment}')
     result = frame.copy()
@@ -34,6 +36,7 @@ def treat_night_targets(frame, night_policy, treatment):
     finite = np.isfinite(result.measured_ac_mw)
     result['night_target_zeroed'] = (night & finite & result.measured_ac_mw.ne(0)
                                       if treatment == 'zero' else False)
+    # When `treatment == 'zero'`, set `result.loc[night & finite, 'measured_ac_mw']` using `0.0`.
     if treatment == 'zero':
         result.loc[night & finite, 'measured_ac_mw'] = 0.0
     return result
@@ -53,6 +56,7 @@ def prepare_farm(config: dict, farm_id: int, output: Path) -> dict:
     power = pd.read_parquet(power_path, columns=['interval_start_utc', 'measured_ac_mw', 'eligible'])
     power = power.loc[power.eligible]
     grouped = power.groupby('interval_start_utc').measured_ac_mw
+    # Enforce the input contract: Curated auction views disagree on measured power.
     if grouped.nunique(dropna=False).gt(1).any():
         raise ValueError('Curated auction views disagree on measured power')
     power = grouped.first()
@@ -63,6 +67,7 @@ def prepare_farm(config: dict, farm_id: int, output: Path) -> dict:
             'ghi': selected.ghi.values,
             'diffuse_fraction': selected.fraction_diffuse.values,
         }, index=times)
+        # Enforce the input contract: Unsupported GHI gap fill.
         if section['ghi_gap_fill'] != 'linear_inside':
             raise ValueError('Unsupported GHI gap fill')
         historic['ghi_raw'] = historic.ghi
@@ -73,6 +78,7 @@ def prepare_farm(config: dict, farm_id: int, output: Path) -> dict:
         leads = pd.TimedeltaIndex(selected.lead_time.values) / pd.Timedelta(hours=1)
         required = np.arange(horizon + 1)
         indices = pd.Index(leads).get_indexer(required)
+        # Enforce the input contract: Forecast archive lacks required hourly endpoints.
         if (indices < 0).any():
             raise ValueError('Forecast archive lacks required hourly endpoints')
         wanted = (cycles < end) & (cycles + pd.Timedelta(hours=horizon) > start)
@@ -91,6 +97,7 @@ def prepare_farm(config: dict, farm_id: int, output: Path) -> dict:
             'diffuse_fraction': base.diffuse_fraction.to_numpy(),
             'measured_ac_mw': base.measured_ac_mw.to_numpy(),
         })
+        # Process each `(canonical, source)` in this collection.
         for canonical, source in [('temperature_c', 'temperature_2m'),
                                   ('wind_u_10m', 'wind_u_component_10m'),
                                   ('wind_v_10m', 'wind_v_component_10m')]:
@@ -119,6 +126,7 @@ def prepare_farm(config: dict, farm_id: int, output: Path) -> dict:
                      'vintages_per_interval': {str(k): int(v) for k, v in
                          counts.loc[split].value_counts().sort_index().items()}}
              for split, part in frame.groupby('split')}
+    # Update `stats` when this condition is met.
     if section.get('selection_scope', 'validation') == 'full_period':
         stats = {('pre_august_fit' if split == 'train' else 'august_fit'): value
                  for split, value in stats.items()}
@@ -144,6 +152,7 @@ def main() -> None:
     root = config_path(config, section['output_root']) / section['run_id']
     root.mkdir(parents=True, exist_ok=True)
     summary = []
+    # Write one reusable aligned corpus and coverage summary for each farm for each `farm` in `section['farm_ids']`.
     for farm in section['farm_ids']:
         print(f'Preparing farm {farm}', flush=True)
         item = prepare_farm(config, int(farm), root / f'farm_{farm}' / 'aligned_inputs.parquet')
@@ -152,5 +161,6 @@ def main() -> None:
     (root / 'input_coverage.json').write_text(json.dumps(summary, indent=2) + '\n')
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

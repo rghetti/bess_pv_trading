@@ -25,9 +25,11 @@ from bess_pv_trading.forecasting.data.pv_outages import apply_episode_exclusions
 
 def metrics(frame, column, rating):
     """Normalize signed MW errors by farm AC nameplate, never measured power."""
+    # Return `{}` when `frame.empty`.
     if frame.empty:
         return {}
     residual=frame[column].to_numpy(float)-frame.measured_ac_mw.to_numpy(float)
+    # Enforce the input contract: Saved predictions must be finite on the common evaluation mask.
     if not np.isfinite(residual).all():
         raise ValueError('Saved predictions must be finite on the common evaluation mask')
     weights=balanced_weights(frame)
@@ -55,12 +57,14 @@ def plot_episode(frame, episode, column, rating, timezone, interval_minutes, des
     physical=day.groupby('interval_start_utc',sort=True).first().reset_index()
     boundary=(pd.Timestamp(episode.delivery_day).tz_localize(timezone)+pd.DateOffset(days=1)).tz_convert('UTC')
     next_point=frame.loc[frame.interval_start_utc.eq(boundary)]
+    # When `not next_point.empty`, set `physical` using `pd.concat([physical, next_point.iloc[[0]]], ignore_index=True)`.
     if not next_point.empty:
         physical=pd.concat([physical,next_point.iloc[[0]]],ignore_index=True)
     figure,axes=plt.subplots(3,1,figsize=(13,10),sharex=True,layout='constrained')
     axes[0].plot(physical.interval_start_utc,physical.measured_ac_mw,color='black',lw=2,label='Measured AC')
     axes[0].axhline(rating,color='gray',ls='--',label='Installed AC rating')
     axes[1].plot(physical.interval_start_utc,physical.satellite_ghi_w_m2,color='black',lw=2,label='Satellite GHI')
+    # Show AC, weather GHI and signed capacity-normalized AC error on local time for each `(auction, curve)` in `day.groupby('auction', sort=False)`.
     for auction,curve in day.groupby('auction',sort=False):
         line=axes[0].plot(curve.interval_start_utc,curve[column],label=auction)[0]
         axes[1].plot(curve.interval_start_utc,curve.forecast_ghi,color=line.get_color(),label=auction)
@@ -68,6 +72,7 @@ def plot_episode(frame, episode, column, rating, timezone, interval_minutes, des
             100*(curve[column]-curve.measured_ac_mw)/rating,color=line.get_color(),label=auction)
     left=pd.Timestamp(episode.start_utc)
     right=pd.Timestamp(episode.end_utc)+pd.Timedelta(minutes=interval_minutes)
+    # Show AC, weather GHI and signed capacity-normalized AC error on local time for each `axis` in `axes`.
     for axis in axes:
         axis.axvspan(left,right,color='orange',alpha=.15,label='Audited disagreement episode')
         axis.grid(alpha=.2)
@@ -92,7 +97,9 @@ def plot_summary(summary,destination):
     figure,axes=plt.subplots(1,len(splits),figsize=(5*len(splits),4),sharey=True,
         squeeze=False,layout='constrained')
     groups=['weather_disagreement','other_daylight']
+    # Compare weather-episode and other-daylight RMSE separately by data split for each `(axis, split)` in `zip(axes[0], splits)`.
     for axis,split in zip(axes[0],splits):
+        # Process each `(offset, (method, color, label))` in this collection.
         for offset,(method,color,label) in enumerate([
             ('selected_model','tab:blue','Selected model'),('pvlib','tab:orange','Calibrated pvlib')]):
             part=summary.loc[summary['mask'].eq('raw_valid')&summary.split.eq(split)&
@@ -130,10 +137,12 @@ def main():
     corpus=pd.read_parquet(corpus_path)
     saved=pd.read_parquet(prediction_path)
     keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
+    # Enforce the input contract: Saved predictions and corpus have different keys or measured AC.
     if not corpus[keys].equals(saved[keys]):
         raise ValueError('Saved predictions and corpus have different keys or measured AC')
     frame=apply_episode_exclusions(corpus,config,farm_id=args.farm_id)
     methods={'selected_model':args.prediction_column,'pvlib':args.baseline_column}
+    # Read versioned predictions and episode boundaries; write a reproducible report for each `column` in `methods.values()`.
     for column in methods.values():
         frame[column]=saved[column].to_numpy(float)
     audit_episodes=pd.read_csv(episode_path)
@@ -142,11 +151,14 @@ def main():
     flagged_any_audit=np.zeros(len(frame),dtype=bool)
     frame['weather_episode_id']=-1
     weather_episode_id=0
+    # Read versioned predictions and episode boundaries; write a reproducible report for each `row` in `audit_episodes.itertuples(index=False)`.
     for row in audit_episodes.itertuples(index=False):
         selected=frame.interval_start_utc.between(pd.Timestamp(row.start_utc),pd.Timestamp(row.end_utc))
+        # Enforce the input contract: Episode boundaries do not match source physical quarters.
         if frame.loc[selected,'interval_start_utc'].nunique()!=row.physical_quarters:
             raise ValueError('Episode boundaries do not match source physical quarters')
         flagged_any_audit|=selected.to_numpy()
+        # When `row.issue == 'weather_ghi_disagreement'`, set `flagged` using `selected.to_numpy()`.
         if row.issue=='weather_ghi_disagreement':
             flagged|=selected.to_numpy()
             frame.loc[selected,'weather_episode_id']=weather_episode_id
@@ -158,28 +170,38 @@ def main():
                frame.measured_ac_mw.ge(0)&np.isfinite(frame.baseline_mw),
            'curated':frame.eligible&frame.daylight}
     rows=[];auction_rows=[]
+    # Read versioned predictions and episode boundaries; write a reproducible report for each `(mask_name, eligible)` in `masks.items()`.
     for mask_name,eligible in masks.items():
+        # Read versioned predictions and episode boundaries; write a reproducible report for each `split` in `['all_dates', *frame.split.unique()]`.
         for split in ['all_dates',*frame.split.unique()]:
             population=frame.loc[eligible&(True if split=='all_dates' else frame.split.eq(split))]
+            # Process each `(group, part)` in this collection.
             for group,part in [('all_daylight',population),
                                ('weather_disagreement',population.loc[population.weather_episode]),
                                ('other_daylight',population.loc[~population.weather_episode]),
                                ('outside_all_audit_episodes',population.loc[~population.any_audit_episode])]:
+                # Read versioned predictions and episode boundaries; write a reproducible report for each `(method, column)` in `methods.items()`.
                 for method,column in methods.items():
+                    # Read versioned predictions and episode boundaries; write a reproducible report when `not part.empty`.
                     if not part.empty:
                         rows.append({'mask':mask_name,'split':split,'group':group,'method':method,
                             'episodes':part.loc[part.weather_episode,'weather_episode_id'].nunique(),
                             **metrics(part,column,rating)})
+                        # Read versioned predictions and episode boundaries; write a reproducible report for each `(auction, view)` in `part.groupby('auction')`.
                         for auction,view in part.groupby('auction'):
                             auction_rows.append({'mask':mask_name,'split':split,'group':group,
                                 'method':method,'auction':auction,**metrics(view,column,rating)})
     summary=pd.DataFrame(rows)
     episode_rows=[]
+    # Read versioned predictions and episode boundaries; write a reproducible report for each `(mask_name, eligible)` in `masks.items()`.
     for mask_name,eligible in masks.items():
+        # Read versioned predictions and episode boundaries; write a reproducible report for each `(episode_id, row)` in `enumerate(episodes.itertuples(index=False))`.
         for episode_id,row in enumerate(episodes.itertuples(index=False)):
             event=frame.loc[frame.weather_episode_id.eq(episode_id)]
             part=event.loc[eligible.loc[event.index]]
+            # Read versioned predictions and episode boundaries; write a reproducible report for each `(auction, view)` in `[('ALL_BALANCED', part), *list(part.groupby('auction'))]`.
             for auction,view in [('ALL_BALANCED',part),*list(part.groupby('auction'))]:
+                # Read versioned predictions and episode boundaries; write a reproducible report for each `(method, column)` in `methods.items()`.
                 for method,column in methods.items():
                     episode_rows.append({'mask':mask_name,'episode_id':episode_id,
                         'split':event.split.iloc[0],'status':'scored' if not view.empty else 'no_eligible_views',
@@ -187,6 +209,7 @@ def main():
                         'end_utc':row.end_utc,'auction':auction,'method':method,
                         **metrics(view,column,rating)})
     output=args.output
+    # Read versioned predictions and episode boundaries; write a reproducible report for each `name` in `['csv', 'json', 'plots']`.
     for name in ['csv','json','plots']:(output/name).mkdir(parents=True,exist_ok=True)
     summary.to_csv(output/'csv/group_metrics.csv',index=False)
     pd.DataFrame(auction_rows).to_csv(output/'csv/by_auction_metrics.csv',index=False)
@@ -194,6 +217,7 @@ def main():
     per_episode.to_csv(output/'csv/episode_metrics.csv',index=False)
     focus=per_episode.loc[per_episode['mask'].eq('raw_valid')&per_episode.split.eq(args.reference_split)&
         per_episode.auction.eq('ALL_BALANCED')&per_episode.method.eq('selected_model')]
+    # When `not focus.empty`, set `selected` using `focus.nlargest(1, 'physical_quarters').iloc[0]`.
     if not focus.empty:
         selected=focus.nlargest(1,'physical_quarters').iloc[0]
         episode=episodes.iloc[int(selected.episode_id)]
@@ -224,4 +248,5 @@ def main():
     print(f'\nOutput: {output}')
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__=='__main__':main()

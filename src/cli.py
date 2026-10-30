@@ -20,7 +20,9 @@ def _optimization_inputs(config: dict):
     from .optimization.degradation import degradation_settings_from_config
     from .optimization.prepared import terminal_minimum_energy_mwh
     from .simulation.synthetic import synthetic_inputs
+    # Construct validated inputs without creating a solver model when `'synthetic' not in config`.
     if "synthetic" not in config:
+        # Enforce the input contract: The experimental price-forecast optimization input workflow was archived; use explicit prepared mean-price inputs or the GME oracle experiment.
         if "pv_forecast_path" in config.get("optimization", {}).get("forecast_inputs", {}):
             raise ValueError("The experimental price-forecast optimization input workflow was archived; use explicit prepared mean-price inputs or the GME oracle experiment")
         from .optimization.prepared import load_prepared_inputs
@@ -67,6 +69,7 @@ def _solve_optimization(inputs, config: dict) -> dict:
     timing = optimization_timing_report([solve_timing(result.diagnostics,
         category="optimization", status=result.status)])
     write_json(output / "json/optimization_timing.json", timing)
+    # Enforce the input contract: Solver `result.status`: `result.message`.
     if not result.has_incumbent:
         raise RuntimeError(f"Solver {result.status}: {result.message}")
     validation = validate_solution(inputs,result)
@@ -81,6 +84,7 @@ def _solve_optimization(inputs, config: dict) -> dict:
     report["output_dir"] = str(output)
     from .reporting.artifacts import organize_run_outputs
     organize_run_outputs(output)
+    # Enforce the input contract: Independent validation failed: `validation.violations`.
     if not validation.valid:
         raise RuntimeError(f"Independent validation failed: {validation.violations}")
     return report
@@ -88,121 +92,158 @@ def _solve_optimization(inputs, config: dict) -> dict:
 
 def dispatch(command: str, config: dict) -> dict:
     """Import optional workflows only when their commands are requested."""
+    # Import optional workflows only when their commands are requested when `command == 'validate-config'`.
     if command == "validate-config":
+        # Import optional workflows only when their commands are requested when `'inputs' in config`.
         if "inputs" in config:
             from .data.adapters import validate_source_config
             validate_source_config(config)
         optimization = config.get("optimization", {})
+        # Apply this branch only when its condition is met.
         if ("synthetic" in config or "pv_forecast_path" in optimization
                 or "pv_forecast_path" in optimization.get("forecast_inputs", {})):
             _optimization_inputs(config)
         return {"status":"valid", "sections":list(config)}
+    # Import optional workflows only when their commands are requested when `command == 'report-optimization-timing'`.
     if command == "report-optimization-timing":
         from .reporting.optimization_timing import report_saved_optimization_timing
         return report_saved_optimization_timing(config)
+    # Import optional workflows only when their commands are requested when `command == 'inspect-data'`.
     if command == "inspect-data":
         from .data import inspect_data
         return inspect_data(config)
+    # Import optional workflows only when their commands are requested when `command == 'prepare-analysis-data'`.
     if command == "prepare-analysis-data":
         from .data import prepare_analysis_data
         return prepare_analysis_data(config)
+    # Import optional workflows only when their commands are requested when `command == 'forecast-pv'`.
     if command == "forecast-pv":
         from .forecasting.models.pv import forecast_pv_from_config
         return forecast_pv_from_config(config)
+    # Import optional workflows only when their commands are requested when `command == 'calibrate-pv-output'`.
     if command == "calibrate-pv-output":
         from .forecasting.training.pv_calibration import calibrate_pv_output
         return calibrate_pv_output(config)
+    # Import optional workflows only when their commands are requested when `command in {'study-pv-calibration', 'retrain-pv-calibration'}`.
     if command in {"study-pv-calibration", "retrain-pv-calibration"}:
         from .forecasting.studies.pv_study import run_pv_calibration_study
         return run_pv_calibration_study(config, retrain=command == "retrain-pv-calibration",
             progress=lambda message: print(message, file=sys.stderr, flush=True))
+    # Import optional workflows only when their commands are requested when `command == 'study-pv-neural'`.
     if command == "study-pv-neural":
         from .forecasting.studies.pv_neural_study import run_neural_study
         return run_neural_study(config,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
+    # Import optional workflows only when their commands are requested when `command == 'compare-pv-forecast-searches'`.
     if command == "compare-pv-forecast-searches":
         from .forecasting.evaluation.pv_forecast_comparison import run_forecast_comparison
         return run_forecast_comparison(config)
+    # Import optional workflows only when their commands are requested when `command == 'study-pv-hourly-bias'`.
     if command == "study-pv-hourly-bias":
         from .forecasting.studies.pv_hourly_bias import run_hourly_bias_study
         return run_hourly_bias_study(config)
+    # Import optional workflows only when their commands are requested when `command == 'study-pv-online-ridge'`.
     if command == "study-pv-online-ridge":
         from .forecasting.online.pv_online_ridge import run_online_ridge_study
         return run_online_ridge_study(config)
+    # Import optional workflows only when their commands are requested when `command == 'study-pv-monthly-retraining'`.
     if command == "study-pv-monthly-retraining":
         from .forecasting.studies.pv_monthly_retraining import run_monthly_retraining
         return run_monthly_retraining(config)
+    # Import optional workflows only when their commands are requested when `command == 'diagnose-pv-forecast-errors'`.
     if command == "diagnose-pv-forecast-errors":
         from .forecasting.evaluation.pv_error_diagnostics import run_pv_error_diagnostics
         return run_pv_error_diagnostics(config)
+    # Import optional workflows only when their commands are requested when `command == 'curate-pv-outages'`.
     if command == "curate-pv-outages":
         from .forecasting.data.pv_outages import run_outage_curation
         return run_outage_curation(config)
+    # Import optional workflows only when their commands are requested when `command == 'audit-pv-validation'`.
     if command == "audit-pv-validation":
         from .forecasting.evaluation.pv_validation_audit import run_validation_error_audit
         return run_validation_error_audit(config)
+    # Import optional workflows only when their commands are requested when `command == 'audit-pv-data-quality'`.
     if command == "audit-pv-data-quality":
         from .forecasting.evaluation.pv_quality_review import run_pv_quality_review
         return run_pv_quality_review(config)
+    # Import optional workflows only when their commands are requested when `command == 'study-pv-forecast-search'`.
     if command == "study-pv-forecast-search":
         from .forecasting.training.pv_forecast_search import run_forecast_search
         return run_forecast_search(config)
+    # Import optional workflows only when their commands are requested when `command == 'study-pv-ensembles'`.
     if command == "study-pv-ensembles":
         from .forecasting.studies.pv_ensemble_study import run_ensemble_study
         return run_ensemble_study(config)
+    # Import optional workflows only when their commands are requested when `command == 'tune-pv-neural'`.
     if command == "tune-pv-neural":
         from .forecasting.training.pv_neural_tuning import run_neural_tuning
         return run_neural_tuning(config,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
+    # Import optional workflows only when their commands are requested when `command == 'import-market-data'`.
     if command == "import-market-data":
         from .data.market_prices import import_market_from_config
         return import_market_from_config(config)
+    # Import optional workflows only when their commands are requested when `command == 'import-gme-workbooks'`.
     if command == "import-gme-workbooks":
         from .data.gme_workbooks import import_gme_workbooks
         return import_gme_workbooks(config)
+    # Import optional workflows only when their commands are requested when `command == 'import-terna-workbooks'`.
     if command == "import-terna-workbooks":
         from .data.terna_workbooks import import_terna_workbooks
         return import_terna_workbooks(config)
+    # Import optional workflows only when their commands are requested when `command == 'stage-market-workbooks'`.
     if command == "stage-market-workbooks":
         from .data.manual_market_import import stage_market_workbooks
         return stage_market_workbooks(config,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
+    # Import optional workflows only when their commands are requested when `command == 'merge-market-workbooks'`.
     if command == "merge-market-workbooks":
         from .data.manual_market_import import merge_market_workbooks
         return merge_market_workbooks(config)
+    # Import optional workflows only when their commands are requested when `command == 'check-market-history'`.
     if command == "check-market-history":
         from .data.manual_market_import import check_market_history
         return check_market_history(config)
+    # Import optional workflows only when their commands are requested when `command == 'experiment-gme-oracle'`.
     if command == "experiment-gme-oracle":
         from .simulation.gme_oracle import run_gme_oracle_experiment
         return run_gme_oracle_experiment(config)
+    # Import optional workflows only when their commands are requested when `command == 'experiment-participation'`.
     if command == "experiment-participation":
         from .simulation.participation_study import run_participation_study
         return run_participation_study(config,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
+    # Import optional workflows only when their commands are requested when `command == 'experiment-continuous'`.
     if command == "experiment-continuous":
         from .config import validate_continuous_optimization
         validate_continuous_optimization(config, require_dates=True)
         from .simulation.continuous import run_continuous_experiment
         return run_continuous_experiment(config,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
+    # Import optional workflows only when their commands are requested when `command == 'api-cache-status'`.
     if command == "api-cache-status":
         from .data.api_catalog import summarize_api_cache
         return summarize_api_cache(config)
+    # Import optional workflows only when their commands are requested when `command == 'migrate-api-cache'`.
     if command == "migrate-api-cache":
         from .data.api_migration import migrate_api_cache
         return migrate_api_cache(config,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
+    # Import optional workflows only when their commands are requested when `command in {'run-synthetic', 'backtest'}`.
     if command in {"run-synthetic","backtest"}:
+        # Enforce the input contract: Historical market replay is blocked: import auction and settlement targets, confirm BESS/POI, and provide a historically validated settlement adapter..
         if "synthetic" not in config:
             raise ValueError("Historical market replay is blocked: import auction and settlement targets, confirm BESS/POI, and provide a historically validated settlement adapter. The synthetic event replay is available via configs/full_experiments/synthetic_small.yaml.")
         from .simulation.synthetic import run_synthetic
         return run_synthetic(config)
+    # Return `_optimize(config)` when `command == 'optimize'`.
     if command == "optimize":
         return _optimize(config)
+    # Import optional workflows only when their commands are requested when `command == 'report-implementation'`.
     if command == "report-implementation":
         from .reporting.implementation import report_implementation
         return report_implementation(config)
+    # Import optional workflows only when their commands are requested when `command == 'download-data'`.
     if command == "download-data":
         from .data.api import download_from_config
         return download_from_config(config)
@@ -230,28 +271,36 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config, overrides={"farm_id": args.farm_id} if args.farm_id is not None else None)
+        # Print serializable results and actionable errors without credential prompts when `args.command == 'resolve-config'`.
         if args.command == "resolve-config":
+            # Enforce the input contract: API download flags apply only to download-data.
             if args.interactive or args.dry_run or args.refresh_cache or args.provider:
                 raise ValueError("API download flags apply only to download-data")
             print(yaml.safe_dump(config, sort_keys=False), end="")
             return 0
+        # Print serializable results and actionable errors without credential prompts when `args.command == 'download-data'`.
         if args.command=="download-data":
             from .data.api import download_from_config
             result=download_from_config(config,interactive=args.interactive,dry_run=args.dry_run,
                 refresh_cache=args.refresh_cache,providers=args.provider,
                 progress=lambda message:print(message,file=sys.stderr,flush=True))
+        # Print serializable results and actionable errors without credential prompts when `args.command == 'diagnose-terna'`.
         elif args.command == "diagnose-terna":
+            # Enforce the input contract: diagnose-terna does not support cache flags.
             if args.dry_run or args.refresh_cache or args.provider:
                 raise ValueError("diagnose-terna does not support cache flags")
             from .data.terna_diagnostics import diagnose_terna
             result = diagnose_terna(config, interactive=args.interactive)
         else:
+            # Enforce the input contract: API download flags apply only to download-data.
             if args.interactive or args.dry_run or args.refresh_cache or args.provider:
                 raise ValueError("API download flags apply only to download-data")
             result = dispatch(args.command,config)
+        # Update `result` when this condition is met.
         if args.command == "stage-market-workbooks":
             result = {key: result[key] for key in ("status", "database", "target_database", "live_database_opened",
                 "import_config", "workbooks", "records", "identical_duplicate_rows_removed", "quarantined_rows", "datasets", "report")}
+        # Update `result` when this condition is met.
         elif args.command in {"run-synthetic", "backtest"}:
             result = {"run_id":result["run_id"],"kind":result["kind"],
                 "intervals":result["intervals"],"scenario_count":result["scenario_count"],
@@ -259,12 +308,15 @@ def main(argv: list[str] | None = None) -> int:
                     {key:item[key] for key in ("strategy","realized_operating_profit_eur",
                         "terminal_error_mwh","max_validation_error","solves","runtime_seconds")}
                     for item in result["strategies"]]}
+        # Update `result` when this condition is met.
         elif args.command == "optimize":
             result = {"status":result["status"],"objective_eur":result["objective_eur"],
                 "valid":result["validation"]["valid"],
                 "max_validation_error":max(result["validation"]["max_errors"].values()),
                 "diagnostics":result["diagnostics"],"output_dir":result["output_dir"]}
+        # Print serializable results and actionable errors without credential prompts when `args.command == 'download-data'`.
         elif args.command == "download-data":
+            # Print serializable results and actionable errors without credential prompts when `args.dry_run`.
             if args.dry_run:
                 from collections import Counter
                 groups=Counter((item["request"]["provider"],item["request"]["dataset"]) for item in result["items"])
@@ -279,16 +331,20 @@ def main(argv: list[str] | None = None) -> int:
                               for (provider,dataset),count in groups.items()]}
             else:
                 result={key:value for key,value in result.items() if key!="items"}
+        # Update `result` when this condition is met.
         elif args.command == "migrate-api-cache":
             result = {key: result[key] for key in
                       ("status", "database", "counts", "report", "coverage_plot")}
+        # Update `result` when this condition is met.
         elif args.command == "experiment-gme-oracle":
             result = {key: result[key] for key in
                       ("status", "study_id", "run_id", "study_date", "output_dir",
                        "active_auctions", "skipped_auctions", "optimizer_solves")}
         print(json.dumps(result,indent=2,default=json_default,allow_nan=False))
+        # Return `2` when `args.command == 'download-data' and result.get('status') == 'partial'`.
         if args.command == "download-data" and result.get("status") == "partial":
             return 2
+        # Return the selected result for this condition.
         if args.command == "check-market-history" and result.get("status") != "passed":
             return 2
         return 0

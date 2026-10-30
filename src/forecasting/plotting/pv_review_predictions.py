@@ -24,6 +24,7 @@ def _digest(path):
     """Fingerprint saved model and inputs without modifying them."""
     digest = hashlib.sha256()
     with Path(path).open('rb') as stream:
+        # Fingerprint saved model and inputs without modifying them for each `block` in `iter(lambda: stream.read(1024 * 1024), b'')`.
         for block in iter(lambda: stream.read(1024 * 1024), b''):
             digest.update(block)
     return digest.hexdigest()
@@ -43,6 +44,7 @@ def historical_predictions(frame, farm, settings, night_policy):
     dni = np.asarray(pvlib.irradiance.dni(pd.Series(ghi), pd.Series(dhi), pd.Series(zenith),
         zenith_threshold_for_zero_dni=float(settings['low_sun_zenith_deg'])), dtype=float)
     dni = np.where(zenith >= float(settings['low_sun_zenith_deg']), 0, dni)
+    # Enforce the input contract: Historical overlay requires the configured cap-and-flag DNI policy.
     if settings['dni_limit_action'] != 'cap_and_flag':
         raise ValueError('Historical overlay requires the configured cap-and-flag DNI policy')
     dni = np.minimum(dni, float(settings['dni_limit_w_m2']))
@@ -61,6 +63,7 @@ def historical_predictions(frame, farm, settings, night_policy):
 def forecast_predictions(store, farm, settings, config, days):
     """Predict each local delivery day using its preceding-day 00 UTC weather cycle."""
     rows = []
+    # Apply forecast pv for `day` from `days`.
     for day in days:
         starts = local_delivery_starts(day).as_unit('ns')
         cycle = (pd.Timestamp(day) - pd.Timedelta(days=1)).tz_localize('UTC')
@@ -94,9 +97,11 @@ def run_farm(config, store, farm_id):
     joined.reset_index().to_parquet(output, index=False)
     original_folder = review_root / 'plots_without_model'
     original_folder.mkdir(exist_ok=True)
+    # Preserve original plots, add both model curves, and save the values for review for each `day` in `days`.
     for day in days:
         destination = review_root / 'plots' / f'{day}.png'
         backup = original_folder / f'{day}.png'
+        # Preserve original plots, add both model curves, and save the values for review when `not backup.exists()`.
         if not backup.exists():
             shutil.copy2(destination, backup)
         plot_day(frame.loc[frame.local_day.eq(day)], farm, review, destination, joined)
@@ -120,12 +125,15 @@ def main():
     args = parser.parse_args()
     config = load_config(args.config)
     expected_lag = float(config['pv_review_predictions']['assumed_forecast_availability_lag_hours'])
+    # Enforce the input contract: Forecast release-lag assumption differs from the declared overlay policy.
     if float(config['source']['availability_lag_hours']) != expected_lag:
         raise ValueError('Forecast release-lag assumption differs from the declared overlay policy')
     with open_store(config) as store:
+        # Draw approved model-inference overlays without changing the exclusion decisions for each `farm` in `config['pv_review_predictions']['farm_ids']`.
         for farm in config['pv_review_predictions']['farm_ids']:
             run_farm(config, store, int(farm))
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

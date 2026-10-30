@@ -39,7 +39,9 @@ def plot_day(frame, episodes, day, farm, rating, path, timezone):
         sample=pd.concat([sample,boundary.iloc[:1]],ignore_index=True)
         times=pd.DatetimeIndex(sample.interval_start_utc).tz_convert(timezone)
     fig,axes=plt.subplots(3,1,figsize=(13,9),sharex=True,layout='constrained')
+    # Separate neural and physical predictions, retaining quarter-hour boundaries for each `(axis, model)` in `zip(axes[:2], ['neural', 'pvlib'])`.
     for axis,model in zip(axes[:2],['neural','pvlib']):
+        # Process each `(column, label, color, style)` in this collection.
         for column,label,color,style in [
             ('measured_ac_mw','Measured AC','black','-'),
             (f'{model}_forecast_mw',f'{model}: forecast weather','tab:orange','--'),
@@ -48,23 +50,29 @@ def plot_day(frame, episodes, day, farm, rating, path, timezone):
             axis.plot(times,values,label=label,color=color,linestyle=style)
         axis.axhline(rating,color='gray',linestyle=':',label='Installed AC rating')
         filled=sample.satellite_ghi_interpolated.to_numpy(dtype=bool)
+        # Separate neural and physical predictions, retaining quarter-hour boundaries when `filled.any()`.
         if filled.any():
             axis.scatter(times[filled],sample.loc[filled,f'{model}_satellite_ghi_mw'],
                 color='tab:purple',s=16,zorder=4,label='Interpolated GHI input')
         axis.set(ylabel='AC power (MW)',ylim=(0,rating*1.08))
+    # Process each `(column, label, color)` in this collection.
     for column,label,color in [('satellite_ghi_input_w_m2','Satellite GHI (interior gaps interpolated)','black'),
         ('forecast_ghi','Forecast GHI (mean across auction views)','tab:orange')]:
         values=sample[column].to_numpy()
         axes[2].plot(times,values,label=label,color=color)
     filled=sample.satellite_ghi_interpolated.to_numpy(dtype=bool)
+    # Separate neural and physical predictions, retaining quarter-hour boundaries when `filled.any()`.
     if filled.any():
         axes[2].scatter(times[filled],sample.loc[filled,'satellite_ghi_input_w_m2'],
             color='tab:purple',s=18,zorder=4,label='Interpolated satellite GHI')
     axes[2].set(ylabel='GHI (W/m²)',xlabel=f'Delivery time ({timezone})')
+    # Separate neural and physical predictions, retaining quarter-hour boundaries for each `row` in `episodes.loc[episodes.delivery_day.eq(day)].itertuples()`.
     for row in episodes.loc[episodes.delivery_day.eq(day)].itertuples():
         start=pd.Timestamp(row.start_utc).tz_convert(timezone)
         end=pd.Timestamp(row.end_utc).tz_convert(timezone)+pd.Timedelta(minutes=15)
+        # Separate neural and physical predictions, retaining quarter-hour boundaries for each `axis` in `axes`.
         for axis in axes:axis.axvspan(start,end,color='tab:red',alpha=.09)
+    # Separate neural and physical predictions, retaining quarter-hour boundaries for each `axis` in `axes`.
     for axis in axes:
         axis.grid(alpha=.2)
         axis.legend(loc='upper right',fontsize=8)
@@ -76,6 +84,7 @@ def plot_day(frame, episodes, day, farm, rating, path, timezone):
 def run(config):
     """Regenerate candidate-day plots without fitting models or reclassifying episodes."""
     section=config['pv_satellite_ghi_reference']
+    # Return `replot(config)` when `section['plots_only']`.
     if section['plots_only']:
         return replot(config)
     torch.set_num_threads(int(section['cpu_threads']))
@@ -88,6 +97,7 @@ def run(config):
     candidates=pd.read_csv(scan/'csv/all_episodes.csv')
     farms=load_metadata(config_path(config,config['inputs']['metadata_parquet']),section['farm_ids'])
     reports=[]
+    # Write the corresponding artifacts for `farm_id` from `section['farm_ids']`.
     for farm_id in section['farm_ids']:
         directory=source/f'farm_{farm_id}'
         prediction_path=directory/'parquet/predictions.parquet'
@@ -107,6 +117,7 @@ def run(config):
         baseline=PhysicalPVModel(physical,farms[farm_id],settings,night).evaluate()
         baseline_difference=float(np.nanmax(np.abs(baseline-frame.prediction_pvlib_mw.to_numpy())))
         tolerance=float(section['replay_tolerance_mw'])
+        # Enforce the input contract: Farm `farm_id`: saved forecast replay mismatch: `neural_difference`, `baseline_difference`.
         if neural_difference>tolerance or baseline_difference>tolerance:
             raise ValueError(f'Farm {farm_id}: saved forecast replay mismatch: {neural_difference}, {baseline_difference}')
         frame=interpolate_satellite(frame,section['satellite_ghi_gap_fill'])
@@ -119,6 +130,7 @@ def run(config):
         frame['satellite_ghi_valid']=modified.satellite_ghi_valid
         frame['direct_fraction_erbs_fallback']=modified.direct_fraction_erbs_fallback
         folder=output/f'farm_{farm_id}'
+        # Regenerate candidate-day plots without fitting models or reclassifying episodes for each `name` in `['parquet', 'plots', 'json']`.
         for name in ['parquet','plots','json']:(folder/name).mkdir(parents=True,exist_ok=True)
         frame.to_parquet(folder/'parquet/auction_view_predictions.parquet',index=False)
         # Average complete model predictions across auction views only after inference.
@@ -136,6 +148,7 @@ def run(config):
         top=episodes.sort_values('indicative_gap_mwh',ascending=False).drop_duplicates('delivery_day')
         days=list(top.head(int(section['plot_top_per_farm'])).delivery_day)
         focus=section['focus_days_by_farm'].get(str(farm_id),section['focus_days_by_farm'].get(farm_id,[]))
+        # Regenerate candidate-day plots without fitting models or reclassifying episodes for each `day` in `dict.fromkeys(days + focus)`.
         for day in dict.fromkeys(days+focus):
             plot_day(compact,episodes,day,farm_id,farms[farm_id].ac_capacity_mw,
                 folder/'plots'/f'{day}.png',section['timezone'])
@@ -169,22 +182,28 @@ def replot(config):
     section=config['pv_satellite_ghi_reference']
     output=config_path(config,section['output_root'])/section['run_id']
     manifest=json.loads((output/'json/manifest.json').read_text())
+    # Enforce the input contract: Plot-only rendering requires a completed inference run.
     if manifest['status']!='complete':
         raise ValueError('Plot-only rendering requires a completed inference run')
+    # Enforce the input contract: Satellite interpolation changed; rerun inference before plotting.
     if manifest.get('satellite_ghi_gap_fill','none')!=section['satellite_ghi_gap_fill']:
         raise ValueError('Satellite interpolation changed; rerun inference before plotting')
     episode_path=config_path(config,section['episode_source_root'])/'csv/all_episodes.csv'
+    # Enforce the input contract: Candidate episode inputs changed; rerun inference explicitly.
     if sha(episode_path)!=manifest['episode_source_sha256']:
         raise ValueError('Candidate episode inputs changed; rerun inference explicitly')
     episodes=pd.read_csv(episode_path)
+    # Render saved numerical results again without changing inference or its provenance for each `report` in `manifest['farms']`.
     for report in manifest['farms']:
         farm=report['farm_id']
+        # Skip the current item when `farm not in section['farm_ids']`.
         if farm not in section['farm_ids']:continue
         metadata=json.loads(Path(report['neural_artifact']).with_suffix('.json').read_text())
         rating=metadata['farm_metadata']['ac_capacity_kw']/1000
         folder=output/f'farm_{farm}'
         frame=pd.read_parquet(folder/'parquet/physical_reference.parquet')
         selected=episodes.loc[episodes.farm_id.eq(farm)]
+        # Render saved numerical results again without changing inference or its provenance for each `day` in `report['plotted_days']`.
         for day in report['plotted_days']:
             plot_day(frame,selected,day,farm,rating,folder/'plots'/f'{day}.png',section['timezone'])
         print(f'Farm {farm}: regenerated {len(report["plotted_days"])} connected-line plots',flush=True)
@@ -195,11 +214,13 @@ def replot(config):
     return output
 
 
+# When `__name__ == '__main__'`, set `parser` using `argparse.ArgumentParser(description=__doc__)`.
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',required=True)
     parser.add_argument('--plots-only',action='store_true',help='Redraw completed saved results without inference')
     args=parser.parse_args()
     configuration=load_config(args.config)
+    # When `args.plots_only`, set `configuration['pv_satellite_ghi_reference']['plots_only']` using `True`.
     if args.plots_only:configuration['pv_satellite_ghi_reference']['plots_only']=True
     print(run(configuration))

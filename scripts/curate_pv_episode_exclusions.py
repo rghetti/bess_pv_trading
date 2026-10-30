@@ -23,6 +23,7 @@ def run(config):
     table=pd.read_csv(disconnect)
     table=table.loc[table.kind.isin(section['disconnect_kinds']),['farm_id','start_utc','end_utc','kind']]
     frames=[table.rename(columns={'kind':'reason'})]
+    # Collect production-disconnect/plateau intervals; do not exclude weather disagreements for each `farm` in `section['farm_ids']`.
     for farm in section['farm_ids']:
         path=config_path(config,section['review_source_root'])/f'farm_{farm}/csv/candidate_episodes.csv'
         paths.append(path);review=pd.read_csv(path)
@@ -35,6 +36,7 @@ def run(config):
         # Model readers subsequently need only the resulting CSV, never these flags/rules.
         for reason,column in section['source_flags'].items():
             times=pd.DatetimeIndex(physical.loc[physical[column],'interval_start_utc'])
+            # Skip the current item when `not len(times)`.
             if not len(times):continue
             boundaries=np.flatnonzero(np.diff(times.as_unit('ns').asi8)!=
                 pd.Timedelta(minutes=config['source']['historical_interval_minutes']).value)+1
@@ -55,6 +57,7 @@ def run(config):
     print(destination)
 
 
+# When `__name__ == '__main__'`, set `parser` using `argparse.ArgumentParser(description=__doc__)`.
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',required=True)

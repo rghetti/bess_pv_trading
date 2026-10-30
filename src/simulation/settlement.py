@@ -25,6 +25,7 @@ def expected_realized_kpis(*, initial_expected_profit_eur: float | None,
     kpis = {"initial_expected_profit_eur": (None if initial_expected_profit_eur is None else float(initial_expected_profit_eur)),
         "initial_expected_auction_revenue_eur": float(initial_expected_auction_revenue_eur),
         "expectation_baseline": "initial_auction_solve" if initial_expected_profit_eur is not None else "no_auction_decision"}
+    # Compare the initial auction solve with final cash accounting for each `(name, (expected, realized))` in `comparisons.items()`.
     for name, (expected, realized) in comparisons.items():
         difference = None if realized is None or expected is None else float(realized - expected)
         kpis[f"realized_minus_expected_{name}_eur"] = difference
@@ -36,8 +37,10 @@ def expected_realized_kpis(*, initial_expected_profit_eur: float | None,
 def load_realized_imbalance_prices(config, grid) -> tuple[pd.DataFrame | None, dict]:
     """Align an exact actual-price curve from pinned DuckDB snapshots, ex post only."""
     settings = config.get("settlement", {})
+    # Return `(None, {'status': 'disabled'})` when `not settings.get('enabled', False)`.
     if not settings.get("enabled", False):
         return None, {"status": "disabled"}
+    # Enforce the input contract: Actual imbalance prices require missing_price_policy=error; no filling is allowed.
     if settings["missing_price_policy"] != "error":
         raise ValueError("Actual imbalance prices require missing_price_policy=error; no filling is allowed")
     from ..data.api_catalog import load_api_cache_records
@@ -47,20 +50,26 @@ def load_realized_imbalance_prices(config, grid) -> tuple[pd.DataFrame | None, d
         start=grid.starts[0], end=grid.ends[-1], verify_checksums=True)
     # Compare actual instants at one precision across Parquet and Python clocks.
     expected = pd.DatetimeIndex(grid.starts).tz_convert("UTC").as_unit("ns")
+    # Enforce the input contract: Actual imbalance settlement requires a nonempty unique price curve.
     if frame.empty or frame.product_start.duplicated().any():
         raise ValueError("Actual imbalance settlement requires a nonempty unique price curve")
     frame = frame.set_index("product_start").sort_index()
+    # Enforce the input contract: Actual imbalance price starts do not match the executed quarter-hour grid.
     if not pd.DatetimeIndex(frame.index).as_unit("ns").equals(expected):
         raise ValueError("Actual imbalance price starts do not match the executed quarter-hour grid")
+    # Enforce the input contract: Actual imbalance price ends do not match the executed quarter-hour grid.
     if not pd.DatetimeIndex(frame.product_end).as_unit("ns").equals(pd.DatetimeIndex(grid.ends).tz_convert("UTC").as_unit("ns")):
         raise ValueError("Actual imbalance price ends do not match the executed quarter-hour grid")
     minutes = settings["native_interval_minutes"]
     durations = (pd.DatetimeIndex(frame.product_end) - expected).total_seconds() / 60
+    # Enforce the input contract: Actual imbalance settlement requires native 15-minute EUR/MWh prices.
     if minutes != 15 or np.any(durations != minutes) or not frame.unit.eq("EUR/MWh").all():
         raise ValueError("Actual imbalance settlement requires native 15-minute EUR/MWh prices")
+    # Enforce the input contract: Actual imbalance prices contain an unexpected macrozone.
     if not frame.zone.eq(settings["zone"]).all():
         raise ValueError("Actual imbalance prices contain an unexpected macrozone")
     values = pd.to_numeric(frame[settings["price_column"]], errors="raise").to_numpy(float)
+    # Enforce the input contract: Actual imbalance settlement prices must all be finite.
     if not np.all(np.isfinite(values)):
         raise ValueError("Actual imbalance settlement prices must all be finite")
     frame = frame.reset_index()
@@ -85,9 +94,11 @@ def settle_realized_dispatch(dispatch: pd.DataFrame, *, auction_revenue_eur: flo
     starts = pd.to_datetime(frame.start, utc=True)
     ends = pd.to_datetime(frame.end, utc=True)
     hours = (ends - starts).dt.total_seconds().to_numpy() / 3600
+    # Enforce the input contract: Settlement requires unique intervals with positive duration.
     if frame.interval_id.duplicated().any() or np.any(hours <= 0):
         raise ValueError("Settlement requires unique intervals with positive duration")
     imbalance = frame.grid_mw.to_numpy(dtype=float) * hours - frame.net_position_mwh.to_numpy(dtype=float)
+    # Enforce the input contract: Settlement requires finite executed powers and positions.
     if not np.all(np.isfinite(imbalance)):
         raise ValueError("Settlement requires finite executed powers and positions")
     frame["imbalance_mwh"] = imbalance
@@ -104,13 +115,16 @@ def settle_realized_dispatch(dispatch: pd.DataFrame, *, auction_revenue_eur: flo
         "imbalance_settlement_status": "unavailable",
         "realized_imbalance_cashflow_eur": None,
         "realized_profit_after_imbalance_eur": None}
+    # Apply aligned settlement prices only after dispatch; missing prices stay unknown when `imbalance_prices is None`.
     if imbalance_prices is None:
+        # Enforce the input contract: Negative-direction prices require a positive-direction price curve.
         if imbalance_negative_prices is not None:
             raise ValueError("Negative-direction prices require a positive-direction price curve")
         frame["realized_imbalance_cashflow_eur"] = np.nan
         return frame, kpis
     positive = np.asarray(imbalance_prices, dtype=float)
     negative = positive if imbalance_negative_prices is None else np.asarray(imbalance_negative_prices, dtype=float)
+    # Enforce the input contract: Settlement prices must be finite and aligned to every executed interval.
     if any(values.shape != imbalance.shape or not np.all(np.isfinite(values)) for values in (positive, negative)):
         raise ValueError("Settlement prices must be finite and aligned to every executed interval")
     cashflow = np.maximum(imbalance, 0) * positive + np.minimum(imbalance, 0) * negative

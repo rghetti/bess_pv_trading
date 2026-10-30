@@ -26,24 +26,29 @@ class PreparedInputError(ValueError):
 def _utc(value: Any, label: str) -> pd.Timestamp:
     """Require explicit historical clock offsets at this integration boundary."""
     stamp = pd.Timestamp(value)
+    # Enforce the input contract: `label` must be a nonmissing timezone-aware timestamp.
     if pd.isna(stamp) or stamp.tzinfo is None:
         raise PreparedInputError(f"{label} must be a nonmissing timezone-aware timestamp")
     return stamp.tz_convert("UTC")
 
 
 def _timestamps(frame: pd.DataFrame, column: str, cutoff: pd.Timestamp | None = None) -> pd.DatetimeIndex:
+    # Enforce the input contract: Prepared CSV missing timestamp column `column`.
     if column not in frame:
         raise PreparedInputError(f"Prepared CSV missing timestamp column {column}")
     values = pd.DatetimeIndex([_utc(value, column) for value in frame[column]])
+    # Enforce the input contract: Future/unavailable `column` exceeds optimization.decision_cutoff.
     if cutoff is not None and (values > cutoff).any():
         raise PreparedInputError(f"Future/unavailable {column} exceeds optimization.decision_cutoff")
     return values
 
 
 def _read(path: Any, label: str) -> pd.DataFrame:
+    # Enforce the input contract: Missing optimization.`label`: supply an existing prepared CSV; no data will be invented.
     if not path or not Path(path).is_file():
         raise PreparedInputError(f"Missing optimization.{label}: supply an existing prepared CSV; no data will be invented")
     frame = pd.read_csv(path)
+    # Enforce the input contract: Prepared `label` is empty.
     if frame.empty:
         raise PreparedInputError(f"Prepared {label} is empty")
     return frame
@@ -51,21 +56,26 @@ def _read(path: Any, label: str) -> pd.DataFrame:
 
 def _require(settings: Mapping[str, Any], names: tuple[str, ...], label: str) -> None:
     missing = [name for name in names if name not in settings or settings[name] is None]
+    # Enforce the input contract: Missing explicitly configured `label`: `', '.join(missing)`.
     if missing:
         raise PreparedInputError(f"Missing explicitly configured {label}: {', '.join(missing)}")
 
 
 def _planning_settlement_price(settings: Mapping[str, Any], cutoff, enabled: bool) -> float:
     """Require a causal settlement assumption only when the optimizer uses it."""
+    # Return `0.0` when `not enabled`.
     if not enabled:
         return 0.0  # Unused scenario-array placeholder, not a real settlement price.
     _require(settings, ("settlement_point_price_eur_per_mwh", "settlement_point_price_available_at",
                         "settlement_point_price_status"), "settlement assumption")
+    # Enforce the input contract: Settlement point price must explicitly have status study_assumption.
     if settings["settlement_point_price_status"] != "study_assumption":
         raise PreparedInputError("Settlement point price must explicitly have status study_assumption")
+    # Enforce the input contract: Settlement assumption is unavailable at the decision cutoff.
     if _utc(settings["settlement_point_price_available_at"], "settlement availability") > cutoff:
         raise PreparedInputError("Settlement assumption is unavailable at the decision cutoff")
     price = float(settings["settlement_point_price_eur_per_mwh"])
+    # Enforce the input contract: Settlement point-price assumption must be finite.
     if not np.isfinite(price):
         raise PreparedInputError("Settlement point-price assumption must be finite")
     return price
@@ -73,6 +83,7 @@ def _planning_settlement_price(settings: Mapping[str, Any], cutoff, enabled: boo
 
 def _terminal_target(settings: Mapping[str, Any]) -> float | None:
     """Require an explicit target, with YAML null selecting unconstrained SOC."""
+    # Enforce the input contract: Missing explicitly configured state.terminal_target_mwh (use null to disable).
     if "terminal_target_mwh" not in settings:
         raise PreparedInputError("Missing explicitly configured state.terminal_target_mwh (use null to disable)")
     target = settings["terminal_target_mwh"]
@@ -82,15 +93,18 @@ def _terminal_target(settings: Mapping[str, Any]) -> float | None:
 def terminal_minimum_energy_mwh(settings: Mapping[str, Any], battery: BatteryParameters) -> float | None:
     """Convert an optional terminal SOC floor percentage to stored energy."""
     percentage = settings.get("terminal_soc_min_percent")
+    # Return `None` when `percentage is None`.
     if percentage is None:
         return None
     try:
         value = float(percentage)
     except (TypeError, ValueError):
         raise PreparedInputError("state.terminal_soc_min_percent must be a finite percentage or null") from None
+    # Enforce the input contract: state.terminal_soc_min_percent must be a finite percentage between 0 and 100.
     if not np.isfinite(value) or not 0 <= value <= 100:
         raise PreparedInputError("state.terminal_soc_min_percent must be a finite percentage between 0 and 100")
     energy = battery.capacity_mwh * value / 100.0
+    # Enforce the input contract: state.terminal_soc_min_percent lies outside battery SOC bounds.
     if not battery.energy_min_mwh <= energy <= battery.maximum_energy:
         raise PreparedInputError("state.terminal_soc_min_percent lies outside battery SOC bounds")
     return energy
@@ -98,6 +112,7 @@ def terminal_minimum_energy_mwh(settings: Mapping[str, Any], battery: BatteryPar
 
 def _boolean(series: pd.Series, label: str) -> np.ndarray:
     values = series.astype(str).str.lower().str.strip()
+    # Enforce the input contract: `label` must contain explicit true/false values without missing entries.
     if not values.isin(["true", "false", "1", "0"]).all():
         raise PreparedInputError(f"{label} must contain explicit true/false values without missing entries")
     return values.isin(["true", "1"]).to_numpy()
@@ -119,6 +134,7 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
     market_grid = calendar.delivery_grid(str(settings["delivery_day"]))
     grid = market_grid.to_domain()
     schedule = calendar.schedule(str(settings["delivery_day"]))
+    # Enforce the input contract: Prepared planning supports only an initial cutoff no later than the DA submission; historical replay is separate.
     if cutoff > schedule[0].submission_at:
         raise PreparedInputError("Prepared planning supports only an initial cutoff no later than the DA submission; historical replay is separate")
     plant_config, battery_config = config.get("plant", {}), config.get("battery", {})
@@ -137,88 +153,120 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
     required_pv = {"farm_id", "member_id", "member_origin", "member_probability", "forecast_cycle_time",
                    "forecast_available_at", "interval_start_utc", "interval_end_utc", "pv_ac_mw",
                    "input_eligibility", "review_status"}
+    # Enforce the input contract: PV forecast export missing contract columns: `sorted(missing)`.
     if missing := required_pv - set(pv):
         raise PreparedInputError(f"PV forecast export missing contract columns: {sorted(missing)}")
+    # Enforce the input contract: Prepared PV must contain exactly the configured farm.
     if pv.farm_id.nunique(dropna=False) != 1 or not (pd.to_numeric(pv.farm_id, errors="raise") == plant.farm_id).all():
         raise PreparedInputError("Prepared PV must contain exactly the configured farm")
+    # Enforce the input contract: Prepared planning requires one explicit deterministic PV member and origin.
     if pv.member_id.isna().any() or pv.member_id.nunique() != 1 or pv.member_origin.isna().any() or pv.member_origin.nunique() != 1:
         raise PreparedInputError("Prepared planning requires one explicit deterministic PV member and origin")
     origins = pv.member_origin.astype(str).str.strip()
+    # Enforce the input contract: PV member origin must describe a usable forecast, not future realized/oracle power.
     if origins.eq("").any() or origins.str.lower().str.contains("realized|oracle|perfect_foresight|observed_power", regex=True).any():
         raise PreparedInputError("PV member origin must describe a usable forecast, not future realized/oracle power")
+    # Enforce the input contract: The single PV member must carry probability one.
     if not np.allclose(pd.to_numeric(pv.member_probability, errors="raise"), 1.0, atol=1e-12, rtol=0):
         raise PreparedInputError("The single PV member must carry probability one")
+    # Enforce the input contract: Invalid PV input_eligibility: gaps/model-invalid intervals cannot be optimized.
     if not _boolean(pv.input_eligibility, "input_eligibility").all():
         raise PreparedInputError("Invalid PV input_eligibility: gaps/model-invalid intervals cannot be optimized")
+    # Validate one farm/member, full-day PV and point-price forecasts, then plan for each `name` in `('review_excluded', 'derived_review_excluded')`.
     for name in ("review_excluded", "derived_review_excluded"):
+        # Enforce the input contract: PV export contains review exclusions; no automatic override is permitted.
         if name in pv and _boolean(pv[name], name).any():
             raise PreparedInputError("PV export contains review exclusions; no automatic override is permitted")
     allowed_reviews = {"no_configured_observation_review_exclusion", "no_review_exclusion", "eligible"}
+    # Enforce the input contract: PV review_status must explicitly declare no review exclusions.
     if pv.review_status.isna().any() or not pv.review_status.isin(allowed_reviews).all():
         raise PreparedInputError("PV review_status must explicitly declare no review exclusions")
     starts = _timestamps(pv, "interval_start_utc")
     ends = _timestamps(pv, "interval_end_utc")
     source = _timestamps(pv, "forecast_cycle_time", cutoff)
     availability = _timestamps(pv, "forecast_available_at", cutoff)
+    # Enforce the input contract: PV export must retain one causal source vintage and its availability.
     if source.nunique() != 1 or availability.nunique() != 1 or (source > availability).any():
         raise PreparedInputError("PV export must retain one causal source vintage and its availability")
+    # Enforce the input contract: PV must cover the complete local quarter-hour delivery grid exactly once.
     if starts.duplicated().any() or len(starts) != len(market_grid) or set(starts) != set(market_grid.starts):
         raise PreparedInputError("PV must cover the complete local quarter-hour delivery grid exactly once")
     pv = pv.assign(_start=starts, _end=ends).set_index("_start").loc[market_grid.starts]
+    # Enforce the input contract: PV interval ends do not match the declared market products.
     if not pd.DatetimeIndex(pv._end).equals(market_grid.ends):
         raise PreparedInputError("PV interval ends do not match the declared market products")
     pv_values = pd.to_numeric(pv.pv_ac_mw, errors="raise").to_numpy(float)
+    # Enforce the input contract: PV AC forecast must be finite and nonnegative; missing values are not filled.
     if not np.isfinite(pv_values).all() or (pv_values < 0).any():
         raise PreparedInputError("PV AC forecast must be finite and nonnegative; missing values are not filled")
     pv_fit = settings.get("pv_model_fit_cutoff")
+    # Validate one farm/member, full-day PV and point-price forecasts, then plan when `'model_fit_cutoff' in pv`.
     if "model_fit_cutoff" in pv:
         _timestamps(pv, "model_fit_cutoff", cutoff)
+    # Validate one farm/member, full-day PV and point-price forecasts, then plan when `pv_fit is not None`.
     elif pv_fit is not None:
+        # Enforce the input contract: PV model fit uses future data.
         if _utc(pv_fit, "pv_model_fit_cutoff") > cutoff:
             raise PreparedInputError("PV model fit uses future data")
+    # Enforce the input contract: Supply pv_model_fit_cutoff or explicitly declare pv_model_fit_status=unfitted_explicit_assumption.
     elif settings.get("pv_model_fit_status") != "unfitted_explicit_assumption":
         raise PreparedInputError("Supply pv_model_fit_cutoff or explicitly declare pv_model_fit_status=unfitted_explicit_assumption")
 
     # Forecast labels are numerical expectations, never ex-post clearing outcomes.
     prices = _read(settings["price_forecast_path"], "price_forecast_path")
     required_price = {"auction", "product_start", "price_eur_mwh", "available_at", "origin"}
+    # Enforce the input contract: Price forecast CSV missing columns: `sorted(missing)`.
     if missing := required_price - set(prices):
         raise PreparedInputError(f"Price forecast CSV missing columns: {sorted(missing)}")
+    # Enforce the input contract: Price forecasts require explicit origin provenance.
     if prices.origin.isna().any() or prices.origin.astype(str).str.strip().eq("").any():
         raise PreparedInputError("Price forecasts require explicit origin provenance")
     forbidden = prices.origin.astype(str).str.lower().str.contains("realized|oracle|perfect_foresight|observed_clearing", regex=True)
+    # Enforce the input contract: Future realized/oracle clearing prices cannot be a prepared executable forecast.
     if forbidden.any():
         raise PreparedInputError("Future realized/oracle clearing prices cannot be a prepared executable forecast")
     prices["auction"] = prices.auction.replace({"MGP": "DA", "MI-A1": "IDA1", "MI-A2": "IDA2", "MI-A3": "IDA3"})
+    # Enforce the input contract: Price CSV has unknown/nonauction products.
     if not prices.auction.isin([event.auction for event in schedule]).all():
         raise PreparedInputError("Price CSV has unknown/nonauction products")
     prices["_start"] = _timestamps(prices, "product_start")
     prices["available_at"] = _timestamps(prices, "available_at", cutoff)
+    # Process each `(field, config_field)` in this collection.
     for field, config_field in (("source_time", "price_forecast_source_time"), ("fit_cutoff", "price_forecast_fit_cutoff")):
+        # Validate one farm/member, full-day PV and point-price forecasts, then plan when `field not in prices`.
         if field not in prices:
             _require(settings, (config_field,), "optimization price provenance")
             prices[field] = settings[config_field]
         prices[field] = _timestamps(prices, field, cutoff)
+    # Enforce the input contract: Price source time exceeds its availability.
     if (pd.DatetimeIndex(prices.source_time) > pd.DatetimeIndex(prices.available_at)).any():
         raise PreparedInputError("Price source time exceeds its availability")
+    # Enforce the input contract: Price model fit cutoff exceeds its forecast availability.
     if (pd.DatetimeIndex(prices.fit_cutoff) > pd.DatetimeIndex(prices.available_at)).any():
         raise PreparedInputError("Price model fit cutoff exceeds its forecast availability")
+    # Enforce the input contract: Duplicate price-forecast auction/products.
     if prices.duplicated(["auction", "_start"]).any():
         raise PreparedInputError("Duplicate price-forecast auction/products")
     prices["price_eur_mwh"] = pd.to_numeric(prices.price_eur_mwh, errors="raise")
+    # Enforce the input contract: Missing price forecasts cannot be filled.
     if not np.isfinite(prices.price_eur_mwh).all():
         raise PreparedInputError("Missing price forecasts cannot be filled")
+    # Enforce the input contract: Prepared Italy NORD prices must identify the NORD bidding zone.
     if "zone" in prices and not prices.zone.eq("NORD").all():
         raise PreparedInputError("Prepared Italy NORD prices must identify the NORD bidding zone")
     paths: dict[str, np.ndarray] = {}
     masks: dict[str, tuple[bool, ...]] = {}
+    # Validate one farm/member, full-day PV and point-price forecasts, then plan for each `event` in `schedule`.
     for event in schedule:
         expected = market_grid.starts[list(event.eligible_intervals)]
         selected = prices.loc[prices.auction == event.auction].set_index("_start")
+        # Enforce the input contract: `event.auction` point forecasts must cover its eligible quarter-hour products exactly; IDA3 is noon onward.
         if len(selected) != len(expected) or set(selected.index) != set(expected):
             raise PreparedInputError(f"{event.auction} point forecasts must cover its eligible quarter-hour products exactly; IDA3 is noon onward")
+        # When `'product_end' in selected`, set `expected_ends` using `market_grid.ends[list(event.eligible_intervals)]`.
         if "product_end" in selected:
             expected_ends = market_grid.ends[list(event.eligible_intervals)]
+            # Enforce the input contract: `event.auction` price product ends mismatch market grid.
             if not _timestamps(selected.loc[expected], "product_end").equals(expected_ends):
                 raise PreparedInputError(f"{event.auction} price product ends mismatch market grid")
         # Ineligible IDA3 coefficients are never traded; retain predecessor values
@@ -247,8 +295,10 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
     scenarios = replace(scenarios, origin="supplied point-price / deterministic-PV", provenance=provenance)
     state_config, trading, degradation = config.get("state", {}), config.get("trading", {}), config.get("degradation", {})
     _require(state_config, ("initial_energy_mwh", "origin"), "delivery-boundary state")
+    # Enforce the input contract: Initial pre-delivery planning requires an explicit known_delivery_start_assumption.
     if state_config["origin"] != "known_delivery_start_assumption":
         raise PreparedInputError("Initial pre-delivery planning requires an explicit known_delivery_start_assumption")
+    # Enforce the input contract: state.timestamp must equal delivery-day start; a preceding-day state cannot be reused.
     if state_config.get("timestamp") and _utc(state_config["timestamp"], "state.timestamp") != pd.Timestamp(grid.starts[0]):
         raise PreparedInputError("state.timestamp must equal delivery-day start; a preceding-day state cannot be reused")
     _require(trading, ("imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"), "trading cost assumptions")

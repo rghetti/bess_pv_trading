@@ -171,6 +171,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--force", action="store_true", help="replace files in the output directory")
     parser.add_argument("--reuse-existing-plots", action="store_true", help="keep non-empty plot PNGs when resuming an interrupted report")
     args = parser.parse_args()
+    # Perform parse args when `args.plot_days < 1 or args.overlay_members < 1`.
     if args.plot_days < 1 or args.overlay_members < 1:
         parser.error("plot-days and overlay-members must be positive")
     return args
@@ -187,6 +188,7 @@ def select_cycle(ds: xr.Dataset, delivery_day: date, gate: str, args: argparse.N
     cutoff = cutoff_for(delivery_day, gate, args)
     available = cycles + pd.Timedelta(hours=args.availability_lag_hours)
     eligible = cycles[(cycles <= cutoff) & (available <= cutoff)]
+    # Enforce the input contract: No cycle eligible for `delivery_day` at `gate` cutoff `cutoff`.
     if not len(eligible):
         raise ValueError(f"No cycle eligible for {delivery_day} at {gate} cutoff {cutoff}")
     return eligible[-1], cutoff
@@ -195,11 +197,13 @@ def select_cycle(ds: xr.Dataset, delivery_day: date, gate: str, args: argparse.N
 def local_day_values(ds: xr.Dataset, variable: str, farm_id: int, cycle: pd.Timestamp,
                      delivery_day: date, timezone_name: str) -> np.ndarray:
     """Return a 24-by-member forecast matrix aligned to local delivery-hour starts."""
+    # Enforce the input contract: Forecast arrays must be loaded before extraction.
     if VALID_TIME_CACHE is None or variable not in ARRAY_CACHE:
         raise RuntimeError("Forecast arrays must be loaded before extraction")
     cycle_index = CYCLE_INDEX[cycle.value]
     valid = pd.DatetimeIndex(pd.to_datetime(VALID_TIME_CACHE[cycle_index], utc=True))
     semantics = str(ds[variable].attrs.get("temporal_semantics", "instantaneous"))
+    # When `semantics in {'interval_average', 'interval_accumulation'}`, set `hour_starts` using `(valid - pd.Timedelta(hours=1)).tz_convert(timezone_name)`.
     if semantics in {"interval_average", "interval_accumulation"}:
         hour_starts = (valid - pd.Timedelta(hours=1)).tz_convert(timezone_name)
     else:
@@ -208,7 +212,9 @@ def local_day_values(ds: xr.Dataset, variable: str, farm_id: int, cycle: pd.Time
     hours = np.asarray([stamp.hour for stamp in hour_starts[mask]], dtype=int)
     values = ARRAY_CACHE[variable][FARM_INDEX[farm_id], cycle_index, mask, :]
     result = np.full((24, ds.sizes["member"]), np.nan, dtype=float)
+    # Return a 24-by-member forecast matrix aligned to local delivery-hour starts when `len(hours)`.
     if len(hours):
+        # Enforce the input contract: Duplicate local delivery-hour values for `variable`, `farm_id`, `delivery_day`.
         if len(set(hours)) != len(hours):
             raise ValueError(f"Duplicate local delivery-hour values for {variable}, {farm_id}, {delivery_day}")
         result[hours, :] = values
@@ -217,10 +223,12 @@ def local_day_values(ds: xr.Dataset, variable: str, farm_id: int, cycle: pd.Time
 
 def all_member_matrix(ds: xr.Dataset, variable: str, farm_id: int, cycle: pd.Timestamp,
                       delivery_day: date, timezone_name: str) -> np.ndarray:
+    # Update `u` when this condition is met.
     if variable == "wind_speed_10m":
         u = local_day_values(ds, "wind_u_component_10m", farm_id, cycle, delivery_day, timezone_name)
         v = local_day_values(ds, "wind_v_component_10m", farm_id, cycle, delivery_day, timezone_name)
         return np.hypot(u, v)
+    # Update `u` when this condition is met.
     if variable == "wind_speed_100m":
         u = local_day_values(ds, "wind_u_component_100m", farm_id, cycle, delivery_day, timezone_name)
         v = local_day_values(ds, "wind_v_component_100m", farm_id, cycle, delivery_day, timezone_name)
@@ -230,6 +238,7 @@ def all_member_matrix(ds: xr.Dataset, variable: str, farm_id: int, cycle: pd.Tim
 
 def point_statistics(matrix: np.ndarray) -> dict[str, float | int]:
     finite = matrix[np.isfinite(matrix)]
+    # Return the selected result for this condition.
     if not len(finite):
         return {"member_count": 0, **{key: np.nan for key in ("mean", "median", "std", "min", "p05", "p10", "p25", "p75", "p90", "p95", "max", "range", "p90_p10", "iqr")}}
     qs = np.nanquantile(finite, [0.05, 0.10, 0.25, 0.75, 0.90, 0.95])
@@ -245,6 +254,7 @@ def point_statistics(matrix: np.ndarray) -> dict[str, float | int]:
 
 def make_dictionary(ds: xr.Dataset, metadata: pd.DataFrame) -> pd.DataFrame:
     rows = []
+    # Perform make dictionary for each `(name, info)` in `VARIABLES.items()`.
     for name, info in VARIABLES.items():
         attrs = ds[name].attrs
         rows.append({
@@ -252,6 +262,7 @@ def make_dictionary(ds: xr.Dataset, metadata: pd.DataFrame) -> pd.DataFrame:
             "units": attrs.get("units", info["units"]), "temporal_semantics": attrs.get("temporal_semantics", info["semantics"]),
             "array_dimensions": ", ".join(ds[name].dims), "current_pipeline_use": info["current"], "future_ensemble_use": info["future"],
         })
+    # Perform make dictionary for each `(name, (meaning, future))` in `COORDINATES.items()`.
     for name, (meaning, future) in COORDINATES.items():
         rows.append({
             "zarr_group": name, "group_type": "coordinate", "meaning": meaning,
@@ -287,11 +298,13 @@ def make_day_group_page(ds: xr.Dataset, day: date, farm_id: int, cycle: pd.Times
     selected_ids = member_coords[selected_indices]
     cmap = plt.get_cmap("tab10")
     x = np.arange(24)
+    # Perform make day group page for each `(index, variable)` in `enumerate(variables)`.
     for index, variable in enumerate(variables):
         ax = axes[index]
         values = all_member_matrix(ds, variable, farm_id, cycle, day, timezone_name)
         p10, median, p90 = np.nanquantile(values, [0.10, 0.50, 0.90], axis=1)
         ax.fill_between(x, p10, p90, color="#aab7c4", alpha=0.38, linewidth=0, label="All 50: p10–p90")
+        # Perform make day group page for each `(color_index, member_id)` in `enumerate(selected_ids)`.
         for color_index, member_id in enumerate(selected_ids):
             idx = int(np.flatnonzero(member_coords == member_id)[0])
             ax.plot(x, values[:, idx], color=cmap(color_index), linewidth=0.9, alpha=0.78)
@@ -302,11 +315,15 @@ def make_day_group_page(ds: xr.Dataset, day: date, farm_id: int, cycle: pd.Times
         ax.set_ylabel(unit, fontsize=8)
         ax.grid(True, color="#d7dce0", linewidth=0.45, alpha=0.8)
         ax.tick_params(labelsize=7)
+        # Apply this branch only when its condition is met.
         if variable in {"shortwave_radiation", "direct_radiation", "precipitation"}:
             ax.set_xlim(-0.5, 23.5)
+    # Perform make day group page for each `ax` in `axes[len(variables):]`.
     for ax in axes[len(variables):]:
         ax.axis("off")
+    # Perform make day group page for each `ax` in `axes`.
     for ax in axes:
+        # Perform make day group page when `ax.axison`.
         if ax.axison:
             ax.set_xticks([0, 6, 12, 18, 23])
             ax.set_xlabel("Local delivery hour (hour-start aligned)", fontsize=8)
@@ -331,6 +348,7 @@ def make_day_group_page(ds: xr.Dataset, day: date, farm_id: int, cycle: pd.Times
 
 
 def fmt(value: object, digits: int = 3) -> str:
+    # Return `'n/a' if not np.isfinite(value) else f'{value:.{digits}f}'` when `isinstance(value, (float, np.floating))`.
     if isinstance(value, (float, np.floating)):
         return "n/a" if not np.isfinite(value) else f"{value:.{digits}f}"
     return str(value)
@@ -341,6 +359,7 @@ def markdown_table(frame: pd.DataFrame) -> str:
     columns = list(frame.columns)
     lines = ["| " + " | ".join(str(column).replace("|", "\\|") for column in columns) + " |"]
     lines.append("| " + " | ".join("---" for _ in columns) + " |")
+    # Render a Markdown table without relying on pandas' optional tabulate dependency for each `row` in `frame.itertuples(index=False, name=None)`.
     for row in frame.itertuples(index=False, name=None):
         cells = [str(value).replace("|", "\\|").replace("\n", "<br>") for value in row]
         lines.append("| " + " | ".join(cells) + " |")
@@ -349,13 +368,17 @@ def markdown_table(frame: pd.DataFrame) -> str:
 
 def main() -> None:
     args = parse_args()
+    # Reject invalid input when `not args.zarr.exists()`.
     if not args.zarr.exists():
         raise FileNotFoundError(args.zarr)
+    # Reject invalid input when `not args.metadata.exists()`.
     if not args.metadata.exists():
         raise FileNotFoundError(args.metadata)
     args.output.mkdir(parents=True, exist_ok=True)
+    # Enforce the input contract: Output directory is not empty: `args.output`; choose another --output or pass --force.
     if any(args.output.iterdir()) and not args.force:
         raise FileExistsError(f"Output directory is not empty: {args.output}; choose another --output or pass --force")
+    # Perform main when `args.force`.
     if args.force:
         # Remove only the exact root-level artifacts written by the earlier, mixed-farm layout.
         for name in (
@@ -364,22 +387,29 @@ def main() -> None:
             "source_value_coverage_and_negative_values.csv", "ensemble_seven_day_all_farms.pdf",
         ):
             candidate = args.output / name
+            # Perform main when `candidate.is_file()`.
             if candidate.is_file():
                 candidate.unlink()
+        # Perform main for each `day_index` in `range(args.plot_days)`.
         for day_index in range(args.plot_days):
             candidate = args.output / f"ensemble_{(args.plot_start + timedelta(days=day_index)).isoformat()}.pdf"
+            # Perform main when `candidate.is_file()`.
             if candidate.is_file():
                 candidate.unlink()
 
     ds = xr.open_zarr(args.zarr, consolidated=True)
     required_dims = {"farm_id", "cycle_time", "lead_time", "member"}
+    # Enforce the input contract: Expected explicit ensemble dimensions `sorted(required_dims)`, found `dict(ds.sizes)`.
     if not required_dims.issubset(ds.sizes):
         raise ValueError(f"Expected explicit ensemble dimensions {sorted(required_dims)}, found {dict(ds.sizes)}")
+    # Enforce the input contract: Zarr has no valid_time coordinate.
     if "valid_time" not in ds.coords:
         raise ValueError("Zarr has no valid_time coordinate")
     expected_valid = ds.cycle_time.values[:, None] + ds.lead_time.values[None, :]
+    # Enforce the input contract: valid_time does not equal cycle_time + lead_time.
     if not np.array_equal(ds.valid_time.values, expected_valid):
         raise ValueError("valid_time does not equal cycle_time + lead_time")
+    # Enforce the input contract: One or more documented forecast variables are absent from the Zarr.
     if not set(VARIABLES).issubset(ds.data_vars):
         raise ValueError("One or more documented forecast variables are absent from the Zarr")
 
@@ -392,6 +422,7 @@ def main() -> None:
 
     metadata = pd.read_parquet(args.metadata)
     farm_ids = [int(item) for item in ds.farm_id.values]
+    # Enforce the input contract: metadata.parquet does not contain matching farm_id keys.
     if "farm_id" not in metadata or not set(farm_ids).issubset(set(metadata.farm_id.astype(int))):
         raise ValueError("metadata.parquet does not contain matching farm_id keys")
     metadata = metadata.loc[metadata.farm_id.astype(int).isin(farm_ids)].sort_values("farm_id")
@@ -402,9 +433,11 @@ def main() -> None:
     plot_days = [args.plot_start + timedelta(days=i) for i in range(args.plot_days)]
     farm_ids = sorted(farm_ids)
     farm_dirs = {farm_id: args.output / f"farm_{farm_id}" for farm_id in farm_ids}
+    # Perform main for each `directory` in `farm_dirs.values()`.
     for directory in farm_dirs.values():
         directory.mkdir(parents=True, exist_ok=True)
     member_coords = ds.member.values.astype(int)
+    # Enforce the input contract: Requested `args.overlay_members` overlay members but only `len(member_coords)` exist.
     if args.overlay_members > len(member_coords):
         raise ValueError(f"Requested {args.overlay_members} overlay members but only {len(member_coords)} exist")
     overlay_indices = np.linspace(0, len(member_coords) - 1, args.overlay_members).round().astype(int)
@@ -412,6 +445,7 @@ def main() -> None:
 
     gate_records = []
     selected_cycles: dict[date, tuple[pd.Timestamp, pd.Timestamp, pd.Timestamp, pd.Timestamp]] = {}
+    # Perform main for each `day` in `analysis_days`.
     for day in analysis_days:
         da_cycle, da_cutoff = select_cycle(ds, day, args.da_gate_local, args)
         ida_cycle, ida_cutoff = select_cycle(ds, day, args.ida1_gate_local, args)
@@ -428,13 +462,17 @@ def main() -> None:
     # Materialize one member matrix per day/farm/feature and retain complete pointwise quantiles.
     matrices: dict[tuple[date, int, str], np.ndarray] = {}
     point_rows = []
+    # Perform main for each `day` in `analysis_days`.
     for day in analysis_days:
         cycle, _, _, _ = selected_cycles[day]
+        # Perform main for each `farm_id` in `farm_ids`.
         for farm_id in farm_ids:
+            # Perform main for each `variable` in `PLOT_VARIABLES`.
             for variable in PLOT_VARIABLES:
                 matrix = all_member_matrix(ds, variable, farm_id, cycle, day, args.timezone)
                 matrices[(day, farm_id, variable)] = matrix
                 unit = VARIABLES.get(variable, {}).get("units", "m/s")
+                # Perform main for each `hour` in `range(24)`.
                 for hour in range(24):
                     stats = point_statistics(matrix[hour, :])
                     point_rows.append({
@@ -442,10 +480,12 @@ def main() -> None:
                         "forecast_cycle_utc": cycle.isoformat(), "variable": variable, "unit": unit, **stats,
                     })
     point_frame = pd.DataFrame(point_rows)
+    # Write the corresponding artifacts for `(farm_id, directory)` from `farm_dirs.items()`.
     for farm_id, directory in farm_dirs.items():
         point_frame.loc[point_frame.farm_id.eq(farm_id)].to_csv(directory / "pointwise_ensemble_statistics.csv", index=False)
 
     summary_rows = []
+    # Write the corresponding artifacts for `((farm_id, variable), subset)` from `point_frame.groupby(['farm_id', 'variable'], sort=True)`.
     for (farm_id, variable), subset in point_frame.groupby(["farm_id", "variable"], sort=True):
         expected_points = len(analysis_days) * 24
         valid = subset.loc[subset.member_count.ge(2)]
@@ -471,6 +511,7 @@ def main() -> None:
             "max_full_member_range": float(valid["range"].max()) if len(valid) else np.nan,
         })
         by_day_rows = []
+        # Perform main for each `(day_text, group)` in `subset.groupby('delivery_day', sort=True)`.
         for day_text, group in subset.groupby("delivery_day", sort=True):
             finite_group = group.loc[group.member_count.ge(2)]
             by_day_rows.append({
@@ -485,6 +526,7 @@ def main() -> None:
         pd.DataFrame(by_day_rows).to_csv(farm_dirs[int(farm_id)] / "ensemble_variability_by_day.csv", mode="a", index=False,
                                          header=not (farm_dirs[int(farm_id)] / "ensemble_variability_by_day.csv").exists())
         lead_rows = []
+        # Perform main for each `(hour, group)` in `subset.groupby('delivery_hour_local', sort=True)`.
         for hour, group in subset.groupby("delivery_hour_local", sort=True):
             finite_group = group.loc[group.member_count.ge(2)]
             lead_rows.append({
@@ -497,12 +539,15 @@ def main() -> None:
                 "p90_p90_p10_width": float(finite_group.p90_p10.quantile(0.90)) if len(finite_group) else np.nan,
             })
     summary = pd.DataFrame(summary_rows)
+    # Write the corresponding artifacts for `(farm_id, directory)` from `farm_dirs.items()`.
     for farm_id, directory in farm_dirs.items():
         farm_summary = summary.loc[summary.farm_id.eq(farm_id)]
         farm_summary.to_csv(directory / "ensemble_variability_summary.csv", index=False)
         farm_lead = []
+        # Perform main for each `variable` in `PLOT_VARIABLES`.
         for variable in PLOT_VARIABLES:
             subset = point_frame.loc[point_frame.farm_id.eq(farm_id) & point_frame.variable.eq(variable)]
+            # Perform main for each `(hour, group)` in `subset.groupby('delivery_hour_local', sort=True)`.
             for hour, group in subset.groupby("delivery_hour_local", sort=True):
                 finite_group = group.loc[group.member_count.ge(2)]
                 farm_lead.append({
@@ -515,12 +560,14 @@ def main() -> None:
                     "p90_p90_p10_width": float(finite_group.p90_p10.quantile(0.90)) if len(finite_group) else np.nan,
                 })
         pd.DataFrame(farm_lead).to_csv(directory / "ensemble_variability_by_delivery_hour.csv", index=False)
+        # Write the corresponding artifacts for `day` from `analysis_days`.
         for day in analysis_days:
             day_dir = directory / day.isoformat()
             day_dir.mkdir(parents=True, exist_ok=True)
             daily = point_frame.loc[point_frame.farm_id.eq(farm_id) & point_frame.delivery_day.eq(day.isoformat())].copy()
             daily.to_csv(day_dir / "pointwise_ensemble_statistics.csv", index=False)
             quantity_rows = []
+            # Perform main for each `(variable, group)` in `daily.groupby('variable', sort=True)`.
             for variable, group in daily.groupby("variable", sort=True):
                 valid = group.loc[group.member_count.ge(2)]
                 quantity_rows.append({
@@ -562,8 +609,10 @@ def main() -> None:
         .reshape(ds.sizes["cycle_time"], ds.sizes["lead_time"])
     )
     in_month = (valid_utc >= np.datetime64("2026-01-01T00:00:00")) & (valid_utc < np.datetime64("2026-02-01T00:00:00"))
+    # Write the corresponding artifacts for `(farm_id, directory)` from `farm_dirs.items()`.
     for farm_id, directory in farm_dirs.items():
         quality_rows = []
+        # Perform main for each `variable` in `VARIABLES`.
         for variable in VARIABLES:
             arr = ARRAY_CACHE[variable][FARM_INDEX[farm_id]]
             finite = np.isfinite(arr)
@@ -583,25 +632,33 @@ def main() -> None:
 
     # Keep each delivery date under its farm folder and separate plots by weather quantity group.
     plot_outputs: dict[int, list[str]] = {farm_id: [] for farm_id in farm_ids}
+    # Perform main for each `day` in `plot_days`.
     for day in plot_days:
+        # Enforce the input contract: Plot day `day` must be inside the analysis window.
         if day not in selected_cycles:
             raise ValueError(f"Plot day {day} must be inside the analysis window")
         da_cycle, da_cutoff, ida_cycle, ida_cutoff = selected_cycles[day]
+        # Enforce the input contract: DA and IDA1 select different cycles on `day`; current day plot expects one shared vintage.
         if da_cycle != ida_cycle:
             raise ValueError(f"DA and IDA1 select different cycles on {day}; current day plot expects one shared vintage")
+        # Perform main for each `farm_id` in `farm_ids`.
         for farm_id in farm_ids:
             day_dir = farm_dirs[farm_id] / day.isoformat()
             day_dir.mkdir(parents=True, exist_ok=True)
+            # Perform main for each `(group_name, variables)` in `PLOT_GROUPS.items()`.
             for group_name, variables in PLOT_GROUPS.items():
                 path = day_dir / f"{group_name}.png"
                 legacy_pdf = day_dir / f"{group_name}.pdf"
+                # Apply this branch only when its condition is met.
                 if args.reuse_existing_plots and path.is_file() and path.stat().st_size > 0:
+                    # Perform main when `legacy_pdf.is_file()`.
                     if legacy_pdf.is_file():
                         legacy_pdf.unlink()
                     plot_outputs[farm_id].append(path.relative_to(args.output).as_posix())
                     continue
                 make_day_group_page(ds, day, farm_id, da_cycle, da_cutoff, ida_cutoff,
                                     overlay_ids, path, args.timezone, group_name, variables)
+                # Perform main when `legacy_pdf.is_file()`.
                 if legacy_pdf.is_file():
                     legacy_pdf.unlink()
                 plot_outputs[farm_id].append(path.relative_to(args.output).as_posix())
@@ -689,5 +746,6 @@ Root files `.zgroup`, `.zattrs` and `.zmetadata` describe the Zarr group, datase
     print(json.dumps(manifest, indent=2))
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == "__main__":
     main()

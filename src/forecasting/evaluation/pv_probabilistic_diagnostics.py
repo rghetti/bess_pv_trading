@@ -18,13 +18,16 @@ def analyze(frame, ids, levels, farm_id, label, output, rating):
     valid = comparable(frame, ids) & frame.split.eq('validation').to_numpy()
     valid &= np.isfinite(frame[qcols].to_numpy(float)).all(axis=1)
     data = frame.loc[valid].copy()
+    # Return `([], [])` when `data.empty`.
     if data.empty: return [], []
     members = data[ids].to_numpy(float)
     target = data.measured_ac_mw.to_numpy(float)
     raw = np.quantile(members, levels, axis=1).T
     calibrated = data[qcols].to_numpy(float)
     records=[]
+    # Report observed quantile frequencies with explicit zero/tie intervals for each `(method, forecast)` in `[('raw_ensemble', raw), ('calibrated_quantiles', calibrated)]`.
     for method, forecast in [('raw_ensemble', raw), ('calibrated_quantiles', calibrated)]:
+        # Report observed quantile frequencies with explicit zero/tie intervals for each `(j, level)` in `enumerate(levels)`.
         for j, level in enumerate(levels):
             strict = float(np.mean(target < forecast[:, j]))
             inclusive = float(np.mean(target <= forecast[:, j]))
@@ -33,11 +36,14 @@ def analyze(frame, ids, levels, farm_id, label, output, rating):
                 'ties_fraction':inclusive-strict})
     hours = pd.DatetimeIndex(data.interval_start_utc).tz_convert('Europe/Rome').hour.to_numpy()
     hourly=[]
+    # Report observed quantile frequencies with explicit zero/tie intervals for each `hour` in `range(24)`.
     for hour in range(24):
         select = hours==hour
+        # Skip the current item when `not select.any()`.
         if not select.any(): continue
         mean = members[select].mean(axis=1); median = np.median(members[select],axis=1)
         det = data.deterministic_prediction.to_numpy(float)[select]; actual=target[select]
+        # Process each `(method, prediction)` in this collection.
         for method, prediction in [('deterministic',det),('member_mean',mean),('member_median',median)]:
             error=prediction-actual
             hourly.append({'farm_id':farm_id,'model':label,'local_hour':hour,'method':method,'n':int(select.sum()),
@@ -50,6 +56,7 @@ def analyze(frame, ids, levels, farm_id, label, output, rating):
     plot = pd.DataFrame(records)
     fig, ax = plt.subplots(figsize=(7,5),layout='constrained')
     ax.plot([0,1],[0,1],color='black',linestyle='--',label='Nominal quantile')
+    # Report observed quantile frequencies with explicit zero/tie intervals for each `(method, color)` in `[('raw_ensemble', '#1b6ca8'), ('calibrated_quantiles', '#a43787')]`.
     for method, color in [('raw_ensemble','#1b6ca8'),('calibrated_quantiles','#a43787')]:
         subset=plot.loc[plot.method.eq(method)]
         lo=subset.observed_strict_fraction.to_numpy(); hi=subset.observed_inclusive_fraction.to_numpy()
@@ -67,19 +74,25 @@ def summarize_diagnostics(config, include_winners=False):
     """Create reproducible validation reliability tables and comparison graphics."""
     root=study_root(config); levels=list(map(float,config['pv_probabilistic_study']['quantiles']))
     records=[]; hourly=[]
+    # Create reproducible validation reliability tables and comparison graphics for each `farm` in `config['pv_probabilistic_study']['farm_ids']`.
     for farm in config['pv_probabilistic_study']['farm_ids']:
         folder=root/f'farm_{farm}'; baseline=folder/'pvlib_paired_predictions.parquet'
+        # Skip the current item when `not baseline.exists()`.
         if not baseline.exists(): continue
         rating = load_metadata(config_path(config, config['inputs']['metadata_parquet']), [int(farm)])[int(farm)].ac_capacity_mw
         items=[('pvlib',baseline)]
         ranking=folder/'validation_rankings.csv'
+        # When `include_winners and ranking.exists()`, set `ranks` using `pd.read_csv(ranking)`.
         if include_winners and ranking.exists():
             ranks=pd.read_csv(ranking)
+            # Create reproducible validation reliability tables and comparison graphics for each `row` in `ranks.loc[ranks['rank'].eq(1)].drop_duplicates('trial').itertuples()`.
             for row in ranks.loc[ranks['rank'].eq(1)].drop_duplicates('trial').itertuples():
                 items.append((row.trial,Path(row.trial_path)/'predictions.parquet'))
+        # Create reproducible validation reliability tables and comparison graphics for each `(label, path)` in `items`.
         for label,path in items:
             data=pd.read_parquet(path)
             ids=sorted([x for x in data.columns if str(x).isdigit()],key=int)
+            # Enforce the input contract: `path`: expected 50 member columns.
             if len(ids)!=50: raise ValueError(f'{path}: expected 50 member columns')
             r,h=analyze(data,ids,levels,int(farm),label,folder/'plots'/'calibration',rating)
             records.extend(r);hourly.extend(h)

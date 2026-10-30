@@ -26,28 +26,36 @@ def profile_input_checksums(output):
     """Fingerprint common time grid, initial weather/PV and actual market curves."""
     pv = pd.read_csv(output / "csv/pv_forecast_and_realized.csv")
     checksums = {"delivery_grid": hashlib.sha256("\n".join(pv.interval_id.astype(str)).encode()).hexdigest()}
+    # Fingerprint common time grid, initial weather/PV and actual market curves for each `column` in `('pv_realized_execution_ac_mw', 'pv_initial_forecast_ac_mw')`.
     for column in ("pv_realized_execution_ac_mw", "pv_initial_forecast_ac_mw"):
         checksums[column] = hashlib.sha256(pv[column].to_numpy(dtype="<f8").tobytes()).hexdigest()
     prices = pd.read_csv(output / "csv/auction_prices_expanded.csv")
+    # Enforce the input contract: Participation price coefficients do not match the PV delivery grid.
     if list(prices.interval_id) != list(pv.interval_id):
         raise ValueError("Participation price coefficients do not match the PV delivery grid")
+    # Fingerprint common time grid, initial weather/PV and actual market curves for each `auction` in `AUCTION_ORDER`.
     for auction in AUCTION_ORDER:
+        # When `auction in prices`, set `values` using `prices[auction].to_numpy(dtype='<f8')`.
         if auction in prices:
             values = prices[auction].to_numpy(dtype="<f8")
             payload = np.isfinite(values).tobytes() + np.nan_to_num(values).tobytes()
             checksums[f"actual_prices_{auction}"] = hashlib.sha256(payload).hexdigest()
     forecast_path = output / "csv/oracle/pv_forecast_inputs.csv"
+    # When `forecast_path.exists()`, set `forecasts` using `pd.read_csv(forecast_path)`.
     if forecast_path.exists():
         forecasts = pd.read_csv(forecast_path)
+        # Write the corresponding artifacts for `(auction, frame)` from `forecasts.groupby('auction')`.
         for auction, frame in forecasts.groupby("auction"):
             columns = ["cutoff_utc", "interval_start_utc", "pv_ac_forecast_mw",
                 "pv_forecast_vintage_utc", "pv_forecast_available_at_utc"]
             frame = frame[[name for name in columns if name in frame]].sort_values("interval_start_utc")
             checksums[f"pv_inputs_{auction}"] = hashlib.sha256(frame.to_csv(index=False).encode()).hexdigest()
     settlement = output / "csv/imbalance_prices.csv"
+    # When `settlement.exists()`, set `checksums['settlement_inputs']` using `hashlib.sha256(settlement.read_bytes()).hexdigest()`.
     if settlement.exists():
         checksums["settlement_inputs"] = hashlib.sha256(settlement.read_bytes()).hexdigest()
     saved_config = output / "json/study_config.json"
+    # When `saved_config.exists()`, set `configuration` using `json_load(saved_config)`.
     if saved_config.exists():
         configuration = json_load(saved_config)
         common = {key: configuration.get(key) for key in
@@ -58,11 +66,14 @@ def profile_input_checksums(output):
 
 def summarize_sequential_days(sequential, integrated, days, auctions):
     """Pair the sequential baseline with integrated all-auction results by day."""
+    # Enforce the input contract: Sequential baseline requires every identical requested delivery day.
     if sequential.duplicated("study_date").any() or set(sequential.study_date) != set(days):
         raise ValueError("Sequential baseline requires every identical requested delivery day")
+    # Enforce the input contract: Sequential baseline requires fully priced realized profits.
     if not np.isfinite(sequential.net_profit_eur).all():
         raise ValueError("Sequential baseline requires fully priced realized profits")
     full = integrated.loc[integrated.profile == profile_id(auctions)].set_index("study_date")
+    # Enforce the input contract: Sequential baseline requires an integrated all-auction profile on every day.
     if set(full.index) != set(days):
         raise ValueError("Sequential baseline requires an integrated all-auction profile on every day")
     sequential = sequential.copy()
@@ -80,6 +91,7 @@ def summarize_sequential_days(sequential, integrated, days, auctions):
         "total_integrated_minus_sequential_profit_eur": float(sequential.integrated_minus_sequential_profit_eur.sum()),
         "std_integrated_minus_sequential_profit_eur": float(sequential.integrated_minus_sequential_profit_eur.std(ddof=0)),
         "total_infeasible_auction_decisions": int(sequential.infeasible_auction_decisions.sum())}
+    # Process each `column` in this collection.
     for column in ("degradation_eur", "curtailment_mwh", "absolute_imbalance_mwh", "transaction_fee_eur", "auction_solves"):
         summary[f"mean_{column}"] = float(sequential[column].mean())
     return sequential, summary
@@ -90,8 +102,10 @@ def summarize_participation_days(daily, profiles, delivery_days, tolerance):
     expected_profiles = [profile_id(profile) for profile in profiles]
     expected = {(profile, day) for profile in expected_profiles for day in delivery_days}
     observed = set(zip(daily.profile, daily.study_date))
+    # Enforce the input contract: Participation ranking requires each profile on every identical requested delivery day.
     if observed != expected or daily.duplicated(["profile", "study_date"]).any():
         raise ValueError("Participation ranking requires each profile on every identical requested delivery day")
+    # Enforce the input contract: Participation ranking requires fully priced realized profits; no zero settlement substitution.
     if not np.isfinite(daily.net_profit_eur).all():
         raise ValueError("Participation ranking requires fully priced realized profits; no zero settlement substitution")
     reference = max(profiles, key=len)
@@ -102,6 +116,7 @@ def summarize_participation_days(daily, profiles, delivery_days, tolerance):
     day_max = daily.groupby("study_date").net_profit_eur.transform("max")
     daily["is_daily_best_within_tolerance"] = day_max - daily.net_profit_eur <= tolerance
     rows = []
+    # Rank profiles only on complete identical delivery-day sets, retaining SOC for each `profile` in `profiles`.
     for profile in profiles:
         name = profile_id(profile)
         frame = daily.loc[daily.profile == name]
@@ -149,9 +164,11 @@ def _solve_all_auction_reference(config, source_output, destination):
     events = calendar.schedule(study["delivery_day"])
     prices, provenance, skipped = _load_auction_prices(reference, calendar, grid, events)
     schedule = tuple(event for event in events if event.auction in prices)
+    # Enforce the input contract: No available auction for the perfect-foresight reference.
     if not schedule:
         raise ValueError("No available auction for the perfect-foresight reference")
     pv = pd.read_csv(source_output / "csv/pv_forecast_and_realized.csv")
+    # Enforce the input contract: Perfect-foresight reference must use the identical delivery grid.
     if list(pv.interval_id) != list(grid.interval_ids):
         raise ValueError("Perfect-foresight reference must use the identical delivery grid")
     battery = battery_parameters_from_config(reference["battery"])
@@ -160,8 +177,10 @@ def _solve_all_auction_reference(config, source_output, destination):
     initial, terminal = _soc_energy_targets(reference["state"], battery)
     reference["state"].update(initial_energy_mwh=initial, terminal_target_mwh=terminal,
         terminal_minimum_mwh=terminal_minimum_energy_mwh(reference["state"], battery))
+    # Solve just the missing full-information reference with the common actual PV for each `kind` in `('csv', 'json')`.
     for kind in ("csv", "json"):
         (destination / kind).mkdir(parents=True, exist_ok=True)
+    # Solve just the missing full-information reference with the common actual PV when `reference['experiment_outputs'].get('save_model_files', False)`.
     if reference["experiment_outputs"].get("save_model_files", False):
         (destination / "models").mkdir()
     perfect, diagnostics = _solve_perfect_information_schedule(reference, grid, plant,
@@ -177,17 +196,21 @@ def _solve_all_auction_reference(config, source_output, destination):
 
 def collect_perfect_foresight_reference(config, experiments, destination):
     """Reuse one all-auction ObjVal per day, solving only when that profile is absent."""
+    # Return the selected result for this condition.
     if not config["participation_study"].get("perfect_foresight_reference", True):
         return None, None
     all_auctions = auction_subset(list(config["gme_oracle_experiment"]["auction_datasets"]),
         "perfect-foresight reference auctions")
     rows = []
+    # Process each `day` in this collection.
     for day in sorted(str(day) for day in config["participation_study"]["delivery_days"]):
         day_runs = [row for row in experiments if row["study_date"] == day]
+        # Enforce the input contract: Perfect-foresight reference requires every requested delivery day.
         if not day_runs:
             raise ValueError("Perfect-foresight reference requires every requested delivery day")
         full_run = next((row for row in day_runs if row["profile"] == profile_id(all_auctions)), None)
         extra_solves = 0
+        # When `full_run is not None`, set `output` using `Path(full_run['output_dir'])`.
         if full_run is not None:
             output = Path(full_run["output_dir"])
             active = json_load(output / "json/kpis.json")["active_auctions"]
@@ -201,10 +224,12 @@ def collect_perfect_foresight_reference(config, experiments, destination):
         diagnostics = json_load(output / "json/perfect_pv_counterfactual.json")
         perfect = pd.read_csv(output / "csv/perfect_pv_counterfactual_schedule.csv")
         source_pv = pd.read_csv(Path(day_runs[0]["output_dir"]) / "csv/pv_forecast_and_realized.csv")
+        # Enforce the input contract: Perfect-foresight reference must use the identical effective realized PV and grid.
         if (list(perfect.interval_id) != list(source_pv.interval_id)
                 or not np.array_equal(perfect.pv_ac_mw, source_pv.pv_realized_execution_ac_mw)):
             raise ValueError("Perfect-foresight reference must use the identical effective realized PV and grid")
         objective = float(diagnostics["objective_eur"])
+        # Enforce the input contract: Perfect-foresight reference requires a validated finite ObjVal.
         if not diagnostics["validation"]["valid"] or not np.isfinite(objective):
             raise ValueError("Perfect-foresight reference requires a validated finite ObjVal")
         rows.append({"study_date": day, "objective_eur": objective,
@@ -234,14 +259,17 @@ def collect_perfect_foresight_reference(config, experiments, destination):
 def participation_comparison_table(ranking, perfect_foresight=None, sequential=None):
     """Place the sequential baseline next to integrated all-auction planning."""
     chart = ranking.copy()
+    # When `sequential is not None`, set `anchor` using `profile_id(sequential['participating_auctions'])`.
     if sequential is not None:
         anchor = profile_id(sequential["participating_auctions"])
         matching = np.flatnonzero(chart.profile.eq(anchor))
+        # Enforce the input contract: Sequential chart requires its integrated all-auction row.
         if not len(matching):
             raise ValueError("Sequential chart requires its integrated all-auction row")
         position = int(matching[0]) + 1
         chart = pd.concat([chart.iloc[:position], pd.DataFrame([{**sequential, "profile": sequential["label"]}]),
             chart.iloc[position:]], ignore_index=True)
+    # Update `reference_row` when this condition is met.
     if perfect_foresight is not None:
         reference_row = {"profile": perfect_foresight["label"],
             "participating_auctions": perfect_foresight["selected_auctions"],
@@ -281,11 +309,14 @@ def _plot_participation(ranking, path, perfect_foresight=None, sequential=None):
     axes[2].set_xlabel("Mean final stored energy (MWh), unvalued")
     axes[2].set_title("Terminal inventory context")
     axes[0].set_ylim(len(chart) - 0.5, -0.5)
+    # Compare average cash profit, chosen auctions and ending stored energy when `perfect_foresight is not None`.
     if perfect_foresight is not None:
+        # Compare average cash profit, chosen auctions and ending stored energy for each `axis` in `axes`.
         for axis in axes:
             axis.axhline(0.5, color="0.45", linestyle="--", linewidth=0.8)
         axes[0].get_yticklabels()[0].set_color("darkgoldenrod")
         axes[0].get_yticklabels()[0].set_fontweight("bold")
+    # Compare average cash profit, chosen auctions and ending stored energy for each `axis` in `(axes[0], axes[2])`.
     for axis in (axes[0], axes[2]):
         axis.grid(axis="x", alpha=0.2)
         axis.set_axisbelow(True)
@@ -300,21 +331,26 @@ def run_participation_study(config, *, progress=None):
     profiles = participation_profiles(settings)
     cases = [(profile_id(profile), profile, "integrated") for profile in sorted(profiles, key=len, reverse=True)]
     all_auctions = auction_subset(list(config["gme_oracle_experiment"]["auction_datasets"]), "sequential baseline auctions")
+    # Run the same assets and initial state for each profile/day, entirely offline when `settings.get('sequential_all_auctions_baseline', False)`.
     if settings.get("sequential_all_auctions_baseline", False):
+        # Enforce the input contract: Sequential all-auction baseline requires the integrated all-auction participation profile.
         if all_auctions not in profiles:
             raise ValueError("Sequential all-auction baseline requires the integrated all-auction participation profile")
         cases.append((SEQUENTIAL_PROFILE, all_auctions, "current_auction_only"))
     days = settings.get("delivery_days")
+    # Enforce the input contract: participation_study.delivery_days must be a nonempty unique list.
     if not isinstance(days, list) or not days or len(days) != len(set(map(str, days))):
         raise ValueError("participation_study.delivery_days must be a nonempty unique list")
     days = sorted(date.fromisoformat(str(day)).isoformat() for day in days)
     tolerance = float(settings.get("profit_tolerance_eur", 1e-6))
+    # Enforce the input contract: participation_study.profit_tolerance_eur must be finite and nonnegative.
     if not np.isfinite(tolerance) or tolerance < 0:
         raise ValueError("participation_study.profit_tolerance_eur must be finite and nonnegative")
     root = config_path(config, settings["output_root"])
     run_id = str(settings.get("run_id") or datetime.now(timezone.utc).strftime("participation_%Y%m%dT%H%M%S%fZ"))
     destination = root / run_id
     resume = settings.get("resume", False) and destination.exists()
+    # When `resume`, set `previous_config` using `json_load(destination / 'json/study_config.json')`.
     if resume:
         previous_config = json_load(destination / "json/study_config.json")
         comparable = deepcopy(config)
@@ -323,16 +359,20 @@ def run_participation_study(config, *, progress=None):
         from ..config import with_standard_defaults
         previous_config = with_standard_defaults(previous_config)
         comparable = with_standard_defaults(comparable)
+        # Enforce the input contract: Cannot resume a participation study with different configuration.
         if json.loads(json.dumps(previous_config, default=json_default)) != json.loads(json.dumps(comparable, default=json_default)):
             raise ValueError("Cannot resume a participation study with different configuration")
         previous_manifest = json_load(destination / "json/manifest.json")
+        # Enforce the input contract: Cannot resume results with the earlier auction dispatch scope; choose a fresh participation_study.run_id.
         if previous_manifest.get("auction_dispatch_scope") != AUCTION_DISPATCH_SCOPE:
             raise ValueError("Cannot resume results with the earlier auction dispatch scope; choose a fresh participation_study.run_id")
     else:
         prepare_experiment_output(root, destination,
             overwrite=config.get("experiment_outputs", {}).get("overwrite_existing", True))
+    # Run the same assets and initial state for each profile/day, entirely offline for each `kind` in `('json', 'csv')`.
     for kind in ("json", "csv"):
         (destination / kind).mkdir(exist_ok=resume)
+    # Run the same assets and initial state for each profile/day, entirely offline when `settings.get('plots', True)`.
     if settings.get("plots", True):
         (destination / "plots").mkdir(exist_ok=resume)
     write_json(destination / "json/study_config.json", config)
@@ -346,6 +386,7 @@ def run_participation_study(config, *, progress=None):
         "ranking_metric": "mean realized full-day profit after actual settlement, executed wear, import and gross transaction fees; no terminal-energy salvage value",
         "completed_experiments": 0, "experiments": []}
     path = destination / "json/manifest.json"
+    # When `resume`, set `manifest` using `previous_manifest`.
     if resume:
         manifest = previous_manifest
         manifest.setdefault("resumptions", []).append({"at_utc": datetime.now(timezone.utc).isoformat(),
@@ -353,15 +394,18 @@ def run_participation_study(config, *, progress=None):
             "completed_experiments": manifest["completed_experiments"]})
         manifest.update(status="running", ranking_published=False)
         manifest.pop("error", None)
+        # Run the same assets and initial state for each profile/day, entirely offline when `progress`.
         if progress:
             progress(f"Resuming {manifest['completed_experiments']} completed cases after checking configuration and saved inputs")
     write_json(path, manifest)
     rows = list(manifest["experiments"])
     completed = {(row["profile"], row["study_date"]): row for row in rows}
     expected = {(name, day) for name, _, _ in cases for day in days}
+    # Enforce the input contract: Resume checkpoint has duplicate or unexpected profile/day cases.
     if len(completed) != len(rows) or set(completed) - expected:
         raise ValueError("Resume checkpoint has duplicate or unexpected profile/day cases")
     try:
+        # Write the corresponding artifacts for `day` from `days`.
         for day in days:
             shared = deepcopy(config)
             shared["market"].update(valid_from=days[0], valid_to=days[-1])
@@ -370,6 +414,7 @@ def run_participation_study(config, *, progress=None):
             events = [event for event in calendar.schedule(day) if event.auction in candidate_names]
             initialization = min([calendar.delivery_grid(day).starts[0], *(event.submission_at for event in events)])
             shared["gme_oracle_experiment"]["delivery_day"] = day
+            # Run the same assets and initial state for each profile/day, entirely offline for each `specification` in `shared['gme_oracle_experiment']['auction_datasets'].values()`.
             for specification in shared["gme_oracle_experiment"]["auction_datasets"].values():
                 specification["native_interval_minutes"] = native_price_resolution_minutes(
                     specification["dataset"], date.fromisoformat(day))
@@ -377,17 +422,23 @@ def run_participation_study(config, *, progress=None):
             shared["forecast"]["initial_decision_cutoff"] = initialization.isoformat()
             shared["forecast_run"].update(delivery_day=day, decision_cutoff=initialization.isoformat())
             common_checksums = {}
+            # Write the corresponding artifacts for `(name, profile, mode)` from `cases`.
             for name, profile, mode in cases:
                 output_name = "sequential_all_auctions" if mode == "current_auction_only" else name
+                # When `(name, day) in completed`, set `row` using `completed[name, day]`.
                 if (name, day) in completed:
                     row = completed[name, day]
                     output = Path(row["output_dir"])
+                    # Enforce the input contract: Resume checkpoint references an incomplete child experiment.
                     if json_load(output / "json/manifest.json")["status"] != "complete":
                         raise ValueError("Resume checkpoint references an incomplete child experiment")
                     checksums = profile_input_checksums(output)
+                    # Enforce the input contract: Resume checkpoint input or profit verification failed.
                     if checksums != row["input_checksums"] or json_load(output / "json/kpis.json")["total_gain_eur"] != row["net_profit_eur"]:
                         raise ValueError("Resume checkpoint input or profit verification failed")
+                    # Run the same assets and initial state for each profile/day, entirely offline for each `(label, checksum)` in `checksums.items()`.
                     for label, checksum in checksums.items():
+                        # Enforce the input contract: Resume checkpoint has inconsistent shared inputs.
                         if label in common_checksums and common_checksums[label] != checksum:
                             raise ValueError("Resume checkpoint has inconsistent shared inputs")
                         common_checksums[label] = checksum
@@ -398,9 +449,11 @@ def run_participation_study(config, *, progress=None):
                 child["experiment_outputs"].update(root=str(destination / "runs"), run_id=output_name,
                     plots=settings.get("per_profile_plots", False),
                     save_model_files=settings.get("save_model_files", False))
+                # Run the same assets and initial state for each profile/day, entirely offline when `progress`.
                 if progress:
                     progress(f"[{len(rows) + 1}/{len(days) * len(cases)}] {day} {name}")
                 incomplete = destination / "runs" / output_name / f"farm_{config['plant']['farm_id']}" / day
+                # Update `retained` when this condition is met.
                 if resume and incomplete.exists():
                     retained = destination / "diagnostics/incomplete_runs" / output_name / f"{day}_{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
                     retained.parent.mkdir(parents=True, exist_ok=True)
@@ -409,10 +462,13 @@ def run_participation_study(config, *, progress=None):
                 output = Path(result["output_dir"])
                 kpis = json_load(output / "json/kpis.json")
                 checksums = profile_input_checksums(output)
+                # Run the same assets and initial state for each profile/day, entirely offline for each `(label, checksum)` in `checksums.items()`.
                 for label, checksum in checksums.items():
+                    # Enforce the input contract: Participation profiles received different shared input `label`; comparison aborted.
                     if label in common_checksums and common_checksums[label] != checksum:
                         raise ValueError(f"Participation profiles received different shared input {label}; comparison aborted")
                     common_checksums[label] = checksum
+                # Enforce the input contract: Participation ranking needs actual imbalance settlement, not an unpriced profit.
                 if kpis["total_gain_eur"] is None:
                     raise ValueError("Participation ranking needs actual imbalance settlement, not an unpriced profit")
                 row = {"profile": name, "study_date": day, "net_profit_eur": kpis["total_gain_eur"],
@@ -439,6 +495,7 @@ def run_participation_study(config, *, progress=None):
         integrated = all_daily.loc[all_daily.auction_planning_mode == "integrated"]
         daily, ranking = summarize_participation_days(integrated, profiles, days, tolerance)
         sequential_summary = None
+        # Update `(sequential, sequential_summary)` when this condition is met.
         if settings.get("sequential_all_auctions_baseline", False):
             sequential, sequential_summary = summarize_sequential_days(
                 all_daily.loc[all_daily.auction_planning_mode == "current_auction_only"], daily, days, all_auctions)
@@ -446,6 +503,7 @@ def run_participation_study(config, *, progress=None):
             write_json(destination / "json/sequential_baseline.json", sequential_summary)
         perfect_daily, perfect_reference = collect_perfect_foresight_reference(config,
             [row for row in rows if row["profile"] != SEQUENTIAL_PROFILE], destination)
+        # Update `daily['perfect_foresight_objective_eur']` when this condition is met.
         if perfect_reference is not None:
             daily["perfect_foresight_objective_eur"] = daily.study_date.map(perfect_daily.set_index("study_date").objective_eur)
             daily["perfect_foresight_minus_profit_eur"] = daily.perfect_foresight_objective_eur - daily.net_profit_eur
@@ -455,6 +513,7 @@ def run_participation_study(config, *, progress=None):
         participation_comparison_table(ranking, perfect_reference, sequential_summary).to_csv(
             destination / "csv/participation_comparison.csv", index=False)
         daily.loc[daily.is_daily_best_within_tolerance].to_csv(destination / "csv/daily_best_profiles.csv", index=False)
+        # Run the same assets and initial state for each profile/day, entirely offline when `settings.get('plots', True)`.
         if settings.get("plots", True):
             _plot_participation(ranking, destination / "plots/participation_profiles.png", perfect_reference, sequential_summary)
         manifest.update(status="complete", ranking_published=True, best_mean_profile=ranking.iloc[0].profile,

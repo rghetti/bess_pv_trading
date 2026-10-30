@@ -46,8 +46,10 @@ def read_json(path: Path) -> dict:
 
 def _equivalent(left, right):
     """Permit float32 metadata roundoff without permitting changed assumptions."""
+    # Return the selected result for this condition.
     if isinstance(left, dict) and isinstance(right, dict):
         return left.keys() == right.keys() and all(_equivalent(left[key],right[key]) for key in left)
+    # Return `math.isclose(left, right, rel_tol=1e-07, abs_tol=1e-09)` when `isinstance(left, (int, float)) and isinstance(right, (int, float))`.
     if isinstance(left,(int,float)) and isinstance(right,(int,float)):
         return math.isclose(left,right,rel_tol=1e-7,abs_tol=1e-9)
     return left == right
@@ -56,31 +58,40 @@ def _equivalent(left, right):
 def resolve_parameters(settings, farm, night_policy, cutoff):
     """Select only a matching farm artifact that existed at the forecast cutoff."""
     registry_path = settings.get("parameter_registry")
+    # Return `(settings, {'status': 'disabled'})` when `not registry_path`.
     if not registry_path:
         return settings, {"status": "disabled"}
     path = Path(registry_path).resolve()
     registry = read_json(path)
+    # Enforce the input contract: Unsupported PV parameter registry schema.
     if registry.get("schema_version") != 1:
         raise ValueError("Unsupported PV parameter registry schema")
+    # Enforce the input contract: PV parameter registry does not contain the requested farm.
     if farm.farm_id not in registry["farm_ids"]:
         raise ValueError("PV parameter registry does not contain the requested farm")
     cutoff = utc_timestamp(cutoff)
     entries = [entry for entry in registry["entries"] if entry["farm_id"] == farm.farm_id
                and utc_timestamp(entry["issued_at_utc"]) <= cutoff]
+    # Return the selected result for this condition.
     if not entries:
         return settings, {"status": "fixed_baseline_before_first_fit", "registry": str(path)}
     entry = max(entries, key=lambda item: utc_timestamp(item["issued_at_utc"]))
     artifact_path = path.parent / entry["artifact_path"]
+    # Enforce the input contract: PV parameter artifact checksum mismatch.
     if hashlib.sha256(artifact_path.read_bytes()).hexdigest() != entry["sha256"]:
         raise ValueError("PV parameter artifact checksum mismatch")
     artifact = read_json(artifact_path)
+    # Enforce the input contract: PV parameter artifact farm metadata mismatch.
     if artifact["farm_metadata"] != asdict(farm):
         raise ValueError("PV parameter artifact farm metadata mismatch")
+    # Enforce the input contract: PV parameter artifact fixed physical assumptions mismatch.
     if not _equivalent(artifact["fixed_contract"], fixed_contract(settings, night_policy)):
         raise ValueError("PV parameter artifact fixed physical assumptions mismatch")
     issued = utc_timestamp(artifact["issued_at_utc"])
+    # Enforce the input contract: PV parameter artifact was not available at the forecast cutoff.
     if issued != utc_timestamp(entry["issued_at_utc"]) or issued > cutoff:
         raise ValueError("PV parameter artifact was not available at the forecast cutoff")
+    # Enforce the input contract: PV parameter artifact contains targets unavailable at issue time.
     if utc_timestamp(artifact["latest_target_available_at_utc"]) > issued:
         raise ValueError("PV parameter artifact contains targets unavailable at issue time")
     fit = artifact["fit"]

@@ -25,7 +25,9 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
     owners = inputs.tree.control_nodes
     curtailment_owners = inputs.tree.curtailment_nodes or owners
     charge, discharge, mode, curtailment = {}, {}, {}, {}
+    # Share battery commands and binary modes among scenarios with the same information.
     for t in range(intervals):
+        # Each information node receives one mutually exclusive charge/discharge choice.
         for node in sorted({owners[s][t] for s in range(scenario_count)}):
             suffix = f"f{inputs.plant.farm_id},n{node},t{inputs.grid.interval_ids[t]}"
             charge[t, node] = model.addVar(ub=battery.max_power_mw, name=f"charge[{suffix}]")
@@ -33,19 +35,25 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
             mode[t, node] = model.addVar(vtype=gp.GRB.BINARY, name=f"charge_mode[{suffix}]")
             model.addConstr(charge[t, node] <= battery.max_power_mw * mode[t, node], name=f"charge_mode_limit[{suffix}]")
             model.addConstr(discharge[t, node] <= battery.max_power_mw * (1 - mode[t, node]), name=f"discharge_mode_limit[{suffix}]")
+        # Shared curtailment cannot exceed the least PV available at this node.
         for node in sorted({curtailment_owners[s][t] for s in range(scenario_count)}):
             available = min(inputs.scenarios.pv_ac_mw[s, t] for s in range(scenario_count) if curtailment_owners[s][t] == node)
             curtailment[t, node] = model.addVar(ub=float(available), name=f"curtailment[n{node},t{inputs.grid.interval_ids[t]}]")
     energy, grid, pv_injection = {}, {}, {}
+    # Track scenario-specific energy and injection while reusing the node-owned controls.
     for s, scenario in enumerate(inputs.scenarios.scenario_ids):
+        # Include one extra energy boundary for the end of the delivery horizon.
         for t in range(intervals + 1):
             energy[s, t] = model.addVar(lb=battery.energy_min_mwh, ub=battery.maximum_energy, name=f"energy[s{scenario},boundary{t}]")
         model.addConstr(energy[s, 0] == inputs.state.energy_mwh, name=f"initial_energy[s{scenario}]")
+        # Enforce an exact terminal target only when the study requests one.
         if inputs.terminal_target_mwh is not None:
             model.addConstr(energy[s, intervals] == inputs.terminal_target_mwh, name=f"terminal_energy[s{scenario}]")
+        # A minimum terminal target is a separate, potentially weaker requirement.
         if inputs.terminal_minimum_mwh is not None:
             model.addConstr(energy[s, intervals] >= inputs.terminal_minimum_mwh,
                 name=f"terminal_minimum_energy[s{scenario}]")
+        # Balance battery energy, PV generation, curtailment and grid exchange each interval.
         for t, duration in enumerate(inputs.grid.delta_hours):
             suffix = f"s{scenario},t{inputs.grid.interval_ids[t]}"
             owner = owners[s][t]
@@ -68,9 +76,13 @@ def _trading(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
     count, intervals = np.shape(inputs.scenarios.pv_ac_mw)
     trades, positions, auction_revenue = {}, {}, {}
     auction_order = sorted(inputs.auction_eligibility, key=lambda a: ({"DA": 0, "IDA1": 1, "IDA2": 2, "IDA3": 3}.get(a, 4), a))
+    # Create the trade variables for `auction` from `auction_order`.
     for auction in auction_order:
+        # Create the trade variables for `node` from `sorted(set(inputs.tree.bid_nodes[auction]))`.
         for node in sorted(set(inputs.tree.bid_nodes[auction])):
+            # Create the trade variables for `(t, eligible)` from `enumerate(inputs.auction_eligibility[auction])`.
             for t, eligible in enumerate(inputs.auction_eligibility[auction]):
+                # Create trade variables when `eligible`.
                 if eligible:
                     duration = inputs.grid.delta_hours[t]
                     lower = -inputs.plant.poi_import_mw * duration
@@ -78,16 +90,21 @@ def _trading(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
                     trades[auction, node, t] = model.addVar(lb=lower, ub=upper,
                         name=f"trade[{auction},n{node},t{inputs.grid.interval_ids[t]}]")
     accepted = inputs.market.positions(inputs.grid)
+    # When `inputs.pending_position_mwh is not None`, set `accepted` using `accepted + np.asarray(inputs.pending_position_mwh)`.
     if inputs.pending_position_mwh is not None:
         accepted = accepted + np.asarray(inputs.pending_position_mwh)
+    # Build the position sum, position upper, position lower constraints for `s` from `range(count)`.
     for s in range(count):
         auction_revenue[s] = gp.LinExpr(0.0)
+        # Build the position upper, position lower, position sum constraints for `(t, duration)` from `enumerate(inputs.grid.delta_hours)`.
         for t, duration in enumerate(inputs.grid.delta_hours):
             lower = -inputs.plant.poi_import_mw * duration
             upper = inputs.plant.poi_export_mw * duration
             expression = gp.LinExpr(float(accepted[t]))
+            # Build the position upper, position lower constraints for `auction` from `auction_order`.
             for auction in auction_order:
                 key = (auction, inputs.tree.bid_nodes[auction][s], t)
+                # Apply the position upper, position lower constraint when `key in trades`.
                 if key in trades:
                     expression = expression + trades[key]
                     auction_revenue[s] += float(inputs.scenarios.auction_prices_eur_per_mwh[auction][s, t]) * trades[key]
@@ -108,30 +125,41 @@ def _product_resolution_equalities(model: Any, inputs: OptimizationInput,
     trades = variables.get("trades", {})
     control_equalities = 0
     trade_equalities: dict[str, int] = {auction: 0 for auction in inputs.auction_eligibility}
+    # Build the configured dispatch `label` g`group index` t`left` `right` n`left node` `right node` constraints for `(group_index, group)` from `enumerate(groups)`.
     for group_index, group in enumerate(groups):
+        # Build the configured dispatch `label` g`group index` t`left` `right` n`left node` `right node` constraints for `(left, right)` from `zip(group, group[1:])`.
         for left, right in zip(group, group[1:]):
             control_pairs = {(controls[s][left], controls[s][right]) for s in range(count)}
+            # Build the configured dispatch `label` g`group index` t`left` `right` n`left node` `right node` constraints for `(left_node, right_node)` from `sorted(control_pairs)`.
             for left_node, right_node in sorted(control_pairs):
+                # Build the configured dispatch `label` g`group index` t`left` `right` n`left node` `right node` constraints for `(name, label)` from `(('charge', 'charge'), ('discharge', 'discharge'), ('mode', 'mode'))`.
                 for name, label in (("charge", "charge"), ("discharge", "discharge"), ("mode", "mode")):
                     model.addConstr(variables[name][left, left_node] == variables[name][right, right_node],
                                     name=f"configured_dispatch_{label}_g{group_index}_t{left}_{right}_n{left_node}_{right_node}")
                     control_equalities += 1
 
+    # Build the native product `auction` trade g`product index` t`left` `right` n`owner` constraints for `auction` from `inputs.auction_eligibility`.
     for auction in inputs.auction_eligibility:
         eligibility = inputs.auction_eligibility[auction]
         bid_nodes = inputs.tree.bid_nodes[auction]
         prices = inputs.scenarios.auction_prices_eur_per_mwh[auction]
+        # Process each `(product_index, product_group)` in this collection.
         for product_index, product_group in enumerate(
                 configured_auction_product_groups(inputs.grid, auction,
                     inputs.native_interval_minutes_by_auction.get(auction), inputs.market_timezone)):
+            # Skip the current item when `len(product_group) <= 1 or not all((eligibility[index] for index in product_group))`.
             if len(product_group) <= 1 or not all(eligibility[index] for index in product_group):
                 continue
+            # Enforce the input contract: Native `auction` prices must be equal across represented subintervals.
             if any(not np.allclose(prices[:, product_group[0]], prices[:, index],
                                    rtol=0, atol=1e-9) for index in product_group[1:]):
                 raise ValueError(f"Native {auction} prices must be equal across represented subintervals")
+            # Build the native product `auction` trade g`product index` t`left` `right` n`owner` constraints for `(left, right)` from `zip(product_group, product_group[1:])`.
             for left, right in zip(product_group, product_group[1:]):
+                # Build the native product `auction` trade g`product index` t`left` `right` n`owner` constraints for `owner` from `sorted(set(bid_nodes))`.
                 for owner in sorted(set(bid_nodes)):
                     left_key, right_key = (auction, owner, left), (auction, owner, right)
+                    # Skip the current item when `left_key not in trades or right_key not in trades`.
                     if left_key not in trades or right_key not in trades:
                         continue
                     model.addConstr(trades[left_key] == trades[right_key],
@@ -149,11 +177,15 @@ def _settlement(model: Any, inputs: OptimizationInput, variables: dict[str, Any]
     positive, negative, sign, imported = {}, {}, {}, {}
     cashflow, penalty, other_costs = {}, {}, {}
     negative_prices = inputs.scenarios.imbalance_negative_prices_eur_per_mwh
+    # When `negative_prices is None`, set `negative_prices` using `inputs.scenarios.imbalance_prices_eur_per_mwh`.
     if negative_prices is None:
         negative_prices = inputs.scenarios.imbalance_prices_eur_per_mwh
+    # Build the contracted delivery constraints for `s` from `range(count)`.
     for s in range(count):
         cashflow[s], penalty[s], other_costs[s] = gp.LinExpr(), gp.LinExpr(), gp.LinExpr()
+        # Build the contracted delivery constraints for `(t, duration)` from `enumerate(inputs.grid.delta_hours)`.
         for t, duration in enumerate(inputs.grid.delta_hours):
+            # Apply the contracted delivery constraint when `not inputs.optimize_imbalances`.
             if not inputs.optimize_imbalances:
                 model.addConstr(variables["grid"][s, t] * duration == variables["positions"][s, t],
                                 name=f"contracted_delivery[s{s},t{t}]")
@@ -176,6 +208,7 @@ def _imbalance_interval(model, inputs, variables, gp, s, t, duration,
     """Build the optional signed deviation split for one scenario and interval."""
     # Grid energy and contracted energy share the same asymmetric POI range.
     positive_bound = negative_bound = (inputs.plant.poi_export_mw + inputs.plant.poi_import_mw) * duration
+    # When `inputs.imbalance_limit_mwh is not None`, set `positive_bound` using `min(positive_bound, inputs.imbalance_limit_mwh)`.
     if inputs.imbalance_limit_mwh is not None:
         positive_bound = min(positive_bound, inputs.imbalance_limit_mwh)
         negative_bound = min(negative_bound, inputs.imbalance_limit_mwh)
@@ -191,6 +224,7 @@ def _imbalance_interval(model, inputs, variables, gp, s, t, duration,
 
 def _degradation(model: Any, inputs: OptimizationInput, variables: dict[str, Any], gp: Any) -> dict[int, Any]:
     """Cost new throughput or depth-dependent discharge; carried aging is sunk."""
+    # Return `build_xu_degradation(model, inputs, variables, gp)` when `inputs.degradation.mode == 'xu_segmented'`.
     if inputs.degradation.mode == "xu_segmented":
         return build_xu_degradation(model, inputs, variables, gp)
     return {s: inputs.degradation.cost_eur_per_mwh_throughput * gp.quicksum((variables["charge"][t, inputs.tree.control_nodes[s][t]] + variables["discharge"][t, inputs.tree.control_nodes[s][t]]) * duration for t, duration in enumerate(inputs.grid.delta_hours)) for s in range(len(inputs.scenarios.scenario_ids))}
@@ -213,9 +247,12 @@ def build_model(inputs: OptimizationInput) -> BuiltModel:
     # Contracts must be backed by planned net AC energy when this policy is
     # enabled. Native-hour balancing preserves natural quarter-hour PV variation.
     resolution = inputs.planned_delivery_balance_resolution_minutes
+    # Apply the planned delivery balance constraint when `resolution is not None`.
     if resolution is not None:
         groups = market_product_groups(inputs.grid, resolution, inputs.market_timezone)
+        # Build the planned delivery balance constraints for `s` from `range(len(inputs.scenarios.scenario_ids))`.
         for s in range(len(inputs.scenarios.scenario_ids)):
+            # Build the planned delivery balance constraints for `(group_index, group)` from `enumerate(groups)`.
             for group_index, group in enumerate(groups):
                 model.addConstr(gp.quicksum(variables["grid"][s, t] * inputs.grid.delta_hours[t]
                     - variables["positions"][s, t] for t in group) == 0,
@@ -233,14 +270,19 @@ def build_model(inputs: OptimizationInput) -> BuiltModel:
 
 def classify_status(status: int, solution_count: int) -> str:
     """Separate termination cause from presence of a usable incumbent."""
+    # Return `'optimal' if solution_count else 'no_incumbent'` when `status == 2`.
     if status == 2:
         return "optimal" if solution_count else "no_incumbent"
+    # Return `'infeasible'` when `status == 3`.
     if status == 3:
         return "infeasible"
+    # Return `'unbounded'` when `status == 5`.
     if status == 5:
         return "unbounded"
+    # Return `'infeasible_or_unbounded'` when `status == 4`.
     if status == 4:
         return "infeasible_or_unbounded"
+    # Return `'feasible_time_limit' if solution_count else 'time_limit_no_incumbent'` when `status == 9`.
     if status == 9:
         return "feasible_time_limit" if solution_count else "time_limit_no_incumbent"
     return "feasible_terminated" if solution_count else "no_incumbent"
@@ -251,12 +293,16 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     settings = settings or SolverSettings()
     model, inputs = built.model, built.inputs
     model.setParam("OutputFlag", int(settings.output_flag))
+    # Process each `(name, value)` in this collection.
     for name, value in {"Threads": settings.threads, "TimeLimit": settings.time_limit_seconds, "MIPGap": settings.mip_gap, "Seed": settings.seed}.items():
         model.setParam(name, value)
+    # Process each `(name, value)` in this collection.
     for name, value in (("FeasibilityTol", settings.feasibility_tolerance),
                         ("IntFeasTol", settings.integrality_tolerance)):
+        # Apply settings, solve, and extract only a confirmed incumbent when `value is not None`.
         if value is not None:
             model.setParam(name, value)
+    # Apply settings, solve, and extract only a confirmed incumbent when `settings.export_path`.
     if settings.export_path:
         Path(settings.export_path).parent.mkdir(parents=True, exist_ok=True)
         model.write(settings.export_path)
@@ -274,6 +320,7 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
 
     try:
         optimize_once()
+        # Apply settings, solve, and extract only a confirmed incumbent when `model.Status == 4`.
         if model.Status == 4:
             model.setParam("DualReductions", 0)
             optimize_once()
@@ -295,6 +342,7 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     diagnostics["product_resolution_constraints"] = built.variables.get(
         "product_resolution_constraints", {"dispatch_groups": 0, "dispatch_equalities": 0,
             "da_trade_equalities": 0, "auction_trade_equalities": {}})
+    # Process each `(attribute, key)` in this collection.
     for attribute, key in (("ObjBound", "objective_bound_eur"), ("MIPGap", "mip_gap"), ("MaxVio", "max_violation")):
         try:
             value = float(getattr(model, attribute))
@@ -302,11 +350,13 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
         except Exception:
             diagnostics[key] = None
     result = OptimizationResult(classify_status(model.Status, model.SolCount), model.SolCount > 0, diagnostics=diagnostics)
+    # Apply settings, solve, and extract only a confirmed incumbent when `model.Status == 3 and settings.iis_path`.
     if model.Status == 3 and settings.iis_path:
         Path(settings.iis_path).parent.mkdir(parents=True, exist_ok=True)
         model.computeIIS()
         model.write(settings.iis_path)
         diagnostics["iis_path"] = settings.iis_path
+    # Return `result` when `not result.has_incumbent`.
     if not result.has_incumbent:
         return result
     count, intervals = np.shape(inputs.scenarios.pv_ac_mw)
@@ -318,19 +368,24 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     result.arrays["curtailment_mw"] = np.array([[variable["curtailment"][t, curtailment_owners[s][t]].X for t in range(intervals)] for s in range(count)])
     result.arrays["pv_injection_mw"] = np.array([[variable["pv_injection"][s, t].X
         for t in range(intervals)] for s in range(count)])
+    # Process each `(source, destination)` in this collection.
     for source, destination in (("energy", "energy_mwh"), ("grid", "grid_mw"), ("positions", "net_position_mwh")):
         length = intervals + 1 if source == "energy" else intervals
         result.arrays[destination] = np.array([[variable[source][s, t].X for t in range(length)] for s in range(count)])
+    # When `inputs.degradation.mode == 'xu_segmented'`, set `segments` using `inputs.degradation.segment_count`.
     if inputs.degradation.mode == "xu_segmented":
         segments = inputs.degradation.segment_count
         result.arrays["xu_segment_energy_mwh"] = np.array([[[variable["xu_segment_energy"][s, t, j].X for j in range(segments)] for t in range(intervals + 1)] for s in range(count)])
+        # Process each `(source, destination)` in this collection.
         for source, destination in (("xu_segment_charge", "xu_segment_charge_mw"), ("xu_segment_discharge", "xu_segment_discharge_mw")):
             result.arrays[destination] = np.array([[[variable[source][t, inputs.tree.control_nodes[s][t], j].X for j in range(segments)] for t in range(intervals)] for s in range(count)])
     result.arrays["imbalance_mwh"] = result.arrays["grid_mw"] * inputs.grid.delta_hours - result.arrays["net_position_mwh"]
+    # Process each `(source, destination, direction)` in this collection.
     for source, destination, direction in (("imbalance_positive", "imbalance_positive_mwh", 1), ("imbalance_negative", "imbalance_negative_mwh", -1)):
         result.arrays[destination] = (np.array([[variable[source][s, t].X for t in range(intervals)] for s in range(count)])
             if inputs.optimize_imbalances else np.maximum(direction * result.arrays["imbalance_mwh"], 0))
     result.trades = {(auction, node, inputs.grid.interval_ids[t]): item.X for (auction, node, t), item in variable["trades"].items()}
+    # When `inputs.transaction_fees.mode != 'none'`, set `diagnostics['transaction_fees_by_scenario']` using `scenario_fee_details(inputs, result.trades)`.
     if inputs.transaction_fees.mode != "none":
         diagnostics["transaction_fees_by_scenario"] = scenario_fee_details(inputs, result.trades)
     result.components = {name: np.array([expression[s].getValue() for s in range(count)]) for name, expression in built.components.items()}

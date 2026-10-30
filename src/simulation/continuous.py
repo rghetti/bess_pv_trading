@@ -58,6 +58,7 @@ def _physical_state(value):
     """Restore immutable physical state, including optional Xu segment history."""
     values = dict(value)
     values["timestamp"] = pd.Timestamp(values["timestamp"]).to_pydatetime()
+    # Restore Xu degradation segment energies to the immutable tuple required by PhysicalState.
     if values.get("cycle_segment_energy_mwh") is not None:
         values["cycle_segment_energy_mwh"] = tuple(values["cycle_segment_energy_mwh"])
     return PhysicalState(**values)
@@ -66,6 +67,7 @@ def _physical_state(value):
 def _accepted_trade(value):
     """Restore contractual clocks without changing quantity or price."""
     values = {key: value[key] for key in AcceptedTrade.__dataclass_fields__}
+    # Convert the saved submission and publication clocks back to datetimes.
     for key in ("submission_time", "publication_time"):
         values[key] = pd.Timestamp(values[key]).to_pydatetime()
     return AcceptedTrade(**values)
@@ -75,6 +77,7 @@ class ContinuousReplay:
     """One actual state and ledger, with date-scoped plans and shadow projections."""
 
     def __init__(self, config, prepared, strategy, destination, resume=False, progress=None):
+        # Enforce the input contract: Unsupported continuous strategy `strategy`.
         if strategy not in {"integrated", "current_auction_only", "perfect_pv"}:
             raise ValueError(f"Unsupported continuous strategy {strategy}")
         self.config, self.prepared, self.strategy = config, prepared, strategy
@@ -97,14 +100,18 @@ class ContinuousReplay:
         self.config_fingerprint = _configuration_fingerprint(config)
         self.identity = {"policy_version": CONTINUOUS_POLICY_VERSION, "strategy": strategy,
             "config_fingerprint": self.config_fingerprint, "input_fingerprint": prepared["input_fingerprint"]}
+        # Enforce the input contract: Continuous strategy output exists: `self.destination`.
         if self.destination.exists() and not resume:
             raise FileExistsError(f"Continuous strategy output exists: {self.destination}")
         self.destination.mkdir(parents=True, exist_ok=resume)
+        # Prepare separate destinations for checkpoints, tables and solver models.
         for kind in ("json", "csv", "models"):
             (self.destination / kind).mkdir(exist_ok=True)
         metadata = self.destination / "json/replay_identity.json"
+        # Enforce the input contract: Cannot resume continuous replay with different configuration, inputs or policy.
         if metadata.exists() and json.loads(metadata.read_text()) != self.identity:
             raise ValueError("Cannot resume continuous replay with different configuration, inputs or policy")
+        # A nonempty resume directory must contain metadata identifying its original run.
         if resume and any(self.destination.iterdir()) and not metadata.exists():
             # Empty type folders are created above, so require identity only if
             # actual artifacts from an earlier invocation are present.
@@ -123,12 +130,15 @@ class ContinuousReplay:
         self.forecast_inputs, self.initial_expectations, self.initial_revenues = [], {}, {}
         self.cursor = None
         checkpoint = self.destination / "json/checkpoint.json"
+        # Restore the saved replay state only when resuming from a checkpoint.
         if resume and checkpoint.is_file():
             self._restore(json.loads(checkpoint.read_text()))
         attempt_path = self.destination / "json/optimization_attempts.json"
         self.attempts = json.loads(attempt_path.read_text()) if resume and attempt_path.exists() else []
         active_attempts = {row.get("attempt_id") for row in self.solves}
+        # Reconcile recorded attempts with the solve results retained in the checkpoint.
         for row in self.attempts:
+            # When `row.get('attempt_id') not in active_attempts`, set `row['rolled_back_for_resume']` using `True`.
             if row.get("attempt_id") not in active_attempts:
                 row["rolled_back_for_resume"] = True
         self.events = self._events()
@@ -136,11 +146,14 @@ class ContinuousReplay:
     def _events(self):
         """Interleave current-day IDA3, next-day trading and physical execution."""
         events = []
+        # Interleave current-day IDA3, next-day trading and physical execution for each `day` in `self.days`.
         for day in self.days:
+            # Interleave current-day IDA3, next-day trading and physical execution for each `auction` in `self.daily[day]['schedule']`.
             for auction in self.daily[day]["schedule"]:
                 instance = ContinuousAuction(day, auction)
                 events.append(Event(auction.submission_at, EventKind.AUCTION_SUBMISSION, len(events), instance))
                 events.append(Event(auction.results_at, EventKind.AUCTION_RESULTS, len(events), instance))
+        # Interleave current-day IDA3, next-day trading and physical execution for each `(index, (start, end))` in `enumerate(zip(self.grid.starts, self.grid.ends))`.
         for index, (start, end) in enumerate(zip(self.grid.starts, self.grid.ends)):
             events.append(Event(pd.Timestamp(start), EventKind.PHYSICAL_CONTROL, len(events), index))
             events.append(Event(pd.Timestamp(end), EventKind.OBSERVATION_AVAILABLE, len(events), index))
@@ -153,11 +166,13 @@ class ContinuousReplay:
 
     def _restore(self, checkpoint):
         """Restore actual and outstanding state together; projections stay virtual."""
+        # Enforce the input contract: Continuous checkpoint configuration/input fingerprint mismatch.
         if checkpoint["identity"] != self.identity:
             raise ValueError("Continuous checkpoint configuration/input fingerprint mismatch")
         self.state = _physical_state(checkpoint["state"])
         fees = TransactionFeeState(**checkpoint["transaction_fee_state"])
         self.market = MarketState(tuple(_accepted_trade(row) for row in checkpoint["accepted_trades"]), fees)
+        # Process each `name` in this collection.
         for name in ("submitted", "known", "fee_records", "control_plan", "pending", "records",
                      "plan_snapshots", "solves", "projections", "event_trace", "publications",
                      "forecast_inputs", "initial_expectations", "initial_revenues"):
@@ -185,6 +200,7 @@ class ContinuousReplay:
         """Return the retained physical policy and immutable grid target."""
         index = self.index[product]
         row = self.control_plan.get(product)
+        # When `row is None`, set `day` using `self.day_for_product[product]`.
         if row is None:
             day = self.day_for_product[product]
             local = index - self.day_offsets[day]
@@ -198,33 +214,42 @@ class ContinuousReplay:
 
     def _forecast(self, cutoff, starts, auction):
         """Operational trajectories never inspect future measured production."""
+        # When `self.perfect`, set `indices` using `self.starts.get_indexer(starts)`.
         if self.perfect:
             indices = self.starts.get_indexer(starts)
             return np.asarray(self.prepared["full_realized_pv"])[indices].copy(), {
                 "pv_forecast_policy": "perfect_pv_reference",
                 "pv_forecast_vintage_utc": None, "pv_forecast_available_at_utc": None}
         bundle = self.prepared["forecast_provider"](cutoff, starts)
+        # Enforce the input contract: Continuous forecast is unavailable at the submission cutoff.
         if bundle.available_at > cutoff or bundle.forecast_vintage > cutoff:
             raise ValueError("Continuous forecast is unavailable at the submission cutoff")
+        # Enforce the input contract: Continuous forecasting requires this farm and one deterministic member.
         if bundle.farm_id != self.plant.farm_id or len(bundle.members) != 1:
             raise ValueError("Continuous forecasting requires this farm and one deterministic member")
+        # Enforce the input contract: Continuous forecast does not cover the requested projection/planning grid.
         if not pd.DatetimeIndex(bundle.values.index).equals(starts):
             raise ValueError("Continuous forecast does not cover the requested projection/planning grid")
         values = bundle.values["pv_ac_mw"].to_numpy(dtype=float)
+        # Enforce the input contract: Continuous PV forecast must be finite nonnegative AC power.
         if not np.isfinite(values).all() or (values < 0).any():
             raise ValueError("Continuous PV forecast must be finite nonnegative AC power")
         model_settings = self.config["pv"].get("forecast_replacement", {})
         model = model_settings.get("models_by_farm", {}).get(str(self.plant.farm_id),
             model_settings.get("models_by_farm", {}).get(self.plant.farm_id))
         model_provenance = {"pv_forecast_model": "pvlib", "pv_forecast_model_status": "baseline"}
+        # When `model_settings.get('enabled') and model is not None`, set `artifact` using `config_path(self.config, model['artifact_path'])`.
         if model_settings.get("enabled") and model is not None:
             artifact = config_path(self.config, model["artifact_path"])
             available_at = pd.Timestamp(model["available_at_utc"])
+            # Enforce the input contract: PV replacement artifact availability must be timezone-aware.
             if available_at.tzinfo is None:
                 raise ValueError("PV replacement artifact availability must be timezone-aware")
             retrospective = available_at.tz_convert("UTC") > pd.Timestamp(cutoff).tz_convert("UTC")
+            # When `not artifact.is_file()`, set `model_provenance['pv_forecast_model_status']` using `'fallback_artifact_missing'`.
             if not artifact.is_file():
                 model_provenance["pv_forecast_model_status"] = "fallback_artifact_missing"
+            # Update `model_provenance['pv_forecast_model_status']` when this condition is met.
             elif retrospective and not model_settings.get("allow_retrospective_artifacts", False):
                 model_provenance["pv_forecast_model_status"] = "fallback_artifact_not_yet_available"
             else:
@@ -235,6 +260,7 @@ class ContinuousReplay:
                 model_frame["delivery_day"] = local.strftime("%Y-%m-%d")
                 model_frame["auction"] = str(auction)
                 model_frame["forecast_cycle_utc"] = pd.Timestamp(bundle.forecast_vintage)
+                # Update `midpoint` when this condition is met.
                 if "lead_hours" not in model_frame:
                     midpoint=starts+pd.Timedelta(minutes=float(self.config['source']['historical_interval_minutes'])/2)
                     model_frame["lead_hours"] = ((midpoint-pd.Timestamp(bundle.forecast_vintage)).total_seconds()/3600)
@@ -243,12 +269,15 @@ class ContinuousReplay:
                 model_frame["measured_ac_mw"] = np.nan
                 model_frame["eligible"] = False
                 model_frame["split"] = "prediction"
+                # Apply predict bundle when `model['kind'] == 'weather_bundle'`.
                 if model["kind"] == "weather_bundle":
                     from ..forecasting.inference.pv_forecast_bundle import predict_bundle
                     replacement = predict_bundle(model_frame,artifact.parent,farm_id=self.plant.farm_id)
+                # Operational trajectories never inspect future measured production when `model['kind'] == 'neural'`.
                 elif model["kind"] == "neural":
                     from ..forecasting.inference.pv_neural_predict import predict_neural_frame
                     replacement = predict_neural_frame(model_frame, artifact, farm_id=self.plant.farm_id)
+                # When `model['kind'] == 'linear'`, set `details` using `json.loads(artifact.read_text())`.
                 elif model["kind"] == "linear":
                     details = json.loads(artifact.read_text())
                     selected = details["selected"][model["family"]]
@@ -258,6 +287,7 @@ class ContinuousReplay:
                         self.config["pv_neural"]["delivery_timezone"])
                     x = transform_features(features, preprocessors[selected["features"]])
                     rating = float(model["ac_capacity_mw"])
+                    # Enforce the input contract: Linear PV replacement requires a positive configured AC rating.
                     if rating <= 0:
                         raise ValueError("Linear PV replacement requires a positive configured AC rating")
                     replacement = np.clip(x @ np.asarray(selected["coefficients"]) +
@@ -265,8 +295,10 @@ class ContinuousReplay:
                 else:
                     raise ValueError(f"Unknown PV forecast replacement kind: {model['kind']}")
                 replacement = np.asarray(replacement, dtype=float)
+                # Enforce the input contract: PV replacement must return finite nonnegative AC power on the requested grid.
                 if replacement.shape != values.shape or not np.isfinite(replacement).all() or (replacement < 0).any():
                     raise ValueError("PV replacement must return finite nonnegative AC power on the requested grid")
+                # When `'nighttime_zero' in model_frame`, set `replacement[model_frame['nighttime_zero'].to_numpy(dtype=bool)]` using `0.0`.
                 if "nighttime_zero" in model_frame:
                     replacement[model_frame["nighttime_zero"].to_numpy(dtype=bool)] = 0.0
                 bundle.values.loc[:, "pv_ac_mw"] = replacement
@@ -288,6 +320,7 @@ class ContinuousReplay:
         first = max(min(event.eligible_intervals), int(pd.DatetimeIndex(day_grid.starts).searchsorted(cutoff)))
         first_global, stop_global = offset + first, offset + len(day_grid.interval_ids)
         update_first = int(self.starts.searchsorted(self.state.timestamp))
+        # Enforce the input contract: Actual state lies beyond the auction information cutoff.
         if self.state.timestamp > cutoff and not (day == self.days[0] and cutoff < pd.Timestamp(self.grid.starts[0])):
             raise ValueError("Actual state lies beyond the auction information cutoff")
         update_starts = self.starts[update_first:stop_global]
@@ -299,8 +332,10 @@ class ContinuousReplay:
             **provenance} for product, start, value in zip(
                 self.grid.interval_ids[update_first:stop_global], update_starts, forecast))
         boundary, projection = self.state, []
+        # Project retained operation, then construct only the target day's MILP for each `index` in `range(update_first, first_global)`.
         for index in range(update_first, first_global):
             product = self.grid.interval_ids[index]
+            # When `product in self.pending`, set `pending` using `self.pending[product]`.
             if product in self.pending:
                 pending = self.pending[product]
                 commands, row, policy, target = tuple(pending["commands"]), pending["detail"], pending["policy"], pending["target"]
@@ -314,11 +349,13 @@ class ContinuousReplay:
             projection.append({"interval_id": product, "start": str(self.grid.starts[index]),
                 "end": str(self.grid.ends[index]), "plan_source_auction": row.get("auction"),
                 "plan_source_delivery_day": self.day_for_product[product], **record})
+        # When `projection`, set `boundary` using `replace(boundary, origin='forecast_projected_continuous_boundary')`.
         if projection:
             boundary = replace(boundary, origin="forecast_projected_continuous_boundary")
         grid = DeliveryGrid(day_grid.interval_ids[first:], day_grid.starts[first:], day_grid.ends[first:])
         schedule = tuple(daily["schedule"])
         prices = daily["prices"]
+        # When `self.current_only`, set `selected` using `tuple((item for item in schedule if item.auction == event.auction))`.
         if self.current_only:
             selected = tuple(item for item in schedule if item.auction == event.auction)
             base, spreads, known = prices[event.auction][first:], {}, {}
@@ -345,6 +382,7 @@ class ContinuousReplay:
         terminal = self.prepared["terminal_energy_mwh"] if day == self.days[-1] else None
         terminal_minimum = self.prepared["terminal_minimum_energy_mwh"]
         native = daily.get("native_interval_minutes_by_auction")
+        # Project retained operation, then construct only the target day's MILP when `native is None`.
         if native is None:
             from ..data.gme import native_price_resolution_minutes
             native = {auction: native_price_resolution_minutes(
@@ -398,6 +436,7 @@ class ContinuousReplay:
         """Submit one immutable order and scope every change to its delivery book."""
         instance, cutoff = event.payload, event.at
         day, auction = instance.delivery_day, instance.event.auction
+        # Enforce the input contract: Duplicate continuous submission `day`/`auction`.
         if auction in self.submitted[day]:
             raise RuntimeError(f"Duplicate continuous submission {day}/{auction}")
         # Perfect information needs only the first solve of this delivery day.
@@ -408,6 +447,7 @@ class ContinuousReplay:
             products = [self.daily[day]["grid"].interval_ids[index]
                 for index in instance.event.eligible_intervals]
             column = f"planned_trade_{auction}_mwh"
+            # Enforce the input contract: Perfect-PV initial plan has no complete retained auction order.
             if any(product not in by_product or column not in by_product[product] for product in products):
                 raise RuntimeError("Perfect-PV initial plan has no complete retained auction order")
             quantities = {product: float(by_product[product][column]) for product in products}
@@ -424,8 +464,10 @@ class ContinuousReplay:
                 for name in inputs.auction_eligibility})
         settings = dict(self.config["solver"])
         name = f"{day}_{auction}_{cutoff.strftime('%Y%m%dT%H%M%SZ')}"
+        # When `self.config['experiment_outputs'].get('save_model_files', True)`, set `settings['export_path']` using `str(self.destination / 'models' / f'{name}.lp')`.
         if self.config["experiment_outputs"].get("save_model_files", True):
             settings["export_path"] = str(self.destination / "models" / f"{name}.lp")
+        # When `self.config['execution'].get('save_infeasibility_diagnostics', False)`, set `settings['iis_path']` using `str(self.destination / 'models' / f'{name}_infeasible.ilp')`.
         if self.config["execution"].get("save_infeasibility_diagnostics", False):
             settings["iis_path"] = str(self.destination / "models" / f"{name}_infeasible.ilp")
         try:
@@ -437,8 +479,10 @@ class ContinuousReplay:
             attempt_id=len(self.attempts), fallback_applied=False)
         self.attempts.append(diagnostic)
         self._save_attempts()
+        # When `not result.has_incumbent`, set `snapshots` using `self.plan_snapshots[day]`.
         if not result.has_incumbent:
             snapshots = self.plan_snapshots[day]
+            # Enforce the input contract: Continuous `self.strategy` `day`/`auction`: `result.status`: `result.message`.
             if (result.status != "infeasible" or
                     self.config["execution"].get("infeasible_auction_policy", "error") != "previous_plan" or not snapshots):
                 raise RuntimeError(f"Continuous {self.strategy} {day}/{auction}: {result.status}: {result.message}")
@@ -447,13 +491,16 @@ class ContinuousReplay:
             by_product = {row["interval_id"]: row for row in retained}
             products = [self.daily[day]["grid"].interval_ids[index] for index in instance.event.eligible_intervals]
             column = f"planned_trade_{auction}_mwh"
+            # Enforce the input contract: Continuous fallback has no complete target-day prior order plan.
             if any(product not in by_product or column not in by_product[product] for product in products):
                 raise RuntimeError("Continuous fallback has no complete target-day prior order plan")
             quantities = {product: 0.0 if self.current_only else float(by_product[product][column]) for product in products}
             self._commit_quantities(day, auction, cutoff, quantities)
             first = pd.Timestamp(inputs.grid.starts[0])
             snapshot = []
+            # Submit one immutable order and scope every change to its delivery book for each `prior` in `retained`.
             for prior in retained:
+                # Skip the current item when `pd.Timestamp(prior['interval_start_utc']) < first`.
                 if pd.Timestamp(prior["interval_start_utc"]) < first:
                     continue
                 row = {**prior, "auction": auction, "optimizer_cutoff_utc": cutoff.isoformat(),
@@ -480,16 +527,19 @@ class ContinuousReplay:
             integrality_tolerance=validation_integrality_tolerance)
         diagnostic["solution_validation_tolerance"] = validation_tolerance
         diagnostic["solution_validation_integrality_tolerance"] = validation_integrality_tolerance
+        # Enforce the input contract: Continuous solution validation failed: `validation.violations`.
         if not validation.valid:
             raise RuntimeError(f"Continuous solution validation failed: {validation.violations}")
         diagnostic["validation"] = asdict(validation)
         diagnostic["expected_auction_revenue_eur"] = float(np.dot(
             inputs.scenarios.probabilities, result.components["auction_revenue"]))
         self.solves.append(diagnostic)
+        # When `day not in self.initial_expectations`, set `self.initial_expectations[day]` using `float(result.objective_eur)`.
         if day not in self.initial_expectations:
             self.initial_expectations[day] = float(result.objective_eur)
             self.initial_revenues[day] = diagnostic["expected_auction_revenue_eur"]
         owners = inputs.tree.bid_nodes[auction]
+        # Enforce the input contract: Current continuous auction order is not shared at its cutoff.
         if len(set(owners)) != 1:
             raise RuntimeError("Current continuous auction order is not shared at its cutoff")
         owner = owners[0]
@@ -497,6 +547,7 @@ class ContinuousReplay:
             if name == auction and node == owner}
         self._commit_quantities(day, auction, cutoff, quantities)
         snapshot = []
+        # Submit one immutable order and scope every change to its delivery book for each `(index, product)` in `enumerate(inputs.grid.interval_ids)`.
         for index, product in enumerate(inputs.grid.interval_ids):
             commands = {name: max(0.0, float(result.arrays[name][0, index]))
                 for name in ("charge_mw", "discharge_mw", "curtailment_mw")}
@@ -512,7 +563,9 @@ class ContinuousReplay:
                 "soc_start_mwh": float(result.arrays["energy_mwh"][0, index]),
                 "soc_end_mwh": float(result.arrays["energy_mwh"][0, index + 1]),
                 "auction_trade_mwh": quantities.get(product, 0.0), "snapshot_scenario_count": 1}
+            # Submit one immutable order and scope every change to its delivery book for each `planned` in `self.daily[day]['schedule']`.
             for planned in self.daily[day]["schedule"]:
+                # When `planned.auction in inputs.tree.bid_nodes`, set `node` using `inputs.tree.bid_nodes[planned.auction][0]`.
                 if planned.auction in inputs.tree.bid_nodes:
                     node = inputs.tree.bid_nodes[planned.auction][0]
                     quantity = result.trades.get((planned.auction, node, product), 0.0)
@@ -537,11 +590,13 @@ class ContinuousReplay:
     def _publish(self, event):
         """Book each fixed quantity at its actual clearing price exactly once."""
         day, auction = event.payload.delivery_day, event.payload.event.auction
+        # Enforce the input contract: Invalid publication state for `day`/`auction`.
         if auction not in self.submitted[day] or auction in self.known[day]:
             raise RuntimeError(f"Invalid publication state for {day}/{auction}")
         previous = self.market.cashflow_eur
         grid = self.daily[day]["grid"]
         indices = {product: index for index, product in enumerate(grid.interval_ids)}
+        # Book each fixed quantity at its actual clearing price exactly once for each `(product, quantity)` in `self.submitted[day][auction].items()`.
         for product, quantity in self.submitted[day][auction].items():
             trade_id = f"{day}:{auction}:{product}"
             self.market = self.market.accept(AcceptedTrade(auction,
@@ -555,7 +610,9 @@ class ContinuousReplay:
 
     def _update_projection_actuals(self):
         """Resolve predictions only when their physical boundary is reached."""
+        # Resolve predictions only when their physical boundary is reached for each `prediction` in `self.projections`.
         for prediction in self.projections:
+            # Update `prediction['actual_initial_energy_mwh']` when this condition is met.
             if prediction["actual_initial_energy_mwh"] is None and pd.Timestamp(prediction["planning_start_utc"]) == self.state.timestamp:
                 prediction["actual_initial_energy_mwh"] = self.state.energy_mwh
                 prediction["prediction_error_mwh"] = self.state.energy_mwh - prediction["predicted_initial_energy_mwh"]
@@ -565,6 +622,7 @@ class ContinuousReplay:
         self._update_projection_actuals()
         product = self.grid.interval_ids[event.payload]
         commands, detail, policy, target = self._commands(product)
+        # Update `(projected, _)` when this condition is met.
         if detail["auction"] == "pre_participation":
             projected, _ = execute_interval(state=self.state, start=self.grid.starts[event.payload],
                 end=self.grid.ends[event.payload], pv_ac_mw=float(detail["pv_ac_forecast_mw"]),
@@ -605,6 +663,7 @@ class ContinuousReplay:
         position = self._position(product)
         imbalance = record["grid_mw"] * self.grid.delta_hours[index] - position
         curve = self.prepared["imbalance_prices_eur_per_mwh"]
+        # Enforce the input contract: Continuous profit comparisons require settlement.enabled: true and actual settlement prices.
         if curve is None:
             raise ValueError("Continuous profit comparisons require settlement.enabled: true and actual settlement prices")
         record.update(net_position_mwh=position, imbalance_mwh=imbalance,
@@ -620,14 +679,17 @@ class ContinuousReplay:
             EventKind.PHYSICAL_CONTROL: self._control, EventKind.OBSERVATION_AVAILABLE: self._observe,
             EventKind.SETTLEMENT: self._settle}
         detail = handlers[event.kind](event)
+        # Update `detail` when this condition is met.
         if event.kind == EventKind.AUCTION_SUBMISSION:
             detail = {"auction": event.payload.event.auction,
                 "optimization_performed": True, **(detail or {})}
         self.event_trace.append({"at": event.at.isoformat(), "kind": event.kind.name, "sequence": event.sequence,
             "delivery_day": event.payload.delivery_day if isinstance(event.payload, ContinuousAuction)
                 else self.day_for_product[self.grid.interval_ids[event.payload]], **(detail or {})})
+        # Apply this branch only when its condition is met.
         if event.kind == EventKind.SETTLEMENT and event.at.tz_convert(self.prepared["calendar"].timezone).time().isoformat() == "00:00:00":
             self.save_checkpoint(event)
+            # When `self.progress`, set `day` using `self.day_for_product[self.grid.interval_ids[event.payload]]`.
             if self.progress:
                 day = self.day_for_product[self.grid.interval_ids[event.payload]]
                 self.progress(f"Continuous {self.strategy}: completed {day}; "
@@ -636,19 +698,24 @@ class ContinuousReplay:
 
     def _final_dispatch_and_ledger(self):
         """Reconcile the global ledger and allocate increments to delivery products."""
+        # Enforce the input contract: Continuous replay did not execute the complete delivery window.
         if len(self.records) != len(self.grid.interval_ids):
             raise RuntimeError("Continuous replay did not execute the complete delivery window")
         checked_state, checked, fee_summary = account_trade_fees(self.fees, self.fees.initial_state,
             [asdict(trade) for trade in self.market.accepted_trades])
         reference = {row["trade_id"]: row for row in checked}
+        # Enforce the input contract: Continuous fees do not reconcile to the immutable executed ledger.
         if abs(checked_state.cumulative_fees_eur - self.market.transaction_fee_state.cumulative_fees_eur) > 1e-6:
             raise RuntimeError("Continuous fees do not reconcile to the immutable executed ledger")
+        # Reconcile the global ledger and allocate increments to delivery products for each `(month, volume)` in `self.market.transaction_fee_state.monthly_volume_mwh.items()`.
         for month, volume in self.market.transaction_fee_state.monthly_volume_mwh.items():
+            # Enforce the input contract: Continuous monthly operator volume does not reconcile.
             if abs(volume - checked_state.monthly_volume_mwh.get(month, 0.0)) > 1e-6:
                 raise RuntimeError("Continuous monthly operator volume does not reconcile")
         ledger = [{**asdict(trade), **reference[trade.trade_id], "cashflow_eur": trade.cashflow_eur,
             "delivery_day": self.day_for_product[trade.interval_id]} for trade in self.market.accepted_trades]
         revenue, fees = {}, {}
+        # Reconcile the global ledger and allocate increments to delivery products for each `row` in `ledger`.
         for row in ledger:
             product = row["interval_id"]
             revenue[product] = revenue.get(product, 0.0) + row["cashflow_eur"]
@@ -662,8 +729,10 @@ class ContinuousReplay:
         """Run or resume one continuous trajectory and finalize its typed outputs."""
         started = perf_counter()
         events = self.events
+        # When `self.cursor is not None`, set `key` using `tuple(self.cursor)`.
         if self.cursor is not None:
             key = tuple(self.cursor)
+            # Enforce the input contract: Continuous checkpoint cursor is not in this replay's event calendar.
             if not any(tuple(self._event_key(event)) == key for event in events):
                 raise ValueError("Continuous checkpoint cursor is not in this replay's event calendar")
             events = [event for event in events if tuple(self._event_key(event)) > key]
@@ -709,9 +778,11 @@ def run_continuous_experiment(config, *, progress=None):
     """Preflight local inputs once and run independent continuous trajectories."""
     validate_continuous_optimization(config, require_dates=True)
     settings = config["continuous_optimization"]
+    # Preflight local inputs once and run independent continuous trajectories when `progress`.
     if progress:
         progress(f"Continuous optimization: {settings['start_date']} through {settings['end_date']} delivery; offline preflight")
     prepared = prepare_continuous_inputs(config, progress=progress)
+    # Enforce the input contract: Continuous comparisons require actual settlement; set settlement.enabled: true.
     if prepared["imbalance_prices_eur_per_mwh"] is None:
         raise ValueError("Continuous comparisons require actual settlement; set settlement.enabled: true")
     root = config_path(config, settings["output_root"])
@@ -733,8 +804,10 @@ def run_continuous_experiment(config, *, progress=None):
         identity = {"policy_version": CONTINUOUS_POLICY_VERSION,
             "config_fingerprint": _configuration_fingerprint(config), "input_fingerprint": prepared["input_fingerprint"]}
         manifest_path = destination / "json/manifest.json"
+        # When `manifest_path.exists()`, set `previous` using `json.loads(manifest_path.read_text())`.
         if manifest_path.exists():
             previous = json.loads(manifest_path.read_text())
+            # Enforce the input contract: Cannot resume continuous study with different configuration, inputs or policy.
             if any(previous.get(key) != value for key, value in identity.items()):
                 raise ValueError("Cannot resume continuous study with different configuration, inputs or policy")
         write_json(destination / "json/study_config.json", config)
@@ -749,11 +822,14 @@ def run_continuous_experiment(config, *, progress=None):
             "delivery_timezone": prepared["calendar"].timezone}
         _atomic_json(manifest_path, manifest)
         strategies = list(settings["planning_modes"])
+        # Preflight local inputs once and run independent continuous trajectories when `settings.get('perfect_pv_reference', True)`.
         if settings.get("perfect_pv_reference", True):
             strategies.append("perfect_pv")
         summaries = {}
         try:
+            # Preflight local inputs once and run independent continuous trajectories for each `strategy` in `strategies`.
             for strategy in strategies:
+                # Preflight local inputs once and run independent continuous trajectories when `progress`.
                 if progress:
                     progress(f"Continuous trajectory {strategy}: {len(prepared['days'])} delivery days")
                 summaries[strategy] = replay_continuous_strategy(config, prepared, strategy,

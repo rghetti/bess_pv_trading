@@ -15,31 +15,46 @@ from bess_pv_trading.data import config_path
 
 def audit(root, settings):
     root=Path(root); results=[]
+    # Perform audit for each `farm` in `settings['farms']`.
     for farm in settings['farms']:
         base=root/f'farm_{farm}'; manifest=json.loads((base/'prepared_manifest.json').read_text())
         path=base/'prepared.parquet'
+        # Enforce the input contract: Prepared checksum changed for farm `farm`.
         if file_hash(path)!=manifest['prepared_sha256']: raise ValueError(f'Prepared checksum changed for farm {farm}')
         prepared=pd.read_parquet(path)
+        # Perform audit for each `auction` in `settings['auctions']`.
         for auction in settings['auctions']:
             folder=base/auction; marker=json.loads((folder/'manifest.json').read_text())
+            # Perform audit for each `(name, checksum)` in `marker['files'].items()`.
             for name, checksum in marker['files'].items():
+                # Enforce the input contract: Checksum changed: `folder / name`.
                 if file_hash(folder/f'{name}.parquet')!=checksum: raise ValueError(f'Checksum changed: {folder/name}')
             f=pd.read_parquet(folder/'forecasts.parquet'); u=pd.read_parquet(folder/'updates.parquet')
+            # Enforce the input contract: Deterministic vintage after gate.
             if (f.deterministic_available_utc>f.decision_cutoff_utc).any(): raise ValueError('Deterministic vintage after gate')
+            # Enforce the input contract: Observation used before availability.
             if (u.target_available_utc>u.update_processed_at_utc).any(): raise ValueError('Observation used before availability')
+            # Enforce the input contract: Feedback used at its issue.
             if (u.forecast_decision_utc>=u.update_processed_at_utc).any(): raise ValueError('Feedback used at its issue')
             source=prepared.loc[prepared.auction.eq(auction),['interval_start_utc','retrospective_model']]
             u=u.merge(source,left_on='forecast_interval_utc',right_on='interval_start_utc',validate='many_to_one')
+            # Enforce the input contract: Retrospective model used to update weights.
             if u.retrospective_model.any(): raise ValueError('Retrospective model used to update weights')
+            # Perform audit for each `weight` in `f.weights.dropna()`.
             for weight in f.weights.dropna():
                 w=np.asarray(weight,float)
+                # Enforce the input contract: Invalid issued weight.
                 if (w<0).any() or not np.isclose(w.sum(),1): raise ValueError('Invalid issued weight')
+            # Perform audit for each `raw` in `f.det_quantile_corrected`.
             for raw in f.det_quantile_corrected:
                 q=np.asarray(raw,float)
+                # Enforce the input contract: Invalid deterministic quantiles.
                 if np.isfinite(q).all() and ((np.diff(q)<0).any() or (q<0).any() or (q>manifest['rating_mw']).any()):
                     raise ValueError('Invalid deterministic quantiles')
+            # When `auction == 'IDA3'`, set `local` using `pd.DatetimeIndex(f.interval_start_utc).tz_convert('Europe/Rome')`.
             if auction=='IDA3':
                 local=pd.DatetimeIndex(f.interval_start_utc).tz_convert('Europe/Rome')
+                # Enforce the input contract: IDA3 includes pre-noon products.
                 if (local.hour<12).any(): raise ValueError('IDA3 includes pre-noon products')
             prior=f.delivery_day.eq(f.delivery_day.min())
             results.append({'farm_id':farm,'auction':auction,'issued_forecast_rows':len(f),'feedback_updates':len(u),
@@ -49,6 +64,7 @@ def audit(root, settings):
     return output
 
 
+# When `__name__ == '__main__'`, set `parser` using `argparse.ArgumentParser(description=__doc__)`.
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config',required=True,type=Path)

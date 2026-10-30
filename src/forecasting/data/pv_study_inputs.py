@@ -23,11 +23,13 @@ from ..data.pv_outages import modeling_instances
 def farm_settings(config: dict, farm) -> dict:
     """Resolve farm overrides after replacing the selected-farm automatic AC cap."""
     declared = config["farms"][str(farm.farm_id)]
+    # Enforce the input contract: Configured farm AC rating disagrees with measured metadata.
     if not np.isclose(float(declared["ac_capacity_kw"]), farm.ac_capacity_kw):
         raise ValueError("Configured farm AC rating disagrees with measured metadata")
     settings = deepcopy(config.get("_pv_shared_settings", config["pv"]))
     settings["output"]["ac_limit_mw"] = farm.ac_capacity_mw
     settings = merge_mapping(settings, declared.get("pv") or {})
+    # When `settings['output'].get('ac_limit_mw') == 'auto'`, set `settings['output']['ac_limit_mw']` using `farm.ac_capacity_mw`.
     if settings["output"].get("ac_limit_mw") == "auto":
         settings["output"]["ac_limit_mw"] = farm.ac_capacity_mw
     settings["parameter_registry"] = None
@@ -52,18 +54,22 @@ def _source_fingerprint(dataset, config, farm, settings) -> str:
         "quality_exclusions_csv": config["pv_data_quality"].get("exclusions_csv"),
         "remove_excluded_instances":config["pv_data_quality"].get("remove_excluded_instances",False)}
     hasher.update(digest(contract).encode())
+    # Process each `name` in this collection.
     for name in sorted(set(config["forecast_mapping"].values()) | {"time", "cycle_time", "lead_time", "power", "ghi"}):
         array = dataset[name]
         hasher.update(digest({"name": name, "dims": array.dims, "shape": array.shape,
                               "dtype": str(array.dtype), "attrs": array.attrs}).encode())
         hasher.update(np.ascontiguousarray(array.values).tobytes())
     explicit = config["source"].get("explicit_availability_variable")
+    # Read bounded source slices; later appended history does not alter old hashes when `explicit`.
     if explicit:
         hasher.update(np.ascontiguousarray(dataset[explicit].values).tobytes())
     review = config.get("review", {}).get("exclusions_csv")
+    # Read bounded source slices; later appended history does not alter old hashes when `review`.
     if review:
         hasher.update(config_path(config, review).read_bytes())
     quality=config['pv_data_quality'].get('exclusions_csv')
+    # Read bounded source slices; later appended history does not alter old hashes when `quality`.
     if quality:
         hasher.update(config_path(config,quality).read_bytes())
     return hasher.hexdigest()
@@ -84,13 +90,17 @@ def prepare_corpus(config: dict, farm_id: int, destination: Path, progress=None,
             time=slice(start.tz_localize(None), end.tz_localize(None)),
             cycle_time=slice((start-pd.Timedelta(days=3)).tz_localize(None), end.tz_localize(None))).load()
     fingerprint = _source_fingerprint(dataset, config, farm, settings)
+    # When `manifest_path.exists() and corpus_path.exists()`, set `manifest` using `json.loads(manifest_path.read_text())`.
     if manifest_path.exists() and corpus_path.exists():
         manifest = json.loads(manifest_path.read_text())
+        # Enforce the input contract: PV study source fingerprint changed for farm `farm_id`; choose a fresh run ID.
         if manifest["source_fingerprint"] != fingerprint:
             raise ValueError(f"PV study source fingerprint changed for farm {farm_id}; choose a fresh run ID")
         cached = pd.read_parquet(corpus_path)
+        # Enforce the input contract: PV calibration corpus checksum mismatch.
         if frame_fingerprint(cached) != manifest["aligned_fingerprint"]:
             raise ValueError("PV calibration corpus checksum mismatch")
+        # Enforce the input contract: Cached corpus lacks requested weather features; choose a fresh run ID.
         if retain_weather and not set(config["forecast_mapping"]).issubset(cached.columns):
             raise ValueError("Cached corpus lacks requested weather features; choose a fresh run ID")
         dataset.close()
@@ -103,10 +113,13 @@ def prepare_corpus(config: dict, farm_id: int, destination: Path, progress=None,
     mapping = config["forecast_mapping"]
     rows = []
     days = pd.date_range(section["start_day"], section["end_day_exclusive"], freq="D", inclusive="left")
+    # Apply forecast pv for `(number, day)` from `enumerate(days)`.
     for number, day in enumerate(days):
         grid = calendar.delivery_grid(day.date())
+        # Apply forecast pv for `event` from `calendar.schedule(day.date())`.
         for event in calendar.schedule(day.date()):
             starts = grid.starts[list(event.eligible_intervals)]
+            # Skip the current item when `not len(starts)`.
             if not len(starts):
                 continue
             weather = select_forecast_vintage(dataset, farm_id, event.submission_at, mapping,
@@ -127,6 +140,7 @@ def prepare_corpus(config: dict, farm_id: int, destination: Path, progress=None,
             frame.loc[night & ~np.isfinite(frame.baseline_mw), "baseline_mw"] = 0.0
             frame["daylight"] = (frame.solar_zenith_deg < 90) & ~night
             rows.append(frame)
+        # Cache one fixed set of forecast/measurement pairs, preserving all missing rows when `progress and (number % 60 == 0 or number + 1 == len(days))`.
         if progress and (number % 60 == 0 or number+1 == len(days)):
             progress(f"farm {farm_id}: aligned {number+1}/{len(days)} delivery days")
     result = pd.concat(rows, ignore_index=True)
@@ -139,6 +153,7 @@ def prepare_corpus(config: dict, farm_id: int, destination: Path, progress=None,
     result["satellite_ghi_w_m2"] = ghi.reindex(index).to_numpy()
     result["target_available_at_utc"] = index + pd.Timedelta(minutes=15 + float(config["source"]["telemetry_latency_minutes"]))
     plateau = pd.Series(False, index=times)
+    # Cache one fixed set of forecast/measurement pairs, preserving all missing rows for each `run` in `plateau_runs(power.values, times, config['policy']['plateau'])`.
     for run in plateau_runs(power.values, times, config["policy"]["plateau"]):
         plateau.iloc[run] = True
     result["plateau_flag"] = plateau.reindex(index, fill_value=False).to_numpy()
@@ -155,6 +170,7 @@ def prepare_corpus(config: dict, farm_id: int, destination: Path, progress=None,
         "temperature_c", "wind_speed_m_s", "pv_input_valid", "bhi_exceeds_ghi", "dni_limited",
         "baseline_mw", "measured_ac_mw", "satellite_ghi_w_m2", "daylight", "plateau_flag",
         "suspected_outage", "outage_excluded", "review_excluded", "dubious_excluded", "eligible"]
+    # When `retain_weather`, set `keep` using `[name for name in mapping if name not in keep]`.
     if retain_weather:
         keep += [name for name in mapping if name not in keep]
     result = result[keep]

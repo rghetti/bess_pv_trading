@@ -23,6 +23,7 @@ from ..data.pv_study_inputs import farm_settings
 def ranking_path(root, section, *, screen=False):
     """Keep in-sample full-period rankings distinct from validation rankings."""
     scope = section.get('selection_scope', 'validation')
+    # Enforce the input contract: Unsupported physical search selection scope: `scope`.
     if scope not in {'validation', 'full_period'}:
         raise ValueError(f'Unsupported physical search selection scope: {scope}')
     name = 'fit_ranking' if scope == 'full_period' else 'validation_ranking'
@@ -31,8 +32,10 @@ def ranking_path(root, section, *, screen=False):
 
 def fit_and_score_masks(frame, scope):
     """Return fitting and scoring masks without describing in-sample data as validation."""
+    # Return the selected result for this condition.
     if scope == 'validation':
         return frame['split'].eq('train').to_numpy(), frame['split'].eq('validation').to_numpy()
+    # When `scope == 'full_period'`, set `mask` using `np.ones(len(frame), dtype=bool)`.
     if scope == 'full_period':
         mask = np.ones(len(frame), dtype=bool)
         return mask, mask.copy()
@@ -45,14 +48,17 @@ def structural_plan(section, farm_id, tracking, settings):
     tracker = list(itertools.product(section['tracker_gcr'], section['tracker_max_angle'],
                                      section['tracker_backtracking'])) if tracking else [(0.35, 60.0, True)]
     rear = [(False, 0.2, 0.8, 0.4)]
+    # Update `rear` when this condition is met.
     if tracking == 3:
         rear += [(True, *item) for item in itertools.product(section['bifacial_albedo'],
                     section['bifaciality'], section['bifacial_height_to_pitch'])]
     candidates = []
+    # Process each `(location, model, geometry, bifacial)` in this collection.
     for location, model, geometry, bifacial in itertools.product(
             locations, section['transposition_models'], tracker, rear):
         enabled, albedo, bifaciality, height = bifacial
         gcr, angle, backtrack = geometry
+        # Skip the current item when `enabled and (model == 'perez-driesse' or height <= gcr * np.sin(np.radians(angle)) / 2)`.
         if enabled and (model == 'perez-driesse' or height <= gcr * np.sin(np.radians(angle)) / 2):
             continue
         candidates.append({'location': location, 'transposition': model, 'gcr': gcr,
@@ -75,6 +81,7 @@ def run_trial(config, farm_id, trial_id, candidate, root):
     """Fit one physical chain and write resumable, explicitly scoped metrics."""
     section = config['pv_realized_irradiance_search']
     destination = root / f'farm_{farm_id}' / 'trials' / f'{trial_id:04d}.json'
+    # Return `json.loads(destination.read_text())` when `destination.exists()`.
     if destination.exists():
         return json.loads(destination.read_text())
     frame = pd.read_parquet(root / f'farm_{farm_id}' / 'aligned_inputs.parquet')
@@ -116,6 +123,7 @@ def run_trial(config, farm_id, trial_id, candidate, root):
     scope = section.get('selection_scope', 'validation')
     train, valid = fit_and_score_masks(frame, scope)
     weights = frame.weight.to_numpy(float)
+    # Enforce the input contract: Missing eligible fitting or scoring observations.
     if not train.any() or not valid.any():
         raise ValueError('Missing eligible fitting or scoring observations')
 
@@ -127,8 +135,10 @@ def run_trial(config, farm_id, trial_id, candidate, root):
     def objective(unit_vector):
         result = prediction(lower + unit_vector * width)
         residual = result[train] - target[train]
+        # Return `1e+20` when `not np.isfinite(residual).all()`.
         if not np.isfinite(residual).all():
             return 1e20
+        # When `candidate['loss'] == 'mse'`, set `loss` using `residual ** 2`.
         if candidate['loss'] == 'mse':
             loss = residual ** 2
         else:
@@ -143,7 +153,9 @@ def run_trial(config, farm_id, trial_id, candidate, root):
     starts = [np.clip((initial-lower)/width, 0, 1)]
     starts += [rng.uniform(0, 1, len(names)) for _ in range(int(section['multistarts'])-1)]
     solutions = []
+    # Fit one physical chain and write resumable, explicitly scoped metrics for each `start` in `starts`.
     for start in starts:
+        # Fit one physical chain and write resumable, explicitly scoped metrics when `candidate['loss'] == 'fixed'`.
         if candidate['loss'] == 'fixed':
             solutions.append((objective(start), start, True, 'unchanged configured physical baseline'))
             break
@@ -154,9 +166,11 @@ def run_trial(config, farm_id, trial_id, candidate, root):
     vector = lower + best[1] * width
     predicted = prediction(vector)
     residual = predicted[valid] - target[valid]
+    # Enforce the input contract: Nonfinite scoring prediction.
     if not np.isfinite(residual).all():
         raise ValueError('Nonfinite scoring prediction')
     starts = pd.DatetimeIndex(frame.interval_start_utc)
+    # When `'night_policy' in section`, set `daytime` using `~night_window_mask(starts, section['night_policy'])`.
     if 'night_policy' in section:
         daytime = ~night_window_mask(starts, section['night_policy'])
     else:
@@ -165,6 +179,7 @@ def run_trial(config, farm_id, trial_id, candidate, root):
         daytime = (hours >= 6) & (hours < 21.5)
     masks = {'all_hours': valid, 'daytime': valid & daytime}
     metrics = {}
+    # Fit one physical chain and write resumable, explicitly scoped metrics for each `(name, mask)` in `masks.items()`.
     for name, mask in masks.items():
         error = predicted[mask] - target[mask]
         w = weights[mask]
@@ -206,9 +221,11 @@ def main():
     sources += [Path(__file__), Path(__file__).resolve().parents[1] / 'data/pv_realized_irradiance.py',
                 Path(__file__).resolve().parents[1] / 'models/pv_physical.py',
                 config_path(config, config['inputs']['metadata_parquet'])]
+    # Save the exact trial list, then resume or execute the approved search for each `path` in `sources`.
     for path in sources:
         digest = hashlib.sha256()
         with path.open('rb') as stream:
+            # Save the exact trial list, then resume or execute the approved search for each `block` in `iter(lambda: stream.read(1024 * 1024), b'')`.
             for block in iter(lambda: stream.read(1024 * 1024), b''):
                 digest.update(block)
         fingerprints[str(path)] = digest.hexdigest()
@@ -216,16 +233,19 @@ def main():
             'jobs': [{'farm': farm, 'trial': i, **candidate} for farm, i, candidate in jobs]}
     text = json.dumps(plan, sort_keys=True, indent=2, allow_nan=False) + '\n'
     plan_path = root / 'trial_plan.json'
+    # Enforce the input contract: Search plan changed; use a new run ID.
     if plan_path.exists() and plan_path.read_text() != text:
         raise ValueError('Search plan changed; use a new run ID')
     plan_path.write_text(text)
     print(f'{len(jobs)} trials; up to {section["workers"]} workers; plan: {plan_path}', flush=True)
+    # Save the exact trial list, then resume or execute the approved search when `args.plan_only`.
     if args.plan_only:
         return
     results = []
     with ProcessPoolExecutor(max_workers=int(section['workers'])) as pool:
         futures = {pool.submit(run_trial, config, farm, i, candidate, root): (farm, i)
                    for farm, i, candidate in jobs}
+        # Save the exact trial list, then resume or execute the approved search for each `future` in `as_completed(futures)`.
         for future in as_completed(futures):
             farm, i = futures[future]
             try:
@@ -234,6 +254,7 @@ def main():
                 print(f'Completed {len(results)}/{len(jobs)}: farm {farm} trial {i}', flush=True)
             except Exception as error:
                 print(f'FAILED farm {farm} trial {i}: {error}', flush=True)
+                # Save the exact trial list, then resume or execute the approved search for each `pending` in `futures`.
                 for pending in futures:
                     pending.cancel()
                 raise
@@ -243,5 +264,6 @@ def main():
     pd.DataFrame(rows).sort_values(['farm_id', 'rmse_percent_capacity']).to_csv(ranking_path(root, section), index=False)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

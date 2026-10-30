@@ -28,6 +28,7 @@ def audit_saved_study(root: str | Path) -> dict:
         "valid_to":(end-pd.Timedelta(days=1)).date().isoformat()}
     calendar=AuctionCalendar.from_config(calendar_settings)
     farm_audits=[]
+    # Audit persisted inputs/results without rerunning calibration or optimization for each `farm_id` in `section['farm_ids']`.
     for farm_id in section["farm_ids"]:
         directory=root/f"farm_{farm_id}"
         corpus=pd.read_parquet(directory/"parquet"/"corpus.parquet")
@@ -39,30 +40,38 @@ def audit_saved_study(root: str | Path) -> dict:
         pd.testing.assert_frame_equal(corpus,data[corpus.columns])
         assert (data.forecast_available_at_utc<=data.decision_cutoff_utc).all(),"Future weather used"
         assert (data.forecast_cycle_utc<=data.decision_cutoff_utc).all(),"Future cycle used"
+        # Audit persisted inputs/results without rerunning calibration or optimization when `not config['source'].get('explicit_availability_variable')`.
         if not config["source"].get("explicit_availability_variable"):
             assert (data.forecast_cycle_utc+pd.Timedelta(hours=config["source"]["availability_lag_hours"])
                     == data.forecast_available_at_utc).all(),"UTC cycle lag changed"
+        # Audit persisted inputs/results without rerunning calibration or optimization for each `((day, auction), group)` in `data.groupby(['delivery_day', 'auction'])`.
         for (day,auction),group in data.groupby(["delivery_day","auction"]):
             event=next(x for x in calendar.schedule(day) if x.auction==auction)
             expected=calendar.delivery_grid(day).starts[list(event.eligible_intervals)]
             assert pd.DatetimeIndex(group.interval_start_utc).as_unit("ns").equals(expected.as_unit("ns")),"Delivery scope changed"
             assert (group.decision_cutoff_utc==event.submission_at).all(),"Submission cutoff changed"
+        # Audit persisted inputs/results without rerunning calibration or optimization for each `method` in `methods + ['selected']`.
         for method in methods+["selected"]:
             assert np.isfinite(data.loc[data.eligible,f"prediction_{method}_mw"]).all(),"Candidate dropped evaluation samples"
         np.testing.assert_allclose(data.prediction_fixed_mw,data.baseline_mw,atol=1e-12,equal_nan=True)
         required=(len(months)+int(section["retrospective_fit"]))*len(methods)
         files=list((directory/"json"/"fits").glob("*/*.json"))
         assert len(files)==required,f"Incomplete method checkpoints for farm {farm_id}"
+        # Audit persisted inputs/results without rerunning calibration or optimization for each `path` in `files`.
         for path in files:
             checkpoint=read_json(path)
             issue=pd.Timestamp(checkpoint["issued_at_utc"])
             fit=checkpoint["fit"]
+            # Audit persisted inputs/results without rerunning calibration or optimization when `'latest_target_available_at_utc' in fit`.
             if "latest_target_available_at_utc" in fit:
                 assert pd.Timestamp(fit["latest_target_available_at_utc"])<=issue,"Future target in refit"
+            # Audit persisted inputs/results without rerunning calibration or optimization for each `candidate` in `checkpoint['diagnostics'].get('candidates', [])`.
             for candidate in checkpoint["diagnostics"].get("candidates",[]):
                 validation_start=pd.Timestamp(checkpoint["diagnostics"]["validation_start_day"],tz=section["delivery_timezone"])
                 assert pd.Timestamp(candidate["fit"]["latest_target_available_at_utc"])<=validation_start,"Validation target entered candidate fit"
+        # Audit persisted inputs/results without rerunning calibration or optimization for each `entry` in `registry['entries']`.
         for entry in registry["entries"]:
+            # When `entry['farm_id'] == farm_id`, set `artifact` using `read_json(root / 'json' / entry['artifact_path'])`.
             if entry["farm_id"]==farm_id:
                 artifact=read_json(root/"json"/entry["artifact_path"])
                 assert pd.Timestamp(artifact["latest_target_available_at_utc"])<=pd.Timestamp(entry["issued_at_utc"])
@@ -79,6 +88,7 @@ def audit_saved_study(root: str | Path) -> dict:
     comparisons=pd.read_csv(root/"csv"/"farm_method_comparison.csv")
     rankings=[]
     macro=[]
+    # Audit persisted inputs/results without rerunning calibration or optimization for each `(farm_id, group)` in `comparisons.groupby('farm_id')`.
     for farm_id,group in comparisons.groupby("farm_id"):
         rating=read_json(root/f"farm_{farm_id}"/"json"/"summary.json")["ac_rating_mw"]
         fixed=group.loc[group.method=="fixed"].iloc[0]
@@ -89,6 +99,7 @@ def audit_saved_study(root: str | Path) -> dict:
             "selected_daylight_rmse_mw":selected.daylight_balanced_rmse_mw,
             "selected_improvement_percent":100*(1-selected.daylight_balanced_rmse_mw/fixed.daylight_balanced_rmse_mw),
             "best_family_in_hindsight":best.method,"best_family_daylight_rmse_mw":best.daylight_balanced_rmse_mw})
+        # Audit persisted inputs/results without rerunning calibration or optimization for each `row` in `group.itertuples(index=False)`.
         for row in group.itertuples(index=False):
             macro.append({"farm_id":farm_id,"method":row.method,
                 "daylight_nrmse_percent_rating":100*row.daylight_balanced_rmse_mw/rating,

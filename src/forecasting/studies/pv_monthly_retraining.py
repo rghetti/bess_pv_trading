@@ -25,9 +25,11 @@ def plot_monthly_metrics(table,destination):
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     destination=Path(destination);destination.mkdir(parents=True,exist_ok=True)
+    # Show the monthly refit and frozen comparators on their common mask for each `farm` in `sorted(table.farm_id.unique())`.
     for farm in sorted(table.farm_id.unique()):
         data=table[table.farm_id.eq(farm)]
         figure,axes=plt.subplots(2,1,figsize=(11,7),sharex=True,layout='constrained')
+        # Process each `(model, label, color)` in this collection.
         for model,label,color in [('monthly_refit','Monthly refit','tab:blue'),
                                   ('old_selected','Existing frozen model','tab:gray'),
                                   ('old_pvlib','Calibrated pvlib','tab:orange')]:
@@ -36,6 +38,7 @@ def plot_monthly_metrics(table,destination):
             axes[1].plot(rows.month,rows.bias_percent,marker='o',label=label,color=color)
         axes[0].set_ylabel('Daylight RMSE / AC rating (%)')
         axes[1].set_ylabel('Signed bias / AC rating (%)')
+        # Show the monthly refit and frozen comparators on their common mask for each `axis` in `axes`.
         for axis in axes:axis.legend();axis.grid(alpha=.2)
         axes[1].tick_params(axis='x',rotation=30)
         figure.savefig(destination/f'farm_{farm}_monthly_comparison.png',dpi=150)
@@ -47,6 +50,7 @@ def _monthly_job(job):
     import sklearn  # Load the conda C++ runtime before optional PyTorch.
     from sklearn.linear_model import Ridge
     from threadpoolctl import threadpool_limits
+    # Fit once using data available before this month's first delivery day for each `name` in `['OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS']`.
     for name in ['OMP_NUM_THREADS','OPENBLAS_NUM_THREADS','MKL_NUM_THREADS']:
         os.environ[name]='1'
     frame=pd.read_parquet(job['corpus'])
@@ -58,7 +62,9 @@ def _monthly_job(job):
     train=(frame.eligible & frame.delivery_day.lt(job['month']+'-01') &
         frame.target_available_at_utc.le(issue)).to_numpy()
     target=(frame.eligible&frame.daylight&frame.delivery_day.str.startswith(job['month'])).to_numpy()
+    # Enforce the input contract: Missing eligible training or report intervals.
     if not train.any() or not target.any():raise ValueError('Missing eligible training or report intervals')
+    # Enforce the input contract: Future observed production entered a monthly fit.
     if frame.loc[train,'target_available_at_utc'].max()>issue:
         raise ValueError('Future observed production entered a monthly fit')
     weight=balanced_weights(frame.loc[train]);weight*=len(weight)
@@ -85,24 +91,28 @@ def run_monthly_retraining(config,progress=print):
     section=config['pv_monthly_retraining']
     workers=int(section['workers'])
     available=len(os.sched_getaffinity(0)) if hasattr(os,'sched_getaffinity') else os.cpu_count()
+    # Enforce the input contract: Monthly worker count must leave the configured CPU reserve.
     if not 1<=workers<=min(42,max(1,available-section['reserved_cpu_cores'])):
         raise ValueError('Monthly worker count must leave the configured CPU reserve')
     source=config_path(config,section['source_root'])
     comparison=config_path(config,section['comparison_root'])
     output_root=config_path(config,section['output_root'])
     output=output_root/section['run_id']
+    # Enforce the input contract: A monthly study input cannot be under its output directory.
     if any(path.resolve().is_relative_to(output.resolve()) for path in [source,comparison]):
         raise ValueError('A monthly study input cannot be under its output directory')
     prepare_experiment_output(output_root,output,
         overwrite=config['experiment_outputs']['overwrite_existing'])
     (output/'resolved_config.json').write_text(json.dumps(config,indent=2,default=str)+'\n')
     jobs=[];inputs={}
+    # Write the corresponding artifacts for `farm` from `section['farm_ids']`.
     for farm in section['farm_ids']:
         farm_dir=source/f'farm_{farm}'
         frame=modeling_instances(
             pd.read_parquet(farm_dir/'parquet/corpus.parquet'),config,farm_id=farm)
         previous=pd.read_parquet(comparison/f'farm_{farm}/parquet/comparison_predictions.parquet').loc[frame.index]
         keys=['interval_start_utc','delivery_day','auction','measured_ac_mw']
+        # Enforce the input contract: Monthly input and reference population differ.
         if not frame[keys].equals(previous[keys]):raise ValueError('Monthly input and reference population differ')
         selection=json.loads((comparison/f'farm_{farm}/json/selection.json').read_text())
         name=selection['best_new_statistical'].split('/')[-1]
@@ -114,6 +124,7 @@ def run_monthly_retraining(config,progress=print):
         curated=output/f'farm_{farm}/curated_corpus.parquet'
         curated.parent.mkdir(parents=True,exist_ok=True)
         frame.to_parquet(curated,index=False)
+        # Compare expanding-history monthly fits with the same frozen references for each `month` in `section['report_months']`.
         for month in section['report_months']:
             jobs.append({'farm_id':farm,'month':month,'trial_path':str(record),
                 'corpus':str(curated),'features':str(features),'source_positions':frame.index.to_numpy(),
@@ -125,19 +136,24 @@ def run_monthly_retraining(config,progress=print):
     results=[]
     with ProcessPoolExecutor(max_workers=workers,mp_context=multiprocessing.get_context('spawn')) as pool:
         futures=[pool.submit(_monthly_job,job) for job in jobs]
+        # Compare expanding-history monthly fits with the same frozen references for each `future` in `as_completed(futures)`.
         for future in as_completed(futures):
             result=future.result();results.append(result)
             progress(f"Farm {result['farm_id']} {result['month']}: {result['metrics']['nrmse_percent']:.3f}%")
     rows=[];summaries=[]
+    # Apply score for `result` from `sorted(results, key=lambda item: (item['farm_id'], item['month']))`.
     for result in sorted(results,key=lambda item:(item['farm_id'],item['month'])):
         farm=result['farm_id'];frame,previous,rating=inputs[farm]
         mask=(frame.eligible&frame.daylight&frame.delivery_day.str.startswith(result['month'])).to_numpy()
         model=np.load(result['prediction_path'])
+        # Enforce the input contract: Monthly prediction count changed.
         if len(model)!=mask.sum():raise ValueError('Monthly prediction count changed')
         candidates={'monthly_refit':result['metrics']}
+        # Apply score for `label` from `['old_selected', 'old_pvlib']`.
         for label in ['old_selected','old_pvlib']:
             curve=previous[f'prediction_{label}'].to_numpy()
             candidates[label]=score(frame,curve,rating,mask)
+        # Compare expanding-history monthly fits with the same frozen references for each `(label, metrics)` in `candidates.items()`.
         for label,metrics in candidates.items():
             rows.append({'farm_id':farm,'month':result['month'],'model':label,
                 'issue_cutoff_utc':result['issue_cutoff_utc'],'training_rows':result['training_rows'],
@@ -145,6 +161,7 @@ def run_monthly_retraining(config,progress=print):
         summaries.append(result)
     table=pd.DataFrame(rows);(output/'csv').mkdir(exist_ok=True)
     table.to_csv(output/'csv/monthly_metrics.csv',index=False)
+    # Compare expanding-history monthly fits with the same frozen references when `section['save_plots']`.
     if section['save_plots']:plot_monthly_metrics(table,output/'plots')
     (output/'json').mkdir(exist_ok=True)
     (output/'json/fit_provenance.json').write_text(json.dumps(summaries,indent=2)+'\n')

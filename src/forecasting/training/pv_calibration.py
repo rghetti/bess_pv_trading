@@ -21,12 +21,15 @@ from ..data.pv_outages import modeling_instances
 def fit_scale(x: np.ndarray, y: np.ndarray) -> float:
     """Unique MSE-minimizing slope for y = beta*x with zero intercept."""
     x, y = np.asarray(x, dtype=float), np.asarray(y, dtype=float)
+    # Enforce the input contract: Calibration needs matching, finite nonempty vectors.
     if x.shape != y.shape or x.ndim != 1 or not len(x) or not (np.isfinite(x).all() and np.isfinite(y).all()):
         raise ValueError("Calibration needs matching, finite nonempty vectors")
     denominator = float(np.dot(x, x))
+    # Enforce the input contract: Calibration regressor has zero squared norm.
     if denominator <= 0:
         raise ValueError("Calibration regressor has zero squared norm")
     coefficient = float(np.dot(x, y) / denominator)
+    # Enforce the input contract: Fitted PV coefficient must be positive and finite.
     if coefficient <= 0 or not np.isfinite(coefficient):
         raise ValueError("Fitted PV coefficient must be positive and finite")
     return coefficient
@@ -64,23 +67,28 @@ def _plots(pairs: pd.DataFrame, fit: dict[str, Any], path: Path) -> None:
 def calibrate_pv_output(config: dict[str, Any]) -> dict[str, Any]:
     """Pair latest available weather with measured AC and fit a DC-to-AC scale."""
     settings = config["pv_calibration"]
+    # Pair latest available weather with measured AC and fit a DC-to-AC scale for each `key` in `('start_day', 'end_day_exclusive')`.
     for key in ("start_day", "end_day_exclusive"):
+        # Enforce the input contract: pv_calibration.`key` is required.
         if not settings.get(key):
             raise ValueError(f"pv_calibration.{key} is required")
     tz = settings["delivery_timezone"]
     start = pd.Timestamp(settings["start_day"]).tz_localize(tz).tz_convert("UTC")
     end = pd.Timestamp(settings["end_day_exclusive"]).tz_localize(tz).tz_convert("UTC")
+    # Enforce the input contract: PV calibration end_day_exclusive must follow start_day.
     if end <= start:
         raise ValueError("PV calibration end_day_exclusive must follow start_day")
     starts = pd.date_range(start, end, freq="15min", inclusive="left")
     validation_fraction = float(settings["validation_fraction"])
     minimum_pairs = int(settings["minimum_pairs"])
     minimum_dc_fraction = float(settings["minimum_dc_fraction_of_ac_rating"])
+    # Enforce the input contract: Invalid PV calibration split, minimum pairs, or DC threshold.
     if not 0 < validation_fraction < 1 or minimum_pairs < 2 or not 0 <= minimum_dc_fraction < 1:
         raise ValueError("Invalid PV calibration split, minimum pairs, or DC threshold")
     farm_id = int(config["farm_id"])
     farm = load_metadata(config_path(config, config["inputs"]["metadata_parquet"]), [farm_id])[farm_id]
     declared_rating = float(config["farms"][str(farm_id)]["ac_capacity_kw"])
+    # Enforce the input contract: Configured and metadata farm AC ratings disagree.
     if not np.isclose(declared_rating, farm.ac_capacity_kw):
         raise ValueError("Configured and metadata farm AC ratings disagree")
     pv_settings = deepcopy(config["pv"])
@@ -90,10 +98,13 @@ def calibrate_pv_output(config: dict[str, Any]) -> dict[str, Any]:
     try:
         cycles = pd.DatetimeIndex(pd.to_datetime(dataset.cycle_time.values, utc=True))
         availability_variable = source.get("explicit_availability_variable")
+        # When `availability_variable`, set `available` using `dataset[availability_variable]`.
         if availability_variable:
             available = dataset[availability_variable]
+            # When `set(available.dims) == {'farm_id', 'cycle_time'}`, set `available` using `available.sel(farm_id=farm_id)`.
             if set(available.dims) == {"farm_id", "cycle_time"}:
                 available = available.sel(farm_id=farm_id)
+            # Enforce the input contract: Forecast availability metadata must be indexed by cycle_time.
             if available.dims != ("cycle_time",):
                 raise ValueError("Forecast availability metadata must be indexed by cycle_time")
             availability = pd.DatetimeIndex(pd.to_datetime(available.values, utc=True))
@@ -101,14 +112,17 @@ def calibrate_pv_output(config: dict[str, Any]) -> dict[str, Any]:
             availability = cycles + pd.Timedelta(hours=float(source["availability_lag_hours"]))
         # Search the newest cycle that was available by each delivery interval start.
         selected = np.full(len(starts), -1, dtype=int)
+        # Pair latest available weather with measured AC and fit a DC-to-AC scale for each `(i, interval)` in `enumerate(starts)`.
         for i, interval in enumerate(starts):
             eligible_cycles = np.flatnonzero((availability <= interval) & (cycles <= interval))
+            # When `len(eligible_cycles)`, set `selected[i]` using `eligible_cycles[np.argmax(cycles.asi8[eligible_cycles])]`.
             if len(eligible_cycles):
                 selected[i] = eligible_cycles[np.argmax(cycles.asi8[eligible_cycles])]
         modeled = pd.Series(np.nan, index=starts, dtype=float)
         forecast_valid = pd.Series(False, index=starts, dtype=bool)
         vintages = pd.Series(pd.NaT, index=starts, dtype="datetime64[ns, UTC]")
         published = pd.Series(pd.NaT, index=starts, dtype="datetime64[ns, UTC]")
+        # Apply forecast pv for `position` from `np.unique(selected[selected >= 0])`.
         for position in np.unique(selected[selected >= 0]):
             group_starts = starts[selected == position]
             bundle = select_forecast_vintage(dataset, farm_id, group_starts[0], config["forecast_mapping"],
@@ -145,10 +159,12 @@ def calibrate_pv_output(config: dict[str, Any]) -> dict[str, Any]:
     valid=pairs.eligible
     pairs.loc[valid, "exclusion_reason"] = ""
     eligible = pairs.loc[valid].sort_values("interval_start_utc")
+    # Enforce the input contract: Only `len(eligible)` eligible PV calibration pairs; minimum is `minimum_pairs`.
     if len(eligible) < minimum_pairs:
         raise ValueError(f"Only {len(eligible)} eligible PV calibration pairs; minimum is {minimum_pairs}")
     validation_count = max(1, int(np.ceil(len(eligible) * validation_fraction)))
     train, validation = eligible.iloc[:-validation_count], eligible.iloc[-validation_count:]
+    # Enforce the input contract: PV calibration has no training pairs after validation split.
     if len(train) < 1:
         raise ValueError("PV calibration has no training pairs after validation split")
     beta_train = fit_scale(train.regressor_mw.to_numpy(), train.measured_ac_mw.to_numpy())
@@ -170,6 +186,7 @@ def calibrate_pv_output(config: dict[str, Any]) -> dict[str, Any]:
     root = config_path(config, settings["output_root"])
     run_id = settings.get("run_id") or datetime.now(timezone.utc).strftime("farm%d_%Y%m%dT%H%M%S%fZ" % farm_id)
     output = root / run_id
+    # Pair latest available weather with measured AC and fit a DC-to-AC scale for each `subdir` in `('json', 'csv', 'plots')`.
     for subdir in ("json", "csv", "plots"):
         (output / subdir).mkdir(parents=True, exist_ok=False)
     (output / "json" / "study_config.json").write_text(json.dumps(config, indent=2, default=str) + "\n")

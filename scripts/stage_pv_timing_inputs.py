@@ -18,17 +18,23 @@ def stage(config):
     """Copy cleaned weather/AC pairs, five baseline prediction curves and small contracts."""
     section=config['pv_timing_ablation'];target=config_path(config,section['data_root'])
     manifest=target/'json/manifest.json'
+    # When `manifest.exists()`, set `record` using `json.loads(manifest.read_text())`.
     if manifest.exists():
         record=json.loads(manifest.read_text())
+        # Copy cleaned weather/AC pairs, five baseline prediction curves and small contracts for each `(name, checksum)` in `record['files'].items()`.
         for name,checksum in record['files'].items():
+            # Enforce the input contract: Staged timing input changed.
             if sha(target/name)!=checksum:raise ValueError('Staged timing input changed')
+        # Enforce the input contract: Quality CSV changed; explicitly rebuild the staged modeling dataset.
         if sha(config_path(config,config['pv_data_quality']['exclusions_csv']))!=record['quality_csv_sha256']:
             raise ValueError('Quality CSV changed; explicitly rebuild the staged modeling dataset')
         return target,record
     parent=config_path(config,section['parent_study_root'])
     prepared=config_path(config,section['prepared_source_root']);files={}
+    # Copy cleaned weather/AC pairs, five baseline prediction curves and small contracts for each `farm` in `section['farm_ids']`.
     for farm in section['farm_ids']:
         source=prepared/'forecast'/f'farm_{farm}';output=target/f'farm_{farm}'
+        # Copy cleaned weather/AC pairs, five baseline prediction curves and small contracts for each `sub` in `['parquet', 'json', 'cache', 'references']`.
         for sub in ['parquet','json','cache','references']:(output/sub).mkdir(parents=True,exist_ok=True)
         shutil.copy2(source/'parquet/corpus.parquet',output/'parquet/corpus.parquet')
         shutil.copy2(source/'cache/train.npy',output/'cache/train.npy')
@@ -39,16 +45,21 @@ def stage(config):
         ranking=pd.read_csv(folder/'csv/validation_ranking.csv')
         ranking=ranking.loc[ranking.family.isin(['direct_tcn','residual_tcn','residual_mlp'])]
         chosen=[ranking.iloc[0]]
+        # Copy cleaned weather/AC pairs, five baseline prediction curves and small contracts for each `family` in `section['extra_families_by_farm'].get(str(farm), [])`.
         for family in section['extra_families_by_farm'].get(str(farm),[]):
             row=ranking.loc[ranking.family.eq(family)].iloc[0]
+            # Copy cleaned weather/AC pairs, five baseline prediction curves and small contracts when `row.model not in [r.model for r in chosen]`.
             if row.model not in [r.model for r in chosen]:chosen.append(row)
         specs=[]
+        # Copy cleaned weather/AC pairs, five baseline prediction curves and small contracts for each `row` in `chosen`.
         for row in chosen:
             spec=json.loads((folder/'json/trials'/f'{row.model}.json').read_text())['specification']
             specs.append(spec)
             shutil.copy2(folder/'arrays'/f'{row.model}.npy',output/'references'/f'{row.model}.npy')
         write(output/'json/candidates.json',{'specifications':specs,'sequence_length':length})
+        # Copy cleaned weather/AC pairs, five baseline prediction curves and small contracts for each `path` in `output.rglob('*')`.
         for path in output.rglob('*'):
+            # When `path.is_file()`, set `files[str(path.relative_to(target))]` using `sha(path)`.
             if path.is_file():files[str(path.relative_to(target))]=sha(path)
     record={'status':'complete','files':files,
         'quality_csv_sha256':sha(config_path(config,config['pv_data_quality']['exclusions_csv'])),
@@ -58,6 +69,7 @@ def stage(config):
     write(manifest,record);return target,record
 
 
+# When `__name__ == '__main__'`, set `parser` using `argparse.ArgumentParser(description=__doc__)`.
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--config',required=True)
     args=parser.parse_args();print(stage(load_config(args.config))[0])

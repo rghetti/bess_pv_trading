@@ -30,6 +30,7 @@ def compare(config, farm_id, model_path, output):
     input_path = root / f'farm_{farm_id}' / 'aligned_inputs.parquet'
     model_path = Path(model_path)
     result = json.loads(model_path.read_text())
+    # Enforce the input contract: Model farm does not match requested farm.
     if int(result['farm_id']) != farm_id:
         raise ValueError('Model farm does not match requested farm')
     farm = load_metadata(config_path(config, config['inputs']['metadata_parquet']), [farm_id])[farm_id]
@@ -43,6 +44,7 @@ def compare(config, farm_id, model_path, output):
     defaults['temperature'].update(u0=float(signature.parameters['u0'].default),
                                    u1=float(signature.parameters['u1'].default))
     night_policy = section.get('night_policy', config['policy']['night'])
+    # Evaluate both temperature settings on identical eligible four-view means for each `(name, settings)` in `[('fitted', fitted), ('pvlib_default_faiman', defaults)]`.
     for name, settings in [('fitted', fitted), ('pvlib_default_faiman', defaults)]:
         forecast = historical_predictions(frame, farm, settings, night_policy)
         observed[name] = forecast.historical_ghi_prediction_mw
@@ -51,10 +53,13 @@ def compare(config, farm_id, model_path, output):
     scopes = {'all_hours': np.ones(len(common), dtype=bool), 'non_night': ~night,
               'ghi_above_20': common.ghi_w_m2.to_numpy(float) > 20}
     rows = []
+    # Evaluate both temperature settings on identical eligible four-view means for each `(scope, mask)` in `scopes.items()`.
     for scope, mask in scopes.items():
+        # Evaluate both temperature settings on identical eligible four-view means for each `name` in `['fitted', 'pvlib_default_faiman']`.
         for name in ['fitted', 'pvlib_default_faiman']:
             part = common.loc[mask]
             error = (part[name] - part.target_mw).to_numpy(float)
+            # Enforce the input contract: No common eligible observations for `scope`.
             if not len(error):
                 raise ValueError(f'No common eligible observations for {scope}')
             mae, rmse, bias = float(np.mean(abs(error))), float(np.sqrt(np.mean(error**2))), float(np.mean(error))
@@ -90,5 +95,6 @@ def main():
     compare(load_config(args.config), args.farm, args.selected, args.output)
 
 
+# Process this part of the workflow when `__name__ == '__main__'`.
 if __name__ == '__main__':
     main()

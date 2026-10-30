@@ -3,6 +3,38 @@
 # No experiment is launched by loading this file. Dates and source inputs must be set for the chosen command.
 schema_version: 1
 
+# Neural marginal post-processing is opt-in and never starts when loading configuration.
+pv_mayer_neural:
+  input_root: outputs/pv_mayer_postprocessing/january_august_2026_49_12
+  output_root: outputs/pv_mayer_neural
+  run_id: paper_neural_baseline
+  farm_ids: [1, 345, 901, 910]
+  member_count: 50
+  quantile_count: 51
+  early_stopping_every_n_days: 5  # Every fifth calendar day in the fit window; never outer evaluation days.
+  max_epochs: 200
+  batch_size: 256
+  patience: 6
+  learning_rate: 0.001
+  huber_epsilon: 0.00000001
+  minimum_scale: 0.000001
+  bernstein_degree: 10
+  noncrossing_width: 51
+  quantile_hidden_sizes: [64, 32]
+  quantile_activation: relu
+  hyperparameter_trials: 100  # Per quantile-network family and farm; no search runs at import.
+  search_workers: 42  # Each trial uses one numerical thread.
+  search_hidden_width: [5, 200]
+  search_learning_rate: [0.0005, 0.05]
+  search_patience: [5, 50]
+  search_batch_size: [200, 20000]
+  search_bernstein_degree: [6, 15]
+  search_noncrossing_extra_width: [0, 9]
+  drn_hidden_sizes: [15, 10, 10]
+  drn_ensemble_size: 10
+  seed: 20261030
+  rearrange_qrnn: true
+
 # Mayer-style hourly marginal post-processing; data windows must cover the full requested period.
 pv_mayer_postprocessing:
   output_root: outputs/pv_mayer_postprocessing
@@ -21,6 +53,19 @@ pv_mayer_postprocessing:
   quantile_count: 51  # Levels k/(quantile_count+1), k=1..quantile_count.
   rearrange_quantiles: true  # Sort crossed linear quantiles; retain raw predictions and flags.
   timezone: Europe/Rome
+
+# Matched retrospective scoring of fitted physical models and saved neural pilots.
+pv_physical_pilot_comparison:
+  input_root: outputs/pv_error_diagnostics/retrained_timing_all_farms
+  output_root: outputs/pv_physical_pilot_comparison
+  run_id: deterministic_cycles_may_august_2026
+  farm_ids: [1, 345, 901, 910]
+  splits: [test]  # Existing neural-corpus split labels to evaluate.
+  physical_models:
+    '1': outputs/pv_realized_irradiance_search/farm_1_expanded_temperature_full_period_gamma002_2025_2026/farm_1/selected_parameters.json
+    '345': outputs/pv_realized_irradiance_search/farm_345_expanded_temperature_full_period_gamma002_2025_2026/farm_345/selected_parameters.json
+    '901': outputs/pv_realized_irradiance_search/all_farms_full_period_wide_temperature_2025_2026/farm_901/selected_parameters.json
+    '910': outputs/pv_realized_irradiance_search/all_farms_full_period_wide_temperature_2025_2026/farm_910/selected_parameters.json
 
 # January member-wise PV and quantile calibration study. All dates are local delivery days.
 pv_online_crps_study:
