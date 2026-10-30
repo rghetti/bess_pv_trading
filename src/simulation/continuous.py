@@ -20,7 +20,7 @@ from ..optimization import build_model, solve_model, validate_solution
 from ..optimization.degradation import degradation_settings_from_config
 from ..reporting.optimization_timing import optimization_timing_report, solve_timing
 from ..reporting.artifacts import prepare_experiment_output
-from ..scenarios import synthetic_price_tree
+from ..scenarios import shared_dispatch_pv_tree, synthetic_price_tree
 from ..transaction_fees import TransactionFeeState, account_trade_fees, transaction_fees_from_config
 from .continuous_inputs import prepare_continuous_inputs
 from .events import Event, EventEngine, EventKind
@@ -372,6 +372,22 @@ class ContinuousReplay:
             branch_values=(0.0,), branch_probabilities=(1.0,), decision_cutoff=cutoff,
             imbalance_price=float(self.trading.get("imbalance_price_eur_per_mwh", 0.0)),
             seed=int(self.config["solver"].get("seed", 0)))
+        if not self.perfect and self.config["continuous_optimization"].get("pv_ensemble", {}).get("enabled", False):
+            ensemble = daily["ensemble_pv"][:, first:]
+            members = daily["ensemble_members"]
+            bundle, tree = shared_dispatch_pv_tree(bundle, tree, grid,
+                np.vstack([pv, ensemble]), ("deterministic", *(f"weather_{member}" for member in members)))
+            ensemble_info = self.prepared["provenance"]["pv_ensemble"][day]
+            provenance.update(pv_scenario_count=len(bundle.scenario_ids),
+                ensemble_vintage_utc=ensemble_info["forecast_vintage_utc"],
+                ensemble_available_at_utc=ensemble_info["available_at_utc"],
+                scenario_probability=1.0 / len(bundle.scenario_ids))
+            for member_index, member in enumerate(members):
+                self.forecast_inputs.extend({"delivery_day": day, "auction": event.auction,
+                    "cutoff_utc": cutoff.isoformat(), "interval_start_utc": str(start),
+                    "pv_ac_forecast_mw": float(value), "forecast_role": "target_delivery",
+                    "scenario_id": f"weather_{member}", **provenance}
+                    for start, value in zip(grid.starts, ensemble[member_index]))
         masks = {auction: tuple(first + index in next(item.eligible_intervals for item in schedule
             if item.auction == auction) for index in range(len(grid.interval_ids))) for auction in tree.bid_nodes}
         target_products = set(day_grid.interval_ids)
@@ -562,7 +578,7 @@ class ContinuousReplay:
                 "planned_net_position_mwh": float(result.arrays["net_position_mwh"][0, index]),
                 "soc_start_mwh": float(result.arrays["energy_mwh"][0, index]),
                 "soc_end_mwh": float(result.arrays["energy_mwh"][0, index + 1]),
-                "auction_trade_mwh": quantities.get(product, 0.0), "snapshot_scenario_count": 1}
+                "auction_trade_mwh": quantities.get(product, 0.0), "snapshot_scenario_count": len(inputs.scenarios.scenario_ids)}
             # Submit one immutable order and scope every change to its delivery book for each `planned` in `self.daily[day]['schedule']`.
             for planned in self.daily[day]["schedule"]:
                 # When `planned.auction in inputs.tree.bid_nodes`, set `node` using `inputs.tree.bid_nodes[planned.auction][0]`.
@@ -669,7 +685,11 @@ class ContinuousReplay:
         record.update(net_position_mwh=position, imbalance_mwh=imbalance,
             imbalance_price_eur_mwh=float(curve[index]), imbalance_cashflow_eur=imbalance * float(curve[index]),
             imbalance_penalty_eur=(abs(imbalance) * self.trading["imbalance_penalty_eur_per_mwh"]
-                if self.trading.get("optimize_imbalances", True) else 0.0),
+                if self.trading.get("optimize_imbalances", True) and not
+                self.config["continuous_optimization"].get("pv_ensemble", {}).get("enabled", False) else 0.0),
+            illustrative_imbalance_penalty_eur=(abs(imbalance) * self.trading["imbalance_penalty_eur_per_mwh"]
+                if self.trading.get("optimize_imbalances", True) and
+                self.config["continuous_optimization"].get("pv_ensemble", {}).get("enabled", False) else 0.0),
             import_fee_eur=max(0.0, -record["grid_mw"]) * self.grid.delta_hours[index] * self.trading["grid_import_fee_eur_per_mwh"])
         self.pending.pop(product)
 

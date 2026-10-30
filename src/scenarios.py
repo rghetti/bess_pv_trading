@@ -12,6 +12,44 @@ from .domain import DeliveryGrid, InformationNode, InformationTree, ScenarioBund
 from .markets import AuctionEvent
 
 
+def shared_dispatch_pv_tree(base: ScenarioBundle, tree: InformationTree,
+                            grid: DeliveryGrid, pv_ac_mw: np.ndarray,
+                            scenario_ids: Sequence[str]) -> tuple[ScenarioBundle, InformationTree]:
+    """Share all bids and battery commands; allow interval PV curtailment recourse.
+
+    Scenario-owned curtailment is instantaneous PV feedback. The physical model
+    ties curtailment for equal observed PV values, and no scenario-owned action
+    affects a future battery state or auction order.
+    """
+    values = np.asarray(pv_ac_mw, dtype=float)
+    count = len(scenario_ids)
+    if len(base.scenario_ids) != 1 or values.shape != (count, len(grid.interval_ids)) or count < 1:
+        raise ValueError("PV scenario matrix must match the single-price planning grid")
+    root = next(node for node in tree.nodes if node.parent_id is None)
+    nodes = [root]
+    leaves = []
+    for index in range(count):
+        leaf = f"pv_recourse_{index}"
+        nodes.append(InformationNode(leaf, root.node_id, grid.ends[0], 1.0 / count))
+        leaves.append(leaf)
+    prices = {name: np.repeat(curve, count, axis=0) for name, curve in base.auction_prices_eur_per_mwh.items()}
+    imbalance = np.repeat(base.imbalance_prices_eur_per_mwh, count, axis=0)
+    negative = (None if base.imbalance_negative_prices_eur_per_mwh is None else
+                np.repeat(base.imbalance_negative_prices_eur_per_mwh, count, axis=0))
+    provenance = {**base.provenance, "pv_members": count, "pv_member_origin": "raw_weather_plus_deterministic",
+        "execution_convention": "shared_battery_and_orders_with_observed_pv_curtailment",
+        "pv_recourse_equal_observation": True}
+    bundle = ScenarioBundle(tuple(scenario_ids), np.full(count, 1.0 / count), values,
+                            prices, imbalance, negative, origin="perfect-price / PV-scenarios", provenance=provenance)
+    shared = tuple(root.node_id for _ in range(len(grid.interval_ids)))
+    expanded = InformationTree(tuple(nodes), tuple(leaves),
+        {auction: tuple(root.node_id for _ in range(count)) for auction in tree.bid_nodes},
+        tuple(shared for _ in range(count)),
+        tuple(tuple(leaf for _ in grid.interval_ids) for leaf in leaves),
+        execution_convention="shared_battery_and_orders_with_observed_pv_curtailment")
+    return bundle, expanded
+
+
 @dataclass
 class _History:
     node: str

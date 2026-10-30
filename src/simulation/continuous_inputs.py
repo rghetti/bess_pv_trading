@@ -70,6 +70,62 @@ def _utc_index(starts) -> pd.DatetimeIndex:
     return index.tz_convert("UTC").as_unit("ns")
 
 
+def _prepare_pv_ensembles(config, days_data, progress=None):
+    """Convert each frozen preceding-day weather ensemble to AC trajectories."""
+    import xarray as xr
+
+    from ..data import load_metadata
+    from ..forecasting.data.pv_probabilistic_data import align_cycle
+    from ..forecasting.models.pv import forecast_pv
+
+    settings = config["continuous_optimization"]["pv_ensemble"]
+    source = config_path(config, settings["zarr"])
+    farm_id = int(config["forecast"]["farm_id"])
+    farm = load_metadata(config_path(config, config["inputs"]["metadata_parquet"]), [farm_id])[farm_id]
+    provenance = {}
+    with xr.open_zarr(source, consolidated=True, chunks=None) as dataset:
+        members = tuple(str(value) for value in dataset.member.values)
+        if len(members) != int(settings["member_count"]) or len(set(members)) != len(members):
+            raise ValueError("PV ensemble archive has an unexpected member axis")
+        for day, daily in days_data.items():
+            starts = _utc_index(daily["grid"].starts)
+            cycle = (pd.Timestamp(day) - pd.Timedelta(days=1)).tz_localize("UTC")
+            try:
+                weather = align_cycle(dataset, farm_id, cycle, starts, config, ensemble=True)
+            except (KeyError, ValueError) as error:
+                raise ValueError(f"PV ensemble missing or invalid for {day}, cycle {cycle}: {error}") from error
+            first_cutoff = min(event.submission_at for event in daily["schedule"])
+            if weather.available_at > first_cutoff:
+                raise ValueError(f"PV ensemble for {day} is not available at the first auction cutoff")
+            converted = forecast_pv(weather, farm, config["pv"], config.get("policy", {}).get("night", {}))
+            values = np.stack([converted.values.loc[converted.values.member == member, "pv_ac_mw"].to_numpy(float)
+                               for member in members])
+            # Match the deterministic loader's explicit nighttime-only missing-data policy.
+            missing = ~np.isfinite(values)
+            night_policy = config.get("policy", {}).get("night", {})
+            local = starts.tz_convert(night_policy.get("timezone", "Europe/Rome"))
+            minutes = local.hour * 60 + local.minute
+            start_h, start_m = map(int, night_policy.get("start", "21:30").split(":"))
+            end_h, end_m = map(int, night_policy.get("end", "05:00").split(":"))
+            night_start, night_end = start_h * 60 + start_m, end_h * 60 + end_m
+            night = ((minutes >= night_start) | (minutes < night_end) if night_start > night_end
+                     else (minutes >= night_start) & (minutes < night_end))
+            if missing.any() and config["forecast"]["missing_forecast_policy"] == "zero_only_when_policy_marks_night" and night_policy.get("enabled", True):
+                values[missing & np.broadcast_to(night, values.shape)] = 0.0
+            if values.shape != (len(members), len(starts)) or not np.isfinite(values).all() or (values < 0).any():
+                raise ValueError(f"PV ensemble for {day} has incomplete or invalid AC trajectories")
+            daily["ensemble_pv"] = values
+            daily["ensemble_members"] = members
+            provenance[day] = {"source": str(source), "forecast_vintage_utc": cycle.isoformat(),
+                "available_at_utc": weather.available_at.isoformat(), "availability": "assumed cycle plus configured latency",
+                "member_ids": list(members), "values_sha256": _fingerprint(values),
+                "nighttime_missing_filled_zero_member_intervals": int(missing.sum()),
+                "conversion": converted.provenance}
+            if progress:
+                progress(f"Preflight {day}: converted {len(members)} raw PV ensemble members")
+    return provenance
+
+
 def _validate_bundle(bundle, cutoff: pd.Timestamp, starts: pd.DatetimeIndex) -> None:
     """Reject unavailable vintages and unresolved or ambiguously aligned forecasts."""
     # Enforce the input contract: PV forecast available at `bundle.available_at` is after submission `cutoff`.
@@ -244,6 +300,11 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             forecasts.add(pd.Timestamp(key), starts, bundle)
         except (ValueError, RuntimeError) as error:
             raise ValueError(f"Continuous weather preflight at {key}: {error}") from error
+    ensemble_provenance = None
+    if settings.get("pv_ensemble", {}).get("enabled", False):
+        if config["pv"].get("forecast_replacement", {}).get("enabled", False):
+            raise ValueError("PV ensemble replay requires the baseline PVLib model")
+        ensemble_provenance = _prepare_pv_ensembles(config, days_data, progress)
     settlement, settlement_provenance = load_realized_imbalance_prices(config, full_grid)
     settlement_values = (None if settlement is None else
                          settlement.settlement_price_eur_mwh.to_numpy(float, copy=True))
@@ -261,7 +322,7 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             "realized_pv_sha256": _fingerprint(item["realized_pv"]),
             "auction_price_sha256": {name: _fingerprint(curve) for name, curve in item["prices"].items()}}
             for day, item in days_data.items()},
-        "weather_forecasts": forecasts.provenance,
+        "weather_forecasts": forecasts.provenance, "pv_ensemble": ensemble_provenance,
         "settlement": settlement_provenance,
         "settlement_values_sha256": None if settlement_values is None else _fingerprint(settlement_values)}
     fingerprint = _fingerprint(provenance)

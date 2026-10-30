@@ -33,7 +33,7 @@ def continuous_config():
         terminal_target_mwh=config["battery"]["capacity_mwh"] * config["state"]["terminal_soc_percent"] / 100)
     config["decision_resolution_minutes"] = config["gme_oracle_experiment"]["decision_resolution_minutes"]
     config["native_interval_minutes_by_auction"] = {
-        name: item["native_interval_minutes"]
+        name: item["native_interval_minutes"] or 60
         for name, item in config["gme_oracle_experiment"]["auction_datasets"].items()}
     return config
 
@@ -110,6 +110,7 @@ def _prepared(config, *, one_day=False, cancel=False):
         "plant": fixtures[days[0]]["plant"], "full_grid": full,
         "initial_energy_mwh": config["state"]["initial_energy_mwh"],
         "terminal_energy_mwh": config["state"]["terminal_target_mwh"],
+        "terminal_minimum_energy_mwh": None,
         "full_realized_pv": np.concatenate([data[day]["realized_pv"] for day in days]),
         "forecast_provider": provider,
         "imbalance_prices_eur_per_mwh": np.full(len(full.interval_ids), reference["settlement_price_eur_per_mwh"]),
@@ -133,6 +134,56 @@ def _run(config, prepared, mode, destination, *, resume=False):
 
 def _read(destination, filename):
     return json.loads((destination / "json" / filename).read_text())
+
+
+def test_scenario_planning_uses_frozen_members_and_shared_decisions(continuous_config, tmp_path):
+    """A cutoff combines the current deterministic update with frozen PV members."""
+    config = continuous_config
+    config["continuous_optimization"]["pv_ensemble"]["enabled"] = True
+    prepared, _ = _prepared(config, one_day=True)
+    day = prepared["days"][0]
+    daily = prepared["days_data"][day]
+    daily["ensemble_members"] = ("1", "2")
+    daily["ensemble_pv"] = np.stack([daily["initial_forecast"] * 0.8, daily["initial_forecast"] * 1.2])
+    first = daily["schedule"][0]
+    prepared["provenance"]["pv_ensemble"] = {day: {"forecast_vintage_utc": str(first.submission_at),
+        "available_at_utc": str(first.submission_at)}}
+    replay = _module().ContinuousReplay(config, prepared, "integrated", tmp_path / "replay")
+    instance = _module().ContinuousAuction(day, first)
+    inputs, diagnostic = replay._planning_inputs(instance, first.submission_at)
+    assert inputs.scenarios.scenario_ids == ("deterministic", "weather_1", "weather_2")
+    np.testing.assert_allclose(inputs.scenarios.probabilities, 1 / 3)
+    assert diagnostic["pv_scenario_count"] == 3
+    assert all(len(set(owners)) == 1 for owners in inputs.tree.bid_nodes.values())
+    assert all(len({row[t] for row in inputs.tree.control_nodes}) == 1
+               for t in range(len(inputs.grid.interval_ids)))
+    np.testing.assert_allclose(inputs.scenarios.pv_ac_mw[1:], daily["ensemble_pv"])
+
+
+def test_scenario_replay_carries_committed_orders_and_settles_without_penalty_charge(continuous_config, tmp_path):
+    """Run a small synthetic replay and reconcile common orders and actual cash."""
+    config = continuous_config
+    config["continuous_optimization"]["pv_ensemble"]["enabled"] = True
+    config["trading"].update(optimize_imbalances=True, imbalance_penalty_eur_per_mwh=100.0)
+    prepared, _ = _prepared(config, one_day=True)
+    day = prepared["days"][0]
+    daily = prepared["days_data"][day]
+    daily["ensemble_members"] = ("1", "2")
+    daily["ensemble_pv"] = np.stack([daily["initial_forecast"] * 0.8, daily["initial_forecast"] * 1.2])
+    first = daily["schedule"][0]
+    prepared["provenance"]["pv_ensemble"] = {day: {"forecast_vintage_utc": str(first.submission_at),
+        "available_at_utc": str(first.submission_at)}}
+    _, summary = _run(config, prepared, "integrated", tmp_path / "scenario")
+    dispatch = pd.read_csv(tmp_path / "scenario/csv/realized_dispatch.csv")
+    solves = _read(tmp_path / "scenario", "solves.json")
+    assert len(solves) == len(daily["schedule"])
+    assert all(row["pv_scenario_count"] == 3 for row in solves)
+    assert np.isclose(dispatch.imbalance_penalty_eur.sum(), 0.0)
+    assert summary["components"]["illustrative_imbalance_penalty_eur"] == pytest.approx(
+        100.0 * dispatch.imbalance_mwh.abs().sum())
+    assert summary["net_profit_eur"] == pytest.approx((dispatch.auction_revenue_eur +
+        dispatch.imbalance_cashflow_eur - dispatch.degradation_eur - dispatch.import_fee_eur -
+        dispatch.transaction_fee_eur).sum())
 
 
 @pytest.mark.parametrize("mode", ["integrated", "current_auction_only"])

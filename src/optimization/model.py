@@ -39,6 +39,17 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
         for node in sorted({curtailment_owners[s][t] for s in range(scenario_count)}):
             available = min(inputs.scenarios.pv_ac_mw[s, t] for s in range(scenario_count) if curtailment_owners[s][t] == node)
             curtailment[t, node] = model.addVar(ub=float(available), name=f"curtailment[n{node},t{inputs.grid.interval_ids[t]}]")
+        # Equal current PV observations must produce the same instantaneous response.
+        if inputs.scenarios.provenance.get("pv_recourse_equal_observation", False):
+            observed = {}
+            for s in range(scenario_count):
+                value = float(inputs.scenarios.pv_ac_mw[s, t])
+                owner = curtailment_owners[s][t]
+                if value in observed and observed[value] != owner:
+                    model.addConstr(curtailment[t, owner] == curtailment[t, observed[value]],
+                                    name=f"pv_feedback_t{t}_s{s}")
+                else:
+                    observed[value] = owner
     energy, grid, pv_injection = {}, {}, {}
     # Track scenario-specific energy and injection while reusing the node-owned controls.
     for s, scenario in enumerate(inputs.scenarios.scenario_ids):

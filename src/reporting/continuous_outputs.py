@@ -68,6 +68,8 @@ def _financial_dispatch(config, dispatch):
     frame["duration_hours"] = (frame.end - frame.start).dt.total_seconds() / 3600
     if "imbalance_penalty_eur" not in frame:
         frame["imbalance_penalty_eur"] = 0.0
+    if "illustrative_imbalance_penalty_eur" not in frame:
+        frame["illustrative_imbalance_penalty_eur"] = 0.0
     if not np.isfinite(frame.imbalance_penalty_eur).all():
         raise ValueError("Continuous imbalance penalties must be finite")
     frame["net_profit_eur"] = (frame.auction_revenue_eur + frame.imbalance_cashflow_eur
@@ -104,7 +106,8 @@ def _daily_kpis(config, strategy, frame, solves, initial_expected):
                 else profit - float(initial_expected[day]))}
         row.update({column: float(daily[column].sum()) for column in (
             "auction_revenue_eur", "imbalance_cashflow_eur", "degradation_eur",
-            "import_fee_eur", "transaction_fee_eur", "imbalance_penalty_eur")})
+            "import_fee_eur", "transaction_fee_eur", "imbalance_penalty_eur",
+            "illustrative_imbalance_penalty_eur")})
         row.update({f"{name}_mwh": float(np.dot(daily[f"{name}_mw"], duration))
             for name in ("charge", "discharge", "curtailment")})
         row["throughput_mwh"] = row["charge_mwh"] + row["discharge_mwh"]
@@ -342,7 +345,7 @@ def save_continuous_strategy_outputs(config, destination, strategy, dispatch, pl
         for report in timing["by_delivery_day"].values())
     components = {key: float(daily[key].sum()) for key in (
         "auction_revenue_eur", "imbalance_cashflow_eur", "degradation_eur", "import_fee_eur",
-        "transaction_fee_eur", "imbalance_penalty_eur")}
+        "transaction_fee_eur", "imbalance_penalty_eur", "illustrative_imbalance_penalty_eur")}
     profits = daily.net_profit_eur.to_numpy(float)
     summary = {**extra, "strategy": strategy, "output_dir": str(destination),
         "delivery_days": len(daily), "interval_count": len(frame),

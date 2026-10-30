@@ -235,6 +235,15 @@ def validate_continuous_optimization(config: dict[str, Any], *, require_dates: b
         # Enforce the input contract: continuous_optimization.`key` must be a YAML boolean.
         if not isinstance(section.get(key), bool):
             raise ConfigurationError(f"continuous_optimization.{key} must be a YAML boolean")
+    ensemble = section.get("pv_ensemble", {})
+    if not isinstance(ensemble, dict) or not isinstance(ensemble.get("enabled", False), bool):
+        raise ConfigurationError("continuous_optimization.pv_ensemble.enabled must be a YAML boolean")
+    if ensemble.get("enabled", False):
+        if modes != ["integrated"] or not isinstance(ensemble.get("zarr"), str) or not ensemble["zarr"]:
+            raise ConfigurationError("PV ensemble replay requires integrated mode and a Zarr path")
+        count = ensemble.get("member_count")
+        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
+            raise ConfigurationError("PV ensemble member_count must be a positive integer")
     state, battery = config.get("state", {}), config.get("battery", {})
     lower, upper = (float(battery.get(key, default)) for key, default in
                     (("soc_min_percent", 0.0), ("soc_max_percent", 100.0)))

@@ -1108,6 +1108,11 @@ continuous_optimization:
   output_root: outputs/continuous_optimization
   run_id: null
   resume: false
+  # Optional raw weather-member scenarios; deterministic forecasts remain causal.
+  pv_ensemble:
+    enabled: false
+    zarr: data/farms/nwp_ens_20260101_20260131.zarr
+    member_count: 50
 
 # API ACQUISITION: DuckDB backend, credential environment names only; request lists are experiment-specific.
 api:

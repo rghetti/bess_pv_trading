@@ -15,7 +15,7 @@ from torch.nn import functional as functional
 
 def standard_normal_cdf(value):
     """Evaluate the Gaussian CDF with operations supported by autograd."""
-    return 0.5 * (1.0 + torch.erf(value / math.sqrt(2.0)))
+    return 0.5 * (1.0 + torch.erf(value / math.sqrt(2.0))) #√2 is needed to account for the implementation of erf that does not include the 1/2 factor in the exponent.
 
 
 def standard_normal_density(value):

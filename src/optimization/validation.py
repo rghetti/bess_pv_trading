@@ -243,6 +243,13 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
         for owner in set(row[t] for row in curtailment_owners):
             descendants = [s for s, row in enumerate(curtailment_owners) if row[t] == owner]
             equality(f"nonanticipativity_curtailment_{t}_{owner}", curtailment[descendants, t] - curtailment[descendants[0], t])
+        if inputs.scenarios.provenance.get("pv_recourse_equal_observation", False):
+            observed = {}
+            for s, value in enumerate(inputs.scenarios.pv_ac_mw[:, t]):
+                if float(value) in observed:
+                    equality(f"pv_feedback_{t}_{s}", curtailment[s, t] - curtailment[observed[float(value)], t])
+                else:
+                    observed[float(value)] = s
     try:
         components = evaluate_components(inputs, arrays, result.trades)
     except ValueError as error:
