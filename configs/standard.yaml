@@ -3,6 +3,24 @@
 # No experiment is launched by loading this file. Dates and source inputs must be set for the chosen command.
 schema_version: 1
 
+# Mayer-style hourly marginal post-processing; data windows must cover the full requested period.
+pv_mayer_postprocessing:
+  output_root: outputs/pv_mayer_postprocessing
+  run_id: hourly_2026_through_november
+  farm_ids: [1, 345, 901, 910]
+  start_day: '2026-01-01'
+  train_end_day: '2026-09-30'
+  end_day: '2026-11-30'
+  allow_declared_gaps: false  # True analyzes only the explicit windows and reports uncovered days.
+  dataset_periods:
+    - {ensemble_zarr: data/farms/nwp_ens_20260101_20260131.zarr, start_day: '2026-01-01', end_day: '2026-01-31'}
+    - {ensemble_zarr: data/farms/nwp_ens_20260801_20260930.zarr, start_day: '2026-08-02', end_day: '2026-09-30'}
+  member_count: 50
+  workers: 42  # CPU workers; each worker uses one numerical thread.
+  rscript: /home/rghetti/miniforge3/envs/r-censored/bin/Rscript
+  quantile_count: 51  # Levels k/(quantile_count+1), k=1..quantile_count.
+  timezone: Europe/Rome
+
 # January member-wise PV and quantile calibration study. All dates are local delivery days.
 pv_online_crps_study:
   output_root: outputs/pv_online_crps

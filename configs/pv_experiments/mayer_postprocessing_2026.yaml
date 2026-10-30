@@ -1,0 +1,3 @@
+include: ../standard.yaml
+pv_mayer_postprocessing:
+  run_id: hourly_2026_through_november

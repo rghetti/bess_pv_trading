@@ -1,0 +1,10 @@
+include: ../standard.yaml
+pv_mayer_postprocessing:
+  run_id: january_august_2026_49_12
+  start_day: '2026-01-01'
+  train_end_day: '2026-08-19'
+  end_day: '2026-08-31'
+  allow_declared_gaps: true
+  dataset_periods:
+    - {ensemble_zarr: data/farms/nwp_ens_20260101_20260131.zarr, start_day: '2026-01-01', end_day: '2026-01-31'}
+    - {ensemble_zarr: data/farms/nwp_ens_20260801_20260930.zarr, start_day: '2026-08-02', end_day: '2026-08-31'}
