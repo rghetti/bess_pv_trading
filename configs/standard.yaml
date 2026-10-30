@@ -19,6 +19,7 @@ pv_mayer_postprocessing:
   workers: 42  # CPU workers; each worker uses one numerical thread.
   rscript: /home/rghetti/miniforge3/envs/r-censored/bin/Rscript
   quantile_count: 51  # Levels k/(quantile_count+1), k=1..quantile_count.
+  rearrange_quantiles: true  # Sort crossed linear quantiles; retain raw predictions and flags.
   timezone: Europe/Rome
 
 # January member-wise PV and quantile calibration study. All dates are local delivery days.

@@ -81,6 +81,15 @@ def test_crossing_and_out_of_bounds_are_not_silently_corrected():
     q = scores.loc[scores.method.eq('linear_quantile')].iloc[0]
     assert q.lqr_crossing and q.lqr_out_of_bounds and not q.common_score
     assert [q.q_01, q.q_02, q.q_03] == pytest.approx([.6, .4, 1.2])
+    fixed = scoring_rows(frame, ['member_1', 'member_2'], np.array([.25, .5, .75]), r,
+                         np.array([[.6, .4, .8]]), rearrange_quantiles=True)
+    row = fixed.loc[fixed.method.eq('linear_quantile')].iloc[0]
+    assert row.lqr_crossing and row.lqr_rearranged and row.common_score
+    assert [row.q_01, row.q_02, row.q_03] == pytest.approx([.4, .6, .8])
+    assert [row.raw_q_01, row.raw_q_02, row.raw_q_03] == pytest.approx([.6, .4, .8])
+    outside = scoring_rows(frame, ['member_1', 'member_2'], np.array([.25, .5, .75]), r,
+                           np.array([[.6, .4, 1.2]]), rearrange_quantiles=True)
+    assert not outside.common_score.any()
 
 
 def test_current_config_detects_missing_ensemble_periods():

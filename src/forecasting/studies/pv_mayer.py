@@ -71,10 +71,14 @@ def fit_lqr(train_members, train_control, train_targets, test_members, test_cont
     return models, np.column_stack(predictions)
 
 
-def scoring_rows(frame, members, levels, r_predictions, lqr_quantiles):
+def scoring_rows(frame, members, levels, r_predictions, lqr_quantiles, *, rearrange_quantiles=False):
     """Score the same finite, valid-distribution rows across all four methods."""
     n = len(frame); y = frame.y.to_numpy(float); raw = frame[members].to_numpy(float)
     q_raw = np.quantile(raw, levels, axis=1).T
+    raw_lqr_quantiles = np.asarray(lqr_quantiles, dtype=float)
+    crossing = (np.diff(raw_lqr_quantiles, axis=1) < 0).any(axis=1)
+    out_of_bounds = ((raw_lqr_quantiles < 0) | (raw_lqr_quantiles > 1)).any(axis=1)
+    lqr_quantiles = np.sort(raw_lqr_quantiles, axis=1) if rearrange_quantiles else raw_lqr_quantiles.copy()
     quantiles = {'raw_ensemble': q_raw, 'linear_quantile': lqr_quantiles}
     means = {'raw_ensemble': raw.mean(axis=1)}
     crps = {'raw_ensemble': raw_crps(raw, y)}
@@ -108,9 +112,12 @@ def scoring_rows(frame, members, levels, r_predictions, lqr_quantiles):
         part['pinball_mean_fraction_capacity'] = pinball; part['mean_fraction_capacity'] = means[method]
         part['median_fraction_capacity'] = median; part['lower_90_fraction_capacity'] = lower
         part['upper_90_fraction_capacity'] = upper; part['observation_fraction_capacity'] = y
-        part['lqr_crossing'] = (np.diff(lqr_quantiles, axis=1) < 0).any(axis=1)
-        part['lqr_out_of_bounds'] = ((lqr_quantiles < 0) | (lqr_quantiles > 1)).any(axis=1)
+        part['lqr_crossing'] = crossing
+        part['lqr_out_of_bounds'] = out_of_bounds
+        part['lqr_rearranged'] = crossing & rearrange_quantiles
         for i, level in enumerate(levels): part[f'q_{i+1:02d}'] = q[:, i]
+        if method == 'linear_quantile':
+            for i, level in enumerate(levels): part[f'raw_q_{i+1:02d}'] = raw_lqr_quantiles[:, i]
         tables.append(part)
     return pd.concat(tables, ignore_index=True)
 
@@ -195,7 +202,7 @@ def fit_farm(config, farm, hourly, members, rating, root):
     models, q = fit_lqr(train[members].to_numpy(), train.control.to_numpy(), train.y.to_numpy(),
                         test[members].to_numpy(), test.control.to_numpy(), levels)
     joblib.dump({'models': models, 'levels': levels, 'members': members, 'rating_mw': rating}, root / 'linear_quantile.joblib')
-    scored = scoring_rows(test, members, levels, r_predictions, q)
+    scored = scoring_rows(test, members, levels, r_predictions, q, rearrange_quantiles=section['rearrange_quantiles'])
     scored.to_parquet(root / 'evaluation_predictions.parquet', index=False)
     has_comparison = summarize_scores(scored, levels, rating, root)
     return {'farm_id': farm, 'training_hours': len(train), 'evaluation_hours': len(test),
@@ -230,6 +237,46 @@ def prepare_farm_parallel(config, farm, routes, pool):
         source_digest.update(str(day.date()).encode()); source_digest.update(day_digest.encode())
     return (pd.concat(frames, ignore_index=True), pd.concat(quarter_frames, ignore_index=True),
             names, rating, location, source_digest.hexdigest())
+
+
+def rearrange_existing(run_root):
+    """Rescore previously saved forecasts after sorting, without refitting models."""
+    run_root = Path(run_root)
+    manifest = json.loads((run_root / 'manifest.json').read_text())
+    config = json.loads((run_root / 'resolved_config.json').read_text())
+    section = manifest['configuration']
+    levels = np.arange(1, int(section['quantile_count']) + 1) / (int(section['quantile_count']) + 1)
+    destination = run_root / 'rearranged_quantiles'
+    if destination.exists(): raise FileExistsError(f'Rearranged report already exists: {destination}')
+    destination.mkdir()
+    summaries = []
+    for farm in section['farm_ids']:
+        source = run_root / f'farm_{farm}'
+        frame = pd.read_parquet(source / 'hourly_inputs_normalized.parquet')
+        test = frame.loc[frame.split.eq('evaluation') & frame.eligible].copy()
+        members = sorted((name for name in frame.columns if name.startswith('member_')), key=lambda name: int(name.split('_')[1]))
+        original = pd.read_parquet(source / 'evaluation_predictions.parquet')
+        original_lqr = original.loc[original.method.eq('linear_quantile')].set_index('row_id').reindex(test.row_id)
+        q = original_lqr[[f'q_{i+1:02d}' for i in range(len(levels))]].to_numpy(float)
+        if not np.isfinite(q).all(): raise ValueError(f'Farm {farm}: missing saved raw quantiles')
+        r_predictions = pd.read_csv(source / 'r_models' / 'predictions.csv')
+        scored = scoring_rows(test, members, levels, r_predictions, q, rearrange_quantiles=True)
+        farm_output = destination / f'farm_{farm}'
+        farm_output.mkdir()
+        scored.to_parquet(farm_output / 'evaluation_predictions.parquet', index=False)
+        rating = float(config['farms'][str(farm)]['ac_capacity_kw']) / 1000
+        available = summarize_scores(scored, levels, rating, farm_output)
+        matched = scored.loc[scored.method.eq('linear_quantile')]
+        summaries.append({'farm_id': farm, 'evaluation_hours': len(matched), 'matched_hours': int(matched.common_score.sum()),
+            'rearranged_hours': int(matched.lqr_rearranged.sum()), 'out_of_bounds_hours': int(matched.lqr_out_of_bounds.sum()),
+            'comparison_available': available, 'original_predictions_sha256': file_hash(source / 'evaluation_predictions.parquet'),
+            'r_predictions_sha256': file_hash(source / 'r_models' / 'predictions.csv')})
+    write_json(destination / 'manifest.json', {'status': 'complete', 'farm_summaries': summaries,
+        'original_manifest_sha256': file_hash(run_root / 'manifest.json'), 'reanalysis_code_sha256': file_hash(Path(__file__)),
+        'rearrangement': 'sort each raw linear quantile curve; preserve raw values and crossing flags',
+        'bounds': 'no clipping; out-of-bounds linear quantile curves excluded from matched distribution scores',
+        'model_refits': False, 'retrospective': True})
+    return summaries
 
 
 def run(config):
