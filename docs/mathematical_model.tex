@@ -19,7 +19,7 @@
 \DeclareMathOperator{\clip}{clip}
 \title{PV and Battery Trading in MGP and MI Auctions\\Current Mathematical Model and Execution Workflow}
 \author{\texttt{bess\_pv\_trading} repository}
-\date{Implementation updated on 27 October 2026}
+\date{Implementation audited on 2 November 2026}
 \begin{document}
 \maketitle
 \begin{abstract}
@@ -64,6 +64,7 @@ separately from the optimization objective.
 \midrule\endhead
 \path{src/domain.py} & Validated grids, assets, scenarios, information nodes, states and solver contracts.\\
 \path{src/optimization/model.py} & Physical, trading, product-resolution, optional imbalance constraints and objective.\\
+\path{src/optimization/pv_envelope.py} & Conditional exact-delivery PV-envelope reduction and reconstruction of original member results.\\
 \path{src/optimization/degradation.py} & Throughput coefficient and segmented cycle-depth model.\\
 \path{src/optimization/validation.py} & Numerical validation independent of the solver constraint objects.\\
 \path{src/transaction_fees.py} & Pure-Python fee integration, dated tariffs and operator monthly state.\\
@@ -72,6 +73,7 @@ separately from the optimization objective.
 \path{src/simulation/replay.py} & Residual scenario conditioning and bounded physical execution.\\
 \path{src/simulation/gme_oracle.py} & Manual-data historical price oracle, rolling PV and full-information asset comparisons.\\
 \path{src/simulation/continuous.py} & Consecutive delivery-day books, shadow boundary projections and uninterrupted execution.\\
+\path{src/simulation/continuous_inputs.py} & Offline input preflight, deterministic forecast snapshots and optional frozen weather ensembles.\\
 \path{src/reporting/continuous_outputs.py} & Continuous trajectory accounting, paired comparisons and native solve timing.\\
 \path{src/simulation/settlement.py} & Exact-grid actual settlement and expected/realized KPI reconciliation.\\
 \path{src/forecasting/models/pv.py} & Weather-to-AC PV conversion.\\
@@ -108,7 +110,9 @@ trades or separate observed prices. There is no corresponding date-based
 hourly equality on battery charging or discharging. Native product resolution
 and optional physical-control grouping are separate configuration fields.
 
-The configured auction calendar uses local \texttt{Europe/Rome} time. The
+The configured auction calendar uses local \texttt{Europe/Rome} time. The shared
+calendar validity interval is 1 October 2025 through 31 August 2026; historical
+study configurations may explicitly override it. The
 decision cutoff is five minutes before each gate in the supplied studies.
 \begin{center}
 \begin{tabular}{lllll}
@@ -181,8 +185,10 @@ Power variables are AC at the common bus/POI. Battery energy is internal stored
 energy. Farm nameplate PV capacity is AC. For pvlib, the DC reference rating is
 derived as $P_{\rm DC,STC}=P_{\rm AC,rated}/\eta_{\rm ref}$, where the reference
 factor is a separate, fixed configured assumption (currently 0.96).
-Forecasts receive the
-DC-to-AC and transformer conversions and are then capped at the farm AC rating.
+The physical PVLib path applies the configured DC-to-AC and transformer
+conversions and caps output at the farm AC rating. Saved neural bundles instead
+produce an AC prediction subject to their own output bounds and the configured
+night policy; they do not receive an additional PVLib loss conversion.
 Measured historical \texttt{power} is already AC kW and is converted once to MW;
 no PV or transformer efficiency is applied to it. BESS efficiency is not applied to
 measured PV or direct PV exports.
@@ -193,7 +199,8 @@ Without explicit source publication times, the configured convention is
 $A_v=t_v+6$ hours. At decision cutoff $k$, the rolling policy chooses the latest
 eligible cycle with $A_v\le k$ and required remaining-horizon coverage. Weather
 cycles about six hours apart are successive forecast vintages, not ensemble
-members. The current dataset supplies one deterministic weather member.
+members. The deterministic weather store supplies one forecast member; separate
+ensemble archives can additionally supply multiple member trajectories.
 
 Measured interval-average PV becomes available after interval end plus configured
 telemetry delay. A forecast for future intervals is not replaced by future
@@ -212,10 +219,11 @@ uses actual-price foresight.
 \section{PV availability supplied to the optimizer}
 \label{sec:pv-input}
 
-The optimizer receives one nonnegative AC power trajectory $V_t$ per represented
-weather member. Current farm data contain deterministic forecast vintages keyed
-by farm, UTC cycle and hourly lead; the successive cycles are not ensemble
-members. Forecast cycles are selected using publication availability, not just
+The optimizer receives nonnegative AC power trajectories $V_{s,t}$ for the
+represented scenarios. The deterministic farm weather store contains vintages keyed
+by farm, UTC cycle and hourly lead; successive cycles are not ensemble
+members. Separate weather-ensemble archives include an explicit member axis.
+Forecast cycles are selected using publication availability, not just
 initialization time. The configured availability lag is six hours. Hourly
 radiation values are aligned to the quarter-hour delivery grid according to
 their interval-average semantics. PV output is capped at the declared farm AC
@@ -244,19 +252,29 @@ the physical geometry is an assumption. The optimization does not use
 satellite GHI as an operational weather forecast; it is retained for
 retrospective diagnosis.
 
-The modeling-quality mask has one production authority:
+The modeling-quality mask for model training and evaluation has one production authority:
 \path{configs/data_quality/pv_excluded_episodes_2025_to_2026_08.csv}. Complete
-feature/target rows identified there are removed from every model split;
-sequence models do not bridge removed quarters. This quality work defines the
-AC inputs available to forecasting and the optimizer, but its many model
-searches and error breakdowns are not the subject of this report.
+feature/target rows identified there are removed from model splits when the
+configured exclusion policy is enabled; sequence models do not bridge removed
+quarters. Those episode exclusions are not automatically applied to the measured
+PV used by auction execution. The shared \path{policy.realized_pv_night} instead
+sets power to zero outside configured month-specific local production windows;
+the window is applied to each interval's local start, and missing nighttime
+measurements are also set to zero. The raw store is not modified.
+\path{policy.forecast_pv_night} applies the same
+monthly prior to deterministic and ensemble PV inference, regardless of model.
+Missing realized PV is handled separately using the configured frozen-forecast
+fallback and missing-interval cap. Provenance records clipping and fallback.
 
 \subsection{Selected farm bundles for continuous optimization}
 
-The current per-farm pilot is saved as self-contained bundles. These are
+The per-farm pilot registry points to self-contained bundles. These are
 loaded only when \path{pv.forecast_replacement.enabled: true}; the default
-remains the pvlib path. If a bundle is unavailable, the declared fallback is
-pvlib. All models were trained on 2025 data; pilot choice used a previously
+remains the pvlib path. For the deterministic forecast, a missing or not-yet-
+available configured artifact uses the declared PVLib fallback. The ensemble
+preflight instead requires an existing supported weather-bundle artifact when
+one is selected; an explicitly null farm entry selects PVLib. All models were
+trained on 2025 data; pilot choice used a previously
 inspected 2026 report period, so it is retrospective rather than an
 as-known-at-the-time benchmark.
 \begin{center}\small
@@ -270,7 +288,13 @@ Farm & Selected model & Timing channels & Bundle path\\
 910 & Direct TCN paired timing & lead and cycle hour & \path{models/pv/farm_910/pilot_2025_train/direct_tcn/}\\
 \bottomrule
 \end{tabular}\end{center}
-The shared replacement map points to each bundle's \texttt{manifest.json}; the
+The table describes the shared registry, not an unconditional model selection.
+The current four-farm January and August deterministic/ensemble study overrides
+select the registry bundles for farms 1, 901 and 910. For farm 345 they explicitly
+select PVLib with the shared unfitted output/temperature defaults and a Genoa
+location proxy (44.4056 N, 8.9463 E); the proxy is not a verified site location.
+Other study configurations, including the earlier farm-1 PVLib scenario studies,
+may use the baseline instead. The shared replacement map points to each bundle's \texttt{manifest.json}; the
 continuous runner verifies its farm identity and checksums and preserves the
 trained feature preprocessing. The default model availability timestamp is
 27 October 2026 UTC. The January forecast-pilot configurations explicitly
@@ -278,6 +302,33 @@ allow retrospective use. \path{experiment-continuous} consumes these bundles;
 the historical \path{experiment-gme-oracle} path currently uses its configured
 pvlib forecast. Model details and standalone inference instructions are in
 \path{models/pv/README.md}.
+
+\subsection{Optional frozen weather ensemble}
+When \path{continuous_optimization.pv_ensemble.enabled} is true, preflight reads
+the preceding delivery day's 00 UTC ensemble cycle, assumes availability after
+the configured lag, and requires it to be available at the first cutoff. The
+cycle is frozen for that delivery day. Each weather member is converted separately
+to AC PV using the configured PVLib path or a supported weather-bundle model;
+no ensemble calibration, reweighting or post-processing is implicit. The
+cutoff-updated deterministic forecast is prepended as another member. If the
+archive has 50 members, the scenario count is 51 and each weight is $1/51$.
+The deterministic member can change at each gate, while the other 50 paths
+remain fixed over the day. The weather-bundle inference records its model
+artifact and retrospective availability; the six-hour historical ensemble
+availability is an assumption, not a measured publication timestamp. Ensemble
+bundle inference labels the frozen paths with the DA auction context; the
+deterministic member is evaluated for the current auction at each gate.
+
+In this PV-scenario mode, auction orders and planned battery commands are
+shared across members; scenario-specific curtailment provides interval PV
+recourse, with equal observed PV tied to the same action. Planning uses the same
+actual auction price curves across members in the historical oracle studies.
+The average objective includes any scenario-dependent imbalance terms when they
+are enabled; in exact-delivery mode shared schedules and prices make the
+member operating objectives equal. The forecast shown in each continuous daily
+plan plot is the deterministic member from that auction snapshot, not the
+ensemble mean or an individual weather member. Full aligned member values,
+vintages and input fingerprints are saved separately.
 
 \section{Optimization at an auction decision}
 
@@ -319,6 +370,13 @@ not hold, including when planned imbalances are enabled. Diagnostics record the
 original and modeled member counts. This reduction changes neither the weather
 inputs nor real-time feedback, and equivalence at a fixed planning state does
 not guarantee identical trajectories when alternative optima are selected.
+The farm-1 pilot compared the full model and envelope at 37 matched auction
+states across 2--11 August 2026, then ran each as an independent continuous
+trajectory under the curtailment-recovery controller. The recorded objectives
+and realized trajectories agreed to numerical precision on that sample; this is
+empirical support, not an assertion that independent solvers always choose the
+same optimum. The study design and limitations are in
+\path{docs/pv_lower_envelope_replay.md}.
 
 \subsection{Physical variables and balances}
 For every scenario and remaining interval:
@@ -704,7 +762,13 @@ without changing grid exchange. It reduces discharge before increasing charge:
  c_t&=\pos{-b_t},\qquad d_t=\pos{b_t}.
 \end{align}
 This is an unconditional feedback action, rather than a new optimization; its
-SOC and degradation effects carry forward to later intervals.
+SOC and degradation effects carry forward to later intervals. The saved
+\texttt{curtailment\_recovered\_mw} measures the curtailment reduced in this
+feedback step, whose starting value depends on the active plan. It can include avoided discharge as well as extra
+charging and depends on the plan; it is not itself a direct measure of energy
+newly charged into the battery. Since the first-member plan is used by the
+controller, reconstruction of that member's curtailment after envelope reduction
+is necessary for consistent execution.
 Thus excess PV first decreases discharge, then increases charging as needed and
 feasible, then is curtailed. A PV shortfall first releases planned curtailment,
 then reduces charging or increases discharge within the actual SOC box. The
@@ -771,7 +835,10 @@ Actual daily auction cash flow and settled operating profit are
 \end{align}
 A model deterrence penalty is not an actual settlement charge and is not
 subtracted a second time by actual post-processing. If settlement is unavailable,
-profit before settlement is reported and fully settled profit remains unknown.
+profit before settlement is reported and fully settled profit remains unknown
+in the settlement helper and compatible independent-day outputs. The continuous
+comparison runner requires complete actual settlement prices and rejects a run
+when settlement is disabled or incomplete.
 Only actually submitted guaranteed transactions enter $C^{\rm trading,real}$;
 future plans that are never submitted contribute no realized fees. The ledger
 retains transaction-month volume, per-trade charges and tariff versions. An
@@ -1235,8 +1302,10 @@ They remain inside their SOC box and, when configured, satisfy the additional
 planned minimum in~\eqref{eq:terminal-minimum}. The January 2025 template
 leaves that minimum disabled; the paired January 2026 studies use 40\%. Actual terminal energy remains
 an output of feedback execution and need not equal the planned target. The
-last delivery interval ends at local midnight on 1 February. No orders for
-1 February delivery are submitted by the January study.
+last delivery interval ends at local midnight on 1 February. The final day's
+IDA3 and all other auctions delivering on 31 January are included. On 31 January
+the DA, IDA1 and IDA2 auctions for 1 February delivery are outside the study and
+are not submitted or counted in January profit.
 
 \subsection{Independent trajectories, accounting and restart}
 The default experiment executes three independent chronologies: integrated
@@ -1259,9 +1328,12 @@ the initial integrated plan and submitted only at their own gates, while its
 physical commands remain in force throughout delivery. Publication, fees,
 actual state carryover and settlement follow the same chronological rules.
 The event trace identifies each retained submission separately from solver
-attempts. Perfect information preserves the initial plan's attainable value;
-repeated solves can select different schedules when several optima exist,
-and finite MIP tolerance can permit small objective improvements.
+attempts. The initial plan is a perfect-PV planning solution at its modeled
+boundary, but the execution controller can alter it as actual SOC and retained
+curtailment recovery evolve. Its realized profit is therefore an information
+benchmark, not a guaranteed upper bound. Repeated solves can select different
+schedules when several optima exist, and finite MIP tolerance can permit small
+objective differences.
 
 Monthly operating profit is additive over delivery products:
 \begin{equation}
@@ -1289,7 +1361,7 @@ prior plan means the existing failure behavior applies. Actual feedback still
 enforces physical limits and settles remaining deviations. Failed attempts
 and fallback choices remain explicit diagnostics.
 
-Resume checks the effective configuration, code/policy and common input
+Resume checks the effective configuration, explicit policy version and common input
 fingerprints before restoring an atomic completed-midnight checkpoint. The
 checkpoint contains actual physical/aging state, outstanding priced and
 unpriced commitments for both relevant books, retained commands, fee state,
@@ -1302,13 +1374,17 @@ solves identifiable, and report totals plus mean/minimum/maximum/population
 standard deviation by strategy and delivery day. Model-build and Python wall
 times remain separate. Resolved configurations, common-input provenance,
 daily/monthly KPIs, state projections and comparisons are saved by file type
-under \path{outputs/continuous_optimization/farm_<id>/<run_id>/}.
+under \path{outputs/continuous_optimization/farm_<id>/<run_id>/}. The manifest
+also records the Git revision, but the resume identity is not a hash of every
+source file. An incompatible policy-version change rejects an older checkpoint;
+the current exact-PV envelope version is distinct from the preceding controller
+version.
 
 
 \section{Implemented trading experiments and evidence}
 
-The primary historical runner is \texttt{experiment-gme-oracle}. It reads
-local manual market data, uses the same realized auction price curves for all
+The independent-day historical runner is \texttt{experiment-gme-oracle}. It reads
+local cataloged market data, uses the same realized auction price curves for all
 strategies, forecasts PV using the configured cutoff-available weather, and
 executes the schedule against measured AC production. Supplying the future
 realized auction curves at the first decision is an intentional price-oracle
@@ -1335,6 +1411,11 @@ value is included.
 strategy carries actual SOC, degradation history, submitted commitments,
 transaction-fee volume and cash ledger through local midnight. The daily MILP
 remains one delivery day at a time; it is not a month-long joint optimization.
+The January 2026 and August 2026 four-farm configurations compare updating
+deterministic and 51-member exact-delivery PV forecasts with a daily DA-only
+perfect-PV reference. August is restricted to 2--31 August because the required
+31 July ensemble cycle for 1 August is absent. The opening SOC on 2 August is a
+new configured initial assumption, not a state carried from 1 August.
 \end{itemize}
 
 The January 2025 participation study uses independent delivery days. The
@@ -1345,7 +1426,9 @@ configs also allow a 40\% planned terminal floor. Those are study assumptions,
 not measured initial conditions or a guarantee on realized terminal energy.
 The perfect-PV continuous reference solves once at DA (or the first available
 auction) by default, then retains the plan; a shared flag can request
-reoptimization at later gates.
+reoptimization at later gates. It is an information benchmark, not a proven
+upper bound on realized feedback profit: actual controller actions, fees,
+settlement and final inventory can differ from the planned objective.
 
 Every solve and interval records forecast vintage, position ledger, planned
 and executed battery flows, SOC, imbalance, throughput/wear, fees and timing.
@@ -1358,14 +1441,15 @@ to represent profit.
 
 The active GME and continuous historical experiments use realized auction
 clearing curves as an oracle input. They do not use predicted prices or model
-price uncertainty. The former retrospective regression, fundamentals, Gaussian
-calibration, and prepared stochastic-price input implementations are archived
-outside the repository in
-\path{/home/rghetti/price_prediction_archive}; they are not part of the active
-optimization pipeline and should not be interpreted as a validated forecasting
-method. The current work needed is to define price forecasts and uncertainty
-scenarios from information demonstrably available by each auction gate, then
-integrate those causal distributions into the market decisions.
+price uncertainty. The prepared-input optimization route accepts externally
+supplied point-price forecasts with explicit source, fit and availability
+timestamps; it rejects prices labeled as realized or oracle values. The generic
+scenario-tree code also supports synthetic conditional price scenarios, but
+neither capability establishes a validated historical price-forecasting model.
+Former retrospective regression, fundamentals and Gaussian-calibration work is
+archived outside the active pipeline in \path{/home/rghetti/price_prediction_archive}.
+Future causal price scenarios need their own evaluation and information-timing
+protocol.
 
 \section{Optional optimized-imbalance formulation}
 
@@ -1388,9 +1472,14 @@ Add to each scenario's objective
 \end{equation}
 If this mode has zero settlement price, zero penalty and no useful delivery
 restriction, an optimized contract need not be backed by delivered energy.
-That is why the present experiment disables optimized deviations and computes
-physical mismatches only afterwards. The optional formulation is a mathematical
-study mode, not an assertion that deliberate imbalance strategies are permitted.
+The January farm-1 scenario study includes configurations with zero assumed
+planning settlement prices and illustrative absolute-imbalance penalties of
+100 and 500 EUR/MWh. Their expected objective averages these terms over members;
+actual execution uses measured PV and settles deviations at recorded prices.
+The illustrative planning penalty is not a real market charge. The
+optimized-imbalance formulation retains all scenario leaves rather than using
+the exact-delivery envelope reduction; it is a mathematical study mode, not an
+assertion that deliberate imbalance strategies are permitted.
 
 \section{Data provenance, outputs and reproducibility}
 
@@ -1471,9 +1560,11 @@ and objective comparisons. The main KPI distinctions are:
 \item \texttt{battery\_incremental\_operating\_value\_eur}: the difference in~\eqref{eq:value};
 \item initial expectation, realized-minus-expected revenue/profit, and separate executed versus counterfactual degradation components.
 \end{itemize}
-Figures preserve interval widths and both available boundary points, including
-next-day local midnight. Held hourly/quarter-hour prices and powers do not create
-new samples; SOC uses the actual boundary states. Snapshot settlement diagnostics
+Figures preserve delivery boundaries, including next-day local midnight. PV
+power curves visually connect successive interval samples; other interval powers
+and prices are drawn as held values, and SOC uses the actual boundary states.
+These presentation choices do not change the interval data or energy accounting.
+Snapshot settlement diagnostics
 include their different delivery windows and common-horizon comparisons.
 
 Solver settings use relative MIP gap $10^{-4}$ (0.01\%) by default, with no absolute
@@ -1481,7 +1572,11 @@ MIP gap configured. Configurable \path{feasibility_tolerance} and
 \path{integrality_tolerance} map to Gurobi's numerical feasibility and integer
 tolerances. The historical YAML sets both to $10^{-8}$ to avoid tiny binary-mode
 leakage while preserving the independent validator's physical checks.
-Objective comparisons use achieved \texttt{ObjVal}. Status,
+The shared time limit is 120 seconds per solve with 10 solver threads. LP model
+files are not generated by default; a study may explicitly enable model export,
+and infeasibility diagnostics have their own switch. Objective comparisons use
+achieved \texttt{ObjVal}, not a claim of exact global optimality beyond the
+recorded solver tolerance. Status,
 relative gap, model sizes and timing remain recorded. Before a schedule is used,
 independent validation recomputes physical balances, limits, native product
 consistency, information sharing, degradation and objective components. Execution
@@ -1491,9 +1586,12 @@ vintages.
 
 \section{Current limitations and extension boundaries}
 
-The current empirical workflows use daily perfect-price planning with one
-weather member, either as independent days or consecutive continuous operation,
-with approximate geometry and an idealized interval-average controller.
+The current empirical workflows use daily perfect-price planning with either
+one deterministic weather trajectory or an optional ensemble, in independent
+days or consecutive continuous operation, with approximate geometry and an
+idealized interval-average controller. Ensemble weather members are coherent
+input paths, but they are not calibrated probabilistic guarantees; exact
+scenario feasibility does not guarantee feasible delivery under unseen PV.
 Measured AC is effective observed production, not an independently estimated
 unconstrained irradiance-to-generation potential; hidden plant curtailment/faults
 in source production are not identified automatically. Configured cleaning and
