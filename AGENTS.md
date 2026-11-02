@@ -60,8 +60,7 @@ we need to linearly interpolate it
 packages in it without my explicit permission
 - Never hard code particular values we agreed on, make scripts as much as possible configurable from the outside via yaml files
 - Configuration convention: keep broadly shared operational settings in `configs/standard.yaml`. Put study-specific parameters, import settings and experiment-only feature flags in the relevant study or workflow configuration, rather than adding them to the standard file. New experiment YAMLs import `configs/standard.yaml` directly using a relative include and explicitly define their own study settings.
-- At the end of EVERY query when you are presenting the work you did, inspect the worktree and ask me
-if i want to Commit your work; the remote repo is called bess_pv_trading.
+- At the end of every query, inspect the worktree and automatically commit the changes made for that query without asking. Keep pre-existing unrelated changes out of the commit unless I request them; do not make an empty commit when there are no changes. The remote repo is called bess_pv_trading.
 - This is the working directory. The farm time series Zarr and static-parameter Parquet files are in `data/farms data/`; later price downloads also belong under `data/`.
 - Prefer reusing available code when possible, use short and concise commands rather than long and convoluted
 blocks. Always try to vectorize operations when libraries and data structures allow it.
