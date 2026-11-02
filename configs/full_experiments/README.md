@@ -374,3 +374,26 @@ auction replay. Daily objectives and summary are saved separately in
 `csv/perfect_foresight_daily.csv` and `json/perfect_foresight_reference.json`.
 The objective keeps configured costs and terminal SOC; the other rows are actual
 settled feedback profits and can have different ending inventory.
+
+### Continuous participation for all farms
+
+January 2026 has matched deterministic and 51-scenario continuous participation
+configs for farms 1, 345, 901 and 910. Farm 1 uses
+`continuous_participation_2026_01_{deterministic,ensemble}.yaml`; the other
+farms use `continuous_participation_2026_01_farm<ID>_{deterministic,ensemble}.yaml`.
+Each imports `standard.yaml` directly and uses the selected farm's configured
+PV, battery and POI assumptions. Farm locations are proxies. The 2025 PV scales
+and geometries in the shared defaults are prior fitted parameters, not verified
+plant metadata. Each run has a distinct `farm_<ID>` output directory.
+
+Run the two variants sequentially for each farm, for example:
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading experiment-continuous --config configs/full_experiments/continuous_participation_2026_01_farm345_deterministic.yaml
+PYTHONPATH=src python -m bess_pv_trading experiment-continuous --config configs/full_experiments/continuous_participation_2026_01_farm345_ensemble.yaml
+```
+
+The study uses perfect auction prices and carries a separate continuous state for
+each profile. The ensemble archive is the preceding-day 00 UTC forecast, subject
+to the configured availability assumption; preflight validates each farm and day.
+Resume is enabled, and the same configuration and inputs must be retained.

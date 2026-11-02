@@ -34,3 +34,20 @@ def test_monthly_configs_are_matched_and_envelope_compatible(kind):
     assert config["continuous_optimization"]["end_date"] == "2026-01-31"
     assert not config["trading"]["optimize_imbalances"]
     assert config["continuous_participation_study"]["profiles"] is None
+
+
+@pytest.mark.parametrize("farm_id", [1, 345, 901, 910])
+@pytest.mark.parametrize("kind", ["deterministic", "ensemble"])
+def test_participation_configs_select_each_farm(farm_id, kind):
+    """Each farm resolves its own assets while both variants share assumptions."""
+    root = Path(__file__).resolve().parents[2]
+    prefix = "continuous_participation_2026_01_"
+    if farm_id != 1:
+        prefix += f"farm{farm_id}_"
+    config = load_config(root / f"configs/full_experiments/{prefix}{kind}.yaml")
+    assert config["farm_id"] == config["plant"]["farm_id"] == config["forecast"]["farm_id"] == farm_id
+    farm = config["farms"][str(farm_id)]
+    assert config["battery"]["capacity_mwh"] == farm["battery"]["capacity_mwh"]
+    assert config["plant"]["poi_export_mw"] == farm["ac_capacity_kw"] / 1000
+    assert config["continuous_optimization"]["pv_ensemble"]["enabled"] == (kind == "ensemble")
+    assert config["continuous_optimization"]["resume"]
