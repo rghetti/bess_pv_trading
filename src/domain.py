@@ -496,6 +496,9 @@ class OptimizationInput:
     transaction_fees: TransactionFeeSettings = field(default_factory=TransactionFeeSettings)
     auction_submission_times: Mapping[str, datetime] = field(default_factory=dict)
     terminal_minimum_mwh: float | None = None
+    # Optional tail-risk penalty on total scenario absolute imbalance (EUR/MWh).
+    imbalance_cvar_confidence: float = 0.95
+    imbalance_cvar_weight_eur_per_mwh: float = 0.0
 
     def __post_init__(self) -> None:
         # Validate fee state only when the optimization includes transaction fees.
@@ -514,6 +517,11 @@ class OptimizationInput:
         # Both imbalance penalties and import fees are nonnegative operating costs.
         for key in ("imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"):
             finite_nonnegative(getattr(self, key), key)
+        finite_nonnegative(self.imbalance_cvar_weight_eur_per_mwh, "imbalance CVaR weight")
+        if not 0 < self.imbalance_cvar_confidence < 1:
+            raise ValueError("Imbalance CVaR confidence must be strictly between zero and one")
+        if self.imbalance_cvar_weight_eur_per_mwh and not self.optimize_imbalances:
+            raise ValueError("Imbalance CVaR requires optimized imbalances")
         # A configured imbalance cap must be a valid nonnegative energy quantity.
         if self.imbalance_limit_mwh is not None:
             finite_nonnegative(self.imbalance_limit_mwh, "imbalance limit")

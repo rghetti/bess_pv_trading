@@ -36,7 +36,8 @@ def shared_dispatch_pv_tree(base: ScenarioBundle, tree: InformationTree,
     imbalance = np.repeat(base.imbalance_prices_eur_per_mwh, count, axis=0)
     negative = (None if base.imbalance_negative_prices_eur_per_mwh is None else
                 np.repeat(base.imbalance_negative_prices_eur_per_mwh, count, axis=0))
-    provenance = {**base.provenance, "pv_members": count, "pv_member_origin": "raw_weather_plus_deterministic",
+    origin = "raw_weather_plus_deterministic" if "deterministic" in scenario_ids else "raw_weather_only"
+    provenance = {**base.provenance, "pv_members": count, "pv_member_origin": origin,
         "execution_convention": "shared_battery_and_orders_with_observed_pv_curtailment",
         "pv_recourse_equal_observation": True}
     bundle = ScenarioBundle(tuple(scenario_ids), np.full(count, 1.0 / count), values,

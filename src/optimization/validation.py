@@ -260,6 +260,14 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
         if name in components:
             equality(f"component_{name}_eur", np.asarray(values) - components[name])
     objective = float(np.dot(inputs.scenarios.probabilities, components["operating_profit"]))
+    if inputs.imbalance_cvar_weight_eur_per_mwh:
+        # Minimize the discrete CVaR epigraph independently of solver variables.
+        totals = np.abs(result.arrays["imbalance_mwh"]).sum(axis=1)
+        candidates = np.unique(np.concatenate(([0.0], totals)))
+        cvar = min(float(threshold + np.dot(inputs.scenarios.probabilities,
+            np.maximum(totals - threshold, 0.0)) / (1.0 - inputs.imbalance_cvar_confidence))
+            for threshold in candidates)
+        objective -= inputs.imbalance_cvar_weight_eur_per_mwh * cvar
     equality("expected_objective_eur", np.inf if result.objective_eur is None else result.objective_eur - objective)
     def allowed_error(name):
         """Use the solver's distinct binary tolerance only on discrete residuals."""

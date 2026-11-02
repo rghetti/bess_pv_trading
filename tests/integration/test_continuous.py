@@ -636,3 +636,128 @@ def test_continuous_participation_carries_state_and_filters_gates(continuous_con
     assert daily[1]["initial_energy_mwh"] == pytest.approx(daily[0]["final_energy_mwh"])
     assert {row["current_auction"] for row in replay.solves} == {"DA"}
     assert all(row["auction"] == "DA" for row in replay.projections)
+
+
+@pytest.mark.parametrize("policy,include_det", [("deterministic", True), ("ensemble_mean", True),
+                                                ("ensemble_stochastic", True), ("ensemble_stochastic", False)])
+def test_extended_pv_policy_information_and_scenarios(continuous_config, tmp_path, policy, include_det):
+    """Planning uses available forecasts, explicit members and no realized settlement prices."""
+    config = continuous_config
+    config["continuous_optimization"]["pv_ensemble"].update(enabled=True, planning_policy=policy,
+        include_deterministic_member=include_det, planning_imbalance_penalty_eur_per_mwh=500.0,
+        cvar_confidence=0.9, cvar_weight_eur_per_mwh=2.0)
+    prepared, _ = _prepared(config, one_day=True)
+    day = prepared["days"][0]
+    daily = prepared["days_data"][day]
+    daily["ensemble_members"] = ("1", "2")
+    daily["ensemble_pv"] = np.stack([daily["initial_forecast"] * 0.6, daily["initial_forecast"] * 1.0])
+    first = daily["schedule"][0]
+    prepared["provenance"]["pv_ensemble"] = {day: {"forecast_vintage_utc": str(first.submission_at),
+        "available_at_utc": str(first.submission_at)}}
+    replay = _module().ContinuousReplay(config, prepared, "integrated", tmp_path / policy)
+    inputs, _ = replay._planning_inputs(_module().ContinuousAuction(day, first), first.submission_at)
+    count = 3 if policy == "ensemble_stochastic" and include_det else 2 if policy == "ensemble_stochastic" else 1
+    assert len(inputs.scenarios.scenario_ids) == count
+    assert np.allclose(inputs.scenarios.probabilities, 1 / count)
+    if policy == "ensemble_mean":
+        np.testing.assert_allclose(inputs.scenarios.pv_ac_mw[0], daily["ensemble_pv"].mean(axis=0))
+    if policy == "ensemble_stochastic":
+        assert inputs.optimize_imbalances and inputs.imbalance_penalty_eur_per_mwh == 500.0
+        assert inputs.imbalance_cvar_weight_eur_per_mwh == 2.0
+        assert np.all(inputs.scenarios.imbalance_prices_eur_per_mwh == 0)
+        assert all(len(set(owners)) == 1 for owners in inputs.tree.bid_nodes.values())
+        assert all(len({owner[t] for owner in inputs.tree.control_nodes}) == 1 for t in range(len(inputs.grid.interval_ids)))
+        built = _module().build_model(inputs)
+        try:
+            result = _module().solve_model(built)
+        finally:
+            built.model.dispose()
+        assert result.has_incumbent
+        assert _module().validate_solution(inputs, result).valid
+        assert result.diagnostics["pv_scenario_formulation"] == "unreduced"
+
+
+def test_matched_pv_only_replays_same_forecasts_and_zero_battery(continuous_config, tmp_path):
+    """Counterfactual keeps shared historical inputs but executes without a battery."""
+    from bess_pv_trading.simulation.continuous_pv_only import pv_only_inputs
+    config = continuous_config
+    prepared, _ = _prepared(config, one_day=True)
+    child, no_battery = pv_only_inputs(config, prepared)
+    assert no_battery["forecast_provider"] is prepared["forecast_provider"]
+    assert no_battery["full_realized_pv"] is prepared["full_realized_pv"]
+    assert no_battery["plant"].battery.capacity_mwh == 0
+    assert no_battery["initial_energy_mwh"] == 0
+    _, summary = _run(child, no_battery, "integrated", tmp_path / "matched_pv_only")
+    assert summary["initial_energy_mwh"] == summary["final_energy_mwh"] == 0
+
+
+def test_stochastic_replay_separates_planning_penalty_from_actual_settlement(continuous_config, tmp_path):
+    """Full replay uses observed settlement and saves decision-specific ensemble diagnostics."""
+    config = continuous_config
+    config["experiment_outputs"]["plots"] = False
+    config["continuous_optimization"]["pv_ensemble"].update(enabled=True, planning_policy="ensemble_stochastic",
+        include_deterministic_member=True, planning_imbalance_penalty_eur_per_mwh=500.0,
+        cvar_confidence=0.95, cvar_weight_eur_per_mwh=0.0)
+    config["trading"]["optimize_imbalances"] = False
+    prepared, _ = _prepared(config, one_day=True)
+    day = prepared["days"][0]
+    daily = prepared["days_data"][day]
+    daily["ensemble_members"] = ("1", "2")
+    daily["ensemble_pv"] = np.stack([daily["initial_forecast"] * 0.8, daily["initial_forecast"] * 1.2])
+    first = daily["schedule"][0]
+    prepared["provenance"]["pv_ensemble"] = {day: {"forecast_vintage_utc": str(first.submission_at),
+        "available_at_utc": str(first.submission_at)}}
+    _, summary = _run(config, prepared, "integrated", tmp_path / "stochastic")
+    dispatch = pd.read_csv(tmp_path / "stochastic/csv/realized_dispatch.csv")
+    assert np.allclose(dispatch.imbalance_cashflow_eur, dispatch.imbalance_mwh * config["test_case"]["settlement_price_eur_per_mwh"])
+    assert np.allclose(dispatch.imbalance_penalty_eur, 0.0)
+    assert summary["total_gain_eur"] == pytest.approx(dispatch.net_profit_eur.sum())
+    diagnostics = pd.read_csv(tmp_path / "stochastic/csv/ensemble_diagnostics_by_decision.csv")
+    assert set(diagnostics.auction) == {event.auction for event in daily["schedule"]}
+    assert (tmp_path / "stochastic/csv/revenue_energy_daily.csv").is_file()
+
+
+def test_participation_driver_pairs_each_profile_with_pv_only(continuous_config, tmp_path, monkeypatch):
+    """Every requested auction subset receives its own zero-battery continuous replay."""
+    from bess_pv_trading.simulation import continuous_participation
+    config = continuous_config
+    config["experiment_outputs"]["plots"] = False
+    config["continuous_optimization"].update(output_root=str(tmp_path), run_id="matched", resume=False)
+    config["continuous_participation_study"] = {"enabled": True, "candidate_auctions": ["DA", "IDA1", "IDA2", "IDA3"],
+        "required_auctions": ["DA"], "profiles": [["DA"], ["DA", "IDA1", "IDA2", "IDA3"]],
+        "matched_pv_only": True, "sequential_all_auctions_baseline": False, "perfect_pv_baseline": False, "plots": False}
+    prepared, _ = _prepared(config, one_day=True)
+    monkeypatch.setattr(continuous_participation, "prepare_continuous_inputs", lambda config, progress=None: prepared)
+    result = continuous_participation.run_continuous_participation(config)
+    comparison = pd.read_csv(Path(result["output_dir"]) / "csv/pv_only_comparison_daily.csv")
+    assert set(comparison.strategy) == {"DA", "DA+IDA1+IDA2+IDA3"}
+    assert np.allclose(comparison.incremental_profit_eur, comparison.pv_bess_profit_eur - comparison.pv_only_profit_eur)
+    assert np.allclose(comparison.pv_only_initial_energy_mwh, 0)
+    assert np.allclose(comparison.pv_only_final_energy_mwh, 0)
+
+
+def test_ensemble_mean_projects_each_day_with_its_own_available_cycle(continuous_config, tmp_path):
+    """A next-day auction projects the locked prefix with the current day's mean."""
+    config = continuous_config
+    config["continuous_optimization"]["pv_ensemble"].update(enabled=True, planning_policy="ensemble_mean")
+    prepared, _ = _prepared(config)
+    provenance = {}
+    for offset, day in enumerate(prepared["days"]):
+        daily = prepared["days_data"][day]
+        daily["ensemble_members"] = ("1", "2")
+        daily["ensemble_pv"] = np.stack([daily["initial_forecast"] * (0.3 + offset * 0.2),
+                                         daily["initial_forecast"] * (0.7 + offset * 0.2)])
+        first = daily["schedule"][0].submission_at
+        provenance[day] = {"forecast_vintage_utc": str(first - pd.Timedelta(hours=6)),
+                           "available_at_utc": str(first)}
+    prepared["provenance"]["pv_ensemble"] = provenance
+    next_day = prepared["days"][1]
+    event = prepared["days_data"][next_day]["schedule"][0]
+    replay = _module().ContinuousReplay(config, prepared, "integrated", tmp_path / "mean")
+    inputs, _ = replay._planning_inputs(_module().ContinuousAuction(next_day, event), event.submission_at)
+    np.testing.assert_allclose(inputs.scenarios.pv_ac_mw[0], prepared["days_data"][next_day]["ensemble_pv"].mean(axis=0))
+    prefix = [row for row in replay.forecast_inputs if row["forecast_role"] == "locked_projection"]
+    assert prefix
+    assert all(row["pv_forecast_vintage_utc"] == provenance[prepared["days"][0]]["forecast_vintage_utc"] for row in prefix)
+    expected = prepared["days_data"][prepared["days"][0]]["ensemble_pv"].mean(axis=0)
+    np.testing.assert_allclose([row["pv_ac_forecast_mw"] for row in prefix], expected)

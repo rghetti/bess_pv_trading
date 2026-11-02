@@ -426,3 +426,64 @@ histograms and daily data tables. Set
 `continuous_participation_study.daily_strategy_plots: true` to enable those
 figures for a new study. Regular continuous optimization keeps its daily views.
 Existing files from an earlier invocation are not deleted on resume.
+
+### Four-policy DA-required participation study
+
+`participation_2026_01_ten_days_<policy>.yaml` covers January 1–10 with DA
+required in all eight auction subsets. Each policy also includes the all-auction
+sequential and perfect-PV references and a matched forecast-based PV-only replay
+for every trajectory. Policies are `deterministic`, `envelope`, `ensemble_mean`
+and `ensemble_stochastic`; the example stochastic policy uses a 500 EUR/MWh
+planning deviation penalty and zero CVaR weight. Actual imbalance prices are
+used for realized settlement. All four policies use the same price oracle,
+PV inputs, initial assets and 50-member ensemble archive. The deterministic
+policy loads the ensemble for diagnostics but does not use it to plan trades.
+
+```bash
+PYTHONPATH=src python scripts/run_extended_participation.py --farm-id 1 --period ten_days --check-only
+PYTHONPATH=src python scripts/run_extended_participation.py --farm-id 1 --period ten_days
+PYTHONPATH=src python scripts/run_extended_participation.py --all-farms --period ten_days --check-only
+PYTHONPATH=src python scripts/run_extended_participation.py --all-farms --period ten_days
+```
+
+The check-only commands read and validate inputs without writing study results
+or solving. The run commands start the selected farm-policy combinations
+concurrently and resume matching checkpoints. Child progress lines carry farm
+and policy labels; a failure stops the remaining processes and prevents comparison.
+Select one of farms 1, 345, 901 or 910 with `--farm-id`, or use `--all-farms`
+to run all four farms concurrently. Use `--report-only` to rebuild
+comparisons from four completed runs. `--period smoke` selects January 15 only,
+with the same eight DA-required profiles and matched PV-only replays; it omits
+the extra reference trajectories. The ten-day study has 80 continuous
+trajectories per farm: 4 policies × (8 subsets + 2 references) × 2 assets.
+All four farms therefore require 320 trajectories and 16 processes. Each
+study config requests two Gurobi threads per solve (32 total); adjust `solver.threads`
+in all four corresponding policy YAMLs if a different budget is desired.
+Numerical-library thread pools are limited to one thread per child. The database
+is read-only during preflight; do not start an
+API downloader or another database writer while the studies are reading it.
+
+The combined report and period-level daily-metric plots are under
+`outputs/continuous_optimization/comparisons/farm_<ID>/2026_01_participation_<period>_four_policies/`.
+Each trajectory includes `csv/revenue_energy_daily.csv` and
+`csv/revenue_energy_monthly.csv`, plus ensemble interval/cutoff, decision,
+daily and monthly diagnostics where the policy observes forecasts. Daily
+ensemble summaries use the latest modeled forecast for each eligible interval;
+they are not full-day statistics for profiles without full-day eligibility.
+DA reference/spread decomposition is unavailable when DA prices are missing.
+Gross offsetting MWh is the smaller of purchases and sales for each delivery
+product, summed across products. PV-only results use the same execution
+controller and their own continuous state; cash comparisons do not price final
+battery inventory. The perfect-PV baseline does not have forecast diagnostics.
+
+The 51-scenario stochastic model shares orders and battery commands; scenario
+curtailment is tied for equal PV observations. To request 50 weather members
+only, set `continuous_optimization.pv_ensemble.include_deterministic_member:
+false` in a new run configuration. The first scenario's curtailment initializes
+the existing tracking controller; realized PV drives its physical feedback.
+The scenario-specific recourse is an idealized planning assumption, not an MPC
+or a guarantee of realized imbalance. Optional `cvar_confidence` and
+`cvar_weight_eur_per_mwh` control CVaR of total absolute scenario imbalance;
+zero weight disables it. The planning imbalance penalty and CVaR weight are not
+realized settlement charges. Historical weather availability uses the configured
+lag, an assumption rather than verified issuance records.

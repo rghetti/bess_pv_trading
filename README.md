@@ -873,3 +873,6 @@ checks configuration, input and per-profile replay identities; incomplete
 profiles restart from their latest midnight checkpoint. Canceled auctions are
 skipped under the configured missing-auction policy. Study-end SOC is a planned
 constraint; realized final SOC can differ and profits do not value that difference.
+
+For the four-policy, DA-required January 1–10 participation comparison with
+matched PV-only trajectories, see the [study commands and settings](configs/full_experiments/README.md#four-policy-da-required-participation-study).

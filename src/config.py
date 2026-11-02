@@ -244,6 +244,23 @@ def validate_continuous_optimization(config: dict[str, Any], *, require_dates: b
         count = ensemble.get("member_count")
         if isinstance(count, bool) or not isinstance(count, int) or count < 1:
             raise ConfigurationError("PV ensemble member_count must be a positive integer")
+        policy = ensemble.get("planning_policy", "envelope")
+        if policy not in ("deterministic", "envelope", "ensemble_mean", "ensemble_stochastic"):
+            raise ConfigurationError("Unknown PV ensemble planning policy")
+        if not isinstance(ensemble.get("include_deterministic_member", True), bool):
+            raise ConfigurationError("PV ensemble include_deterministic_member must be a YAML boolean")
+        if policy == "ensemble_stochastic":
+            penalty = ensemble.get("planning_imbalance_penalty_eur_per_mwh")
+            confidence = ensemble.get("cvar_confidence", 0.95)
+            weight = ensemble.get("cvar_weight_eur_per_mwh", 0.0)
+            if (isinstance(penalty, bool) or not isinstance(penalty, (int, float))
+                    or not math.isfinite(penalty) or penalty < 0):
+                raise ConfigurationError("Stochastic PV requires a finite nonnegative planning imbalance penalty")
+            if (isinstance(weight, bool) or not isinstance(weight, (int, float))
+                    or not math.isfinite(weight) or weight < 0
+                    or isinstance(confidence, bool) or not isinstance(confidence, (int, float))
+                    or not 0 < confidence < 1):
+                raise ConfigurationError("Invalid imbalance CVaR settings")
     state, battery = config.get("state", {}), config.get("battery", {})
     lower, upper = (float(battery.get(key, default)) for key, default in
                     (("soc_min_percent", 0.0), ("soc_max_percent", 100.0)))

@@ -384,12 +384,38 @@ class ContinuousReplay:
             raise ValueError("Actual state lies beyond the auction information cutoff")
         update_starts = self.starts[update_first:stop_global]
         forecast, provenance = self._forecast(cutoff, update_starts, event.auction)
+        ensemble_settings = self.config["continuous_optimization"].get("pv_ensemble", {})
+        pv_policy = ensemble_settings.get("planning_policy", "envelope")
+        deterministic_forecast = forecast.copy()
+        deterministic_provenance = dict(provenance)
+        if not self.perfect and ensemble_settings.get("enabled", False) and pv_policy == "ensemble_mean":
+            # Project locked intervals using the applicable day's available frozen ensemble.
+            forecast = forecast.copy()
+            for index, product in enumerate(self.grid.interval_ids[update_first:stop_global]):
+                source_day = self.day_for_product[product]
+                source = self.daily[source_day]
+                info = self.prepared["provenance"]["pv_ensemble"][source_day]
+                if pd.Timestamp(info["available_at_utc"]) > cutoff:
+                    raise ValueError(f"Ensemble projection for {source_day} is unavailable at cutoff")
+                local = self.index[product] - self.day_offsets[source_day]
+                forecast[index] = float(np.mean(source["ensemble_pv"][:, local]))
+            target_info = self.prepared["provenance"]["pv_ensemble"][day]
+            provenance = {**provenance, "pv_forecast_policy": "frozen_weather_ensemble_mean",
+                "pv_forecast_vintage_utc": target_info["forecast_vintage_utc"],
+                "pv_forecast_available_at_utc": target_info["available_at_utc"]}
         by_product = dict(zip(self.grid.interval_ids[update_first:stop_global], map(float, forecast)))
-        self.forecast_inputs.extend({"delivery_day": day, "auction": event.auction,
-            "cutoff_utc": cutoff.isoformat(), "interval_start_utc": str(start),
-            "pv_ac_forecast_mw": value, "forecast_role": "locked_projection" if self.index[product] < first_global else "target_delivery",
-            **provenance} for product, start, value in zip(
-                self.grid.interval_ids[update_first:stop_global], update_starts, forecast))
+        # Projection intervals may belong to another day's frozen ensemble.
+        for product, start, value in zip(self.grid.interval_ids[update_first:stop_global], update_starts, forecast):
+            row_provenance = dict(provenance)
+            if not self.perfect and ensemble_settings.get("enabled", False) and pv_policy == "ensemble_mean":
+                info = self.prepared["provenance"]["pv_ensemble"][self.day_for_product[product]]
+                row_provenance.update(pv_forecast_vintage_utc=info["forecast_vintage_utc"],
+                                      pv_forecast_available_at_utc=info["available_at_utc"])
+            self.forecast_inputs.append({"delivery_day": day, "auction": event.auction,
+                "cutoff_utc": cutoff.isoformat(), "interval_start_utc": str(start),
+                "pv_ac_forecast_mw": value,
+                "forecast_role": "locked_projection" if self.index[product] < first_global else "target_delivery",
+                **row_provenance})
         boundary, projection = self.state, []
         # Project retained operation, then construct only the target day's MILP for each `index` in `range(update_first, first_global)`.
         for index in range(update_first, first_global):
@@ -426,21 +452,39 @@ class ContinuousReplay:
                 for previous, current in zip(names, names[1:])}
             known = {auction: prices[auction][first:] for auction in self.known[day]}
         pv = np.asarray([by_product[product] for product in grid.interval_ids])
+        stochastic = not self.perfect and ensemble_settings.get("enabled", False) and pv_policy == "ensemble_stochastic"
         bundle, tree = synthetic_price_tree(grid, pv, selected, base_prices=base,
             stage_spreads=spreads, known_prices=known, residual_scale=0.0,
             branch_values=(0.0,), branch_probabilities=(1.0,), decision_cutoff=cutoff,
-            imbalance_price=float(self.trading.get("imbalance_price_eur_per_mwh", 0.0)),
+            imbalance_price=0.0 if stochastic else float(self.trading.get("imbalance_price_eur_per_mwh", 0.0)),
             seed=int(self.config["solver"].get("seed", 0)))
-        if not self.perfect and self.config["continuous_optimization"].get("pv_ensemble", {}).get("enabled", False):
+        if not self.perfect and ensemble_settings.get("enabled", False):
             ensemble = daily["ensemble_pv"][:, first:]
             members = daily["ensemble_members"]
-            bundle, tree = shared_dispatch_pv_tree(bundle, tree, grid,
-                np.vstack([pv, ensemble]), ("deterministic", *(f"weather_{member}" for member in members)))
+            include_det = ensemble_settings.get("include_deterministic_member", True)
+            if pv_policy not in ("ensemble_mean", "deterministic"):
+                values = np.vstack([pv, ensemble]) if include_det else ensemble
+                member_ids = (("deterministic",) if include_det else ()) + tuple(f"weather_{member}" for member in members)
+                bundle, tree = shared_dispatch_pv_tree(bundle, tree, grid, values, member_ids)
             ensemble_info = self.prepared["provenance"]["pv_ensemble"][day]
+            if not include_det and pv_policy not in ("ensemble_mean", "deterministic"):
+                # Execution snapshots use the first weather member in this sensitivity.
+                provenance = {**provenance, "pv_forecast_policy": "frozen_first_weather_member",
+                    "pv_forecast_vintage_utc": ensemble_info["forecast_vintage_utc"],
+                    "pv_forecast_available_at_utc": ensemble_info["available_at_utc"]}
             provenance.update(pv_scenario_count=len(bundle.scenario_ids),
                 ensemble_vintage_utc=ensemble_info["forecast_vintage_utc"],
                 ensemble_available_at_utc=ensemble_info["available_at_utc"],
-                scenario_probability=1.0 / len(bundle.scenario_ids))
+                scenario_probability=(1.0 / len(bundle.scenario_ids)
+                    if pv_policy not in ("ensemble_mean", "deterministic") else None),
+                pv_planning_policy=pv_policy)
+            deterministic_target = deterministic_forecast[first_global - update_first:]
+            self.forecast_inputs.extend({"delivery_day": day, "auction": event.auction,
+                "cutoff_utc": cutoff.isoformat(), "interval_start_utc": str(start),
+                "pv_ac_forecast_mw": float(value), "forecast_role": "deterministic_diagnostic",
+                "scenario_id": "deterministic", **{**provenance, **deterministic_provenance},
+                "scenario_probability": provenance["scenario_probability"] if include_det else None}
+                for start, value in zip(grid.starts, deterministic_target))
             for member_index, member in enumerate(members):
                 self.forecast_inputs.extend({"delivery_day": day, "auction": event.auction,
                     "cutoff_utc": cutoff.isoformat(), "interval_start_utc": str(start),
@@ -465,11 +509,14 @@ class ContinuousReplay:
                 pd.Timestamp(day).date()) for auction in masks}
         inputs = OptimizationInput(grid=grid, plant=self.plant, state=boundary, market=market,
             scenarios=bundle, tree=tree, auction_eligibility=masks,
-            imbalance_penalty_eur_per_mwh=self.trading["imbalance_penalty_eur_per_mwh"],
+            imbalance_penalty_eur_per_mwh=(ensemble_settings["planning_imbalance_penalty_eur_per_mwh"]
+                if stochastic else self.trading["imbalance_penalty_eur_per_mwh"]),
             terminal_target_mwh=terminal, terminal_minimum_mwh=terminal_minimum,
             degradation=self.aging,
             grid_import_fee_eur_per_mwh=self.trading["grid_import_fee_eur_per_mwh"],
-            optimize_imbalances=self.trading.get("optimize_imbalances", True),
+            optimize_imbalances=True if stochastic else self.trading.get("optimize_imbalances", True),
+            imbalance_cvar_confidence=ensemble_settings.get("cvar_confidence", 0.95) if stochastic else 0.95,
+            imbalance_cvar_weight_eur_per_mwh=ensemble_settings.get("cvar_weight_eur_per_mwh", 0.0) if stochastic else 0.0,
             imbalance_limit_mwh=self.trading.get("imbalance_limit_mwh"),
             planned_delivery_balance_resolution_minutes=self.trading.get("planned_delivery_balance_resolution_minutes"),
             pending_position_mwh=pending_positions,
@@ -555,7 +602,10 @@ class ContinuousReplay:
             built.model.dispose()
         diagnostic.update(result.diagnostics)
         diagnostic.update(status=result.status, objective_eur=result.objective_eur,
-            attempt_id=len(self.attempts), fallback_applied=False)
+            attempt_id=len(self.attempts), fallback_applied=False,
+            pv_scenario_ids=list(inputs.scenarios.scenario_ids),
+            pv_scenario_probabilities=inputs.scenarios.probabilities.tolist(),
+            planning_imbalance_penalty_eur_per_mwh=inputs.imbalance_penalty_eur_per_mwh)
         self.attempts.append(diagnostic)
         self._save_attempts()
         # When `not result.has_incumbent`, set `snapshots` using `self.plan_snapshots[day]`.
@@ -851,6 +901,11 @@ class ContinuousReplay:
                     self.state.energy_mwh - self.prepared["terminal_energy_mwh"]),
                 "replay_wall_seconds_this_invocation": perf_counter() - started,
                 "comparison_scope": "Continuous physical execution, retained-plan boundary projection, one delivery-day planning horizon; no intermediate terminal target or salvage value"})
+        from ..reporting.continuous_decomposition import save_continuous_decomposition
+        save_continuous_decomposition(self.config, dispatch, ledger, self.daily, self.destination)
+        from ..reporting.continuous_ensemble import save_ensemble_diagnostics
+        save_ensemble_diagnostics(self.destination, self.forecast_inputs, self.prepared,
+                                  plots=self.config.get("experiment_outputs", {}).get("plots", True))
         write_json(self.destination / "json/manifest.json", {"status": "complete", **self.identity,
             "output_dir": str(self.destination), "days": list(self.days), "summary": summary})
         return summary
@@ -939,6 +994,16 @@ def run_continuous_experiment(config, *, progress=None):
                     config_fingerprint=identity["config_fingerprint"])
                 manifest["completed_strategies"].append(strategy)
                 _atomic_json(manifest_path, manifest)
+            if settings.get("matched_pv_only", False):
+                from .continuous_pv_only import pv_only_inputs, save_pv_only_comparison
+                pv_config, pv_prepared = pv_only_inputs(config, prepared)
+                pv_summaries = {}
+                for strategy in strategies:
+                    fingerprint = hashlib.sha256(f"{identity['config_fingerprint']}:{strategy}:pv_only".encode()).hexdigest()
+                    pv_summaries[strategy] = replay_continuous_strategy(pv_config, pv_prepared, strategy,
+                        destination / "pv_only" / strategy, resume=resume, progress=progress,
+                        config_fingerprint=fingerprint)
+                save_pv_only_comparison(destination, summaries, pv_summaries)
             from ..reporting.continuous_outputs import save_continuous_comparison
             comparison = save_continuous_comparison(config, destination, summaries)
             manifest.update(status="complete", comparison=comparison,

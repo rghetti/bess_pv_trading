@@ -274,3 +274,37 @@ def test_continuous_plots_use_shared_market_time_and_save_daily_views(report_inp
         assert not (comparison_root / "plots" / f"{name}.png").exists()
         for item in summaries:
             assert (comparison_root / "plots" / f"{name}_{item['strategy']}.png").stat().st_size > 0
+
+
+def test_revenue_decomposition_reconciles_signed_spreads_and_physical_allocation(report_inputs):
+    """DA valuation and intraday adjustments sum exactly to each ledger cash flow."""
+    from types import SimpleNamespace
+    from bess_pv_trading.reporting.continuous_decomposition import continuous_daily_decomposition
+
+    config, frame, _, _ = report_inputs
+    frame = frame.iloc[:2].copy()
+    frame["net_position_mwh"] = [0.2, 0.0]
+    frame["auction_revenue_eur"] = [-6.0, 0.0]
+    frame["charge_mw"] = [0.1, 0.0]
+    frame["curtailment_mw"] = [0.1, 0.0]
+    frame["grid_mw"] = frame.pv_ac_mw - frame.curtailment_mw - frame.charge_mw + frame.discharge_mw
+    day = frame.delivery_day.iloc[0]
+    grid = SimpleNamespace(interval_ids=tuple(frame.interval_id))
+    data = {day: {"grid": grid, "prices": {"DA": np.array([50.0, 50.0])}}}
+    product = frame.interval_id.iloc[0]
+    ledger = [{"interval_id": product, "auction": "DA", "quantity_mwh": 1.0,
+               "price_eur_per_mwh": 50.0, "cashflow_eur": 50.0},
+              {"interval_id": product, "auction": "IDA1", "quantity_mwh": -0.8,
+               "price_eur_per_mwh": 70.0, "cashflow_eur": -56.0}]
+    row = continuous_daily_decomposition(config, frame, ledger, data).iloc[0]
+    assert row.da_reference_value_eur == pytest.approx(10.0)
+    assert row.inter_auction_spread_revenue_eur == pytest.approx(-16.0)
+    assert row.auction_revenue_eur == pytest.approx(-6.0)
+    assert row.gross_traded_mwh == pytest.approx(1.8)
+    assert row.offsetting_mwh == pytest.approx(0.8)
+    assert row.pv_available_mwh == pytest.approx(row.pv_exported_mwh + row.pv_to_battery_mwh + row.pv_curtailed_mwh)
+    assert row.battery_charge_mwh == pytest.approx(row.pv_to_battery_mwh + row.grid_to_battery_mwh)
+    data[day]["prices"].pop("DA")
+    missing = continuous_daily_decomposition(config, frame, ledger, data).iloc[0]
+    assert not missing.da_reference_available
+    assert np.isnan(missing.da_reference_value_eur)

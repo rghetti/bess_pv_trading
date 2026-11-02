@@ -309,9 +309,10 @@ the preceding delivery day's 00 UTC ensemble cycle, assumes availability after
 the configured lag, and requires it to be available at the first cutoff. The
 cycle is frozen for that delivery day. Each weather member is converted separately
 to AC PV using the configured PVLib path or a supported weather-bundle model;
-no ensemble calibration, reweighting or post-processing is implicit. The
-cutoff-updated deterministic forecast is prepended as another member. If the
-archive has 50 members, the scenario count is 51 and each weight is $1/51$.
+no ensemble calibration, reweighting or post-processing is implicit. By default,
+the cutoff-updated deterministic forecast is prepended as another member. If the
+archive has 50 members, the scenario count is 51 and each weight is $1/51$;
+the optional weather-only sensitivity instead has 50 equal weights.
 The deterministic member can change at each gate, while the other 50 paths
 remain fixed over the day. The weather-bundle inference records its model
 artifact and retrospective availability; the six-hour historical ensemble
@@ -325,10 +326,29 @@ recourse, with equal observed PV tied to the same action. Planning uses the same
 actual auction price curves across members in the historical oracle studies.
 The average objective includes any scenario-dependent imbalance terms when they
 are enabled; in exact-delivery mode shared schedules and prices make the
-member operating objectives equal. The forecast shown in each continuous daily
-plan plot is the deterministic member from that auction snapshot, not the
-ensemble mean or an individual weather member. Full aligned member values,
+member operating objectives equal. In a scenario formulation, the execution
+snapshot takes curtailment from the first scenario; the existing grid-tracking
+controller adapts it to realized PV. Full aligned member values,
 vintages and input fingerprints are saved separately.
+
+The optional \texttt{ensemble\_mean} policy uses the pointwise arithmetic mean
+of the weather members only, including for locked-prefix projections. The
+optional \texttt{ensemble\_stochastic} policy preserves the full scenario
+formulation and replaces exact planned delivery by scenario deviations $\delta_{s,t}$.
+It maximizes expected operating profit less
+\begin{equation}
+ c\sum_s p_s\sum_t |\delta_{s,t}| +
+ \rho\left(z+\frac{1}{1-\alpha}\sum_s p_s u_s\right),
+ \qquad u_s\ge\sum_t |\delta_{s,t}|-z,\quad u_s,z\ge0.
+\end{equation}
+Here $c$ and $\rho$ are configured EUR/MWh weights, and $\alpha$ is CVaR
+confidence. The CVaR weight defaults to zero. The stochastic planning
+imbalance price is zero, rather than a future realized settlement price. The
+objective uses the configured idealized scenario-dependent curtailment recourse;
+this is not an optimized real-time controller or an intraday recourse tree.
+The first scenario is the deterministic member when included; in the weather-only
+sensitivity it is the first weather member. The unchanged feedback controller
+executes its planned battery commands and adjusts curtailment against actual PV.
 
 \section{Optimization at an auction decision}
 
@@ -833,12 +853,26 @@ Actual daily auction cash flow and settled operating profit are
  J^{\rm real}&=A^{\rm real}+\sum_t S_t
        -D^{\rm executed}-f\sum_t\pos{-g_t^{\rm real}}\Delta_t-C^{\rm trading,real}.
 \end{align}
-A model deterrence penalty is not an actual settlement charge and is not
-subtracted a second time by actual post-processing. If settlement is unavailable,
+The stochastic-ensemble model deterrence penalty is not an actual settlement
+charge and is not subtracted from realized profit. Legacy non-ensemble runs
+with optimized imbalance retain their existing configured realized penalty.
+If settlement is unavailable,
 profit before settlement is reported and fully settled profit remains unknown
 in the settlement helper and compatible independent-day outputs. The continuous
 comparison runner requires complete actual settlement prices and rejects a run
 when settlement is disabled or incomplete.
+The continuous ledger additionally decomposes realized auction cash flow as
+\begin{equation}
+ A^{\rm real}=\sum_t \pi^{\rm real}_{DA,t}\sum_a q^{\rm sub}_{a,t}
+ +\sum_{a\ne DA,t}(\pi^{\rm real}_{a,t}-\pi^{\rm real}_{DA,t})q^{\rm sub}_{a,t}.
+\end{equation}
+Each signed quarter-hour quantity is in MWh, including the allocated shares
+of native hourly products; no second duration factor is applied. If the DA
+reference curve is absent, both components are unavailable rather than filled.
+Offsetting volume is the sum across products of the smaller of gross purchases
+and gross sales. Matched PV-only continuous replays remove battery capacity and
+power while retaining the forecast and market policy. Their cash-profit
+difference does not assign a terminal value to remaining stored energy.
 Only actually submitted guaranteed transactions enter $C^{\rm trading,real}$;
 future plans that are never submitted contribute no realized fees. The ledger
 retains transaction-month volume, per-trade charges and tariff versions. An

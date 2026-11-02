@@ -87,7 +87,9 @@ def run_continuous_participation(config, *, progress=None):
     profiles = participation_profiles(study)
     all_auctions = auction_subset(list(config["gme_oracle_experiment"]["auction_datasets"]),
                                  "continuous participation auctions")
-    if all_auctions not in profiles:
+    sequential_enabled = study.get("sequential_all_auctions_baseline", True)
+    perfect_enabled = study.get("perfect_pv_baseline", True)
+    if (sequential_enabled or perfect_enabled) and all_auctions not in profiles:
         raise ValueError("Continuous participation requires the all-auction profile")
     prepared = prepare_continuous_inputs(config, progress=progress)
     if prepared["imbalance_prices_eur_per_mwh"] is None:
@@ -122,9 +124,15 @@ def run_continuous_participation(config, *, progress=None):
                     "delivery_days": list(prepared["days"]), "completed": []}
         _atomic_json(manifest_path, manifest)
         cases = [(profile_id(profile), profile, "integrated") for profile in profiles]
-        cases.extend([("sequential_all_auctions", all_auctions, "current_auction_only"),
-                      ("perfect_pv_all_auctions", all_auctions, "perfect_pv")])
+        if sequential_enabled:
+            cases.append(("sequential_all_auctions", all_auctions, "current_auction_only"))
+        if perfect_enabled:
+            cases.append(("perfect_pv_all_auctions", all_auctions, "perfect_pv"))
         summaries = {}
+        pv_summaries = {}
+        if study.get("matched_pv_only", False):
+            from .continuous_pv_only import pv_only_inputs
+            pv_config, pv_prepared = pv_only_inputs(config, prepared)
         try:
             for index, (name, profile, strategy) in enumerate(cases, start=1):
                 if progress:
@@ -138,9 +146,18 @@ def run_continuous_participation(config, *, progress=None):
                 summaries[name] = replay_continuous_strategy(config, _profile_inputs(prepared, profile), strategy,
                     destination / "strategies" / name, resume=resume, progress=progress,
                     config_fingerprint=case_fingerprint)
+                if study.get("matched_pv_only", False):
+                    pv_fingerprint = hashlib.sha256(f"{fingerprint}:{name}:pv_only".encode()).hexdigest()
+                    pv_summaries[name] = replay_continuous_strategy(pv_config,
+                        _profile_inputs(pv_prepared, profile), strategy,
+                        destination / "pv_only" / name, resume=resume, progress=progress,
+                        config_fingerprint=pv_fingerprint)
                 manifest["completed"].append(name)
                 _atomic_json(manifest_path, manifest)
             ranking = _save_comparison(destination, summaries, profiles, prepared["days"], study.get("plots", True))
+            if pv_summaries:
+                from .continuous_pv_only import save_pv_only_comparison
+                save_pv_only_comparison(destination, summaries, pv_summaries)
             manifest.update(status="complete", comparison=ranking,
                 comparison_scope="Continuous realized cash profit; each profile carries its own physical and fee state. Final SOC may differ.")
             _atomic_json(manifest_path, manifest)

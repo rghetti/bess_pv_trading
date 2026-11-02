@@ -1,0 +1,76 @@
+include: ../standard.yaml
+farm_id: 1
+continuous_optimization:
+  start_date: '2026-01-01'
+  end_date: '2026-01-10'
+  planning_modes:
+  - integrated
+  perfect_pv_reference: true
+  perfect_pv_reoptimize_at_each_auction: false
+  run_id: 2026_01_participation_ten_days_ensemble_mean
+  resume: true
+  pv_ensemble:
+    enabled: true
+    zarr: data/farms/nwp_ens_20260101_20260131.zarr
+    member_count: 50
+    planning_policy: ensemble_mean
+    include_deterministic_member: true
+state:
+  initial_soc_percent: 90.0
+  terminal_soc_percent: 50.0
+  terminal_soc_min_percent: 40.0
+solver:
+  threads: 2
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+pv:
+  direct_exceeds_ghi: clip_and_flag
+trading:
+  optimize_imbalances: false
+transaction_fees:
+  mode: gme_real
+execution:
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+settlement:
+  enabled: true
+gme_oracle_experiment:
+  study_id: null
+  delivery_day: null
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA:
+      dataset: day_ahead_prices
+      native_interval_minutes: null
+    IDA1:
+      dataset: ida1_prices
+      native_interval_minutes: 15
+    IDA2:
+      dataset: ida2_prices
+      native_interval_minutes: 15
+    IDA3:
+      dataset: ida3_prices
+      native_interval_minutes: 15
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions: null
+continuous_participation_study:
+  enabled: true
+  candidate_auctions:
+  - DA
+  - IDA1
+  - IDA2
+  - IDA3
+  required_auctions:
+  - DA
+  profiles: null
+  plots: true
+  matched_pv_only: true
+  sequential_all_auctions_baseline: true
+  perfect_pv_baseline: true

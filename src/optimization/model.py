@@ -280,7 +280,22 @@ def build_model(inputs: OptimizationInput, *, reduce_exact_pv_scenarios: bool = 
         "transaction_fees": build_transaction_fees(model, inputs, variables, gp)}
     profit = {s: components["auction_revenue"][s] + components["imbalance_cashflow"][s] - components["imbalance_penalty"][s] - components["battery_degradation_cost"][s] - components["other_costs"][s] - components["transaction_fees"][s] for s in range(len(inputs.scenarios.scenario_ids))}
     components["operating_profit"] = profit
-    model.setObjective(gp.quicksum(float(probability) * profit[s] for s, probability in enumerate(inputs.scenarios.probabilities)), gp.GRB.MAXIMIZE)
+    objective = gp.quicksum(float(probability) * profit[s] for s, probability in enumerate(inputs.scenarios.probabilities))
+    if inputs.imbalance_cvar_weight_eur_per_mwh:
+        # The CVaR epigraph applies to total absolute imbalance energy per scenario.
+        threshold = model.addVar(lb=0.0, name="imbalance_cvar_threshold_mwh")
+        excess = {}
+        for s, probability in enumerate(inputs.scenarios.probabilities):
+            excess[s] = model.addVar(lb=0.0, name=f"imbalance_cvar_excess_s{s}")
+            total = gp.quicksum(variables["imbalance_positive"][s, t] + variables["imbalance_negative"][s, t]
+                                for t in range(len(inputs.grid.interval_ids)))
+            model.addConstr(excess[s] >= total - threshold, name=f"imbalance_cvar_tail_s{s}")
+        cvar = threshold + gp.quicksum(float(inputs.scenarios.probabilities[s]) * excess[s]
+            for s in range(len(excess))) / (1.0 - inputs.imbalance_cvar_confidence)
+        objective -= inputs.imbalance_cvar_weight_eur_per_mwh * cvar
+        variables["imbalance_cvar_threshold"] = threshold
+        variables["imbalance_cvar_excess"] = excess
+    model.setObjective(objective, gp.GRB.MAXIMIZE)
     model.update() #imports the changes to the model
     return BuiltModel(inputs, model, variables, components, perf_counter() - started, original_inputs)
 
@@ -403,6 +418,13 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
         for source, destination in (("xu_segment_charge", "xu_segment_charge_mw"), ("xu_segment_discharge", "xu_segment_discharge_mw")):
             result.arrays[destination] = np.array([[[variable[source][t, inputs.tree.control_nodes[s][t], j].X for j in range(segments)] for t in range(intervals)] for s in range(count)])
     result.arrays["imbalance_mwh"] = result.arrays["grid_mw"] * inputs.grid.delta_hours - result.arrays["net_position_mwh"]
+    diagnostics["imbalance_cvar_confidence"] = inputs.imbalance_cvar_confidence
+    diagnostics["imbalance_cvar_weight_eur_per_mwh"] = inputs.imbalance_cvar_weight_eur_per_mwh
+    if inputs.imbalance_cvar_weight_eur_per_mwh:
+        threshold = variable["imbalance_cvar_threshold"].X
+        excess = np.array([variable["imbalance_cvar_excess"][s].X for s in range(count)])
+        diagnostics["imbalance_cvar_mwh"] = float(threshold + np.dot(inputs.scenarios.probabilities, excess)
+                                                    / (1.0 - inputs.imbalance_cvar_confidence))
     # Process each `(source, destination, direction)` in this collection.
     for source, destination, direction in (("imbalance_positive", "imbalance_positive_mwh", 1), ("imbalance_negative", "imbalance_negative_mwh", -1)):
         result.arrays[destination] = (np.array([[variable[source][s, t].X for t in range(intervals)] for s in range(count)])
