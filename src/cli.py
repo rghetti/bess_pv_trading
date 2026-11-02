@@ -263,6 +263,8 @@ def main(argv: list[str] | None = None) -> int:
         "report-optimization-timing"))
     parser.add_argument("--config",required=True,type=Path)
     parser.add_argument("--farm-id",type=int,help="Select farm metadata, PV/weather series and automatic POI limits")
+    parser.add_argument("--study-days", type=int, choices=range(1, 32),
+                        help="Run the first N January days of a ten-day continuous participation configuration")
     parser.add_argument("--interactive",action="store_true",help="Prompt invisibly for missing API credentials in a terminal")
     parser.add_argument("--dry-run",action="store_true",help="Plan API requests and inspect cache without authenticating")
     parser.add_argument("--refresh-cache",action="store_true",help="Retrieve API requests again even when cached")
@@ -271,6 +273,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config, overrides={"farm_id": args.farm_id} if args.farm_id is not None else None)
+        if args.study_days is not None:
+            if args.command not in {"experiment-continuous", "resolve-config"}:
+                raise ValueError("--study-days applies only to continuous participation and resolve-config")
+            from .simulation.study_duration import january_participation_days
+            config = january_participation_days(config, args.study_days)
         # Print serializable results and actionable errors without credential prompts when `args.command == 'resolve-config'`.
         if args.command == "resolve-config":
             # Enforce the input contract: API download flags apply only to download-data.

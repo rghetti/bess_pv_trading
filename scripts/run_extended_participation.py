@@ -17,6 +17,7 @@ from bess_pv_trading.config import load_config
 from bess_pv_trading.numerical_tolerances import continuous_tolerances
 from bess_pv_trading.participation import participation_profiles, profile_id
 from bess_pv_trading.simulation.continuous_inputs import prepare_continuous_inputs
+from bess_pv_trading.simulation.study_duration import january_participation_days
 
 ROOT = Path(__file__).resolve().parents[1]
 POLICIES = ("deterministic", "envelope", "ensemble_mean", "ensemble_stochastic")
@@ -74,10 +75,15 @@ def summarize(configs, roots, output):
         if len(manifest["completed"]) != len(names) or set(manifest["completed"]) != set(names):
             raise ValueError(f"Incomplete profiles for {policy}")
         daily = pd.read_csv(root / "csv/daily_participation.csv", dtype={"delivery_day": str, "profile": str})
+        if "validation_warning_count" not in daily:
+            # Older completed runs predate non-blocking objective warnings.
+            daily["validation_warning_count"] = 0
         expected = {(name, day) for name in names for day in days}
         if daily.duplicated(["profile", "delivery_day"]).any() or set(zip(daily.profile, daily.delivery_day)) != expected:
             raise ValueError(f"Unmatched daily results for {policy}")
         paired = pd.read_csv(root / "csv/pv_only_comparison_daily.csv", dtype={"delivery_day": str, "strategy": str})
+        if "pv_only_validation_warning_count" not in paired:
+            paired["pv_only_validation_warning_count"] = 0
         daily = daily.merge(paired, left_on=["profile", "delivery_day"], right_on=["strategy", "delivery_day"],
                             validate="one_to_one", how="left")
         if daily.pv_only_profit_eur.isna().any():
@@ -108,6 +114,8 @@ def summarize(configs, roots, output):
         profit_eur=("net_profit_eur", "sum"), absolute_imbalance_mwh=("absolute_imbalance_mwh", "sum"),
         signed_imbalance_mwh=("signed_imbalance_mwh", "sum"), curtailment_mwh=("curtailment_mwh", "sum"),
         pv_only_profit_eur=("pv_only_profit_eur", "sum"), incremental_profit_eur=("incremental_profit_eur", "sum"),
+        validation_warning_count=("validation_warning_count", "sum"),
+        pv_only_validation_warning_count=("pv_only_validation_warning_count", "sum"),
         initial_energy_mwh=("initial_energy_mwh", "first"), final_energy_mwh=("final_energy_mwh", "last")).reset_index()
     output.mkdir(parents=True, exist_ok=True)
     daily.to_csv(output / "daily_comparison.csv", index=False)
@@ -126,6 +134,15 @@ def summarize(configs, roots, output):
             row = selected.iloc[0]
             cells.append(" / ".join(f"{row[column]:,.2f}" for column in
                 ("profit_eur", "pv_only_profit_eur", "incremental_profit_eur")))
+        lines.append("| " + " | ".join(cells) + " |")
+    lines.extend(["", "Reported solver-objective warnings by policy (PV+BESS / PV-only):", "",
+        "| Participation / strategy | Deterministic | Envelope | Ensemble mean | Ensemble stochastic |",
+        "| --- | ---: | ---: | ---: | ---: |"])
+    for name in names:
+        cells = [name]
+        for policy in POLICIES:
+            row = monthly.loc[monthly.profile.eq(name) & monthly.policy.eq(policy)].iloc[0]
+            cells.append(f"{int(row.validation_warning_count)} / {int(row.pv_only_validation_warning_count)}")
         lines.append("| " + " | ".join(cells) + " |")
     lines.extend(["", "Each physical cell shows absolute imbalance / signed imbalance / curtailment / initial to final stored energy, all in MWh.", "",
         "| Participation / strategy | Deterministic | Envelope | Ensemble mean | Ensemble stochastic |",
@@ -167,7 +184,7 @@ def summarize(configs, roots, output):
     return output / "summary.md"
 
 
-def _run_policies_parallel(farm_ids, paths):
+def _run_policies_parallel(farm_ids, paths, days=None):
     """Run one process per farm and forecast policy; stop the group on failure."""
     processes = []
     readers = []
@@ -187,6 +204,8 @@ def _run_policies_parallel(farm_ids, paths):
             for policy, path in zip(POLICIES, paths):
                 command = [sys.executable, "-u", "-m", "bess_pv_trading", "experiment-continuous",
                            "--config", str(path), "--farm-id", str(farm_id)]
+                if days is not None:
+                    command.extend(["--study-days", str(days)])
                 process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=subprocess.PIPE,
                                            stderr=subprocess.STDOUT, text=True, bufsize=1)
                 processes.append((farm_id, policy, process, command))
@@ -227,25 +246,31 @@ def main():
     farms.add_argument("--farm-id", type=int, choices=(1, 345, 901, 910))
     farms.add_argument("--all-farms", action="store_true", help="Process farms 1, 345, 901 and 910 concurrently")
     parser.add_argument("--period", choices=("ten_days", "smoke"), default="ten_days")
+    parser.add_argument("--days", type=int, choices=range(1, 32),
+                        help="First N January days (1–31); defaults to 10")
     parser.add_argument("--check-only", action="store_true", help="Preflight local data only; no solve or output write")
     parser.add_argument("--report-only", action="store_true", help="Summarize existing completed runs only")
     args = parser.parse_args()
     if args.check_only and args.report_only:
         parser.error("--check-only and --report-only are mutually exclusive")
+    if args.period == "smoke" and args.days is not None:
+        parser.error("--days cannot be combined with --period smoke")
     paths = [ROOT / f"configs/full_experiments/participation_2026_01_{args.period}_{policy}.yaml" for policy in POLICIES]
     farm_ids = (1, 345, 901, 910) if args.all_farms else (args.farm_id,)
     if not args.check_only and not args.report_only:
         # Validate all configurations before starting the concurrent process group.
         for farm_id in farm_ids:
-            _farm_configs(farm_id, paths)
-        _run_policies_parallel(farm_ids, paths)
+            _farm_configs(farm_id, paths, days=args.days)
+        _run_policies_parallel(farm_ids, paths, days=args.days)
     for farm_id in farm_ids:
         run_farm(farm_id, args, paths)
 
 
-def _farm_configs(farm_id, paths):
+def _farm_configs(farm_id, paths, *, days=None):
     """Resolve each policy and reject mismatched common study settings."""
     configs = [load_config(path, overrides={"farm_id": farm_id}) for path in paths]
+    if days is not None:
+        configs = [january_participation_days(config, days) for config in configs]
     if any(_common_config(config) != _common_config(configs[0]) for config in configs):
         raise ValueError("Study configurations differ beyond the intended ensemble policy")
     return configs
@@ -253,8 +278,9 @@ def _farm_configs(farm_id, paths):
 
 def run_farm(farm_id, args, paths):
     """Preflight or report one farm after all selected policies finish."""
-    print(f"Farm {farm_id}: {args.period}", flush=True)
-    configs = _farm_configs(farm_id, paths)
+    label = f"first {args.days} January days" if args.days is not None else args.period
+    print(f"Farm {farm_id}: {label}", flush=True)
+    configs = _farm_configs(farm_id, paths, days=args.days)
     if args.check_only:
         # Inputs are identical across policies; preflight pins all prices and 50 members once.
         prepared = prepare_continuous_inputs(configs[0], progress=lambda message: print(message, flush=True))
@@ -269,7 +295,8 @@ def run_farm(farm_id, args, paths):
         return
     roots = [ROOT / config["continuous_optimization"]["output_root"] / f"farm_{farm_id}" /
              config["continuous_optimization"]["run_id"] for config in configs]
-    output = ROOT / "outputs/continuous_optimization/comparisons" / f"farm_{farm_id}" / f"2026_01_participation_{args.period}_four_policies"
+    period_label = args.period if args.days in (None, 10) else f"days_{args.days:02d}"
+    output = ROOT / "outputs/continuous_optimization/comparisons" / f"farm_{farm_id}" / f"2026_01_participation_{period_label}_four_policies"
     print(f"Comparison saved to {summarize(configs, roots, output)}", flush=True)
 
 

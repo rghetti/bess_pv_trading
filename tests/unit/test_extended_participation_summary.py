@@ -37,12 +37,14 @@ def test_four_policy_summary_pairs_profiles_and_rejects_changed_sources(tmp_path
         (root / "csv").mkdir()
         pd.DataFrame([{"profile": "DA", "delivery_day": day, "net_profit_eur": 10 + index,
             "absolute_imbalance_mwh": 2, "signed_imbalance_mwh": -1, "curtailment_mwh": 3,
-            "initial_energy_mwh": 1, "final_energy_mwh": 0.5}]).to_csv(root / "csv/daily_participation.csv", index=False)
+            "initial_energy_mwh": 1, "final_energy_mwh": 0.5, "validation_warning_count": 2 if index == 0 else 0}]).to_csv(root / "csv/daily_participation.csv", index=False)
         pd.DataFrame([{"strategy": "DA", "delivery_day": day, "pv_bess_profit_eur": 10 + index, "pv_only_profit_eur": 5,
-                       "incremental_profit_eur": 5 + index}]).to_csv(root / "csv/pv_only_comparison_daily.csv", index=False)
+                       "incremental_profit_eur": 5 + index,
+                       "pv_only_validation_warning_count": 3 if index == 0 else 0}]).to_csv(root / "csv/pv_only_comparison_daily.csv", index=False)
     summary = MODULE.summarize(configs, roots, tmp_path / "summary")
     text = summary.read_text()
     assert "DA | 10.00 / 5.00 / 5.00 | 11.00 / 5.00 / 6.00" in text
+    assert "| DA | 2 / 3 | 0 / 0 |" in text
     assert len(pd.read_csv(tmp_path / "summary/period_comparison.csv")) == 4
     provenance = json.loads((roots[3] / "json/input_provenance.json").read_text())
     provenance["days"][day]["realized_pv_sha256"] = "different"
@@ -124,10 +126,92 @@ def test_parallel_launcher_starts_all_farms_and_handles_failure(monkeypatch, cap
 def test_all_farms_runs_one_concurrent_group_before_reports(monkeypatch):
     """Launch every farm together and report only after all policies finish."""
     actions = []
-    monkeypatch.setattr(MODULE, "_farm_configs", lambda farm, paths: [])
-    monkeypatch.setattr(MODULE, "_run_policies_parallel", lambda farms, paths: actions.append(("run", farms)))
+    monkeypatch.setattr(MODULE, "_farm_configs", lambda farm, paths, days=None: [])
+    monkeypatch.setattr(MODULE, "_run_policies_parallel", lambda farms, paths, days=None: actions.append(("run", farms)))
     monkeypatch.setattr(MODULE, "run_farm", lambda farm, args, paths: actions.append(("report", farm)))
     monkeypatch.setattr(MODULE.sys, "argv", ["run_extended_participation.py", "--all-farms"])
     MODULE.main()
     assert actions == [("run", (1, 345, 901, 910)), ("report", 1), ("report", 345),
                        ("report", 901), ("report", 910)]
+
+
+@pytest.mark.parametrize("days", [1, 10, 15, 31])
+@pytest.mark.parametrize("policy", MODULE.POLICIES)
+def test_january_day_count_sets_dates_and_isolates_run_ids(days, policy):
+    """Short and long studies retain their own resume identity; ten days is unchanged."""
+    path = ROOT / f"configs/full_experiments/participation_2026_01_ten_days_{policy}.yaml"
+    original = MODULE.load_config(path, overrides={"farm_id": 1})
+    config = MODULE.january_participation_days(original, days)
+    assert config["continuous_optimization"]["start_date"] == "2026-01-01"
+    assert config["continuous_optimization"]["end_date"] == f"2026-01-{days:02d}"
+    if days == 10:
+        assert config == original
+    else:
+        assert f"_days_{days:02d}_" in config["continuous_optimization"]["run_id"]
+        assert config["continuous_optimization"]["run_id"] != original["continuous_optimization"]["run_id"]
+
+
+@pytest.mark.parametrize("days", [0, 32, -1, True, 1.5])
+def test_january_day_count_rejects_invalid_values(days):
+    config = MODULE.load_config(ROOT / "configs/full_experiments/participation_2026_01_ten_days_deterministic.yaml")
+    with pytest.raises(ValueError, match="1 to 31"):
+        MODULE.january_participation_days(config, days)
+
+
+def test_requested_days_reaches_all_worker_processes(monkeypatch):
+    """Every subprocess receives the same requested delivery horizon."""
+    actions = []
+    monkeypatch.setattr(MODULE, "_farm_configs", lambda farm, paths, days=None: actions.append(("config", farm, days)))
+    monkeypatch.setattr(MODULE, "_run_policies_parallel", lambda farms, paths, days=None: actions.append(("run", farms, days)))
+    monkeypatch.setattr(MODULE, "run_farm", lambda farm, args, paths: actions.append(("report", farm, args.days)))
+    monkeypatch.setattr(MODULE.sys, "argv", ["run_extended_participation.py", "--all-farms", "--days", "21"])
+    MODULE.main()
+    assert actions[:4] == [("config", farm, 21) for farm in (1, 345, 901, 910)]
+    assert actions[4] == ("run", (1, 345, 901, 910), 21)
+    assert actions[5:] == [("report", farm, 21) for farm in (1, 345, 901, 910)]
+
+
+@pytest.mark.parametrize("days", [1, 10, 31])
+def test_worker_cli_resolves_same_duration_as_launcher(days, capsys):
+    """The worker and parent calculate identical configs and checkpoint identities."""
+    import yaml
+    from bess_pv_trading import cli
+
+    path = ROOT / "configs/full_experiments/participation_2026_01_ten_days_deterministic.yaml"
+    expected = MODULE.january_participation_days(MODULE.load_config(path, overrides={"farm_id": 901}), days)
+    assert cli.main(["resolve-config", "--config", str(path), "--farm-id", "901", "--study-days", str(days)]) == 0
+    resolved = yaml.safe_load(capsys.readouterr().out)
+    assert resolved == expected
+
+
+def test_parallel_workers_receive_study_day_argument(monkeypatch):
+    """Every actual worker command is configured with the requested length."""
+    commands = []
+    class FakeProcess:
+        def __init__(self, command, **kwargs):
+            self.stdout = []
+            commands.append(command)
+        def poll(self):
+            return 0
+        def wait(self, timeout=None):
+            return 0
+        def terminate(self):
+            raise AssertionError("Completed worker should not be terminated")
+    monkeypatch.setattr(MODULE.subprocess, "Popen", FakeProcess)
+    paths = [ROOT / f"{policy}.yaml" for policy in MODULE.POLICIES]
+    MODULE._run_policies_parallel((901,), paths, days=31)
+    assert len(commands) == 4
+    assert all(command[-4:] == ["--farm-id", "901", "--study-days", "31"] for command in commands)
+
+
+def test_pv_only_warning_counts_are_retained_in_paired_daily_output(tmp_path):
+    from bess_pv_trading.simulation.continuous_pv_only import save_pv_only_comparison
+
+    def summary(profit, warning_count):
+        return {"daily_kpis": [{"delivery_day": "2026-01-01", "net_profit_eur": profit,
+            "initial_energy_mwh": 0.0, "final_energy_mwh": 0.0,
+            "validation_warning_count": warning_count}]}
+    save_pv_only_comparison(tmp_path, {"DA": summary(10, 2)}, {"DA": summary(3, 4)})
+    frame = pd.read_csv(tmp_path / "csv/pv_only_comparison_daily.csv")
+    assert frame.pv_only_validation_warning_count.iloc[0] == 4
+    assert frame.incremental_profit_eur.iloc[0] == 7

@@ -661,7 +661,8 @@ class ContinuousReplay:
             integrality_tolerance=validation_integrality_tolerance,
             objective_relative_tolerance=objective_relative_tolerance,
             component_absolute_tolerance=tolerances.money_absolute_eur,
-            component_relative_tolerance=tolerances.relative)
+            component_relative_tolerance=tolerances.relative,
+            allow_reported_objective_warning=True)
         diagnostic["solution_validation_tolerance"] = validation_tolerance
         diagnostic["solution_validation_integrality_tolerance"] = validation_integrality_tolerance
         diagnostic["solution_validation_objective_relative_tolerance"] = objective_relative_tolerance
@@ -672,6 +673,8 @@ class ContinuousReplay:
         if not validation.valid:
             self._save_attempts()
             raise RuntimeError(f"Continuous solution validation failed: {validation.violations}")
+        if validation.warnings and self.progress:
+            self.progress(f"Continuous {self.strategy} {day}/{auction}: {validation.warnings[0]}")
         diagnostic["expected_auction_revenue_eur"] = float(np.dot(
             inputs.scenarios.probabilities, result.components["auction_revenue"]))
         self.solves.append(diagnostic)

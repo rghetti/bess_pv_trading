@@ -1631,7 +1631,11 @@ allowance, checked for each scenario. The report records the applied tolerances
 and objective residuals. Ledger and physical reporting use the same configured
 absolute and relative numerical comparison convention. Nonfinite values, missing
 inputs and temporal/identity contracts still require exact validity. The solver's reported objective is not
-replaced by the recomputed value. When CVaR is enabled, the returned threshold
+replaced by the recomputed value. In continuous replay, if the extracted
+objective expression and all independent physical and component checks pass,
+a discrepancy in the solver's reported objective is saved and displayed as a
+warning rather than stopping the replay. A missing or mismatched extracted
+expression does not receive that exception. When CVaR is enabled, the returned threshold
 and excess variables are checked against the scenario-loss epigraph and used
 to reconstruct the objective, including for a time-limited incumbent.
 Execution

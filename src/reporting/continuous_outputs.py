@@ -103,6 +103,7 @@ def _daily_kpis(config, strategy, frame, solves, initial_expected):
             "net_profit_eur": profit, "total_gain_eur": profit,
             "auction_solves": len(solved),
             "fallback_count": sum(bool(item.get("fallback_applied")) for item in solved),
+            "validation_warning_count": sum(len(item.get("validation", {}).get("warnings", ())) for item in solved),
             "initial_expected_profit_eur": initial_expected.get(day),
             "realized_minus_expected_profit_eur": (None if initial_expected.get(day) is None
                 else profit - float(initial_expected[day]))}

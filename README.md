@@ -876,3 +876,5 @@ constraint; realized final SOC can differ and profits do not value that differen
 
 For the four-policy, DA-required January 1–10 participation comparison with
 matched PV-only trajectories, see the [study commands and settings](configs/full_experiments/README.md#four-policy-da-required-participation-study).
+The same launcher accepts `--days N` for the first 1–31 days of January 2026
+and writes one matched comparison `summary.md` per farm after all policies finish.

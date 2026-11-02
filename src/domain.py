@@ -754,3 +754,5 @@ class ValidationReport:
     objective_tolerance_eur: float | None = None
     # Largest per-scenario tolerance used for each checked EUR component.
     component_tolerances_eur: Mapping[str, float] = field(default_factory=dict)
+    # Non-blocking differences retained for audit when the extracted solution validates.
+    warnings: tuple[str, ...] = ()

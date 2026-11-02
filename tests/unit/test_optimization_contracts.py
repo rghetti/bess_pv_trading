@@ -288,10 +288,14 @@ def test_objective_relative_tolerance_is_separate_from_physical_and_component_ch
     assert validation.objective_tolerance_eur == pytest.approx(1e-6 + 1e-8 * reported)
     assert not validate_solution(inputs, replace(result, objective_eur=reported + 0.01),
                                  objective_relative_tolerance=1e-8).valid
+    warning = validate_solution(inputs, replace(result, objective_eur=reported + 0.01),
+        objective_relative_tolerance=1e-8, allow_reported_objective_warning=True)
+    assert warning.valid and warning.warnings
     assert not validate_solution(inputs, replace(result, diagnostics={"objective_at_extracted_solution_eur": extracted + 0.01}),
-                                 objective_relative_tolerance=1e-8).valid
+                                 objective_relative_tolerance=1e-8, allow_reported_objective_warning=True).valid
     changed = dict(arrays, grid_mw=np.full((1, 1), 0.9))
-    assert not validate_solution(inputs, replace(result, arrays=changed), objective_relative_tolerance=1e-8).valid
+    assert not validate_solution(inputs, replace(result, arrays=changed), objective_relative_tolerance=1e-8,
+                                 allow_reported_objective_warning=True).valid
 
 
 def test_cvar_validation_accepts_feasible_nonminimal_epigraph_and_rejects_bad_tail():
@@ -335,3 +339,26 @@ def test_component_tolerance_scales_each_scenario_independently():
                                component_relative_tolerance=1e-8)
     assert not report.valid
     assert any("component_auction_revenue_eur" in item for item in report.violations)
+
+
+def test_reported_objective_warning_does_not_block_a_valid_extracted_solution():
+    """The observed solver attribute discrepancy is retained without losing checks."""
+    extracted = 4514.8531247132505
+    reported = 4514.853175834514
+    inputs = example_inputs(prices=[[extracted]], pv=np.ones((1, 1)))
+    arrays = {"charge_mw": np.zeros((1, 1)), "discharge_mw": np.zeros((1, 1)),
+        "mode_charge": np.zeros((1, 1)), "curtailment_mw": np.zeros((1, 1)),
+        "pv_injection_mw": np.ones((1, 1)), "grid_mw": np.ones((1, 1)),
+        "energy_mwh": np.zeros((1, 2)), "net_position_mwh": np.ones((1, 1)),
+        "imbalance_mwh": np.zeros((1, 1)), "imbalance_positive_mwh": np.zeros((1, 1)),
+        "imbalance_negative_mwh": np.zeros((1, 1))}
+    result = OptimizationResult("optimal", True, reported, arrays, {("DA", "root", "t0"): 1.0},
+        {"auction_revenue": np.array([extracted]), "operating_profit": np.array([extracted])},
+        {"objective_at_extracted_solution_eur": extracted})
+    kwargs = {"objective_relative_tolerance": 1e-8, "allow_reported_objective_warning": True}
+    report = validate_solution(inputs, result, **kwargs)
+    assert report.valid and len(report.warnings) == 1
+    assert report.max_errors["expected_objective_eur"] == pytest.approx(reported - extracted)
+    assert not validate_solution(inputs, replace(result, diagnostics={}), **kwargs).valid
+    bad_component = replace(result, components={"auction_revenue": np.array([extracted + 0.01])})
+    assert not validate_solution(inputs, bad_component, **kwargs).valid

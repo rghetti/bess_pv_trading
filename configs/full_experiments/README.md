@@ -444,6 +444,7 @@ PYTHONPATH=src python scripts/run_extended_participation.py --farm-id 1 --period
 PYTHONPATH=src python scripts/run_extended_participation.py --farm-id 1 --period ten_days
 PYTHONPATH=src python scripts/run_extended_participation.py --all-farms --period ten_days --check-only
 PYTHONPATH=src python scripts/run_extended_participation.py --all-farms --period ten_days
+PYTHONPATH=src python scripts/run_extended_participation.py --all-farms --days 15
 ```
 
 The check-only commands read and validate inputs without writing study results
@@ -463,8 +464,22 @@ Numerical-library thread pools are limited to one thread per child. The database
 is read-only during preflight; do not start an
 API downloader or another database writer while the studies are reading it.
 
+`--days N` selects the first N delivery days of January 2026, for any integer
+from 1 to 31. The default and `--days 10` retain the original ten-day run and
+comparison paths, so those checkpoints can resume. Other lengths use distinct
+`days_NN` run IDs and comparison directories and start from the configured
+initial state; they do not reuse a shorter horizon's SOC or checkpoints. The
+study-end SOC target applies at the end of the selected horizon. `--days` cannot
+be combined with the separate January 15 `--period smoke` configuration.
+
 The combined report and period-level daily-metric plots are under
 `outputs/continuous_optimization/comparisons/farm_<ID>/2026_01_participation_<period>_four_policies/`.
+For `--days N` other than 10, `<period>` is `days_NN`, with a two-digit day
+count. A `summary.md` is written for each selected farm only after all selected
+policy processes finish successfully; `--report-only` regenerates the report
+from four completed policy runs. The summary counts non-blocking reported
+solver-objective discrepancies separately for PV+BESS and PV-only trajectories;
+their detailed values remain in each strategy's solve diagnostics.
 Each trajectory includes `csv/revenue_energy_daily.csv` and
 `csv/revenue_energy_monthly.csv`, plus ensemble interval/cutoff, decision,
 daily and monthly diagnostics where the policy observes forecasts. Daily

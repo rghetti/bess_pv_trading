@@ -40,6 +40,7 @@ def save_pv_only_comparison(destination, battery_summaries, pv_summaries):
                 "incremental_profit_eur": row["net_profit_eur_pv_bess"] - row["net_profit_eur_pv_only"],
                 "pv_bess_initial_energy_mwh": row["initial_energy_mwh_pv_bess"],
                 "pv_bess_final_energy_mwh": row["final_energy_mwh_pv_bess"],
+                "pv_only_validation_warning_count": row.get("validation_warning_count_pv_only", 0),
                 "pv_only_initial_energy_mwh": row["initial_energy_mwh_pv_only"],
                 "pv_only_final_energy_mwh": row["final_energy_mwh_pv_only"]})
     daily = pd.DataFrame(records)

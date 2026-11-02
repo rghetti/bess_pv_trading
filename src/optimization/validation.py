@@ -56,7 +56,8 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
                       integrality_tolerance: float | None = None,
                       objective_relative_tolerance: float = 0.0,
                       component_absolute_tolerance: float | None = None,
-                      component_relative_tolerance: float = 0.0) -> ValidationReport:
+                      component_relative_tolerance: float = 0.0,
+                      allow_reported_objective_warning: bool = False) -> ValidationReport:
     """Recompute balances, signs, sharing and accounting independently of Gurobi."""
     # When `integrality_tolerance is None`, set `integrality_tolerance` using `tolerance`.
     if integrality_tolerance is None:
@@ -337,9 +338,17 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
             or "nonanticipativity_mode_charge" in name)
         return integrality_tolerance if discrete else tolerance
 
+    warnings = ()
+    objective_discrepancy = errors["expected_objective_eur"] > objective_tolerance
+    expression_verified = (expression_objective is not None
+                           and not component_violations.get("objective_expression_eur", True))
+    if allow_reported_objective_warning and objective_discrepancy and expression_verified:
+        warnings = (f"reported solver objective differs from validated extracted objective by "
+                    f"{errors['expected_objective_eur']:.6g} EUR (tolerance {objective_tolerance:.6g} EUR)",)
     violations = tuple(f"{name}: {component_violation_details.get(name, f'{error:.6g}')}" for name, error in errors.items()
-        if (component_violations[name] if name in component_violations else error > allowed_error(name)))
+        if not (name == "expected_objective_eur" and warnings)
+        and (component_violations[name] if name in component_violations else error > allowed_error(name)))
     accounting_differences = {name: float(np.max(np.abs(components[name] - physical_components[name]), initial=0))
         for name in ("imbalance_cashflow", "imbalance_penalty", "operating_profit")}
     return ValidationReport(not violations, errors, objective, violations, accounting_differences,
-                            objective_tolerance, component_tolerances)
+                            objective_tolerance, component_tolerances, warnings)
