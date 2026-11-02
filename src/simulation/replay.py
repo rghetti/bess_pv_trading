@@ -146,6 +146,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
     safety_adjustment = (abs(charge-requested_charge_mw) + abs(discharge-requested_discharge_mw)
                          + abs(curtailment-requested_curtailment_mw))
     bounded = (charge, discharge, curtailment)
+    recovered_curtailment = 0.0
     # When `dispatch_policy == 'track_committed_grid'`, set `available_grid` using `pv_ac_mw - curtailment + discharge - charge`.
     if dispatch_policy == "track_committed_grid":
         # Release scheduled curtailment before spending additional stored energy.
@@ -161,6 +162,12 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         # Surplus PV first changes battery power, then spills if charging is limited.
         excess = pv_ac_mw-curtailment+actual_battery-grid_target_mw
         curtailment += min(pv_ac_mw-curtailment, max(0.0, excess))
+        # Recover curtailed PV by reducing discharge or increasing charge while
+        # holding grid exchange fixed. Charge headroom accounts for power and SOC.
+        recovered_curtailment = min(curtailment, max(0.0, actual_battery + charge_limit))
+        curtailment -= recovered_curtailment
+        actual_battery -= recovered_curtailment
+        charge, discharge = max(0.0, -actual_battery), max(0.0, actual_battery)
     feedback_adjustment = sum(abs(a-b) for a,b in zip((charge,discharge,curtailment),bounded))
     before_poi = (charge, discharge, curtailment)
     grid = pv_ac_mw - curtailment + discharge - charge
@@ -195,6 +202,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         "requested_charge_mw": requested_charge_mw,
         "requested_discharge_mw": requested_discharge_mw,
         "requested_curtailment_mw": requested_curtailment_mw,
+        "curtailment_recovered_mw": recovered_curtailment,
         "dispatch_policy": dispatch_policy, "grid_target_mw": grid_target_mw,
         "grid_tracking_error_mw": None if grid_target_mw is None else grid-grid_target_mw,
         "feedback_adjustment_mw": feedback_adjustment,

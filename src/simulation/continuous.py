@@ -28,7 +28,7 @@ from .replay import execute_interval
 from .synthetic import json_default, write_json
 
 
-CONTINUOUS_POLICY_VERSION = "continuous-retained-plan-v2"
+CONTINUOUS_POLICY_VERSION = "continuous-retained-plan-v3-curtailment-recovery"
 
 # These sections were previously inherited by every run but are not used by
 # continuous replay. Retaining their old values must not prevent resuming a

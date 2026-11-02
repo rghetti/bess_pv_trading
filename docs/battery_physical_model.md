@@ -107,14 +107,24 @@ $$
 Then adjust battery power and curtail any remaining PV surplus:
 
 $$
-b_t=\operatorname{clip}(g_t^*-p_t+k_t^1,-\bar c_t,\bar d_t),\qquad
-c_t=[-b_t]_+,\quad d_t=[b_t]_+,
+\tilde b_t=\operatorname{clip}(g_t^*-p_t+k_t^1,-\bar c_t,\bar d_t),
 $$
 $$
-k_t=k_t^1+\min\left(p_t-k_t^1,[p_t-k_t^1+b_t-g_t^*]_+\right).
+\tilde k_t=k_t^1+\min\left(p_t-k_t^1,[p_t-k_t^1+\tilde b_t-g_t^*]_+\right).
 $$
 
-Thus $c_td_t=0$ without a new binary decision or optimization. POI protection
+Recover curtailed PV whenever the battery has room, keeping the same grid
+exchange. This first reduces discharge, then increases charging:
+
+$$
+r_t=\min(\tilde k_t,[\tilde b_t+\bar c_t]_+),\quad
+b_t=\tilde b_t-r_t,\quad k_t=\tilde k_t-r_t,\quad
+c_t=[-b_t]_+,\quad d_t=[b_t]_+.
+$$
+
+The resulting SOC carries forward to later intervals, and the action is applied
+without a new optimization or an economic assessment. Thus $c_td_t=0$ without
+a new binary decision or optimization. POI protection
 then reduces charging if the import limit would be exceeded, or reduces
 discharging and adds curtailment if the export limit would be exceeded. The
 final executed powers determine both SOC and throughput wear:

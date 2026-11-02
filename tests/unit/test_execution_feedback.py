@@ -56,3 +56,21 @@ def test_feedback_requires_an_explicit_finite_committed_target():
         execute_interval(state=state, start=state.timestamp,
             end=state.timestamp+timedelta(hours=case["duration_hours"]), plant=plant,
             dispatch_policy="track_committed_grid", **step)
+
+
+def test_recovered_pv_is_carried_to_later_commitment():
+    """Recovered PV changes real SOC and can support a later grid target."""
+    case, plant, state = feedback_case("scheduled_curtailment_replaces_discharge_then_charges")
+    state = PhysicalState(state.timestamp, plant.battery.energy_min_mwh)
+    end = state.timestamp + timedelta(hours=case["duration_hours"])
+    state, first = execute_interval(state=state, start=state.timestamp, end=end, plant=plant,
+        pv_ac_mw=1.0, requested_charge_mw=0.0, requested_discharge_mw=0.0,
+        requested_curtailment_mw=0.5, dispatch_policy="track_committed_grid", grid_target_mw=0.5)
+    assert first["grid_mw"] == pytest.approx(0.5)
+    assert first["charge_mw"] == pytest.approx(0.5)
+    state, second = execute_interval(state=state, start=state.timestamp,
+        end=state.timestamp + timedelta(hours=case["duration_hours"]), plant=plant,
+        pv_ac_mw=0.0, requested_charge_mw=0.0, requested_discharge_mw=0.3,
+        requested_curtailment_mw=0.0, dispatch_policy="track_committed_grid", grid_target_mw=0.3)
+    assert second["grid_mw"] == pytest.approx(0.3)
+    assert second["discharge_mw"] == pytest.approx(0.3)

@@ -673,15 +673,23 @@ Release scheduled curtailment if it can help meet a deficit:
 The desired net battery dispatch and its feasible projection are
 \begin{align}
  b_t^{\rm req}&=g_t^\star-\widetilde V_t+\bar u_t,\\
- b_t&=\clip(b_t^{\rm req},-C_t,D_t),\\
- c_t&=\pos{-b_t},\qquad d_t=\pos{b_t}.
+ \tilde b_t&=\clip(b_t^{\rm req},-C_t,D_t).
 \end{align}
 Finally curtail any remaining surplus that battery adjustment cannot absorb:
 \begin{equation}
- u_t=\bar u_t+
+ \tilde u_t=\bar u_t+
  \min\{\widetilde V_t-\bar u_t,
-             \pos{\widetilde V_t-\bar u_t+b_t-g_t^\star}\}.
+             \pos{\widetilde V_t-\bar u_t+\tilde b_t-g_t^\star}\}.
 \end{equation}
+The controller then recovers curtailed PV using the available battery headroom,
+without changing grid exchange. It reduces discharge before increasing charge:
+\begin{align}
+ r_t&=\min\{\tilde u_t,\pos{\tilde b_t+C_t}\},\\
+ b_t&=\tilde b_t-r_t,\qquad u_t=\tilde u_t-r_t,\\
+ c_t&=\pos{-b_t},\qquad d_t=\pos{b_t}.
+\end{align}
+This is an unconditional feedback action, rather than a new optimization; its
+SOC and degradation effects carry forward to later intervals.
 Thus excess PV first decreases discharge, then increases charging as needed and
 feasible, then is curtailed. A PV shortfall first releases planned curtailment,
 then reduces charging or increases discharge within the actual SOC box. The

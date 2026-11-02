@@ -211,6 +211,13 @@ def test_relocated_run_preserves_resume_identity(monkeypatch, tmp_path):
     continuous.run_continuous_experiment(config)
     assert calls[0] == calls[1]
     assert json.loads((new / "json/study_config.json").read_text())["continuous_optimization"]["run_id"] == "original"
+    manifest_path = new / "json/manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    old_manifest = {**manifest, "policy_version": "continuous-retained-plan-v2"}
+    manifest_path.write_text(json.dumps(old_manifest))
+    with pytest.raises(ValueError, match="inputs or policy"):
+        continuous.run_continuous_experiment(config)
+    manifest_path.write_text(json.dumps(manifest))
     config["solver"]["seed"] += 1
     with pytest.raises(ValueError, match="non-location"):
         continuous.run_continuous_experiment(config)

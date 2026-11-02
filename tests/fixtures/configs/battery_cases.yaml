@@ -320,10 +320,35 @@ feedback_cases:
     steps:
       - {pv_ac_mw: 0.0, requested_charge_mw: 0.5, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.0, grid_target_mw: -0.5}
     expected: {charge_mw: 0.5, discharge_mw: 0.0, curtailment_mw: 0.0, grid_mw: -0.5, energy_end_mwh: 0.62125}
-  matching_pv_preserves_plan:
+  matching_pv_recovers_scheduled_curtailment:
     steps:
       - {pv_ac_mw: 1.0, requested_charge_mw: 0.3, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.2, grid_target_mw: 0.5}
-    expected: {charge_mw: 0.3, discharge_mw: 0.0, curtailment_mw: 0.2, grid_mw: 0.5, energy_end_mwh: 0.57275}
+    expected: {charge_mw: 0.5, discharge_mw: 0.0, curtailment_mw: 0.0, grid_mw: 0.5, energy_end_mwh: 0.62125, curtailment_recovered_mw: 0.2}
+  scheduled_curtailment_limited_by_soc:
+    initial_energy_mwh: 0.95
+    steps:
+      - {pv_ac_mw: 1.0, requested_charge_mw: 0.0, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.5, grid_target_mw: 0.5}
+    expected: {charge_mw: 0.2061855670103093, discharge_mw: 0.0, curtailment_mw: 0.2938144329896907, grid_mw: 0.5, energy_end_mwh: 1.0, curtailment_recovered_mw: 0.2061855670103093}
+  scheduled_curtailment_limited_by_power:
+    battery: half_power
+    steps:
+      - {pv_ac_mw: 2.0, requested_charge_mw: 0.0, requested_discharge_mw: 0.0, requested_curtailment_mw: 1.5, grid_target_mw: 0.5}
+    expected: {charge_mw: 0.5, discharge_mw: 0.0, curtailment_mw: 1.0, grid_mw: 0.5, energy_end_mwh: 0.62125, curtailment_recovered_mw: 0.5}
+  scheduled_curtailment_replaces_discharge_then_charges:
+    steps:
+      - {pv_ac_mw: 0.8, requested_charge_mw: 0.0, requested_discharge_mw: 0.3, requested_curtailment_mw: 0.5, grid_target_mw: 0.6}
+    expected: {charge_mw: 0.2, discharge_mw: 0.0, curtailment_mw: 0.0, grid_mw: 0.6, energy_end_mwh: 0.5485, curtailment_recovered_mw: 0.5}
+  scheduled_curtailment_with_full_battery:
+    initial_energy_mwh: 1.0
+    steps:
+      - {pv_ac_mw: 1.0, requested_charge_mw: 0.0, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.5, grid_target_mw: 0.5}
+    expected: {charge_mw: 0.0, discharge_mw: 0.0, curtailment_mw: 0.5, grid_mw: 0.5, energy_end_mwh: 1.0, curtailment_recovered_mw: 0.0}
+  scheduled_curtailment_without_battery:
+    battery: no_bess
+    initial_energy_mwh: 0.0
+    steps:
+      - {pv_ac_mw: 1.0, requested_charge_mw: 0.0, requested_discharge_mw: 0.0, requested_curtailment_mw: 0.5, grid_target_mw: 0.5}
+    expected: {charge_mw: 0.0, discharge_mw: 0.0, curtailment_mw: 0.5, grid_mw: 0.5, energy_end_mwh: 0.0, curtailment_recovered_mw: 0.0}
   missing_charge_cannot_fund_future_discharge:
     initial_energy_mwh: 0.0
     duration_hours: 1.0
