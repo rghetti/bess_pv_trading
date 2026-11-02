@@ -69,6 +69,14 @@ carried from August 1. The price data record IDA1 cancellations on August 4,
 skips those auctions. Outputs are grouped under each farm, with comparison
 tables and plot in `comparisons/farm_<id>/2026_08_mixed_models_pv_comparison`.
 
+Each completed continuous run also writes `summary.md` in its run directory.
+The January and August farm-comparison launchers write a three-strategy
+`summary.md` alongside their comparison plot and CSVs. These tables report
+realized profit, auction revenue and imbalance settlement, battery wear, fees,
+signed and absolute imbalance, PV production, battery charge and discharge,
+curtailment, and fallback/non-optimal solve counts. The perfect-PV row is an
+information benchmark. August totals cover 2–31 August only.
+
 `continuous_optimization_2025-01.yaml` is a separate consecutive-delivery
 experiment. From the repository root, run:
 

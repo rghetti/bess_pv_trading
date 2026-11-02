@@ -96,6 +96,10 @@ def test_continuous_comparison_pairs_days_and_keeps_reference_timings_separate(r
         assert pd.read_csv(tmp_path / strategy / "csv/accepted_trades.csv").empty
         assert pd.read_csv(tmp_path / strategy / "csv/state_projections.csv").empty
     report = save_continuous_comparison(config, tmp_path / "comparison", summaries)
+    markdown = (tmp_path / "comparison/summary.md").read_text()
+    assert f"Farm {config['plant']['farm_id']}" in markdown
+    assert "Integrated" in markdown and "Perfect PV reference" in markdown
+    assert "Fallbacks" in markdown and "Non-optimal solves" in markdown
     assert report["same_horizon_perfect_pv_profit_eur"] == summaries["perfect_pv"]["total_gain_eur"]
     assert report["common_prices_weather_settlement_and_assets_verified"] is False
     comparison = pd.read_csv(tmp_path / "comparison/csv/strategy_comparison.csv").set_index("strategy")

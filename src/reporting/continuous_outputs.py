@@ -11,6 +11,7 @@ import pandas as pd
 
 from .optimization_timing import optimization_timing_report, solve_timing, timing_statistics
 from .plots import plot_boundary_series, plot_interval_series, plot_pv_series, pv_power_allocation
+from .continuous_summary import write_continuous_markdown
 
 
 def _json_value(value):
@@ -533,4 +534,20 @@ def save_continuous_comparison(config, destination, summaries):
         plt.close(fig)
         save_continuous_projection_plots(config, destination, by_strategy)
         save_daily_imbalance_comparison(config, destination, daily)
+    settings = config.get("continuous_optimization", {})
+    ensemble = settings.get("pv_ensemble", {})
+    members = ensemble.get("member_count")
+    if ensemble.get("enabled"):
+        forecast_label = f"{int(members) + 1} PV scenarios" if members is not None else "PV scenarios"
+    else:
+        forecast_label = "deterministic PV"
+    perfect_label = ("Perfect PV reference (reoptimized at each auction)"
+        if settings.get("perfect_pv_reoptimize_at_each_auction", False)
+        else "Perfect PV reference (first auction only)")
+    write_continuous_markdown(destination / "summary.md", daily, farm_id=config["plant"]["farm_id"],
+        labels={"integrated": f"Integrated ({forecast_label})",
+                "current_auction_only": f"Current auction only ({forecast_label})",
+                "perfect_pv": perfect_label},
+        solves_by_strategy={key: value["optimization_timing"]["solves"]
+                            for key, value in by_strategy.items()})
     return report

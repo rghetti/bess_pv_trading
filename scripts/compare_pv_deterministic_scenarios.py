@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+from bess_pv_trading.reporting.continuous_summary import aggregate_continuous_daily, write_continuous_markdown
 
 
 def _read_json(path: Path):
@@ -33,23 +34,24 @@ def compare(deterministic: Path, scenarios: Path, output: Path) -> None:
     sources = (("deterministic", deterministic, "integrated"),
                ("scenarios_51", scenarios, "integrated"),
                ("perfect_pv", scenarios, "perfect_pv"))
-    frames = []
+    frames, solves = [], {}
     for label, root, strategy in sources:
         frame = pd.read_csv(root / "strategies" / strategy / "csv/daily_kpis.csv")
         if list(frame.delivery_day) != days:
             raise ValueError(f"Daily results for {label} do not match the pinned dates")
         frame.insert(0, "comparison_label", label)
         frames.append(frame)
+        solve_path = root / "strategies" / strategy / "json/solves.json"
+        solves[label] = _read_json(solve_path) if solve_path.is_file() else None
     daily = pd.concat(frames, ignore_index=True)
-    metrics = ("net_profit_eur", "auction_revenue_eur", "imbalance_cashflow_eur", "degradation_eur",
-               "import_fee_eur", "transaction_fee_eur", "signed_imbalance_mwh", "absolute_imbalance_mwh",
-               "fallback_count")
-    monthly = daily.groupby("comparison_label", sort=False)[list(metrics)].sum().reset_index()
+    monthly = aggregate_continuous_daily(daily, strategy_column="comparison_label")
     last_soc = daily.groupby("comparison_label", sort=False).final_soc_percent.last()
     monthly["final_soc_percent"] = monthly.comparison_label.map(last_soc)
     output.mkdir(parents=True, exist_ok=True)
     daily.to_csv(output / "daily_comparison.csv", index=False)
     monthly.to_csv(output / "monthly_comparison.csv", index=False)
+    labels = {"deterministic": "Updating deterministic forecast", "scenarios_51": "51 PV scenarios",
+              "perfect_pv": "Perfect PV reference (DA only)"}
     (output / "input_verification.json").write_text(json.dumps({"matched_delivery_days": len(days),
         "matched": ["realized PV", "auction prices", "settlement prices", "plant", "asset settings",
                     "deterministic weather forecasts"],
@@ -59,8 +61,6 @@ def compare(deterministic: Path, scenarios: Path, output: Path) -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    labels = {"deterministic": "Updating deterministic forecast", "scenarios_51": "51 PV scenarios",
-              "perfect_pv": "Perfect PV reference (DA only)"}
     fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True, layout="constrained")
     for label, frame in daily.groupby("comparison_label", sort=False):
         dates = pd.to_datetime(frame.delivery_day)
@@ -72,6 +72,8 @@ def compare(deterministic: Path, scenarios: Path, output: Path) -> None:
     axes[0].legend()
     fig.savefig(output / "profit_and_imbalances.png", dpi=150)
     plt.close(fig)
+    write_continuous_markdown(output / "summary.md", daily, farm_id=inputs[0]["plant"]["farm_id"],
+        strategy_column="comparison_label", labels=labels, solves_by_strategy=solves)
 
 
 def main() -> None:
