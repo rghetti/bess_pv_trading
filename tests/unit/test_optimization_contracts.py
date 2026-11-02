@@ -236,3 +236,32 @@ def test_synthetic_cli_adapter_preserves_imbalance_policy(enabled):
     config = load_config(Path(__file__).resolve().parents[2] / "configs/full_experiments/synthetic_small.yaml")
     config["trading"]["optimize_imbalances"] = enabled
     assert _optimization_inputs(config).optimize_imbalances is enabled
+
+
+@pytest.mark.parametrize("cvar_weight", [0.0, 100.0])
+def test_validation_keeps_physical_balance_and_model_accounting_separate(cvar_weight):
+    """Sub-tolerance MWh residuals can become several micro-euros at large penalties."""
+    inputs = replace(example_inputs(prices=[[100.0]], pv=np.ones((1, 1))),
+                     imbalance_penalty_eur_per_mwh=500.0,
+                     imbalance_cvar_weight_eur_per_mwh=cvar_weight)
+    residual_mwh = 2.8869e-6 / 500.0
+    arrays = {"charge_mw": np.zeros((1, 1)), "discharge_mw": np.zeros((1, 1)),
+        "mode_charge": np.zeros((1, 1)), "curtailment_mw": np.zeros((1, 1)),
+        "pv_injection_mw": np.ones((1, 1)), "grid_mw": np.ones((1, 1)),
+        "energy_mwh": np.zeros((1, 2)), "net_position_mwh": np.ones((1, 1)),
+        "imbalance_mwh": np.zeros((1, 1)),
+        "imbalance_positive_mwh": np.full((1, 1), residual_mwh),
+        "imbalance_negative_mwh": np.zeros((1, 1))}
+    penalty = 500.0 * residual_mwh
+    profit = 100.0 - penalty
+    objective = profit - cvar_weight * residual_mwh
+    result = OptimizationResult("optimal", True, objective, arrays, {("DA", "root", "t0"): 1.0},
+        {"imbalance_penalty": np.array([penalty]), "operating_profit": np.array([profit])})
+    report = validate_solution(inputs, result)
+    assert report.valid
+    assert report.accounting_differences_eur["imbalance_penalty"] == pytest.approx(penalty)
+    assert report.max_errors["positive_imbalance_mwh"] == pytest.approx(residual_mwh)
+    # Material split/balance errors and incorrect objective values remain invalid.
+    changed_arrays = dict(arrays, imbalance_positive_mwh=np.full((1, 1), 1e-4))
+    assert not validate_solution(inputs, replace(result, arrays=changed_arrays)).valid
+    assert not validate_solution(inputs, replace(result, objective_eur=objective + 0.01)).valid

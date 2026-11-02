@@ -9,7 +9,8 @@ from .market_regime import configured_auction_product_groups, configured_dispatc
 from ..transaction_fees import scenario_fee_details
 
 
-def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray], trades: dict[tuple[str, str, str], float]) -> dict[str, np.ndarray]:
+def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray], trades: dict[tuple[str, str, str], float],
+                        *, use_imbalance_split: bool = False) -> dict[str, np.ndarray]:
     """Evaluate actual signed settlement and AC throughput without solver expressions."""
     count = len(inputs.scenarios.scenario_ids)
     revenue = np.zeros(count)
@@ -28,8 +29,12 @@ def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray]
     # When `negative_prices is None`, set `negative_prices` using `inputs.scenarios.imbalance_prices_eur_per_mwh`.
     if negative_prices is None:
         negative_prices = inputs.scenarios.imbalance_prices_eur_per_mwh
-    settlement = np.sum(np.maximum(imbalance, 0) * inputs.scenarios.imbalance_prices_eur_per_mwh + np.minimum(imbalance, 0) * negative_prices, axis=1)
-    penalty = np.abs(imbalance).sum(axis=1) * inputs.imbalance_penalty_eur_per_mwh
+    # Model accounting uses its split variables; physical accounting uses the
+    # independently reconstructed grid-minus-position balance by default.
+    positive = arrays["imbalance_positive_mwh"] if use_imbalance_split else np.maximum(imbalance, 0)
+    negative = arrays["imbalance_negative_mwh"] if use_imbalance_split else np.maximum(-imbalance, 0)
+    settlement = np.sum(positive * inputs.scenarios.imbalance_prices_eur_per_mwh - negative * negative_prices, axis=1)
+    penalty = (positive + negative).sum(axis=1) * inputs.imbalance_penalty_eur_per_mwh
     # When `not inputs.optimize_imbalances`, set `(settlement, penalty)` using `(np.zeros(count), np.zeros(count))`.
     if not inputs.optimize_imbalances:
         settlement, penalty = np.zeros(count), np.zeros(count)
@@ -251,7 +256,8 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
                 else:
                     observed[float(value)] = s
     try:
-        components = evaluate_components(inputs, arrays, result.trades)
+        physical_components = evaluate_components(inputs, arrays, result.trades)
+        components = evaluate_components(inputs, arrays, result.trades, use_imbalance_split=True)
     except ValueError as error:
         return ValidationReport(False, errors, None, (f"Cannot evaluate degradation: {error}",))
     # Recompute balances, signs, sharing and accounting independently of Gurobi for each `(name, values)` in `result.components.items()`.
@@ -262,8 +268,8 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     objective = float(np.dot(inputs.scenarios.probabilities, components["operating_profit"]))
     if inputs.imbalance_cvar_weight_eur_per_mwh:
         # Minimize the discrete CVaR epigraph independently of solver variables.
-        totals = np.abs(result.arrays["imbalance_mwh"]).sum(axis=1)
-        candidates = np.unique(np.concatenate(([0.0], totals)))
+        totals = (arrays["imbalance_positive_mwh"] + arrays["imbalance_negative_mwh"]).sum(axis=1)
+        candidates = np.unique(np.concatenate(([0.0], totals[totals >= 0])))
         cvar = min(float(threshold + np.dot(inputs.scenarios.probabilities,
             np.maximum(totals - threshold, 0.0)) / (1.0 - inputs.imbalance_cvar_confidence))
             for threshold in candidates)
@@ -278,4 +284,6 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
 
     violations = tuple(f"{name}: {error:.6g}" for name, error in errors.items()
         if error > allowed_error(name))
-    return ValidationReport(not violations, errors, objective, violations)
+    accounting_differences = {name: float(np.max(np.abs(components[name] - physical_components[name]), initial=0))
+        for name in ("imbalance_cashflow", "imbalance_penalty", "operating_profit")}
+    return ValidationReport(not violations, errors, objective, violations, accounting_differences)

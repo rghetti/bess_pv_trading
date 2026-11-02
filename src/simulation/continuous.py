@@ -656,10 +656,11 @@ class ContinuousReplay:
             integrality_tolerance=validation_integrality_tolerance)
         diagnostic["solution_validation_tolerance"] = validation_tolerance
         diagnostic["solution_validation_integrality_tolerance"] = validation_integrality_tolerance
+        diagnostic["validation"] = asdict(validation)
         # Enforce the input contract: Continuous solution validation failed: `validation.violations`.
         if not validation.valid:
+            self._save_attempts()
             raise RuntimeError(f"Continuous solution validation failed: {validation.violations}")
-        diagnostic["validation"] = asdict(validation)
         diagnostic["expected_auction_revenue_eur"] = float(np.dot(
             inputs.scenarios.probabilities, result.components["auction_revenue"]))
         self.solves.append(diagnostic)

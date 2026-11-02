@@ -748,3 +748,5 @@ class ValidationReport:
     max_errors: Mapping[str, float]
     expected_objective_eur: float | None
     violations: tuple[str, ...] = ()
+    # Maximum model-split versus physical-balance accounting differences (EUR).
+    accounting_differences_eur: Mapping[str, float] = field(default_factory=dict)
