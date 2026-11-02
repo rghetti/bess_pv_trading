@@ -1,2 +1,28 @@
 # Legacy filename; export the complete CSV-approved modeling population.
 include: ../standard.yaml
+
+# Workflow-specific settings, independent of the shared defaults.
+pv_episode_curation:
+  farm_ids:
+  - 1
+  - 345
+  - 901
+  - 910
+  disconnect_source_root: outputs/pv_data_quality/ghi_power_disconnect_full_history
+  review_source_root: outputs/pv_data_quality/full_history_2025_to_2026_08
+  disconnect_kinds:
+  - low_power
+  - high_power
+  review_issues:
+  - low_output_high_ghi
+  - nonzero_plateau
+  - above_ac_rating
+  - partial_recovery_between_outages
+  source_flags:
+    sustained_zero_outage: outage_excluded
+    nonzero_plateau: plateau_flag
+    reviewed_exclusion: review_excluded
+  zero_detection:
+    minimum_consecutive_intervals: 4
+    minimum_satellite_ghi_w_m2: 100.0
+    expand_full_daylight_run: true

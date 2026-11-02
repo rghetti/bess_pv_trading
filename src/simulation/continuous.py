@@ -30,6 +30,21 @@ from .synthetic import json_default, write_json
 
 CONTINUOUS_POLICY_VERSION = "continuous-retained-plan-v2"
 
+# These sections were previously inherited by every run but are not used by
+# continuous replay. Retaining their old values must not prevent resuming a
+# checkpoint after study-specific settings were moved into their own configs.
+_OBSOLETE_SHARED_SECTIONS = frozenset({
+    "api", "gme_workbook_import", "manual_market_import", "terna_workbook_import", "report",
+    "participation_study", "reoptimization_baseline", "pv_cleaned_hpo", "pv_data_quality_review",
+    "pv_ensemble_study", "pv_episode_curation", "pv_error_diagnostics", "pv_ghi_power_disconnect",
+    "pv_hourly_bias_study", "pv_mayer_neural", "pv_mayer_postprocessing", "pv_monthly_retraining",
+    "pv_near_flat_review", "pv_neural_tuning", "pv_online_bias", "pv_online_crps_study",
+    "pv_online_ridge_study", "pv_outage_export", "pv_physical_pilot_comparison",
+    "pv_probabilistic_study", "pv_realized_irradiance_search", "pv_realized_refinement",
+    "pv_retrained_error_diagnostics", "pv_review_predictions", "pv_satellite_benchmark",
+    "pv_satellite_ghi_reference", "pv_timing_ablation", "pv_validation_audit",
+})
+
 
 @dataclass(frozen=True)
 class ContinuousAuction:
@@ -54,6 +69,33 @@ def _configuration_fingerprint(config):
     return hashlib.sha256(json.dumps(comparable, sort_keys=True, default=json_default).encode()).hexdigest()
 
 
+def _relocated_configuration_fingerprint(config, previous_config, previous_fingerprint):
+    """Accept verified location changes and removal of unused inherited study settings."""
+    if _configuration_fingerprint(previous_config) != previous_fingerprint:
+        raise ValueError("Saved continuous configuration does not match its original fingerprint")
+    comparable = deepcopy(config)
+    for key in ("output_root", "run_id"):
+        comparable["continuous_optimization"][key] = previous_config["continuous_optimization"].get(key)
+    historical = deepcopy(previous_config)
+    for key in _OBSOLETE_SHARED_SECTIONS - comparable.keys():
+        historical.pop(key, None)
+    previous_outputs = historical.get("experiment_outputs", {})
+    current_outputs = comparable.get("experiment_outputs", {})
+    if (previous_outputs.get("root") == "outputs/full_experiments/gme_oracle"
+            and current_outputs.get("root") == "outputs/full_experiments"):
+        previous_outputs["root"] = current_outputs["root"]
+    if "pv_only_baseline" not in current_outputs:
+        previous_outputs.pop("pv_only_baseline", None)
+    current_ensemble = comparable["continuous_optimization"].get("pv_ensemble", {})
+    previous_ensemble = historical["continuous_optimization"].get("pv_ensemble", {})
+    if not current_ensemble.get("enabled") and not previous_ensemble.get("enabled"):
+        for key in ("zarr", "member_count"):
+            previous_ensemble[key] = current_ensemble.get(key)
+    if _configuration_fingerprint(comparable) != _configuration_fingerprint(historical):
+        raise ValueError("Cannot resume continuous study with changed non-location configuration")
+    return previous_fingerprint
+
+
 def _physical_state(value):
     """Restore immutable physical state, including optional Xu segment history."""
     values = dict(value)
@@ -76,13 +118,15 @@ def _accepted_trade(value):
 class ContinuousReplay:
     """One actual state and ledger, with date-scoped plans and shadow projections."""
 
-    def __init__(self, config, prepared, strategy, destination, resume=False, progress=None):
+    def __init__(self, config, prepared, strategy, destination, resume=False, progress=None,
+                 config_fingerprint=None):
         # Enforce the input contract: Unsupported continuous strategy `strategy`.
         if strategy not in {"integrated", "current_auction_only", "perfect_pv"}:
             raise ValueError(f"Unsupported continuous strategy {strategy}")
         self.config, self.prepared, self.strategy = config, prepared, strategy
         self.progress = progress
         self.destination = Path(destination)
+        self.resume = bool(resume)
         self.current_only = strategy == "current_auction_only"
         self.perfect = strategy == "perfect_pv"
         self.perfect_reoptimizes = config["continuous_optimization"].get(
@@ -97,7 +141,7 @@ class ContinuousReplay:
         self.aging = degradation_settings_from_config(config)
         self.trading = config["trading"]
         self.dispatch_policy = config["execution"].get("dispatch_policy", "track_committed_grid")
-        self.config_fingerprint = _configuration_fingerprint(config)
+        self.config_fingerprint = config_fingerprint or _configuration_fingerprint(config)
         self.identity = {"policy_version": CONTINUOUS_POLICY_VERSION, "strategy": strategy,
             "config_fingerprint": self.config_fingerprint, "input_fingerprint": prepared["input_fingerprint"]}
         # Enforce the input contract: Continuous strategy output exists: `self.destination`.
@@ -766,7 +810,9 @@ class ContinuousReplay:
         self._save_attempts()
         write_json(self.destination / "json/event_trace.json", self.event_trace)
         write_json(self.destination / "json/price_publications.json", self.publications)
-        write_json(self.destination / "json/study_config.json", self.config)
+        saved_config = self.destination / "json/study_config.json"
+        if not self.resume or not saved_config.exists():
+            write_json(saved_config, self.config)
         pd.DataFrame(self.forecast_inputs).to_csv(self.destination / "csv/pv_forecast_inputs.csv", index=False)
         from ..reporting.continuous_outputs import save_continuous_strategy_outputs
         summary = save_continuous_strategy_outputs(self.config, self.destination, self.strategy,
@@ -791,9 +837,11 @@ class ContinuousReplay:
         return summary
 
 
-def replay_continuous_strategy(config, prepared, strategy, destination, resume=False, progress=None):
+def replay_continuous_strategy(config, prepared, strategy, destination, resume=False, progress=None,
+                               config_fingerprint=None):
     """Reuse one replay implementation for causal policies and perfect PV."""
-    return ContinuousReplay(config, prepared, strategy, destination, resume=resume, progress=progress).run()
+    return ContinuousReplay(config, prepared, strategy, destination, resume=resume, progress=progress,
+                            config_fingerprint=config_fingerprint).run()
 
 
 def run_continuous_experiment(config, *, progress=None):
@@ -807,8 +855,8 @@ def run_continuous_experiment(config, *, progress=None):
     # Enforce the input contract: Continuous comparisons require actual settlement; set settlement.enabled: true.
     if prepared["imbalance_prices_eur_per_mwh"] is None:
         raise ValueError("Continuous comparisons require actual settlement; set settlement.enabled: true")
-    root = config_path(config, settings["output_root"])
-    run_id = str(settings.get("run_id") or datetime.now(timezone.utc).strftime("continuous_%Y%m%dT%H%M%S%fZ"))
+    root = config_path(config, settings["output_root"]) / f"farm_{config['plant']['farm_id']}"
+    run_id = str(settings.get("run_id") or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ"))
     destination = root / run_id
     resume = bool(settings.get("resume", False))
     # Validate the run scope before touching its lock; clearing happens only
@@ -829,10 +877,17 @@ def run_continuous_experiment(config, *, progress=None):
         # When `manifest_path.exists()`, set `previous` using `json.loads(manifest_path.read_text())`.
         if manifest_path.exists():
             previous = json.loads(manifest_path.read_text())
+            if resume and previous.get("config_fingerprint") != identity["config_fingerprint"]:
+                saved_config_path = destination / "json/study_config.json"
+                if not saved_config_path.is_file():
+                    raise ValueError("Cannot verify relocated continuous study without its original configuration")
+                identity["config_fingerprint"] = _relocated_configuration_fingerprint(
+                    config, json.loads(saved_config_path.read_text()), previous.get("config_fingerprint"))
             # Enforce the input contract: Cannot resume continuous study with different configuration, inputs or policy.
             if any(previous.get(key) != value for key, value in identity.items()):
                 raise ValueError("Cannot resume continuous study with different configuration, inputs or policy")
-        write_json(destination / "json/study_config.json", config)
+        if not resume or not (destination / "json/study_config.json").exists():
+            write_json(destination / "json/study_config.json", config)
         write_json(destination / "json/input_provenance.json", prepared["provenance"])
         revision = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False).stdout.strip()
         manifest = {"status": "running", **identity, "run_id": run_id, "output_dir": str(destination),
@@ -858,7 +913,8 @@ def run_continuous_experiment(config, *, progress=None):
                 if progress:
                     progress(f"Continuous trajectory {strategy}: {len(prepared['days'])} delivery days")
                 summaries[strategy] = replay_continuous_strategy(config, prepared, strategy,
-                    destination / "strategies" / strategy, resume=resume, progress=progress)
+                    destination / "strategies" / strategy, resume=resume, progress=progress,
+                    config_fingerprint=identity["config_fingerprint"])
                 manifest["completed_strategies"].append(strategy)
                 _atomic_json(manifest_path, manifest)
             from ..reporting.continuous_outputs import save_continuous_comparison

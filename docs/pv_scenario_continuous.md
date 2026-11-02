@@ -35,9 +35,9 @@ After both studies complete, produce a four-way comparison with:
 
 ```bash
 /home/rghetti/miniforge3/envs/bess/bin/python scripts/compare_pv_scenario_replays.py \
-  --exact outputs/continuous_optimization/continuous_farm1_2026_01_pv_scenarios_exact \
-  --penalty outputs/continuous_optimization/continuous_farm1_2026_01_pv_scenarios_penalty \
-  --output outputs/continuous_optimization/continuous_farm1_2026_01_pv_scenarios_comparison
+  --exact outputs/continuous_optimization/farm_1/2026_01_pv_scenarios_exact \
+  --penalty outputs/continuous_optimization/farm_1/2026_01_pv_scenarios_penalty \
+  --output outputs/continuous_optimization/comparisons/farm_1/2026_01_pv_scenarios_penalty100_comparison
 ```
 
 The comparison requires complete runs with matching delivery days. Daily tables retain

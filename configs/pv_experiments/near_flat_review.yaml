@@ -1,1 +1,28 @@
 include: ../standard.yaml
+
+# Workflow-specific settings, independent of the shared defaults.
+pv_near_flat_review:
+  output_root: outputs/pv_near_flat_review
+  run_id: near_flat_2025_2026
+  input_run: outputs/pv_realized_irradiance_search/four_vintages_2025_2026_v4
+  farm_ids:
+  - 1
+  - 345
+  - 901
+  - 910
+  timezone: Europe/Rome
+  tolerance_kw: 1.5
+  minimum_quarters: 4
+  priority_minimum_quarters: 8
+  priority_ghi_range_w_m2: 200.0
+  priority_zero_ghi_w_m2: 0.0
+  priority_minimum_ac_fraction: 0.01
+  linked_minimum_distinct_days: 3
+  plot_dpi: 140
+
+pv_review_predictions:
+  review_root: outputs/pv_near_flat_review/near_flat_2025_2026
+  physical_search_root: outputs/pv_realized_irradiance_search/four_vintages_2025_2026_v4
+  farm_ids:
+  - 1
+  assumed_forecast_availability_lag_hours: 6

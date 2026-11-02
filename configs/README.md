@@ -1,6 +1,24 @@
 # Configuration layout
 
-Every shipped configuration imports **[`standard.yaml`](standard.yaml) directly**. It contains the shared source schema, PV conversion, farm metadata, battery, SOC, throughput economics, calendar, solver settings, execution and settlement policies, optional comparison flags, acquisition defaults and reporting flags. Experiment files hold only overrides; no experiment inherits another experiment.
+Every shipped configuration imports **[`standard.yaml`](standard.yaml) directly**. It contains the shared source schema, PV conversion, farm metadata, battery, SOC, throughput economics, calendar, solver settings, execution and settlement policies. Each workflow configuration defines its own study, import and reporting settings; no experiment inherits another experiment.
+
+The top-level fields retained in the standard have these roles:
+
+| Fields | Shared purpose |
+| --- | --- |
+| `schema_version` | Configuration schema version. |
+| `inputs`, `source`, `forecast_mapping`, `forecast_semantics` | Common farm data, clock conventions and weather-variable mappings. |
+| `policy`, `review`, `analysis`, `pv_data_quality` | Shared data handling, raw-review and approved modeling exclusions. |
+| `farm_id`, `farms` | Selected farm and shared farm and asset metadata. |
+| `forecast_run`, `forecast`, `pv` | Forecast selection and reusable weather-to-PV conversion. |
+| `market`, `trading`, `transaction_fees`, `settlement` | Market calendar, trading rules, fees and settlement. |
+| `plant`, `battery`, `state`, `degradation`, `execution` | Physical assets, operating state and execution behavior. |
+| `experiment_outputs`, `outputs`, `solver` | Common output controls and numerical solver settings. |
+| `continuous_optimization` | Reusable continuous-replay controls; ensemble source and member count are supplied by an enabled study. |
+
+GME oracle, participation, acquisition, workbook import, reporting and individual
+PV studies keep their own sections in the relevant workflow YAML. A new study
+should define its own parameters there rather than extending the standard.
 
 - `api_experiments/`: downloads, provider diagnostics, workbook imports and DuckDB acquisition.
 - `price_experiments/`: price-model training, calibration and evaluation.
@@ -10,8 +28,7 @@ Every shipped configuration imports **[`standard.yaml`](standard.yaml) directly*
 `api_experiments/manual_market_workbooks.yaml` stages current GME/Terna Excel
 files into a separate database while API acquisition continues. Its generated
 `import.yaml` is used by `merge-market-workbooks` and `check-market-history` only
-after the downloader stops. All defaults are in `manual_market_import` in the
-standard configuration; the audit includes preexisting January–March IDA history.
+after the downloader stops. Its settings are in `manual_market_import` in that workflow configuration; the audit includes preexisting January–March IDA history.
 
 Mappings merge recursively. Scalars and lists replace inherited values; explicit `null` is retained (including a free terminal SOC). Includes are relative to the including file. Data/output paths remain repository-relative: run commands from the repository root. Use the shared `load_config()` loader when reading experiment YAML from Python; a raw `yaml.safe_load()` does not apply inheritance.
 
@@ -28,7 +45,7 @@ python -m bess_pv_trading experiment-gme-oracle --config configs/full_experiment
 
 `${farm_id}` references are resolved **after all YAML and CLI overrides** and keep their numeric type when they occupy the whole value. They link `plant.farm_id` and `forecast.farm_id`; output IDs may embed the same reference. Selected farm metadata from Parquet determines capacity, tracking, tilt and azimuth in pvlib. The selected farm's weather and measured-power series are used; shared location/temperature/irradiance assumptions can be overridden normally. Temperature and wind influence the configured module-temperature model.
 
-`plant.poi_import_mw: auto` and `poi_export_mw: auto` use the selected farm's declared AC nameplate in `farms.<id>.ac_capacity_kw`, divided by 1000. This is an illustrative connection-rating proxy, **not a measured POI rating**. PV forecasts use that rating as their maximum output. pvlib's DC reference capacity is derived by dividing the AC rating by the independent `pv.dc.reference_conversion_efficiency` (0.96 in the shared defaults). The explicit or fitted output coefficient converts DC to AC, followed by the transformer factor and an AC rating cap. Measured production is already AC and receives only the configured kW-to-MW unit conversion. `configs/pv_calibration_2025-01_farm910.yaml` demonstrates the offline fit; `pv_calibration` defaults and output location are in `standard.yaml`. Set measured directional POI ratings once per farm:
+`plant.poi_import_mw: auto` and `poi_export_mw: auto` use the selected farm's declared AC nameplate in `farms.<id>.ac_capacity_kw`, divided by 1000. This is an illustrative connection-rating proxy, **not a measured POI rating**. PV forecasts use that rating as their maximum output. pvlib's DC reference capacity is derived by dividing the AC rating by the independent `pv.dc.reference_conversion_efficiency` (0.96 in the shared defaults). The explicit or fitted output coefficient converts DC to AC, followed by the transformer factor and an AC rating cap. Measured production is already AC and receives only the configured kW-to-MW unit conversion. `configs/pv_calibration_2025-01_farm910.yaml` demonstrates the offline fit; `pv_calibration` settings and output location are in that calibration configuration. Set measured directional POI ratings once per farm:
 
 ```yaml
 include: ../standard.yaml
@@ -54,7 +71,7 @@ Shared efficiencies are `sqrt(0.90)` in each direction, giving 90% AC-to-AC roun
 
 ## Integrated January 2026 forecast comparison
 
-The paired configs `full_experiments/continuous_optimization_2026-01_forecast_pilot.yaml` and `full_experiments/continuous_optimization_2026-01_pvlib_soc40.yaml` both select the farm battery automatically. Each runs integrated all-auction planning and a perfect-PV reference. They share 90% initial SOC, a 40% planned daily terminal minimum, a 50% final-day target, progressive GME transaction fees and signed imbalance settlement. Both set `resume: false`, so subsequent runs reuse their stable farm-labelled run IDs and replace the previous outputs. No new comparison runs are implied by resolving these configs.
+The paired configs `full_experiments/continuous_optimization_2026-01_forecast_pilot.yaml` and `full_experiments/continuous_optimization_2026-01_pvlib_soc40.yaml` both select the farm battery automatically. Each runs integrated all-auction planning and a perfect-PV reference. They share 90% initial SOC, a 40% planned daily terminal minimum, a 50% final-day target, progressive GME transaction fees and signed imbalance settlement. Both set `resume: false`, so subsequent runs reuse their stable run IDs inside the selected farm directory and replace the previous outputs. No new comparison runs are implied by resolving these configs.
 
 For example, select farm 901 for the two offline runs:
 
@@ -78,7 +95,7 @@ Core inputs include forecast GHI/beam irradiance, temperature and wind, plus det
 
 ## New studies and existing results
 
-Start with `include: ../standard.yaml`, select a farm and set the command's dates, inputs and output IDs. Copy the overrides from the closest existing example into the new file rather than importing that example. The current historical defaults use exact planned delivery, signed imbalance settlement after execution when enabled, and committed-grid feedback. Legacy synthetic/prepared examples retain their own previous policies explicitly. All feature flags are visible in the standard, even in older examples.
+Start with `include: ../standard.yaml`, select a farm and set the command's dates, inputs and output IDs. Copy the workflow-specific sections and relevant overrides from the closest existing example into the new file rather than importing that example. The current historical defaults use exact planned delivery, signed imbalance settlement after execution when enabled, and committed-grid feedback. Legacy synthetic/prepared examples retain their own previous policies explicitly. Study-specific flags and parameters belong in the study configuration, not the shared standard.
 
 The generic `gme_day.yaml` uses the configured day to set calendar validity, refreshes causally available PV at each auction, settles actual NORD imbalances, and saves the perfect-information and PV-only comparisons. It generates a fresh output timestamp. Auction dataset native resolutions must match the chosen date; the supplied setup is hourly DA and quarter-hour IDA for January 2025. Participation studies choose native durations separately for each delivery date.
 

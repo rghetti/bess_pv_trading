@@ -59,7 +59,7 @@ we need to linearly interpolate it
 - The working env is bess, activated by conda activate bess; do not ever change it or download
 packages in it without my explicit permission
 - Never hard code particular values we agreed on, make scripts as much as possible configurable from the outside via yaml files
-- Configuration convention: whenever adding a configuration option or feature flag, also add its documented default to `configs/standard.yaml` in the same change so existing configurations inherit it. New experiment YAMLs must import `configs/standard.yaml` directly (using a relative include) and contain only their overrides; update the shared defaults whenever configuration behavior changes.
+- Configuration convention: keep broadly shared operational settings in `configs/standard.yaml`. Put study-specific parameters, import settings and experiment-only feature flags in the relevant study or workflow configuration, rather than adding them to the standard file. New experiment YAMLs import `configs/standard.yaml` directly using a relative include and explicitly define their own study settings.
 - At the end of EVERY query when you are presenting the work you did, inspect the worktree and ask me
 if i want to Commit your work; the remote repo is called bess_pv_trading.
 - This is the working directory. The farm time series Zarr and static-parameter Parquet files are in `data/farms data/`; later price downloads also belong under `data/`.

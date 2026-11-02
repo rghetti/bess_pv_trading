@@ -1,9 +1,9 @@
 # Keep hourly MGP; replace the invalid hourly IDA summaries with native PT15 data.
 include: ../standard.yaml
 gme_workbook_import:
+  retire_hourly_ida_snapshots: true
   database_path: data/api/market.duckdb
   duckdb_threads: 4
-  retire_hourly_ida_snapshots: true
   retired_snapshot_directory: data/archive/gme/hourly_ida
   report_path: outputs/data_imports/gme_native_prices/manifest.json
   timezone: Europe/Rome
@@ -19,37 +19,37 @@ gme_workbook_import:
   decimal_separator: ','
   thousands_separator: ''
   missing_price_tokens:
-    - ''
-    - '-'
-    - —
+  - ''
+  - '-'
+  - —
   workbooks:
-    - dataset: day_ahead_prices
-      zone: NORD
-      path: data/20250101_20250831_MGP_PrezziZonali_Nord.xlsx
-      native_interval_minutes: 60
-    - dataset: ida1_prices
-      zone: NORD
-      path: data/20250101_20250401_MI-A1_PrezziZonali_Nord.xlsx
-      date_end_exclusive: '2025-04-02'
-      native_interval_minutes: 15
-      columns:
-        period: Periodo
-        hour: Ora
-    - dataset: ida2_prices
-      zone: NORD
-      path: data/20250101_20250401_MI-A2_PrezziZonali_Nord.xlsx
-      date_end_exclusive: '2025-04-02'
-      native_interval_minutes: 15
-      columns:
-        period: Periodo
-        hour: Ora
-    - dataset: ida3_prices
-      zone: NORD
-      path: data/20250101_20250401_MI-A3_PrezziZonali_Nord.xlsx
-      date_end_exclusive: '2025-04-02'
-      native_interval_minutes: 15
-      columns:
-        period: Periodo
-        hour: Ora
-      eligible_start_clock: '12:00'
+  - dataset: day_ahead_prices
+    zone: NORD
+    path: data/20250101_20250831_MGP_PrezziZonali_Nord.xlsx
+    native_interval_minutes: 60
+  - dataset: ida1_prices
+    zone: NORD
+    path: data/20250101_20250401_MI-A1_PrezziZonali_Nord.xlsx
+    date_end_exclusive: '2025-04-02'
+    native_interval_minutes: 15
+    columns:
+      period: Periodo
+      hour: Ora
+  - dataset: ida2_prices
+    zone: NORD
+    path: data/20250101_20250401_MI-A2_PrezziZonali_Nord.xlsx
+    date_end_exclusive: '2025-04-02'
+    native_interval_minutes: 15
+    columns:
+      period: Periodo
+      hour: Ora
+  - dataset: ida3_prices
+    zone: NORD
+    path: data/20250101_20250401_MI-A3_PrezziZonali_Nord.xlsx
+    date_end_exclusive: '2025-04-02'
+    native_interval_minutes: 15
+    columns:
+      period: Periodo
+      hour: Ora
+    eligible_start_clock: '12:00'
 farm_id: 1

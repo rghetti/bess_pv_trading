@@ -52,7 +52,7 @@ experiment_outputs:
   run_id: my_january_study_farm${farm_id}
 ```
 
-All remaining battery, SOC, market, execution, degradation, comparison and output settings come from [`configs/standard.yaml`](configs/standard.yaml). To inspect the complete effective YAML or switch farms without editing the study:
+Shared battery, SOC, market, execution and degradation settings come from [`configs/standard.yaml`](configs/standard.yaml). To inspect the complete effective YAML or switch farms without editing the study:
 
 ```bash
 python -m bess_pv_trading resolve-config --config configs/full_experiments/gme_day.yaml --farm-id 345
@@ -194,7 +194,7 @@ at the final study boundary; intermediate days have no terminal target or
 inventory salvage. `null` disables that final constraint. Realized final SOC
 is reported separately, since feedback execution can differ from the plan.
 
-Results are saved under `outputs/continuous_optimization/<run_id>/` with per
+Results are saved under `outputs/continuous_optimization/farm_<id>/<run_id>/` with per
 strategy `csv/`, `json/` and `plots/` folders. They include interval execution,
 daily/monthly settled profit, accepted trades, forecasts and dispatch plans,
 projected-versus-realized starting states, degradation, imbalances, final
@@ -253,7 +253,7 @@ configs/
   api_experiments/   acquisition, provider diagnostics, workbook imports
   price_experiments/ retained market-import example; prior price studies are archived
   full_experiments/  complete historical/synthetic studies and prepared-input examples
-  standard.yaml    common parameters and feature flags for every workflow
+  standard.yaml    shared operational parameters across workflows
   data_schema.yaml  data-schema entry point importing the standard
   farms_nord.yaml   selected-farm PV preparation overrides
 bess_pv_trading/     preserved audit tools and checkout import compatibility
@@ -263,7 +263,7 @@ docs/               mathematical model and focused technical notes
 tests/              unit/integration tests and explicitly synthetic fixtures
 ```
 
-YAML supports one `include`, resolved relative to the including YAML file. Nested mappings merge recursively; lists and scalar values replace inherited values. Data/output paths are generally repository-relative, so use the repository root as the working directory. Every shipped configuration imports `configs/standard.yaml` directly and overrides only its differences. References such as `${farm_id}` resolve after the final overrides; explicit `null` is preserved. Use `resolve-config` to inspect the effective YAML. Runs save that effective configuration. See [the configuration guide](configs/README.md).
+YAML supports one `include`, resolved relative to the including YAML file. Nested mappings merge recursively; lists and scalar values replace inherited values. Data/output paths are generally repository-relative, so use the repository root as the working directory. Every shipped configuration imports `configs/standard.yaml` directly and defines its own workflow-specific settings and overrides. References such as `${farm_id}` resolve after the final overrides; explicit `null` is preserved. Use `resolve-config` to inspect the effective YAML. Runs save that effective configuration. See [the configuration guide](configs/README.md).
 
 Useful full-study entry points:
 
@@ -491,7 +491,7 @@ PYTHONPATH=src python -m bess_pv_trading study-pv-calibration \
 
 It independently fits farms 910, 1, 345 and 901. January is warmup; February–December are scored on held-out delivery months. A monthly model is issued at local midnight on the day before that month's first delivery, using only completed, available targets. The last seven complete historical days select expanding versus 90-day history, transposition, and regularization; the chosen specification is refitted before forecasting the next month. Every family also retains its own predictions. `selected` chooses a family using that earlier validation only, so it need not be the best family in hindsight. The bundled study overrides each farm's `pv` mapping to `null`, retaining the original unfitted reference even after calibrated global parameters are promoted to the standard config.
 
-The comparison includes the fixed forecast, clipped scale-only MSE/Huber fits, scale plus Faiman thermal fits, tracker fits that also adjust GCR/maximum rotation, and farm 901 rear-side thermal fits with the declared row geometry held fixed. The DC reference, temperature coefficient, transformer factor, known metadata and proxy location remain fixed. Numerical bounds, search budgets, worker count and all other controls inherit documented defaults from `pv_calibration` in `configs/standard.yaml`. The model uses identical day/auction weights and the same physical forward calculation as the operational forecaster. Raw finite AC targets remain available; the current sustained-zero screen changes model-fit and evaluation eligibility while retaining other genuine zeros. Satellite GHI is used for that screen and diagnostics, never as a future forecast input. No target is filled from a prediction. The completed 2025 fit described below predates this screen.
+The comparison includes the fixed forecast, clipped scale-only MSE/Huber fits, scale plus Faiman thermal fits, tracker fits that also adjust GCR/maximum rotation, and farm 901 rear-side thermal fits with the declared row geometry held fixed. The DC reference, temperature coefficient, transformer factor, known metadata and proxy location remain fixed. Numerical bounds, search budgets, worker count and other controls are specified under `pv_calibration` in the selected study configuration. The model uses identical day/auction weights and the same physical forward calculation as the operational forecaster. Raw finite AC targets remain available; the current sustained-zero screen changes model-fit and evaluation eligibility while retaining other genuine zeros. Satellite GHI is used for that screen and diagnostics, never as a future forecast input. No target is filled from a prediction. The completed 2025 fit described below predates this screen.
 
 Outputs under `outputs/pv_calibration/<run_id>/` contain study comparisons and per-farm `json`, `csv`, `parquet`, and `plots` folders. `predictions.parquet` records the cutoff, vintage, target availability, frozen eligibility mask, warmup/held-out phase and every method's forecast. CSVs include auction/month/season/hour/lead/weather error summaries, daily energy bias, seven-day paired block intervals, coverage, and parameter histories. Energy summaries stay separate by auction because their delivery horizons overlap. `retrospective_*` files use a final all-year refit and are explicitly in-sample. Completed method fits are resumed only when configuration and source fingerprints match.
 
@@ -544,7 +544,7 @@ The output is a sigmoid AC-nameplate fraction, zeroed outside the deterministic 
 
 The temporal convolution uses neighboring values of the **same already available forecast curve**, including its later leads. Its symmetric context is valid forecast information; it does not use later measured power, another weather cycle, or an adjacent delivery day's targets. Sequences never cross date/auction/vintage boundaries. Historical benchmark artifacts retain the pvlib baseline used when they were produced; new runs use the current configured Faiman defaults and retained farm-specific scale/geometry assumptions. A validation-selected ridge weather model is an additional sanity baseline.
 
-All controls inherit `pv_neural` in `configs/standard.yaml`: split dates, embargo, farm selection, feature/architecture candidates, widths/depths, embeddings, loss, learning rate, training budget, seeds, CPU workers/threads and outputs. PyTorch is optional for other commands and this workflow explicitly uses CPU. The benchmark uses four independent farm workers with two CPU threads each by default; it does not allocate GPU memory. Add dependencies through the `bess` environment only after permission; prefer conda (`conda install -n bess -c conda-forge pytorch-cpu`).
+The selected study configuration specifies `pv_neural` controls: split dates, embargo, farm selection, feature/architecture candidates, widths/depths, embeddings, loss, learning rate, training budget, seeds, CPU workers/threads and outputs. PyTorch is optional for other commands and this workflow explicitly uses CPU. The benchmark uses four independent farm workers with two CPU threads each by default; it does not allocate GPU memory. Add dependencies through the `bess` environment only after permission; prefer conda (`conda install -n bess -c conda-forge pytorch-cpu`).
 
 Outputs live in `outputs/pv_neural/<run_id>/`, with study-level comparisons and per-farm `csv`, `json`, `parquet`, `plots`, and `models` folders. They include raw aligned targets and forecasts, separate train/validation/test metrics, mean/minimum/maximum absolute errors, RMSE, signed bias, per-auction/month/hour and daily energy errors, paired seven-day block uncertainty intervals, learning curves, representative test trajectories with the installed AC threshold, input/source fingerprints and resolved configurations. Overlapping auction views are kept separate in energy reporting. `models/selected.pt` and `selected.json` identify each farm's validation-selected neural model, including preprocessing, metadata, architecture, training history and a weight checksum. Other candidates remain reusable. Completed fits resume only with matching configuration, source and training-code fingerprints.
 
@@ -578,7 +578,7 @@ The neural model does not improve every farm or metric: farm 910 worsens, and fa
 
 ### Earlier tracking-aware tree benchmark
 
-Run `PYTHONPATH=src python -m bess_pv_trading study-pv-ensembles --config configs/pv_experiments/farm901_ensembles.yaml` to compare CPU tree ensembles against the saved neural/regression and calibrated pvlib predictions. This optional command requires scikit-learn (installed with conda after approval); it reuses the frozen corpus from the configured `pv_ensemble_study.source_root` and makes no API requests. The shared defaults expose model parameters, feature sets, seed, workers, output location and focus month. Each fit uses one CPU thread; the shipped six-worker configuration leaves other cluster users capacity. Fresh reruns honor `experiment_outputs.overwrite_existing`.
+Run `PYTHONPATH=src python -m bess_pv_trading study-pv-ensembles --config configs/pv_experiments/farm901_ensembles.yaml` to compare CPU tree ensembles against the saved neural/regression and calibrated pvlib predictions. This optional command requires scikit-learn (installed with conda after approval); it reuses the frozen corpus from the configured `pv_ensemble_study.source_root` and makes no API requests. The study configuration specifies model parameters, feature sets, seed, workers, output location and focus month. Each fit uses one CPU thread; the shipped six-worker configuration leaves other cluster users capacity. Fresh reruns honor `experiment_outputs.overwrite_existing`.
 
 The study fits random forests, Extra Trees and histogram gradient boosting on 2025 daylight AC targets. January–April 2026 chooses candidates; May–August is evaluated separately and never chooses them. January is additionally reported as a validation-month diagnostic. The frozen embargo and common eligibility masks are retained, including genuine zeros and operating anomalies. Targets and satellite GHI are excluded from features. Outputs remain normalized/clipped AC production with the established night policy.
 
@@ -603,8 +603,7 @@ Use `--plan-only` to inspect every sampled parameter set without fitting,
 `--farms 901` to restrict the study, and `--resume` to reuse matching completed
 trials. The companion `forecast_tcn_901_910.yaml` configuration runs the temporal
 convolution phase. Run phases consecutively to keep the overall CPU limit.
-All grids, seeds, fitting budgets, source/output paths and flags inherit documented
-defaults from `configs/standard.yaml`.
+Grids, seeds, fitting budgets, source/output paths and flags are specified in the selected search configuration.
 
 This search uses forecast weather, cyclic time and lead features with **no proxy
 location/solar/tracker geometry, auction embeddings, age or measured-power inputs**.

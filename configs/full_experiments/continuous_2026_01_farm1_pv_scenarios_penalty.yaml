@@ -6,9 +6,11 @@ continuous_optimization:
   planning_modes: [integrated]
   perfect_pv_reference: true
   perfect_pv_reoptimize_at_each_auction: false
-  run_id: continuous_farm1_2026_01_pv_scenarios_penalty
+  run_id: 2026_01_pv_scenarios_penalty
   pv_ensemble:
     enabled: true
+    zarr: data/farms/nwp_ens_20260101_20260131.zarr
+    member_count: 50
 state:
   initial_soc_percent: 90.0
   terminal_soc_percent: 50.0
@@ -29,3 +31,371 @@ execution:
   save_infeasibility_diagnostics: true
 settlement:
   enabled: true
+
+# Workflow-specific settings, independent of the shared defaults.
+gme_oracle_experiment:
+  study_id: null
+  delivery_day: null
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA:
+      dataset: day_ahead_prices
+      native_interval_minutes: null
+    IDA1:
+      dataset: ida1_prices
+      native_interval_minutes: 15
+    IDA2:
+      dataset: ida2_prices
+      native_interval_minutes: 15
+    IDA3:
+      dataset: ida3_prices
+      native_interval_minutes: 15
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions: null
+
+pv_calibration:
+  start_day: null
+  end_day_exclusive: null
+  delivery_timezone: Europe/Rome
+  minimum_dc_fraction_of_ac_rating: 0.05
+  minimum_pairs: 100
+  validation_fraction: 0.2
+  exclude_policy_adjusted: true
+  output_root: outputs/pv_calibration
+  run_id: null
+  farm_ids:
+  - 910
+  - 1
+  - 345
+  - 901
+  evaluation_start_day: null
+  as_of_utc: null
+  training_windows_days:
+  - null
+  - 90
+  validation_days: 7
+  minimum_training_days: 14
+  methods:
+  - fixed
+  - scale_mse
+  - scale_huber
+  - thermal_mse
+  - thermal_huber
+  - tracker_mse
+  - tracker_huber
+  - bifacial_mse
+  - bifacial_huber
+  transposition_models:
+  - isotropic
+  - haydavies
+  - perez-driesse
+  regularization_values:
+  - 0.0
+  - 0.01
+  huber_delta: 0.05
+  parameter_bounds:
+    coefficient:
+    - 0.2
+    - 1.5
+    u0:
+    - 10.0
+    - 60.0
+    u1:
+    - 0.0
+    - 15.0
+    gcr:
+    - 0.15
+    - 0.65
+    max_angle:
+    - 30.0
+    - 80.0
+  multistarts: 2
+  max_function_evaluations: 180
+  optimizer_ftol: 1.0e-11
+  optimizer_gtol: 1.0e-09
+  seed: 2025
+  workers: 4
+  resume: true
+  retrospective_fit: true
+  outage_ghi_threshold_w_m2: 100.0
+  bootstrap_block_days: 7
+  bootstrap_repetitions: 1000
+  representative_days_per_season: 1
+  bifacial_sensitivity:
+    bifaciality:
+    - 0.65
+    - 0.9
+    height_to_pitch_ratio:
+    - 0.35
+    - 0.5
+    albedo:
+    - 0.15
+    - 0.25
+
+pv_forecast_search:
+  farm_ids:
+  - 901
+  - 910
+  include_national_holiday: false
+  excluded_features: []
+  missing_weather_interpolation: linear_per_view
+  include_missing_indicators: false
+  source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  output_root: outputs/pv_forecast_search
+  run_id: weather_only_901_910_hpo_v1
+  resume: true
+  workers: 42
+  reserved_cpu_cores: 6
+  seed: 97231
+  feature_sets:
+  - core
+  - weather
+  baseline_ridge_alpha: 1.0
+  statistical_trials_per_family: 6
+  statistical_spaces:
+    boosting_direct:
+      max_iter:
+      - 150
+      - 300
+      - 500
+      max_leaf_nodes:
+      - 7
+      - 15
+      - 31
+      - 63
+      learning_rate:
+      - 0.025
+      - 0.05
+      - 0.1
+      l2_regularization:
+      - 1.0
+      - 10.0
+      loss:
+      - squared_error
+      - absolute_error
+    boosting_residual:
+      max_iter:
+      - 150
+      - 300
+      - 500
+      max_leaf_nodes:
+      - 7
+      - 15
+      - 31
+      - 63
+      learning_rate:
+      - 0.025
+      - 0.05
+      - 0.1
+      l2_regularization:
+      - 1.0
+      - 10.0
+      loss:
+      - squared_error
+      - absolute_error
+    spline_direct:
+      n_knots:
+      - 4
+      - 6
+      - 8
+      degree:
+      - 3
+      alpha:
+      - 0.1
+      - 1.0
+      - 10.0
+      - 100.0
+    spline_residual:
+      n_knots:
+      - 4
+      - 6
+      - 8
+      degree:
+      - 3
+      alpha:
+      - 0.1
+      - 1.0
+      - 10.0
+      - 100.0
+    rbf_direct:
+      gamma:
+      - 0.005
+      - 0.02
+      - 0.05
+      n_components:
+      - 128
+      - 256
+      - 384
+      alpha:
+      - 0.1
+      - 1.0
+      - 10.0
+    rbf_residual:
+      gamma:
+      - 0.005
+      - 0.02
+      - 0.05
+      n_components:
+      - 128
+      - 256
+      - 384
+      alpha:
+      - 0.1
+      - 1.0
+      - 10.0
+    extra_trees:
+      n_estimators:
+      - 100
+      - 200
+      max_features:
+      - 0.6
+      - 0.8
+      - 1.0
+      min_samples_leaf:
+      - 2
+      - 4
+      - 8
+      - 16
+    huber:
+      alpha:
+      - 0.0001
+      - 0.01
+      - 1.0
+      epsilon:
+      - 1.1
+      - 1.35
+      - 1.8
+      max_iter:
+      - 500
+  neural_architectures:
+  - residual_mlp
+  - mixture_experts
+  - bigru
+  - transformer
+  neural_trials_per_architecture: 4
+  neural_space:
+    kernel_size:
+    - 3
+    - 5
+    - 7
+    width:
+    - 32
+    - 64
+    depth:
+    - 2
+    - 3
+    dropout:
+    - 0.0
+    - 0.05
+    - 0.15
+    heads:
+    - 4
+    experts:
+    - 3
+    - 4
+    learning_rate:
+    - 0.0003
+    - 0.001
+    - 0.003
+    weight_decay:
+    - 1.0e-05
+    - 0.0001
+    - 0.001
+    loss:
+    - mse
+    - huber
+  neural_training:
+    max_epochs: 80
+    patience: 10
+    minimum_improvement: 1.0e-06
+    batch_size: 32
+    huber_delta: 0.05
+    gradient_clip_norm: 1.0
+
+pv_neural:
+  farm_ids:
+  - 910
+  - 1
+  - 345
+  - 901
+  start_day: '2025-01-01'
+  train_end_day_exclusive: '2026-01-01'
+  validation_end_day_exclusive: '2026-05-01'
+  end_day_exclusive: '2026-09-01'
+  delivery_timezone: Europe/Rome
+  output_root: outputs/pv_neural
+  split_embargo_days: 1
+  run_id: null
+  resume: true
+  workers: 4
+  threads_per_worker: 2
+  interop_threads_per_worker: 1
+  seed: 2025
+  deterministic: true
+  device: cpu
+  max_epochs: 100
+  patience: 15
+  minimum_improvement: 1.0e-06
+  batch_size: 32
+  prediction_batch_size: 128
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  gradient_clip_norm: 1.0
+  loss: mse
+  huber_delta: 0.05
+  dropout: 0.05
+  month_embedding_dim: 4
+  auction_embedding_dim: 0
+  standardization_floor: 1.0e-06
+  input_clip_standard_deviations: 12.0
+  include_ridge_baseline: true
+  ridge_alphas:
+  - 0.0001
+  - 0.01
+  - 1.0
+  minimum_training_days: 30
+  minimum_validation_days: 7
+  minimum_test_days: 7
+  bootstrap_repetitions: 1000
+  bootstrap_block_days: 7
+  representative_days: 3
+  candidates:
+  - name: mlp_core
+    architecture: mlp
+    features: core
+    width: 48
+    depth: 2
+  - name: mlp_weather
+    architecture: mlp
+    features: weather
+    width: 64
+    depth: 2
+  - name: residual_core
+    architecture: residual
+    features: core
+    width: 48
+    depth: 2
+  - name: residual_weather
+    architecture: residual
+    features: weather
+    width: 64
+    depth: 2
+  - name: tcn_core
+    architecture: tcn
+    features: core
+    width: 32
+    depth: 3
+    kernel_size: 3
+  - name: tcn_weather
+    architecture: tcn
+    features: weather
+    width: 48
+    depth: 3
+    kernel_size: 3

@@ -35,7 +35,7 @@ def test_farm_910_march_2026_exclusion_respects_local_month_and_other_farms(tmp_
 
 
 def test_sustained_zero_requires_measured_daylight_and_contiguous_quarters():
-    config=load_config('configs/pv_experiments/online_ridge_901_910.yaml',
+    config=load_config('configs/pv_experiments/curate_sustained_zero.yaml',
         overrides={'pv_data_quality':{'exclusions_csv':None}})
     rule=config['pv_episode_curation']['zero_detection']
     interval=config['source']['historical_interval_minutes']
@@ -55,7 +55,7 @@ def test_sustained_zero_requires_measured_daylight_and_contiguous_quarters():
 
 
 def test_exclusion_preserves_raw_ac_and_applies_to_every_auction_view(tmp_path):
-    config=load_config('configs/pv_experiments/online_ridge_901_910.yaml',
+    config=load_config('configs/pv_experiments/curate_sustained_zero.yaml',
         overrides={'pv_data_quality':{'exclusions_csv':None}})
     rule=config['pv_episode_curation']['zero_detection']
     count=rule['minimum_consecutive_intervals']
@@ -118,7 +118,7 @@ def test_anchored_daytime_zero_run_includes_satellite_ghi_gap():
 
 
 def test_short_partial_recovery_is_review_only_with_microsecond_timestamps():
-    config=load_config('configs/pv_experiments/curate_sustained_zero.yaml',
+    config=load_config('configs/pv_experiments/audit_data_quality_2025_2026.yaml',
         overrides={'pv_data_quality':{'exclusions_csv':None}})
     times=pd.date_range('2026-04-26T13:15Z',periods=7,freq='15min').astype('datetime64[us, UTC]')
     physical=pd.DataFrame({'interval_start_utc':times,

@@ -190,7 +190,7 @@ def test_float32_nameplate_roundoff_does_not_block_artifacts(physical_case,tmp_p
         resolve_parameters(configured,farm,section["night_policy"],issue)
 
 
-@pytest.mark.parametrize("farm_id",load_config("configs/standard.yaml")["pv_calibration"]["farm_ids"])
+@pytest.mark.parametrize("farm_id",load_config("configs/pv_experiments/calibration_2025.yaml")["pv_calibration"]["farm_ids"])
 def test_farm_scale_and_standard_temperature_load_before_fitting_year(physical_case,farm_id):
     from pathlib import Path
     config=load_config("configs/full_experiments/continuous_optimization_2025-01.yaml",

@@ -6,37 +6,62 @@ include: ../standard.yaml
 api:
   start: '2025-07-01'
   end: '2025-07-02'
+  timezone: Europe/Rome
+  download_order: month_first
+  cache_directory: data/api
+  storage_backend: duckdb
+  database_path: data/api/market.duckdb
+  database_threads: 4
   output_directory: outputs/api/terna
+  no_data_cache_hours: 24
+  progress_every: 25
+  plots: true
+  terna_authorization_scheme: bearer
+  terna_request_period: month
+  terna_http_403_policy: continue_other_providers
+  gme_token_refresh_seconds: 900
+  credentials:
+    entsoe_token_env: ENTSOE_API_TOKEN
+    terna_client_id_env: TERNA_CLIENT_ID
+    terna_client_secret_env: TERNA_CLIENT_SECRET
+    gme_username_env: GME_USERNAME
+    gme_password_env: GME_PASSWORD
   http:
+    attempts: 3
+    connect_timeout: 10
+    read_timeout: 60
+    retry_delay_seconds: 1
+    minimum_request_interval_seconds: 0.25
     terna_minimum_request_interval_seconds: 2.0
+    max_retry_delay_seconds: 10
   requests:
-    - provider: terna
-      dataset: total_load
-      options:
-        zone: NORD
-        bidding_zones:
-          - North
-    - provider: terna
-      dataset: total_load_forecast
-      options:
-        zone: NORD
-        bidding_zones:
-          - North
-    - provider: terna
-      dataset: load_forecast
-      options:
-        session_type: MGP
-        zone: NORD
-    - provider: terna
-      dataset: wind_forecast
-      options:
-        session_type: MSD1
-        zone: NORD
-    - provider: terna
-      dataset: renewable_generation
-      options:
-        zone: IT
-        energy_sources:
-          - Photovoltaic
-          - Wind
+  - provider: terna
+    dataset: total_load
+    options:
+      zone: NORD
+      bidding_zones:
+      - North
+  - provider: terna
+    dataset: total_load_forecast
+    options:
+      zone: NORD
+      bidding_zones:
+      - North
+  - provider: terna
+    dataset: load_forecast
+    options:
+      session_type: MGP
+      zone: NORD
+  - provider: terna
+    dataset: wind_forecast
+    options:
+      session_type: MSD1
+      zone: NORD
+  - provider: terna
+    dataset: renewable_generation
+    options:
+      zone: IT
+      energy_sources:
+      - Photovoltaic
+      - Wind
 farm_id: 1

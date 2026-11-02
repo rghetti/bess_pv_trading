@@ -1,6 +1,6 @@
 # Full experiment configurations
 
-Every YAML imports `../standard.yaml` directly and contains only its study-specific overrides. Shared feature flags and asset/model parameters live in that one standard; explicit overrides preserve earlier examples' settings. See [the configuration guide](../README.md) for merge rules, farm selection and the effective-YAML command.
+Every YAML imports `../standard.yaml` directly. Shared asset and operational settings live in the standard; workflow-specific settings and overrides live in each experiment configuration. See [the configuration guide](../README.md) for merge rules, farm selection and the effective-YAML command.
 
 Start with `gme_day.yaml` for a single-day study on any farm. Set root `farm_id`, or pass `--farm-id 1`, `345`, `901` or `910`; selected PV/weather and metadata, automatic POI ratings and active output labels follow that selection. Battery size remains independently configurable. Set measured POI ratings under `farms.<id>` or override `plant` limits explicitly. Set study dates, data selection and output IDs in YAML and inspect with `resolve-config` before running.
 
@@ -62,7 +62,7 @@ shared YAML sections. `experiment_outputs.plots` and `save_model_files` control
 plots and model exports. Farm selection works with root `farm_id` or
 `--farm-id` as in the single-day workflow.
 
-Outputs under `outputs/continuous_optimization/<run_id>/` include per-strategy
+Outputs under `outputs/continuous_optimization/farm_<id>/<run_id>/` include per-strategy
 interval/daily KPI CSVs, submitted trade ledgers, state projections and raw solve
 diagnostics, with JSON and figures in their own folders. Comparison tables
 report paired daily and total settled-profit differences, inventory and

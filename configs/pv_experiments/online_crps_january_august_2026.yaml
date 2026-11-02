@@ -1,3 +1,297 @@
 include: ../standard.yaml
 pv_online_crps_study:
+  output_root: outputs/pv_online_crps
   run_id: january_august_2026
+  source_config: configs/pv_experiments/probabilistic_january_august_2026.yaml
+  farms:
+    1: huber_core_03
+    345: tcn_weather_02
+    901: tcn_weather_01
+    910: tcn_core_04
+  auctions:
+  - DA
+  - IDA1
+  - IDA2
+  - IDA3
+  block_hours: 3
+  quantiles:
+  - 0.05
+  - 0.1
+  - 0.15
+  - 0.2
+  - 0.25
+  - 0.3
+  - 0.35
+  - 0.4
+  - 0.45
+  - 0.5
+  - 0.55
+  - 0.6
+  - 0.65
+  - 0.7
+  - 0.75
+  - 0.8
+  - 0.85
+  - 0.9
+  - 0.95
+  quantile_alpha: 0.01
+  minimum_quantile_days: 7
+  workers: 42
+  daylight_start: 06:00
+  daylight_end: '21:30'
+  seed: 202601
+
+# Workflow-specific settings, independent of the shared defaults.
+pv_probabilistic_study:
+  ensemble_zarr: data/farms/nwp_ens_20260101_20260131.zarr
+  dataset_periods: null
+  vintage_strategy: preceding_day
+  night_target_treatment: zero
+  output_root: outputs/pv_probabilistic
+  run_id: january_2026_00utc
+  farm_ids:
+  - 1
+  - 345
+  - 901
+  - 910
+  start_day: '2026-01-01'
+  train_end_day: '2026-01-21'
+  validation_end_day: null
+  end_day: '2026-01-31'
+  calibration_folds:
+  - fit_end: '2026-01-07'
+    predict_start: '2026-01-08'
+    predict_end: '2026-01-14'
+  - fit_end: '2026-01-14'
+    predict_start: '2026-01-15'
+    predict_end: '2026-01-21'
+  quantiles:
+  - 0.05
+  - 0.1
+  - 0.25
+  - 0.5
+  - 0.75
+  - 0.9
+  - 0.95
+  calibration_alpha: 0.01
+  workers: 42
+  reserved_cpu_cores: 6
+  estimated_worker_memory_gb: 2.0
+  respect_shared_load: true
+  seed: 202601
+  max_epochs: 80
+  early_stopping_patience: 10
+  batch_size: 32
+  resume: true
+  feature_sets:
+  - core
+  - weather
+  trial_parameters:
+    ridge:
+    - alpha: 0.01
+    - alpha: 0.1
+    - alpha: 1.0
+    - alpha: 10.0
+    huber:
+    - alpha: 0.001
+      epsilon: 1.35
+    - alpha: 0.001
+      epsilon: 1.8
+    - alpha: 0.1
+      epsilon: 1.35
+    - alpha: 0.1
+      epsilon: 1.8
+    extra_trees:
+    - min_samples_leaf: 4
+      max_features: 0.6
+    - min_samples_leaf: 4
+      max_features: 1.0
+    - min_samples_leaf: 16
+      max_features: 0.6
+    - min_samples_leaf: 16
+      max_features: 1.0
+    hist_gradient_boosting:
+    - max_leaf_nodes: 7
+      l2_regularization: 1.0
+    - max_leaf_nodes: 7
+      l2_regularization: 10.0
+    - max_leaf_nodes: 31
+      l2_regularization: 1.0
+    - max_leaf_nodes: 31
+      l2_regularization: 10.0
+    lightgbm:
+    - num_leaves: 7
+      min_child_samples: 20
+    - num_leaves: 7
+      min_child_samples: 80
+    - num_leaves: 31
+      min_child_samples: 20
+    - num_leaves: 31
+      min_child_samples: 80
+    catboost:
+    - depth: 4
+      l2_leaf_reg: 3.0
+    - depth: 4
+      l2_leaf_reg: 10.0
+    - depth: 6
+      l2_leaf_reg: 3.0
+    - depth: 6
+      l2_leaf_reg: 10.0
+    mlp:
+    - width: 32
+      weight_decay: 0.0001
+    - width: 32
+      weight_decay: 0.001
+    - width: 64
+      weight_decay: 0.0001
+    - width: 64
+      weight_decay: 0.001
+    tcn:
+    - width: 32
+      kernel: 3
+    - width: 32
+      kernel: 5
+    - width: 64
+      kernel: 3
+    - width: 64
+      kernel: 5
+  tree_estimators: 150
+  boosting_iterations: 200
+  boosting_learning_rate: 0.05
+
+pv_realized_irradiance_search:
+  output_root: outputs/pv_realized_irradiance_search
+  run_id: four_vintages_2025_2026_v4
+  curated_power_root: data/farms/curated/timing_ablation_2025_2026
+  night_target_treatment: zero
+  night_policy:
+    enabled: true
+    timezone: Europe/Rome
+    monthly_windows:
+      '01':
+        start: '18:30'
+        end: 06:45
+      '02':
+        start: '19:15'
+        end: 06:00
+      '03':
+        start: '21:00'
+        end: 05:15
+      '04':
+        start: '21:45'
+        end: 05:15
+      '05':
+        start: '21:30'
+        end: 05:00
+      '06':
+        start: '21:30'
+        end: 05:00
+      '07':
+        start: '21:30'
+        end: 05:00
+      08:
+        start: '21:30'
+        end: 05:00
+      09:
+        start: '21:15'
+        end: 05:45
+      '10':
+        start: '20:00'
+        end: 06:00
+      '11':
+        start: '18:15'
+        end: 06:00
+      '12':
+        start: '18:00'
+        end: 06:45
+  ghi_gap_fill: linear_inside
+  farm_ids:
+  - 1
+  - 345
+  - 901
+  - 910
+  training_start: '2025-01-01'
+  validation_start: '2026-08-01'
+  end_exclusive: '2026-09-01'
+  selection_scope: validation
+  delivery_timezone: Europe/Rome
+  cycle_horizon_hours: 24
+  cycle_weight: 0.25
+  workers: 42
+  seed: 20261029
+  locations:
+    milan:
+    - 45.4642
+    - 9.19
+    turin:
+    - 45.0703
+    - 7.6869
+    verona:
+    - 45.4384
+    - 10.9916
+    venice:
+    - 45.4408
+    - 12.3155
+    bologna:
+    - 44.4949
+    - 11.3426
+    trieste:
+    - 45.6495
+    - 13.7768
+    bolzano:
+    - 46.4983
+    - 11.3548
+    genoa:
+    - 44.4056
+    - 8.9463
+    aosta:
+    - 45.7375
+    - 7.3201
+  transposition_models:
+  - isotropic
+  - haydavies
+  - perez-driesse
+  losses:
+  - mse
+  - huber
+  huber_delta: 0.05
+  optimization_max_evaluations: 120
+  multistarts: 2
+  structural_trials_per_farm: 128
+  bounds:
+    coefficient:
+    - 0.2
+    - 1.5
+    u0:
+    - 10.0
+    - 60.0
+    u1:
+    - 0.0
+    - 15.0
+    gamma:
+    - -0.006
+    - -0.002
+  tracker_gcr:
+  - 0.2
+  - 0.35
+  - 0.5
+  - 0.65
+  tracker_max_angle:
+  - 30.0
+  - 45.0
+  - 60.0
+  - 80.0
+  tracker_backtracking:
+  - true
+  - false
+  bifacial_albedo:
+  - 0.1
+  - 0.2
+  - 0.35
+  bifaciality:
+  - 0.65
+  - 0.8
+  - 0.9
+  bifacial_height_to_pitch:
+  - 0.35
+  - 0.5

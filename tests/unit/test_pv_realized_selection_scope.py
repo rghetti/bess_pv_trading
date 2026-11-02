@@ -40,7 +40,7 @@ def test_night_target_treatment_preserves_original_and_missing_values():
 
 
 def test_seasonal_night_boundaries_and_spring_autumn_clock_changes():
-    config = load_config('configs/standard.yaml')
+    config = load_config('configs/pv_experiments/realized_irradiance_four_cycles.yaml')
     policy = config['pv_realized_irradiance_search']['night_policy']
     local = pd.to_datetime(['2026-01-15 06:30', '2026-01-15 06:45',
                             '2026-06-15 21:15', '2026-06-15 21:30',

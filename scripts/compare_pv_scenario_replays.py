@@ -38,10 +38,15 @@ def compare(exact_root: Path, penalty_root: Path, output: Path) -> None:
     import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True, layout="constrained")
+    config_path = penalty_root / "json/study_config.json"
+    penalty = None
+    if config_path.exists():
+        penalty = json.loads(config_path.read_text()).get("trading", {}).get("imbalance_penalty_eur_per_mwh")
     for label, group in daily.groupby("comparison_label", sort=False):
         dates = pd.to_datetime(group.delivery_day)
-        axes[0].plot(dates, group.net_profit_eur.cumsum(), label=label)
-        axes[1].plot(dates, group.absolute_imbalance_mwh, label=label)
+        plot_label = f"{label} (€{float(penalty):g}/MWh)" if label.startswith("penalty_") and penalty is not None else label
+        axes[0].plot(dates, group.net_profit_eur.cumsum(), label=plot_label)
+        axes[1].plot(dates, group.absolute_imbalance_mwh, label=plot_label)
     axes[0].set_ylabel("Cumulative realized profit (EUR)")
     axes[1].set_ylabel("Daily absolute imbalance (MWh)")
     axes[1].set_xlabel("Local delivery day")

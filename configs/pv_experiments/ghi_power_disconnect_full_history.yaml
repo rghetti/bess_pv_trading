@@ -1,6 +1,48 @@
 # Review-only scan of all available physical quarters for four farms.
 include: ../standard.yaml
 pv_ghi_power_disconnect:
+  farm_ids:
+  - 1
+  - 345
+  - 901
+  - 910
+  source_root: outputs/pv_data_quality/full_history_2025_to_2026_08
+  prediction_source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  neural_prediction_column: prediction_selected_mw
+  pvlib_prediction_column: prediction_pvlib_mw
+  output_root: outputs/pv_data_quality
   run_id: ghi_power_disconnect_full_history
+  timezone: Europe/Rome
+  satellite_ghi_min_w_m2: 300.0
+  reference_min_fraction_of_rating: 0.15
+  gap_min_fraction_of_rating: 0.15
+  low_power_ratio_max: 0.55
+  high_power_ratio_min: 1.5
+  minimum_consecutive_intervals: 4
+  forecast_ghi_agreement_w_m2: 200.0
+  ratio_sensitivity:
+  - 0.4
+  - 0.55
+  - 0.7
+  duration_sensitivity_intervals:
+  - 2
+  - 4
+  - 8
+  model:
+    max_iter: 150
+    max_leaf_nodes: 15
+    min_samples_leaf: 60
+    learning_rate: 0.05
+    l2_regularization: 10.0
+    upper_quantile: 0.8
+    seed: 2086
+  matched_ghi_range_w_m2:
+  - 500.0
+  - 850.0
+  matched_local_hours:
+  - 10.0
+  - 15.0
+  plot_top_per_farm: 4
   focus_days_by_farm:
-    910: ['2026-08-01']
+    910:
+    - '2026-08-01'

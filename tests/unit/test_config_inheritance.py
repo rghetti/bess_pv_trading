@@ -201,9 +201,19 @@ def test_point_prepared_route_survives_shared_forecast_safety_flag(monkeypatch):
 def test_legacy_saved_study_gains_defaults_but_still_detects_changes():
     config = load_config(CURRENT)
     legacy = deepcopy(config)
-    for key in ("api", "pv_calibration", "report", "outputs"):
+    for key in ("outputs",):
         legacy.pop(key)
     assert with_standard_defaults(legacy) == with_standard_defaults(config)
     changed = deepcopy(legacy)
     changed["battery"]["capacity_mwh"] *= 2
     assert with_standard_defaults(changed) != with_standard_defaults(config)
+
+
+def test_study_and_import_settings_live_in_their_configs():
+    shared = load_config(STANDARD)
+    for section in ("gme_oracle_experiment", "api", "manual_market_import",
+                    "pv_probabilistic_study", "pv_neural", "pv_calibration"):
+        assert section not in shared
+    assert "gme_oracle_experiment" in load_config(CURRENT)
+    assert "manual_market_import" in load_config(ROOT / "configs/api_experiments/manual_market_workbooks.yaml")
+    assert "pv_neural" in load_config(ROOT / "configs/pv_experiments/neural_2025_2026.yaml")

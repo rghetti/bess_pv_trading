@@ -1,4 +1,195 @@
 # Full-history physical-quarter quality review with known focus dates.
 include: ../standard.yaml
 pv_data_quality_review:
-  focus_days: ['2025-05-01', '2026-03-08', '2026-04-25', '2026-04-26', '2026-05-01']
+  farm_ids:
+  - 1
+  - 345
+  - 901
+  - 910
+  source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  output_root: outputs/pv_data_quality
+  run_id: full_history_2025_to_2026_08
+  plot_prediction_file: predictions.parquet
+  plot_prediction_column: prediction_selected_mw
+  plot_prediction_label: Selected neural AC forecast
+  plot_pvlib_column: prediction_pvlib_mw
+  plot_pvlib_label: pvlib AC forecast
+  low_output_max_fraction_of_rating: 0.1
+  low_output_minimum_ghi_w_m2: 300.0
+  low_output_minimum_intervals: 3
+  partial_recovery_max_fraction_of_rating: 0.25
+  partial_recovery_max_intervals: 4
+  plateau_minimum_intervals: 4
+  plateau_level_rounding_kw: 1.0
+  rating_excess_fraction: 0.01
+  weather_ghi_disagreement_w_m2: 200.0
+  weather_disagreement_minimum_intervals: 2
+  focus_days:
+  - '2025-05-01'
+  - '2026-03-08'
+  - '2026-04-25'
+  - '2026-04-26'
+  - '2026-05-01'
+  plot_top_candidate_days: 2
+  save_plots: true
+
+# Workflow-specific settings, independent of the shared defaults.
+pv_calibration:
+  start_day: null
+  end_day_exclusive: null
+  delivery_timezone: Europe/Rome
+  minimum_dc_fraction_of_ac_rating: 0.05
+  minimum_pairs: 100
+  validation_fraction: 0.2
+  exclude_policy_adjusted: true
+  output_root: outputs/pv_calibration
+  run_id: null
+  farm_ids:
+  - 910
+  - 1
+  - 345
+  - 901
+  evaluation_start_day: null
+  as_of_utc: null
+  training_windows_days:
+  - null
+  - 90
+  validation_days: 7
+  minimum_training_days: 14
+  methods:
+  - fixed
+  - scale_mse
+  - scale_huber
+  - thermal_mse
+  - thermal_huber
+  - tracker_mse
+  - tracker_huber
+  - bifacial_mse
+  - bifacial_huber
+  transposition_models:
+  - isotropic
+  - haydavies
+  - perez-driesse
+  regularization_values:
+  - 0.0
+  - 0.01
+  huber_delta: 0.05
+  parameter_bounds:
+    coefficient:
+    - 0.2
+    - 1.5
+    u0:
+    - 10.0
+    - 60.0
+    u1:
+    - 0.0
+    - 15.0
+    gcr:
+    - 0.15
+    - 0.65
+    max_angle:
+    - 30.0
+    - 80.0
+  multistarts: 2
+  max_function_evaluations: 180
+  optimizer_ftol: 1.0e-11
+  optimizer_gtol: 1.0e-09
+  seed: 2025
+  workers: 4
+  resume: true
+  retrospective_fit: true
+  outage_ghi_threshold_w_m2: 100.0
+  bootstrap_block_days: 7
+  bootstrap_repetitions: 1000
+  representative_days_per_season: 1
+  bifacial_sensitivity:
+    bifaciality:
+    - 0.65
+    - 0.9
+    height_to_pitch_ratio:
+    - 0.35
+    - 0.5
+    albedo:
+    - 0.15
+    - 0.25
+
+pv_neural:
+  farm_ids:
+  - 910
+  - 1
+  - 345
+  - 901
+  start_day: '2025-01-01'
+  train_end_day_exclusive: '2026-01-01'
+  validation_end_day_exclusive: '2026-05-01'
+  end_day_exclusive: '2026-09-01'
+  delivery_timezone: Europe/Rome
+  output_root: outputs/pv_neural
+  split_embargo_days: 1
+  run_id: null
+  resume: true
+  workers: 4
+  threads_per_worker: 2
+  interop_threads_per_worker: 1
+  seed: 2025
+  deterministic: true
+  device: cpu
+  max_epochs: 100
+  patience: 15
+  minimum_improvement: 1.0e-06
+  batch_size: 32
+  prediction_batch_size: 128
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  gradient_clip_norm: 1.0
+  loss: mse
+  huber_delta: 0.05
+  dropout: 0.05
+  month_embedding_dim: 4
+  auction_embedding_dim: 0
+  standardization_floor: 1.0e-06
+  input_clip_standard_deviations: 12.0
+  include_ridge_baseline: true
+  ridge_alphas:
+  - 0.0001
+  - 0.01
+  - 1.0
+  minimum_training_days: 30
+  minimum_validation_days: 7
+  minimum_test_days: 7
+  bootstrap_repetitions: 1000
+  bootstrap_block_days: 7
+  representative_days: 3
+  candidates:
+  - name: mlp_core
+    architecture: mlp
+    features: core
+    width: 48
+    depth: 2
+  - name: mlp_weather
+    architecture: mlp
+    features: weather
+    width: 64
+    depth: 2
+  - name: residual_core
+    architecture: residual
+    features: core
+    width: 48
+    depth: 2
+  - name: residual_weather
+    architecture: residual
+    features: weather
+    width: 64
+    depth: 2
+  - name: tcn_core
+    architecture: tcn
+    features: core
+    width: 32
+    depth: 3
+    kernel_size: 3
+  - name: tcn_weather
+    architecture: tcn
+    features: weather
+    width: 48
+    depth: 3
+    kernel_size: 3

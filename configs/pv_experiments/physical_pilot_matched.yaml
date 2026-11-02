@@ -1,1 +1,19 @@
 include: ../standard.yaml
+
+# Workflow-specific settings, independent of the shared defaults.
+pv_physical_pilot_comparison:
+  input_root: outputs/pv_error_diagnostics/retrained_timing_all_farms
+  output_root: outputs/pv_physical_pilot_comparison
+  run_id: deterministic_cycles_may_august_2026
+  farm_ids:
+  - 1
+  - 345
+  - 901
+  - 910
+  splits:
+  - test
+  physical_models:
+    '1': outputs/pv_realized_irradiance_search/farm_1_expanded_temperature_full_period_gamma002_2025_2026/farm_1/selected_parameters.json
+    '345': outputs/pv_realized_irradiance_search/farm_345_expanded_temperature_full_period_gamma002_2025_2026/farm_345/selected_parameters.json
+    '901': outputs/pv_realized_irradiance_search/all_farms_full_period_wide_temperature_2025_2026/farm_901/selected_parameters.json
+    '910': outputs/pv_realized_irradiance_search/all_farms_full_period_wide_temperature_2025_2026/farm_910/selected_parameters.json

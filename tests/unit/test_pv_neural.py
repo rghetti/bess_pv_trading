@@ -22,6 +22,11 @@ from bess_pv_trading.forecasting.training.pv_neural_training import (
 @pytest.fixture
 def neural_case():
     config = load_config("configs/pv_experiments/neural_validation.yaml")
+    # These tests exercise search and online-bias models as well as neural training.
+    config["pv_forecast_search"] = load_config(
+        "configs/pv_experiments/forecast_search_901_910.yaml")["pv_forecast_search"]
+    config["pv_online_bias"] = load_config(
+        "configs/pv_experiments/forecast_comparison_901_910.yaml")["pv_online_bias"]
     section = deepcopy(config["pv_neural"])
     section.update(max_epochs=4, patience=3, batch_size=2, prediction_batch_size=2)
     candidate = {**section["candidates"][0], "width": 8, "depth": 2}

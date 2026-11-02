@@ -1,4 +1,20 @@
 include: ../standard.yaml
 pv_satellite_ghi_reference:
+  farm_ids:
+  - 1
+  - 345
+  - 901
+  - 910
+  prediction_source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  episode_source_root: outputs/pv_data_quality/ghi_power_disconnect_full_history
+  output_root: outputs/pv_data_quality
+  run_id: satellite_ghi_references_full_history
+  plots_only: false
+  satellite_ghi_gap_fill: linear_inside
+  timezone: Europe/Rome
+  cpu_threads: 4
+  replay_tolerance_mw: 1.0e-05
+  plot_top_per_farm: 4
   focus_days_by_farm:
-    910: ['2026-08-01']
+    910:
+    - '2026-08-01'

@@ -1,3 +1,52 @@
 include: ../standard.yaml
 pv_mayer_neural:
+  input_root: outputs/pv_mayer_postprocessing/january_august_2026_49_12
+  output_root: outputs/pv_mayer_neural
   run_id: paper_neural_baseline
+  farm_ids:
+  - 1
+  - 345
+  - 901
+  - 910
+  member_count: 50
+  quantile_count: 51
+  early_stopping_every_n_days: 5
+  max_epochs: 200
+  batch_size: 256
+  patience: 6
+  learning_rate: 0.001
+  huber_epsilon: 1.0e-08
+  minimum_scale: 1.0e-06
+  bernstein_degree: 10
+  noncrossing_width: 51
+  quantile_hidden_sizes:
+  - 64
+  - 32
+  quantile_activation: relu
+  hyperparameter_trials: 100
+  search_workers: 42
+  search_hidden_width:
+  - 5
+  - 200
+  search_learning_rate:
+  - 0.0005
+  - 0.05
+  search_patience:
+  - 5
+  - 50
+  search_batch_size:
+  - 200
+  - 20000
+  search_bernstein_degree:
+  - 6
+  - 15
+  search_noncrossing_extra_width:
+  - 0
+  - 9
+  drn_hidden_sizes:
+  - 15
+  - 10
+  - 10
+  drn_ensemble_size: 10
+  seed: 20261030
+  rearrange_qrnn: true

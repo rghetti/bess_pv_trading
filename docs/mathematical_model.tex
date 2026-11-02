@@ -1279,7 +1279,7 @@ solves identifiable, and report totals plus mean/minimum/maximum/population
 standard deviation by strategy and delivery day. Model-build and Python wall
 times remain separate. Resolved configurations, common-input provenance,
 daily/monthly KPIs, state projections and comparisons are saved by file type
-under \path{outputs/continuous_optimization/<run_id>/}.
+under \path{outputs/continuous_optimization/farm_<id>/<run_id>/}.
 
 
 \section{Implemented trading experiments and evidence}
@@ -1384,8 +1384,8 @@ YAML controls study date, calendar validity, source mappings, PV and data polici
 BESS and POI characteristics, state, degradation, solver and outputs. One include
 is resolved relative to the containing YAML, with recursive mapping overrides.
 Every shipped entry point imports \path{configs/standard.yaml} directly;
-experiment YAMLs contain only their overrides. The standard exposes shared
-feature flags to existing experiments. Explicit null values and replacement
+experiment YAMLs define workflow-specific settings and overrides. The standard
+contains shared operational settings. Explicit null values and replacement
 lists survive the merge. The \texttt{resolve-config} command prints the effective
 YAML without running a study or accessing provider data.
 

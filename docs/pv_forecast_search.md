@@ -54,8 +54,8 @@ python scripts/train_pv_forecasts.py \
 
 Grids, trial counts, features, seeds, maximum epochs, patience, batch size, loss,
 regularization and input/output paths are YAML options under
-`pv_forecast_search` in `configs/standard.yaml`. The TCN configuration overrides
-only the architecture list and budgets. A smaller experiment can override
+`pv_forecast_search` in the selected experiment configuration. The TCN configuration specifies
+its architecture list and budgets. A smaller experiment can override
 `statistical_trials_per_family`, `neural_trials_per_architecture` or `farm_ids`.
 The deterministic grid sampler does not inspect any scores.
 

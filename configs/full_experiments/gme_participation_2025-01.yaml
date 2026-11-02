@@ -13,6 +13,29 @@ pv:
 gme_oracle_experiment:
   study_id: gme_nord_oracle_2025-01-01_farm${farm_id}_perfect_pv_comparison_terminal_soc_50_pv_only_baseline
   delivery_day: '2025-01-01'
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA:
+      dataset: day_ahead_prices
+      native_interval_minutes: null
+    IDA1:
+      dataset: ida1_prices
+      native_interval_minutes: 15
+    IDA2:
+      dataset: ida2_prices
+      native_interval_minutes: 15
+    IDA3:
+      dataset: ida3_prices
+      native_interval_minutes: 15
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions: null
 market:
   valid_from: '2025-01-01'
   valid_to: '2025-01-01'
@@ -27,46 +50,66 @@ solver:
   feasibility_tolerance: 1.0e-08
   integrality_tolerance: 1.0e-08
 experiment_outputs:
-  run_id: farm${farm_id}_all_auctions_comparisons_january_2025
+  root: outputs/full_experiments/gme_oracle
   pv_only_baseline: false
+  run_id: farm${farm_id}_all_auctions_comparisons_january_2025
 execution:
   infeasible_auction_policy: previous_plan
   save_infeasibility_diagnostics: true
 settlement:
   enabled: true
 participation_study:
+  candidate_auctions:
+  - DA
+  - IDA1
+  - IDA2
+  - IDA3
+  required_auctions: []
+  profiles: null
   delivery_days:
-    - '2025-01-01'
-    - '2025-01-02'
-    - '2025-01-03'
-    - '2025-01-04'
-    - '2025-01-05'
-    - '2025-01-06'
-    - '2025-01-07'
-    - '2025-01-08'
-    - '2025-01-09'
-    - '2025-01-10'
-    - '2025-01-11'
-    - '2025-01-12'
-    - '2025-01-13'
-    - '2025-01-14'
-    - '2025-01-15'
-    - '2025-01-16'
-    - '2025-01-17'
-    - '2025-01-18'
-    - '2025-01-19'
-    - '2025-01-20'
-    - '2025-01-21'
-    - '2025-01-22'
-    - '2025-01-23'
-    - '2025-01-24'
-    - '2025-01-25'
-    - '2025-01-26'
-    - '2025-01-27'
-    - '2025-01-28'
-    - '2025-01-29'
-    - '2025-01-30'
-    - '2025-01-31'
-  sequential_all_auctions_baseline: true
+  - '2025-01-01'
+  - '2025-01-02'
+  - '2025-01-03'
+  - '2025-01-04'
+  - '2025-01-05'
+  - '2025-01-06'
+  - '2025-01-07'
+  - '2025-01-08'
+  - '2025-01-09'
+  - '2025-01-10'
+  - '2025-01-11'
+  - '2025-01-12'
+  - '2025-01-13'
+  - '2025-01-14'
+  - '2025-01-15'
+  - '2025-01-16'
+  - '2025-01-17'
+  - '2025-01-18'
+  - '2025-01-19'
+  - '2025-01-20'
+  - '2025-01-21'
+  - '2025-01-22'
+  - '2025-01-23'
+  - '2025-01-24'
+  - '2025-01-25'
+  - '2025-01-26'
+  - '2025-01-27'
+  - '2025-01-28'
+  - '2025-01-29'
+  - '2025-01-30'
+  - '2025-01-31'
+  output_root: outputs/participation_studies
   run_id: gme_nord_farm${farm_id}_2025-01_current_settings_sequential_ida3_noon
+  plots: true
+  perfect_foresight_reference: true
+  sequential_all_auctions_baseline: true
+  per_profile_plots: false
+  save_model_files: false
+  profit_tolerance_eur: 1.0e-06
   resume: true
+
+# Workflow-specific settings, independent of the shared defaults.
+reoptimization_baseline:
+  enabled: false
+  freeze_after_auctions: null
+  plots: true

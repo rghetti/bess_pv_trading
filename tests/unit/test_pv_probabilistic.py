@@ -43,7 +43,7 @@ def test_ensemble_midnight_alignment_matches_existing_contract():
 
 def test_ensemble_targets_use_seasonal_treatment_and_preserve_raw():
     """New ensemble inputs retain measured AC and zero only configured nighttime targets."""
-    config = load_config('configs/standard.yaml', overrides={'pv_data_quality': {'exclusions_csv': None}})
+    config = load_config('configs/pv_experiments/probabilistic_january_2026.yaml', overrides={'pv_data_quality': {'exclusions_csv': None}})
     local = pd.to_datetime(['2026-01-15 18:15', '2026-01-15 18:30',
                             '2026-01-15 18:45', '2026-01-16 06:45']).tz_localize('Europe/Rome')
     times = local.tz_convert('UTC')
@@ -58,7 +58,7 @@ def test_ensemble_targets_use_seasonal_treatment_and_preserve_raw():
 
 def test_ensemble_refuses_cached_inputs_with_old_night_treatment(tmp_path):
     """Previously saved raw-target studies cannot be mistaken for seasonal-treated inputs."""
-    config = load_config('configs/standard.yaml')
+    config = load_config('configs/pv_experiments/probabilistic_january_2026.yaml')
     config['pv_probabilistic_study'].update(output_root=str(tmp_path), run_id='old')
     root = tmp_path / 'old' / 'farm_1'
     root.mkdir(parents=True)
@@ -72,7 +72,7 @@ def test_ensemble_refuses_cached_inputs_with_old_night_treatment(tmp_path):
 def test_pvlib_ensemble_refuses_cached_old_physical_settings(tmp_path, monkeypatch):
     """Changing the physical baseline cannot silently reuse an older pvlib conversion."""
     from bess_pv_trading.forecasting.data import pv_probabilistic_data as module
-    config = load_config('configs/standard.yaml')
+    config = load_config('configs/pv_experiments/probabilistic_january_2026.yaml')
     config['pv_probabilistic_study'].update(output_root=str(tmp_path), run_id='old')
     root = tmp_path / 'old' / 'farm_1'
     root.mkdir(parents=True)

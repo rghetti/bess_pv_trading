@@ -13,6 +13,29 @@ pv:
 gme_oracle_experiment:
   study_id: gme_nord_2025-01-01_farm${farm_id}_reoptimization_value
   delivery_day: '2025-01-01'
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA:
+      dataset: day_ahead_prices
+      native_interval_minutes: null
+    IDA1:
+      dataset: ida1_prices
+      native_interval_minutes: 15
+    IDA2:
+      dataset: ida2_prices
+      native_interval_minutes: 15
+    IDA3:
+      dataset: ida3_prices
+      native_interval_minutes: 15
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions: null
 market:
   valid_from: '2025-01-01'
   valid_to: '2025-01-01'
@@ -27,8 +50,12 @@ solver:
   feasibility_tolerance: 1.0e-08
   integrality_tolerance: 1.0e-08
 experiment_outputs:
+  root: outputs/full_experiments/gme_oracle
+  pv_only_baseline: true
   run_id: gme_nord_2025-01-01_farm${farm_id}_reoptimization_value
 settlement:
   enabled: true
 reoptimization_baseline:
   enabled: true
+  freeze_after_auctions: null
+  plots: true

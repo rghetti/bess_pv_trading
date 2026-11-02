@@ -124,9 +124,82 @@ def test_continuous_study_supports_other_farms_and_date_overrides():
         "continuous_optimization": {"start_date": last, "end_date": last}})
     assert config["plant"]["farm_id"] == config["forecast"]["farm_id"] == int(farm_id)
     assert config["plant"]["poi_export_mw"] == config["farms"][farm_id]["ac_capacity_kw"] / 1000
-    assert f"farm{farm_id}" in config["continuous_optimization"]["run_id"]
+    assert config["continuous_optimization"]["output_root"] == original["continuous_optimization"]["output_root"]
+    assert f"farm{farm_id}" not in config["continuous_optimization"]["run_id"]
     for field, value in config["farms"][farm_id]["battery"].items():
         assert config["battery"][field] == value
+
+
+def test_relocated_resume_accepts_only_verified_location_changes():
+    """Keep old checkpoint identities without accepting changed model settings."""
+    from bess_pv_trading.simulation.continuous import (
+        _configuration_fingerprint, _relocated_configuration_fingerprint)
+    previous = load_config(JANUARY)
+    fingerprint = _configuration_fingerprint(previous)
+    relocated = deepcopy(previous)
+    relocated["continuous_optimization"].update(output_root="outputs/other", run_id="renamed", resume=True)
+    assert _relocated_configuration_fingerprint(relocated, previous, fingerprint) == fingerprint
+    relocated["solver"]["mip_gap"] *= 2
+    with pytest.raises(ValueError, match="non-location"):
+        _relocated_configuration_fingerprint(relocated, previous, fingerprint)
+    with pytest.raises(ValueError, match="original fingerprint"):
+        _relocated_configuration_fingerprint(previous, previous, "incorrect")
+
+
+def test_resume_accepts_removed_unused_study_settings_but_not_active_inputs():
+    from bess_pv_trading.simulation.continuous import (
+        _configuration_fingerprint, _relocated_configuration_fingerprint)
+    current = load_config(JANUARY)
+    previous = deepcopy(current)
+    previous["api"] = {"requests": ["old unused request"]}
+    previous["continuous_optimization"]["pv_ensemble"].update(
+        zarr="old-unused-ensemble.zarr", member_count=50)
+    fingerprint = _configuration_fingerprint(previous)
+    assert _relocated_configuration_fingerprint(current, previous, fingerprint) == fingerprint
+    changed = deepcopy(current)
+    changed["gme_oracle_experiment"]["zone"] = "changed"
+    with pytest.raises(ValueError, match="non-location"):
+        _relocated_configuration_fingerprint(changed, previous, fingerprint)
+    changed = deepcopy(current)
+    changed["continuous_optimization"]["pv_ensemble"]["enabled"] = True
+    with pytest.raises(ValueError, match="non-location"):
+        _relocated_configuration_fingerprint(changed, previous, fingerprint)
+
+
+def test_relocated_run_preserves_resume_identity(monkeypatch, tmp_path):
+    """A moved run can resume without treating a changed solver as a rename."""
+    import json
+    from types import SimpleNamespace
+    from bess_pv_trading.simulation import continuous
+    from bess_pv_trading.reporting import continuous_outputs
+
+    config = load_config(JANUARY, overrides={"continuous_optimization": {
+        "output_root": str(tmp_path), "run_id": "original", "resume": False,
+        "planning_modes": ["integrated"], "perfect_pv_reference": False}})
+    prepared = {"imbalance_prices_eur_per_mwh": [], "input_fingerprint": "fixture",
+        "provenance": {"source": "fixture"}, "calendar": SimpleNamespace(timezone="Europe/Rome"),
+        "days": [config["continuous_optimization"]["start_date"]]}
+    monkeypatch.setattr(continuous, "prepare_continuous_inputs", lambda *args, **kwargs: prepared)
+    calls = []
+
+    def replay(config, prepared, strategy, destination, **kwargs):
+        calls.append(kwargs["config_fingerprint"])
+        destination.mkdir(parents=True, exist_ok=True)
+        return {"output_dir": str(destination), "total_gain_eur": 0.0}
+
+    monkeypatch.setattr(continuous, "replay_continuous_strategy", replay)
+    monkeypatch.setattr(continuous_outputs, "save_continuous_comparison", lambda *args: {})
+    result = continuous.run_continuous_experiment(config)
+    original = Path(result["output_dir"])
+    new = original.with_name("renamed")
+    original.rename(new)
+    config["continuous_optimization"].update(run_id="renamed", resume=True)
+    continuous.run_continuous_experiment(config)
+    assert calls[0] == calls[1]
+    assert json.loads((new / "json/study_config.json").read_text())["continuous_optimization"]["run_id"] == "original"
+    config["solver"]["seed"] += 1
+    with pytest.raises(ValueError, match="non-location"):
+        continuous.run_continuous_experiment(config)
 
 
 def test_continuous_rerun_overwrites_same_id_and_honors_separate_output_root(monkeypatch, tmp_path):
@@ -184,8 +257,8 @@ def test_continuous_overwrite_cannot_clear_an_active_run(monkeypatch, tmp_path):
 
     config = load_config(JANUARY, overrides={"continuous_optimization": {
         "output_root": str(tmp_path), "resume": False}})
-    destination = tmp_path / config["continuous_optimization"]["run_id"]
-    destination.mkdir()
+    destination = tmp_path / f"farm_{config['plant']['farm_id']}" / config["continuous_optimization"]["run_id"]
+    destination.mkdir(parents=True)
     (destination / "keep.csv").write_text("active")
     monkeypatch.setattr(continuous, "prepare_continuous_inputs", lambda *args, **kwargs:
         {"imbalance_prices_eur_per_mwh": []})

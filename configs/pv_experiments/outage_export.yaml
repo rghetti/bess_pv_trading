@@ -1,0 +1,11 @@
+include: ../standard.yaml
+
+pv_outage_export:
+  farm_ids:
+  - 1
+  - 345
+  - 901
+  - 910
+  source_root: outputs/pv_neural_tuning/neural_hpo_2025_to_2026_08_42cpu
+  output_root: data/farms/curated
+  run_id: approved_episodes_2025_to_2026_08

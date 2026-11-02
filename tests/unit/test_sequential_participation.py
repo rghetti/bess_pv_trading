@@ -48,7 +48,7 @@ def test_sequential_summary_pairs_days_and_places_row_below_integrated_reference
 
 
 def test_config_rejects_unknown_modes_and_nonboolean_sequential_flags():
-    config = load_config("configs/standard.yaml")
+    config = load_config("configs/full_experiments/gme_participation_2025-01-01_03.yaml")
     assert config["gme_oracle_experiment"]["auction_planning_mode"] == "integrated"
     assert config["participation_study"]["sequential_all_auctions_baseline"] is False
     cases = load_config("tests/fixtures/configs/participation_cases.yaml")["sequential"]
