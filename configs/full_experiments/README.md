@@ -397,3 +397,25 @@ The study uses perfect auction prices and carries a separate continuous state fo
 each profile. The ensemble archive is the preceding-day 00 UTC forecast, subject
 to the configured availability assumption; preflight validates each farm and day.
 Resume is enabled, and the same configuration and inputs must be retained.
+
+For one farm, the following launcher runs both participation variants in sequence
+and writes a paired Markdown report and CSVs after both complete:
+
+```bash
+PYTHONPATH=src python scripts/run_continuous_participation_comparison.py --farm-id 345
+```
+
+Select `--farm-id` 1, 345, 901 or 910. The report is written to
+`outputs/continuous_optimization/comparisons/farm_<ID>/2026_01_continuous_participation_forecast_comparison/summary.md`.
+It pairs each auction subset, the all-auction sequential strategy and the
+perfect-PV reference across the two variants. It reports monthly settled profit,
+signed and absolute imbalance, curtailment and final SOC. The accompanying CSVs
+contain daily results and paired monthly totals. Comparisons verify completed
+profiles, dates, physical settings, deterministic forecasts, realized PV,
+auction curves and imbalance prices. Forecast variants use their own carried
+states; differences in final SOC are not assigned an inventory value.
+
+Pass `--report-only` to regenerate the report from existing completed runs without
+starting or resuming either experiment. The launcher otherwise uses each study's
+existing resume policy. Existing per-study profit histograms remain in their own
+run directories.
