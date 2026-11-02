@@ -126,9 +126,14 @@ def run_continuous_participation(config, *, progress=None):
                       ("perfect_pv_all_auctions", all_auctions, "perfect_pv")])
         summaries = {}
         try:
-            for name, profile, strategy in cases:
+            for index, (name, profile, strategy) in enumerate(cases, start=1):
                 if progress:
-                    progress(f"Continuous participation {name}: {len(prepared['days'])} delivery days")
+                    # Count auction subsets separately from the two reference trajectories.
+                    if index <= len(profiles):
+                        counter = f"{index}/{len(profiles)}"
+                    else:
+                        counter = f"baseline {index - len(profiles)}/{len(cases) - len(profiles)}"
+                    progress(f"Starting {name} [{counter}]: {len(prepared['days'])} delivery days")
                 case_fingerprint = hashlib.sha256(f"{fingerprint}:{name}".encode()).hexdigest()
                 summaries[name] = replay_continuous_strategy(config, _profile_inputs(prepared, profile), strategy,
                     destination / "strategies" / name, resume=resume, progress=progress,
