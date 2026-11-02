@@ -419,3 +419,10 @@ Pass `--report-only` to regenerate the report from existing completed runs witho
 starting or resuming either experiment. The launcher otherwise uses each study's
 existing resume policy. Existing per-study profit histograms remain in their own
 run directories.
+
+Continuous participation studies omit individual per-day strategy figures by
+default, while retaining period-level strategy plots, study-level profit
+histograms and daily data tables. Set
+`continuous_participation_study.daily_strategy_plots: true` to enable those
+figures for a new study. Regular continuous optimization keeps its daily views.
+Existing files from an earlier invocation are not deleted on resume.

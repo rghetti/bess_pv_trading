@@ -184,6 +184,19 @@ def test_resume_preserves_discarded_solver_attempts_without_counting_them_as_dec
             for row in attempts)
 
 
+def test_participation_skips_daily_views_but_keeps_continuous_plots(report_inputs, tmp_path):
+    """Many-profile studies avoid daily images while preserving period views."""
+    config, frame, solves, _ = report_inputs
+    config["experiment_outputs"]["plots"] = True
+    config["continuous_participation_study"] = {"enabled": True}
+    save_continuous_strategy_outputs(config, tmp_path, "integrated", frame,
+                                     pd.DataFrame(), [], solves, [])
+    assert (tmp_path / "plots/continuous_soc.png").is_file()
+    assert (tmp_path / "plots/cumulative_profit.png").is_file()
+    assert not (tmp_path / "plots/daily").exists()
+    assert (tmp_path / "csv/daily_kpis.csv").is_file()
+
+
 def test_continuous_plots_use_shared_market_time_and_save_daily_views(report_inputs, tmp_path, monkeypatch):
     from matplotlib.figure import Figure
 

@@ -132,7 +132,7 @@ def _daily_kpis(config, strategy, frame, solves, initial_expected):
     return pd.DataFrame(rows)
 
 
-def _plot_strategy(config, destination, strategy, frame, plans):
+def _plot_strategy(config, destination, strategy, frame, plans, *, daily_plots=True):
     """Plot uninterrupted delivery and each daily PV/dispatch view through final midnight."""
     import matplotlib
     matplotlib.use("Agg")
@@ -171,6 +171,10 @@ def _plot_strategy(config, destination, strategy, frame, plans):
         axis.legend()
         fig.savefig(destination / filename, dpi=140)
         plt.close(fig)
+    # Participation studies have many trajectories; avoid one figure per day
+    # unless the study explicitly requests those detailed views.
+    if not daily_plots:
+        return
     daily_destination = destination / "daily"
     daily_destination.mkdir(exist_ok=True)
     for day, daily in frame.groupby("delivery_day", sort=True):
@@ -392,7 +396,10 @@ def save_continuous_strategy_outputs(config, destination, strategy, dispatch, pl
     _write_json(destination / "json/accepted_trades.json", ledger)
     if config.get("experiment_outputs", {}).get("plots", True):
         (destination / "plots").mkdir(exist_ok=True)
-        _plot_strategy(config, destination / "plots", strategy, frame, plans)
+        participation = config.get("continuous_participation_study", {})
+        daily_plots = (participation.get("daily_strategy_plots", False)
+                       if participation.get("enabled", False) else True)
+        _plot_strategy(config, destination / "plots", strategy, frame, plans, daily_plots=daily_plots)
         _plot_projection_errors(config, destination / "plots", projections)
     return summary
 
