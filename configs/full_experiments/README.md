@@ -19,6 +19,26 @@ Small synthetic solver examples remain here for software validation. Add real-da
 
 ## Continuous optimization
 
+For the January 2026 three-way comparison on any of the four farms, use
+`continuous_2026_01_pv_deterministic_four_farms.yaml` and
+`continuous_2026_01_pv_scenarios_four_farms.yaml`. The launcher below runs both
+replays and produces the matched deterministic, 51-scenario and perfect-PV
+comparison. Supply `--farm-id` as 1, 345, 901 or 910:
+
+```bash
+PYTHONPATH=src python scripts/run_january_pv_farm_comparison.py --farm-id 1
+```
+
+Both replays use the configured farm-specific saved weather-to-PV model and exact
+planned delivery. These models were selected retrospectively after January 2026;
+their use is explicitly allowed and recorded, so this is a retrospective study.
+The scenario replay uses the preceding delivery day's 00 UTC weather
+ensemble, with historical availability assumed after the configured latency;
+the deterministic member updates at auction cutoffs. The perfect-PV reference
+solves once per day at DA or the first available auction. Runs replace existing
+outputs with the same IDs; the plot and tables are saved in
+`outputs/continuous_optimization/comparisons/farm_<id>/2026_01_four_farms_model_pv_comparison`.
+
 `continuous_optimization_2025-01.yaml` is a separate consecutive-delivery
 experiment. From the repository root, run:
 

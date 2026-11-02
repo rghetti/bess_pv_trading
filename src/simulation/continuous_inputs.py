@@ -81,6 +81,18 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
     settings = config["continuous_optimization"]["pv_ensemble"]
     source = config_path(config, settings["zarr"])
     farm_id = int(config["forecast"]["farm_id"])
+    replacement = config["pv"].get("forecast_replacement", {})
+    model = replacement.get("models_by_farm", {}).get(str(farm_id),
+        replacement.get("models_by_farm", {}).get(farm_id))
+    if replacement.get("enabled"):
+        if not model or model.get("kind") != "weather_bundle":
+            raise ValueError("PV ensemble model requires a configured weather bundle for the selected farm")
+        artifact = config_path(config, model["artifact_path"])
+        if not artifact.is_file():
+            raise ValueError(f"PV ensemble model artifact is missing: {artifact}")
+        available_at = pd.Timestamp(model["available_at_utc"])
+        if available_at.tzinfo is None:
+            raise ValueError("PV ensemble model availability must be timezone-aware")
     farm = load_metadata(config_path(config, config["inputs"]["metadata_parquet"]), [farm_id])[farm_id]
     provenance = {}
     with xr.open_zarr(source, consolidated=True, chunks=None) as dataset:
@@ -97,9 +109,30 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
             first_cutoff = min(event.submission_at for event in daily["schedule"])
             if weather.available_at > first_cutoff:
                 raise ValueError(f"PV ensemble for {day} is not available at the first auction cutoff")
-            converted = forecast_pv(weather, farm, config["pv"], config.get("policy", {}).get("night", {}))
-            values = np.stack([converted.values.loc[converted.values.member == member, "pv_ac_mw"].to_numpy(float)
-                               for member in members])
+            if replacement.get("enabled"):
+                if available_at > pd.Timestamp(first_cutoff) and not replacement.get("allow_retrospective_artifacts", False):
+                    raise ValueError(f"PV ensemble model was not available at the first cutoff for {day}")
+                from ..forecasting.inference.pv_forecast_bundle import predict_bundle
+
+                # Keep member curves independent for both interpolation and neural sequence packing.
+                frame = weather.values.copy().reset_index(drop=False)
+                frame["interval_start_utc"] = np.tile(starts, len(members))
+                frame["delivery_day"] = day
+                frame["auction"] = "DA"
+                frame["forecast_cycle_utc"] = cycle
+                frame["_scenario_member"] = frame["member"].astype(str)
+                predicted = predict_bundle(frame, artifact.parent, farm_id=farm_id)
+                values = np.stack([predicted[frame["_scenario_member"].to_numpy() == member]
+                                   for member in members])
+                conversion = {"model": model.get("name"), "kind": model["kind"],
+                    "manifest": str(artifact), "manifest_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
+                    "available_at_utc": available_at.isoformat(),
+                    "retrospective": bool(available_at > pd.Timestamp(first_cutoff))}
+            else:
+                converted = forecast_pv(weather, farm, config["pv"], config.get("policy", {}).get("night", {}))
+                values = np.stack([converted.values.loc[converted.values.member == member, "pv_ac_mw"].to_numpy(float)
+                                   for member in members])
+                conversion = converted.provenance
             # Match the deterministic loader's explicit nighttime-only missing-data policy.
             missing = ~np.isfinite(values)
             night_policy = config.get("policy", {}).get("night", {})
@@ -120,7 +153,7 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
                 "available_at_utc": weather.available_at.isoformat(), "availability": "assumed cycle plus configured latency",
                 "member_ids": list(members), "values_sha256": _fingerprint(values),
                 "nighttime_missing_filled_zero_member_intervals": int(missing.sum()),
-                "conversion": converted.provenance}
+                "conversion": conversion}
             if progress:
                 progress(f"Preflight {day}: converted {len(members)} raw PV ensemble members")
     return provenance
@@ -302,8 +335,6 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             raise ValueError(f"Continuous weather preflight at {key}: {error}") from error
     ensemble_provenance = None
     if settings.get("pv_ensemble", {}).get("enabled", False):
-        if config["pv"].get("forecast_replacement", {}).get("enabled", False):
-            raise ValueError("PV ensemble replay requires the baseline PVLib model")
         ensemble_provenance = _prepare_pv_ensembles(config, days_data, progress)
     settlement, settlement_provenance = load_realized_imbalance_prices(config, full_grid)
     settlement_values = (None if settlement is None else

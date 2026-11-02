@@ -171,7 +171,10 @@ def pack_sequences(frame: pd.DataFrame, features: np.ndarray, rating: float, *, 
     """Pack contiguous date/auction segments; excluded quarters are never represented."""
     groups=[];view_ids=[]
     # Process each `(view_id, positions)` in this collection.
-    for view_id,positions in enumerate(frame.groupby(["delivery_day", "auction"], sort=True).indices.values()):
+    group_columns = ["delivery_day", "auction"]
+    if "_scenario_member" in frame:
+        group_columns.append("_scenario_member")
+    for view_id,positions in enumerate(frame.groupby(group_columns, sort=True).indices.values()):
         starts=pd.DatetimeIndex(frame.iloc[positions].interval_start_utc)
         steps=np.diff(starts.as_unit('ns').asi8)
         # Enforce the input contract: Neural quarter-hour timestamps must be ordered and unique.

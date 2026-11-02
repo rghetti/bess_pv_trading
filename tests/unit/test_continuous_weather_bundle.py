@@ -8,6 +8,32 @@ import pytest
 from bess_pv_trading.simulation.continuous import ContinuousReplay
 
 
+def test_scenario_members_are_interpolated_and_packed_independently():
+    """A missing value in one trajectory must never borrow another member's weather."""
+    from bess_pv_trading.forecasting.data.pv_neural_data import pack_sequences
+    from bess_pv_trading.forecasting.training.pv_forecast_search import interpolate_forecast_gaps
+
+    times = pd.date_range('2026-01-01T10:00Z', periods=3, freq='15min')
+    frame = pd.DataFrame({
+        'interval_start_utc': list(times) * 2,
+        'delivery_day': ['2026-01-01'] * 6,
+        'auction': ['DA'] * 6,
+        'forecast_cycle_utc': [pd.Timestamp('2025-12-31T00:00Z')] * 6,
+        '_scenario_member': ['1'] * 3 + ['2'] * 3,
+        'forecast_ghi': [0., np.nan, 2., 100., 101., 102.],
+        'measured_ac_mw': [np.nan] * 6,
+        'eligible': [False] * 6,
+        'daylight': [True] * 6,
+        'split': ['prediction'] * 6,
+    })
+    interpolated, report = interpolate_forecast_gaps(frame)
+    assert report['view_count'] == 2
+    np.testing.assert_allclose(interpolated.forecast_ghi, [0., 1., 2., 100., 101., 102.])
+    packed = pack_sequences(interpolated, interpolated[['forecast_ghi']].to_numpy(), 1.0)
+    assert packed['indices'].shape == (2, 3)
+    np.testing.assert_array_equal(packed['indices'], [[0, 1, 2], [3, 4, 5]])
+
+
 @pytest.mark.parametrize('provided_lead', [False, True])
 def test_weather_bundle_uses_aligned_or_midpoint_lead(tmp_path, monkeypatch, provided_lead):
     """Fallback lead uses quarter midpoints; existing adapter leads remain intact."""

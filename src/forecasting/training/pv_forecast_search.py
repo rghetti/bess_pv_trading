@@ -61,7 +61,7 @@ def interpolate_forecast_gaps(frame,method='linear_per_view'):
         'wind_u_10m','wind_v_10m','cloud_total_pct','cloud_low_pct','cloud_mid_pct',
         'cloud_high_pct','precipitation_mm','snow_water_equivalent_m','visibility_km',
         'wind_u_100m','wind_v_100m'] if name in result]
-    group_columns=[name for name in ['delivery_day','auction','forecast_cycle_utc'] if name in result]
+    group_columns=[name for name in ['delivery_day','auction','forecast_cycle_utc','_scenario_member'] if name in result]
     before={name:int((~np.isfinite(result[name].to_numpy(dtype=float))).sum()) for name in columns}
     report={'method':method,'rows_before':before,'filled_by_feature':{name:0 for name in columns},
         'boundary_extrapolated_by_feature':{name:0 for name in columns},
