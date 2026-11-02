@@ -487,3 +487,20 @@ or a guarantee of realized imbalance. Optional `cvar_confidence` and
 zero weight disables it. The planning imbalance penalty and CVaR weight are not
 realized settlement charges. Historical weather availability uses the configured
 lag, an assumption rather than verified issuance records.
+
+Continuous numerical comparisons use an absolute physical tolerance of `1e-6`
+for power (MW) and energy (MWh), an absolute accounting tolerance of `1e-6`
+EUR, and a symmetric relative tolerance of `1e-8`. The physical default uses
+`execution.comparison_tolerance_mw`; optional study settings
+`execution.validation_physical_absolute_tolerance`,
+`execution.validation_money_absolute_tolerance_eur` and
+`execution.validation_relative_tolerance` override the corresponding values.
+The separate `execution.validation_objective_relative_tolerance` defaults to
+`1e-8`. Solver physical validation uses at least twice the solver feasibility
+tolerance. Integrality uses the solver's configured tolerance; these checks do not
+change the relative MIP gap. Input availability, timestamps, missing values,
+profile identities and finite-value requirements remain exact contracts.
+Original executed values are retained, including tiny tolerated roundoff, and
+computed allocations may contain correspondingly tiny signed values. Changing
+settings on an existing run changes its configuration identity and requires a
+fresh run ID; the defaults need no configuration change when resuming.

@@ -1623,11 +1623,14 @@ energy-balance tolerance when a large penalty scales small MWh residuals.
 For continuous replay, the reported solver objective is checked against the
 independently recomputed objective using the absolute validation tolerance plus
 $10^{-8}$ times the larger objective magnitude; this relative term is distinct
-from the MIP gap and applies only to that scalar comparison. It can be set via
-\path{execution.validation_objective_relative_tolerance}. Objective components
-and, when available, the objective expression evaluated at the extracted
-solution retain the absolute check. The report records the applied objective
-tolerance and both objective residuals. The solver's reported objective is not
+from the MIP gap and applies to that scalar comparison. It can be set via
+\path{execution.validation_objective_relative_tolerance}. Continuous objective
+components and, when available, the objective expression evaluated at the
+extracted solution use an absolute EUR allowance plus a separate relative
+allowance, checked for each scenario. The report records the applied tolerances
+and objective residuals. Ledger and physical reporting use the same configured
+absolute and relative numerical comparison convention. Nonfinite values, missing
+inputs and temporal/identity contracts still require exact validity. The solver's reported objective is not
 replaced by the recomputed value. When CVaR is enabled, the returned threshold
 and excess variables are checked against the scenario-loss epigraph and used
 to reconstruct the objective, including for a time-limited incumbent.

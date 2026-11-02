@@ -12,6 +12,7 @@ import pandas as pd
 from .optimization_timing import optimization_timing_report, solve_timing, timing_statistics
 from .plots import plot_boundary_series, plot_interval_series, plot_pv_series, pv_power_allocation
 from .continuous_summary import write_continuous_markdown
+from ..numerical_tolerances import continuous_tolerances
 
 
 def _json_value(value):
@@ -62,9 +63,9 @@ def _financial_dispatch(config, dispatch):
     frame[numeric] = frame[numeric].apply(pd.to_numeric, errors="raise")
     if not np.isfinite(frame[numeric].to_numpy(float)).all():
         raise ValueError("Continuous realized accounting requires finite execution and settlement values")
-    tolerance = max(float(config.get("solver", {}).get("feasibility_tolerance") or 1e-6), 1e-7)
-    if len(frame) > 1 and not np.allclose(frame.energy_end_mwh.iloc[:-1],
-            frame.energy_start_mwh.iloc[1:], rtol=0, atol=tolerance):
+    tolerances = continuous_tolerances(config)
+    if len(frame) > 1 and not tolerances.close(frame.energy_end_mwh.iloc[:-1],
+            frame.energy_start_mwh.iloc[1:]).all():
         raise ValueError("Continuous battery state must carry across every interval and midnight")
     frame["duration_hours"] = (frame.end - frame.start).dt.total_seconds() / 3600
     if "imbalance_penalty_eur" not in frame:
@@ -327,16 +328,17 @@ def save_continuous_strategy_outputs(config, destination, strategy, dispatch, pl
     supplied_attempts = "optimization_attempts" in extra
     attempts = list(extra.pop("optimization_attempts", solves))
     initial_expected = extra.pop("initial_expected_profit_by_day", {})
+    tolerances = continuous_tolerances(config)
     if ledger:
         for interval_column, ledger_column in (("auction_revenue_eur", "cashflow_eur"),
                 ("transaction_fee_eur", "transaction_fee_eur")):
             expected = sum(float(row.get(ledger_column, 0.0)) for row in ledger)
-            if not np.isclose(frame[interval_column].sum(), expected, rtol=1e-10, atol=1e-7):
+            if not tolerances.close(frame[interval_column].sum(), expected, monetary=True):
                 raise ValueError(f"Continuous {interval_column} does not reconcile with submitted trade ledger")
             for day, executed in frame.groupby("delivery_day", sort=False):
                 booked = sum(float(row.get(ledger_column, 0.0)) for row in ledger
                     if str(row.get("delivery_day")) == day)
-                if not np.isclose(executed[interval_column].sum(), booked, rtol=1e-10, atol=1e-7):
+                if not tolerances.close(executed[interval_column].sum(), booked, monetary=True):
                     raise ValueError(f"Continuous {interval_column} does not reconcile by delivery day {day}")
     daily = _daily_kpis(config, strategy, frame, solves, initial_expected)
     category = "perfect_pv_reference" if strategy == "perfect_pv" else "replay"
@@ -386,7 +388,7 @@ def save_continuous_strategy_outputs(config, destination, strategy, dispatch, pl
         "cutoff_utc", "planning_start_utc", "predicted_initial_energy_mwh",
         "actual_initial_energy_mwh", "prediction_error_mwh"]).to_csv(
             destination / "csv/state_projections.csv", index=False)
-    pv_power_allocation(frame).to_csv(destination / "csv/pv_power_allocation.csv", index=False)
+    pv_power_allocation(frame, tolerances=tolerances).to_csv(destination / "csv/pv_power_allocation.csv", index=False)
     _write_json(destination / "json/kpis.json", summary)
     _write_json(destination / "json/optimization_timing.json", timing)
     _write_json(destination / "json/solves.json", solves)
@@ -474,8 +476,9 @@ def save_continuous_comparison(config, destination, summaries):
         columns = ["interval_id", "start", "end", "pv_ac_mw"]
         if common_grid is None:
             common_grid = execution[columns].copy()
-        elif not common_grid.equals(execution[columns]):
-            raise ValueError("Continuous strategies must use the same delivery grid and realized PV")
+        elif (not common_grid[["interval_id", "start", "end"]].equals(execution[["interval_id", "start", "end"]])
+              or not continuous_tolerances(config).close(common_grid.pv_ac_mw, execution.pv_ac_mw).all()):
+            raise ValueError("Continuous strategies must use the same delivery grid and realized PV within tolerance")
         daily["strategy"] = strategy
         daily["reference_strategy"] = reference_strategy
         daily["reference_profit_eur"] = daily.delivery_day.map(reference.net_profit_eur)

@@ -16,6 +16,7 @@ import pandas as pd
 from ..config import validate_continuous_optimization
 from ..data import config_path, night_window_mask
 from ..domain import AcceptedTrade, DeliveryGrid, MarketState, OptimizationInput, PhysicalState, SolverSettings
+from ..numerical_tolerances import continuous_tolerances
 from ..optimization import build_model, solve_model, validate_solution
 from ..optimization.degradation import degradation_settings_from_config
 from ..reporting.optimization_timing import optimization_timing_report, solve_timing
@@ -143,6 +144,7 @@ class ContinuousReplay:
         self.fees = transaction_fees_from_config(config)
         self.aging = degradation_settings_from_config(config)
         self.trading = config["trading"]
+        self.numerical_tolerances = continuous_tolerances(config)
         self.dispatch_policy = config["execution"].get("dispatch_policy", "track_committed_grid")
         self.config_fingerprint = config_fingerprint or _configuration_fingerprint(config)
         self.identity = {"policy_version": CONTINUOUS_POLICY_VERSION, "strategy": strategy,
@@ -430,7 +432,8 @@ class ContinuousReplay:
                 end=self.grid.ends[index], pv_ac_mw=by_product[product],
                 requested_charge_mw=commands[0], requested_discharge_mw=commands[1],
                 requested_curtailment_mw=commands[2], plant=self.plant,
-                degradation_settings=self.aging, dispatch_policy=policy, grid_target_mw=target)
+                degradation_settings=self.aging, dispatch_policy=policy, grid_target_mw=target,
+                numerical_tolerance=self.numerical_tolerances.physical_absolute)
             projection.append({"interval_id": product, "start": str(self.grid.starts[index]),
                 "end": str(self.grid.ends[index]), "plan_source_auction": row.get("auction"),
                 "plan_source_delivery_day": self.day_for_product[product], **record})
@@ -650,15 +653,20 @@ class ContinuousReplay:
         # residuals against their distinct solver tolerances.
         solver_feasibility_tolerance = float(result.diagnostics.get("feasibility_tolerance") or 1e-6)
         solver_integrality_tolerance = float(result.diagnostics.get("integrality_tolerance") or 1e-5)
-        validation_tolerance = max(1e-6, 2.0 * solver_feasibility_tolerance)
+        tolerances = continuous_tolerances(self.config)
+        validation_tolerance = max(tolerances.physical_absolute, 2.0 * solver_feasibility_tolerance)
         validation_integrality_tolerance = solver_integrality_tolerance
         objective_relative_tolerance = self.config["execution"].get("validation_objective_relative_tolerance", 1e-8)
         validation = validate_solution(inputs, result, tolerance=validation_tolerance,
             integrality_tolerance=validation_integrality_tolerance,
-            objective_relative_tolerance=objective_relative_tolerance)
+            objective_relative_tolerance=objective_relative_tolerance,
+            component_absolute_tolerance=tolerances.money_absolute_eur,
+            component_relative_tolerance=tolerances.relative)
         diagnostic["solution_validation_tolerance"] = validation_tolerance
         diagnostic["solution_validation_integrality_tolerance"] = validation_integrality_tolerance
         diagnostic["solution_validation_objective_relative_tolerance"] = objective_relative_tolerance
+        diagnostic["solution_validation_component_absolute_tolerance_eur"] = tolerances.money_absolute_eur
+        diagnostic["solution_validation_component_relative_tolerance"] = tolerances.relative
         diagnostic["validation"] = asdict(validation)
         # Enforce the input contract: Continuous solution validation failed: `validation.violations`.
         if not validation.valid:
@@ -760,7 +768,8 @@ class ContinuousReplay:
             projected, _ = execute_interval(state=self.state, start=self.grid.starts[event.payload],
                 end=self.grid.ends[event.payload], pv_ac_mw=float(detail["pv_ac_forecast_mw"]),
                 requested_charge_mw=commands[0], requested_discharge_mw=commands[1], requested_curtailment_mw=commands[2],
-                plant=self.plant, degradation_settings=self.aging, dispatch_policy=policy, grid_target_mw=target)
+                plant=self.plant, degradation_settings=self.aging, dispatch_policy=policy, grid_target_mw=target,
+                numerical_tolerance=self.numerical_tolerances.physical_absolute)
             detail = {**detail, "soc_end_mwh": projected.energy_mwh}
         self.pending[product] = {"commands": commands, "detail": dict(detail), "policy": policy, "target": target}
 
@@ -775,7 +784,7 @@ class ContinuousReplay:
             pv_ac_mw=float(self.prepared["full_realized_pv"][index]),
             requested_charge_mw=charge, requested_discharge_mw=discharge, requested_curtailment_mw=curtail,
             plant=self.plant, degradation_settings=self.aging, dispatch_policy=pending["policy"],
-            grid_target_mw=pending["target"])
+            grid_target_mw=pending["target"], numerical_tolerance=self.numerical_tolerances.physical_absolute)
         detail = pending["detail"]
         self.records[product] = {"interval_id": product, "start": str(self.grid.starts[index]),
             "end": str(self.grid.ends[index]), "delivery_day": self.day_for_product[product],
@@ -844,12 +853,14 @@ class ContinuousReplay:
             [asdict(trade) for trade in self.market.accepted_trades])
         reference = {row["trade_id"]: row for row in checked}
         # Enforce the input contract: Continuous fees do not reconcile to the immutable executed ledger.
-        if abs(checked_state.cumulative_fees_eur - self.market.transaction_fee_state.cumulative_fees_eur) > 1e-6:
+        tolerances = continuous_tolerances(self.config)
+        if not tolerances.close(checked_state.cumulative_fees_eur,
+                                self.market.transaction_fee_state.cumulative_fees_eur, monetary=True):
             raise RuntimeError("Continuous fees do not reconcile to the immutable executed ledger")
         # Reconcile the global ledger and allocate increments to delivery products for each `(month, volume)` in `self.market.transaction_fee_state.monthly_volume_mwh.items()`.
         for month, volume in self.market.transaction_fee_state.monthly_volume_mwh.items():
             # Enforce the input contract: Continuous monthly operator volume does not reconcile.
-            if abs(volume - checked_state.monthly_volume_mwh.get(month, 0.0)) > 1e-6:
+            if not tolerances.close(volume, checked_state.monthly_volume_mwh.get(month, 0.0)):
                 raise RuntimeError("Continuous monthly operator volume does not reconcile")
         ledger = [{**asdict(trade), **reference[trade.trade_id], "cashflow_eur": trade.cashflow_eur,
             "delivery_day": self.day_for_product[trade.interval_id]} for trade in self.market.accepted_trades]
@@ -898,6 +909,7 @@ class ContinuousReplay:
                 "retained_auction_submission_count": sum(row.get("optimization_performed") is False
                     for row in self.event_trace),
                 "policy_version": CONTINUOUS_POLICY_VERSION, "input_fingerprint": self.prepared["input_fingerprint"],
+                "numerical_tolerances": asdict(self.numerical_tolerances),
                 "final_state": asdict(self.state), "final_fee_state": asdict(self.market.transaction_fee_state),
                 "terminal_target_mwh": self.prepared["terminal_energy_mwh"],
                 "terminal_minimum_mwh": self.prepared["terminal_minimum_energy_mwh"],

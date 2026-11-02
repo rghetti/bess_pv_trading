@@ -322,6 +322,15 @@ def validate_config(config: dict[str, Any]) -> None:
     if (isinstance(relative_tolerance, bool) or not isinstance(relative_tolerance, (int, float))
             or not math.isfinite(relative_tolerance) or relative_tolerance < 0):
         raise ConfigurationError("execution.validation_objective_relative_tolerance must be finite and nonnegative")
+    # These optional reporting and validation tolerances do not alter saved defaults.
+    for name in ("validation_physical_absolute_tolerance", "validation_money_absolute_tolerance_eur",
+                 "validation_relative_tolerance"):
+        if name in execution:
+            value = execution[name]
+            if (isinstance(value, bool) or not isinstance(value, (int, float))
+                    or not math.isfinite(value) or value < 0
+                    or (name == "validation_physical_absolute_tolerance" and value == 0)):
+                raise ConfigurationError(f"execution.{name} must be finite and nonnegative")
     from .participation import auction_subset, participation_profiles
     # Enforce the input contract: gme_oracle_experiment.auction_planning_mode must be integrated or current_auction_only.
     if config.get("gme_oracle_experiment", {}).get("auction_planning_mode", "integrated") not in {"integrated", "current_auction_only"}:

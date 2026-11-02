@@ -6,6 +6,7 @@ import pandas as pd
 
 from .continuous_outputs import _financial_dispatch
 from .plots import pv_power_allocation
+from ..numerical_tolerances import continuous_tolerances
 
 
 AUCTIONS = ("DA", "IDA1", "IDA2", "IDA3")
@@ -14,6 +15,7 @@ AUCTIONS = ("DA", "IDA1", "IDA2", "IDA3")
 def continuous_daily_decomposition(config, dispatch, ledger, days_data):
     """Attribute actual ledger trades and physical execution to aligned products."""
     frame = _financial_dispatch(config, dispatch)
+    tolerances = continuous_tolerances(config)
     trades = pd.DataFrame(ledger)
     if trades.empty:
         trades = pd.DataFrame(columns=["interval_id", "auction", "quantity_mwh", "cashflow_eur", "price_eur_per_mwh"])
@@ -28,12 +30,12 @@ def continuous_daily_decomposition(config, dispatch, ledger, days_data):
         by_product = product_trades.groupby("interval_id", sort=False)
         quantities = by_product.quantity_mwh.sum().reindex(product_ids, fill_value=0).to_numpy(float)
         cash = by_product.cashflow_eur.sum().reindex(product_ids, fill_value=0).to_numpy(float)
-        if not np.allclose(quantities, daily.net_position_mwh, rtol=1e-10, atol=1e-7):
+        if not tolerances.close(quantities, daily.net_position_mwh).all():
             raise ValueError(f"Ledger quantities do not reconcile on {day}")
-        if not np.allclose(cash, daily.auction_revenue_eur, rtol=1e-10, atol=1e-7):
+        if not tolerances.close(cash, daily.auction_revenue_eur, monetary=True).all():
             raise ValueError(f"Ledger auction cash flow does not reconcile on {day}")
-        if len(product_trades) and not np.allclose(product_trades.cashflow_eur,
-                product_trades.quantity_mwh * product_trades.price_eur_per_mwh, rtol=1e-10, atol=1e-7):
+        if len(product_trades) and not tolerances.close(product_trades.cashflow_eur,
+                product_trades.quantity_mwh * product_trades.price_eur_per_mwh, monetary=True).all():
             raise ValueError(f"Ledger price and quantity do not reconcile on {day}")
         quantity = product_trades.quantity_mwh.to_numpy(dtype=float)
         purchased = float(np.maximum(-quantity, 0).sum())
@@ -58,11 +60,11 @@ def continuous_daily_decomposition(config, dispatch, ledger, days_data):
             for trade in product_trades.itertuples():
                 if trade.auction != "DA":
                     spread += (float(trade.price_eur_per_mwh) - price_by_product[trade.interval_id]) * float(trade.quantity_mwh)
-            if not np.isclose(value + spread, cash.sum(), rtol=1e-10, atol=1e-6):
+            if not tolerances.close(value + spread, cash.sum(), monetary=True):
                 raise ValueError(f"DA reference and intraday spread do not reconcile on {day}")
             row.update(da_reference_value_eur=value, inter_auction_spread_revenue_eur=spread,
                        da_reference_available=True)
-        allocation = pv_power_allocation(daily)
+        allocation = pv_power_allocation(daily, tolerances=tolerances)
         duration = daily.duration_hours.to_numpy(float)
         pv_battery = allocation.pv_to_battery_mw.to_numpy(float)
         row.update(pv_available_mwh=float(np.dot(daily.pv_ac_mw, duration)),
@@ -75,11 +77,11 @@ def continuous_daily_decomposition(config, dispatch, ledger, days_data):
             initial_energy_mwh=float(daily.energy_start_mwh.iloc[0]),
             final_energy_mwh=float(daily.energy_end_mwh.iloc[-1]))
         row["battery_throughput_mwh"] = row["battery_charge_mwh"] + row["battery_discharge_mwh"]
-        if not np.isclose(row["pv_available_mwh"], row["pv_exported_mwh"] + row["pv_to_battery_mwh"] + row["pv_curtailed_mwh"], rtol=1e-10, atol=1e-7):
+        if not tolerances.close(row["pv_available_mwh"], row["pv_exported_mwh"] + row["pv_to_battery_mwh"] + row["pv_curtailed_mwh"]):
             raise ValueError(f"PV energy allocation does not reconcile on {day}")
         grid_energy = float(np.dot(daily.grid_mw, duration))
         allocated_grid_energy = row["pv_exported_mwh"] + row["battery_discharge_mwh"] - row["grid_to_battery_mwh"]
-        if not np.isclose(grid_energy, allocated_grid_energy, rtol=1e-10, atol=1e-7):
+        if not tolerances.close(grid_energy, allocated_grid_energy):
             raise ValueError(f"Grid energy allocation does not reconcile on {day}")
         for field in ("auction_revenue_eur", "imbalance_cashflow_eur", "degradation_eur", "transaction_fee_eur", "import_fee_eur", "imbalance_penalty_eur", "net_profit_eur"):
             row[field] = float(daily[field].sum())

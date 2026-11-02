@@ -304,6 +304,13 @@ def test_revenue_decomposition_reconciles_signed_spreads_and_physical_allocation
     assert row.offsetting_mwh == pytest.approx(0.8)
     assert row.pv_available_mwh == pytest.approx(row.pv_exported_mwh + row.pv_to_battery_mwh + row.pv_curtailed_mwh)
     assert row.battery_charge_mwh == pytest.approx(row.pv_to_battery_mwh + row.grid_to_battery_mwh)
+    # Financial reconciliation tolerates rounding but still rejects material drift.
+    ledger[0]["cashflow_eur"] += 5e-7
+    continuous_daily_decomposition(config, frame, ledger, data)
+    ledger[0]["cashflow_eur"] += 0.01
+    with pytest.raises(ValueError, match="reconcile"):
+        continuous_daily_decomposition(config, frame, ledger, data)
+    ledger[0]["cashflow_eur"] = 50.0
     data[day]["prices"].pop("DA")
     missing = continuous_daily_decomposition(config, frame, ledger, data).iloc[0]
     assert not missing.da_reference_available

@@ -54,15 +54,21 @@ def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray]
 
 def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tolerance: float = 1e-6,
                       integrality_tolerance: float | None = None,
-                      objective_relative_tolerance: float = 0.0) -> ValidationReport:
+                      objective_relative_tolerance: float = 0.0,
+                      component_absolute_tolerance: float | None = None,
+                      component_relative_tolerance: float = 0.0) -> ValidationReport:
     """Recompute balances, signs, sharing and accounting independently of Gurobi."""
     # When `integrality_tolerance is None`, set `integrality_tolerance` using `tolerance`.
     if integrality_tolerance is None:
         integrality_tolerance = tolerance
+    if component_absolute_tolerance is None:
+        component_absolute_tolerance = tolerance
     # Enforce the input contract: Validation tolerances must be finite and positive.
     if (not np.isfinite(tolerance) or tolerance <= 0
             or not np.isfinite(integrality_tolerance) or integrality_tolerance <= 0
-            or not np.isfinite(objective_relative_tolerance) or objective_relative_tolerance < 0):
+            or not np.isfinite(objective_relative_tolerance) or objective_relative_tolerance < 0
+            or not np.isfinite(component_absolute_tolerance) or component_absolute_tolerance < 0
+            or not np.isfinite(component_relative_tolerance) or component_relative_tolerance < 0):
         raise ValueError("Validation tolerances must be finite and positive")
     # Return `ValidationReport(False, {}, None, (f'No incumbent: {result.status}',))` when `not result.has_incumbent`.
     if not result.has_incumbent:
@@ -81,6 +87,9 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
         return ValidationReport(False, {}, None, (f"Missing, nonfinite or incorrectly shaped result arrays: {invalid}",))
     arrays, battery = result.arrays, inputs.plant.battery
     errors: dict[str, float] = {}
+    component_violations: dict[str, bool] = {}
+    component_violation_details: dict[str, str] = {}
+    component_tolerances: dict[str, float] = {}
 
     def equality(name: str, value: np.ndarray | float) -> None:
         errors[name] = float(np.max(np.abs(value), initial=0)) if np.all(np.isfinite(value)) else float("inf")
@@ -88,6 +97,19 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     def upper(name: str, value: np.ndarray | float) -> None:
         residual = float(np.max(value, initial=0)) if np.all(np.isfinite(value)) else float("inf")
         errors[name] = max(errors.get(name, 0.0), residual)
+
+    def monetary_equality(name, left, right):
+        """Apply absolute and relative allowances to each scenario separately."""
+        left, right = np.asarray(left, dtype=float), np.asarray(right, dtype=float)
+        difference = np.abs(left - right)
+        allowance = component_absolute_tolerance + component_relative_tolerance * np.maximum(np.abs(left), np.abs(right))
+        equality(name, left - right)
+        component_violations[name] = not (np.isfinite(difference).all() and np.all(difference <= allowance))
+        component_tolerances[name] = float(np.max(allowance, initial=0))
+        if component_violations[name] and difference.size:
+            index = np.unravel_index(np.argmax(difference - allowance), difference.shape)
+            component_violation_details[name] = (f"{float(difference[index]):.6g} "
+                f"(tolerance {float(allowance[index]):.6g}, scenario index {index})")
 
     # Curtailment belongs only to the PV plant balance. The battery's stored-
     # energy transition is checked separately and contains no PV-curtailment term.
@@ -266,7 +288,9 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     for name, values in result.components.items():
         # Recompute balances, signs, sharing and accounting independently of Gurobi when `name in components`.
         if name in components:
-            equality(f"component_{name}_eur", np.asarray(values) - components[name])
+            if not np.isfinite(np.asarray(values, dtype=float)).all():
+                return ValidationReport(False, errors, None, (f"Nonfinite objective component: {name}",))
+            monetary_equality(f"component_{name}_eur", values, components[name])
     objective = float(np.dot(inputs.scenarios.probabilities, components["operating_profit"]))
     if inputs.imbalance_cvar_weight_eur_per_mwh:
         # Validate the returned CVaR epigraph, including time-limit incumbents
@@ -292,14 +316,18 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
                 np.maximum(totals - candidate, 0.0)) / (1.0 - inputs.imbalance_cvar_confidence))
                 for candidate in candidates)
         objective -= inputs.imbalance_cvar_weight_eur_per_mwh * cvar
-    equality("expected_objective_eur", np.inf if result.objective_eur is None else result.objective_eur - objective)
+    if result.objective_eur is None or not np.isfinite(result.objective_eur):
+        return ValidationReport(False, errors, objective, ("Missing or nonfinite solver objective",))
+    equality("expected_objective_eur", result.objective_eur - objective)
     # When available, verify the model objective evaluated at extracted variable
     # values separately from Gurobi's recorded incumbent objective attribute.
     expression_objective = result.diagnostics.get("objective_at_extracted_solution_eur")
     if expression_objective is not None:
-        equality("objective_expression_eur", float(expression_objective) - objective)
+        if not np.isfinite(expression_objective):
+            return ValidationReport(False, errors, objective, ("Nonfinite extracted objective expression",))
+        monetary_equality("objective_expression_eur", float(expression_objective), objective)
     objective_scale = max(abs(objective), abs(result.objective_eur or 0.0))
-    objective_tolerance = tolerance + objective_relative_tolerance * objective_scale
+    objective_tolerance = component_absolute_tolerance + objective_relative_tolerance * objective_scale
     def allowed_error(name):
         """Use the solver's distinct binary tolerance only on discrete residuals."""
         if name == "expected_objective_eur":
@@ -309,9 +337,9 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
             or "nonanticipativity_mode_charge" in name)
         return integrality_tolerance if discrete else tolerance
 
-    violations = tuple(f"{name}: {error:.6g}" for name, error in errors.items()
-        if error > allowed_error(name))
+    violations = tuple(f"{name}: {component_violation_details.get(name, f'{error:.6g}')}" for name, error in errors.items()
+        if (component_violations[name] if name in component_violations else error > allowed_error(name)))
     accounting_differences = {name: float(np.max(np.abs(components[name] - physical_components[name]), initial=0))
         for name in ("imbalance_cashflow", "imbalance_penalty", "operating_profit")}
     return ValidationReport(not violations, errors, objective, violations, accounting_differences,
-                            objective_tolerance)
+                            objective_tolerance, component_tolerances)

@@ -752,3 +752,5 @@ class ValidationReport:
     accounting_differences_eur: Mapping[str, float] = field(default_factory=dict)
     # Absolute-plus-relative tolerance applied only to the solver objective.
     objective_tolerance_eur: float | None = None
+    # Largest per-scenario tolerance used for each checked EUR component.
+    component_tolerances_eur: Mapping[str, float] = field(default_factory=dict)

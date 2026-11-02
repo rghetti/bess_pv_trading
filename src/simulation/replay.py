@@ -95,6 +95,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
                      degradation_settings: DegradationSettings | None = None,
                      dispatch_policy: str = "follow_battery_plan",
                      grid_target_mw: float | None = None,
+                     numerical_tolerance: float = 1e-8,
                      ) -> tuple[PhysicalState, dict[str, Any]]:
     """Execute pre-interval commands with declared interval-average protection.
 
@@ -108,6 +109,8 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
     # Enforce the input contract: Execution interval must have positive duration.
     if end <= start:
         raise ValueError("Execution interval must have positive duration")
+    if not np.isfinite(numerical_tolerance) or numerical_tolerance < 0:
+        raise ValueError("Execution numerical tolerance must be finite and nonnegative")
     # Enforce the input contract: Unknown execution dispatch_policy.
     if dispatch_policy not in {"follow_battery_plan", "track_committed_grid"}:
         raise ValueError("Unknown execution dispatch_policy")
@@ -186,7 +189,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
     safety_adjustment += sum(abs(a-b) for a,b in zip((charge,discharge,curtailment),before_poi))
     energy = retained + battery.eta_charge * charge * duration - discharge * duration / battery.eta_discharge
     # Enforce the input contract: Execution would violate battery energy bounds.
-    if energy < battery.energy_min_mwh-1e-8 or energy > battery.maximum_energy+1e-8:
+    if energy < battery.energy_min_mwh-numerical_tolerance or energy > battery.maximum_energy+numerical_tolerance:
         raise ValueError("Execution would violate battery energy bounds")
     energy = min(battery.maximum_energy, max(battery.energy_min_mwh, energy))
     throughput = (charge + discharge) * duration

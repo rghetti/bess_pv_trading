@@ -88,6 +88,31 @@ def test_pv_allocation_excludes_grid_charging_and_battery_discharge():
                                dispatch.pv_ac_mw)
 
 
+def test_pv_allocation_preserves_tiny_execution_roundoff():
+    """Reporting must not reject an otherwise completed replay for one ULP."""
+    pv = 0.004800000190734863
+    curtailed = np.nextafter(pv, np.inf)
+    dispatch = pd.DataFrame({"pv_ac_mw": [pv], "curtailment_mw": [curtailed], "charge_mw": [0.0]})
+    allocation = pv_power_allocation(dispatch)
+    assert allocation.pv_ac_mw.iloc[0] == pv
+    assert allocation.pv_curtailed_mw.iloc[0] == curtailed
+    assert dispatch.curtailment_mw.iloc[0] == curtailed
+
+
+def test_pv_allocation_tolerates_only_small_numeric_bound_errors():
+    """Numerical noise passes; material or nonfinite allocation errors do not."""
+    from bess_pv_trading.numerical_tolerances import NumericalTolerances
+    tolerance = NumericalTolerances(physical_absolute=1e-6, relative=0.0)
+    frame = pd.DataFrame({"pv_ac_mw": [1.0], "curtailment_mw": [1.0 + 5e-7], "charge_mw": [0.0]})
+    assert pv_power_allocation(frame, tolerances=tolerance).pv_curtailed_mw.iloc[0] == frame.curtailment_mw.iloc[0]
+    frame.loc[0, "curtailment_mw"] = 1.0 + 2e-6
+    with pytest.raises(ValueError, match="within tolerance"):
+        pv_power_allocation(frame, tolerances=tolerance)
+    frame.loc[0, "curtailment_mw"] = np.nan
+    with pytest.raises(ValueError, match="finite"):
+        pv_power_allocation(frame, tolerances=tolerance)
+
+
 @pytest.mark.parametrize("import_fee", [0.0, 3.0])
 def test_profit_breakdown_shows_trading_fees_and_gross_volume(tmp_path, monkeypatch, import_fee):
     """Trading fees occupy the old import slot; nonzero grid charges stay separate."""

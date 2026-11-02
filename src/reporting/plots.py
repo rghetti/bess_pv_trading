@@ -45,7 +45,7 @@ def plot_boundary_series(axis, starts, ends, start_values, end_values, **kwargs)
     return _plot_interval_boundaries(axis, starts, ends, start_values, end_values, **kwargs)
 
 
-def pv_power_allocation(frame: pd.DataFrame) -> pd.DataFrame:
+def pv_power_allocation(frame: pd.DataFrame, *, tolerances=None) -> pd.DataFrame:
     """Partition realized AC PV using PV-first charging at the shared bus.
 
     Uncurtailed PV supplies battery charging before grid imports are needed.
@@ -55,9 +55,14 @@ def pv_power_allocation(frame: pd.DataFrame) -> pd.DataFrame:
     pv = frame.pv_ac_mw.to_numpy(dtype=float)
     curtailed = frame.curtailment_mw.to_numpy(dtype=float)
     charge = frame.charge_mw.to_numpy(dtype=float)
+    from ..numerical_tolerances import NumericalTolerances
+    tolerances = tolerances or NumericalTolerances()
     values = np.column_stack((pv, curtailed, charge))
-    if not np.isfinite(values).all() or np.any(values < 0) or np.any(curtailed > pv):
-        raise ValueError("PV allocation requires finite nonnegative powers and curtailment no greater than PV")
+    # Reject material violations but retain the original unrounded execution values.
+    if (not np.isfinite(values).all()
+            or np.any((values < 0) & ~tolerances.close(values, 0.0))
+            or np.any((curtailed > pv) & ~tolerances.close(curtailed, pv))):
+        raise ValueError("PV allocation requires finite nonnegative powers and curtailment no greater than PV within tolerance")
     used_pv = pv - curtailed
     pv_to_battery = np.minimum(used_pv, charge)
     allocation = frame[[key for key in ("interval_id", "start", "end") if key in frame]].copy()

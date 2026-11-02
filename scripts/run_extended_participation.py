@@ -11,10 +11,10 @@ import sys
 from threading import Thread
 from time import sleep
 
-import numpy as np
 import pandas as pd
 
 from bess_pv_trading.config import load_config
+from bess_pv_trading.numerical_tolerances import continuous_tolerances
 from bess_pv_trading.participation import participation_profiles, profile_id
 from bess_pv_trading.simulation.continuous_inputs import prepare_continuous_inputs
 
@@ -82,10 +82,11 @@ def summarize(configs, roots, output):
                             validate="one_to_one", how="left")
         if daily.pv_only_profit_eur.isna().any():
             raise ValueError(f"Missing PV-only comparison for {policy}")
-        if not np.allclose(daily.net_profit_eur, daily.pv_bess_profit_eur, rtol=1e-10, atol=1e-7):
+        tolerances = continuous_tolerances(configs[0])
+        if not tolerances.close(daily.net_profit_eur, daily.pv_bess_profit_eur, monetary=True).all():
             raise ValueError(f"PV-only pairing disagrees with realized {policy} profit")
-        if not np.allclose(daily.incremental_profit_eur,
-                daily.net_profit_eur - daily.pv_only_profit_eur, rtol=1e-10, atol=1e-7):
+        if not tolerances.close(daily.incremental_profit_eur,
+                daily.net_profit_eur - daily.pv_only_profit_eur, monetary=True).all():
             raise ValueError(f"PV-only incremental profit does not reconcile for {policy}")
         diagnostics = []
         for name in names:
