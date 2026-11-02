@@ -92,10 +92,10 @@ def _daily_kpis(config, strategy, frame, solves, initial_expected):
         row = {"strategy": strategy, "delivery_day": day, "study_date": day,
             "interval_count": len(daily), "delivery_hours": float(duration.sum()),
             "initial_energy_mwh": initial, "final_energy_mwh": final,
-            "initial_soc_percent": initial / capacity * 100,
-            "final_soc_percent": final / capacity * 100,
-            "terminal_soc_min_percent": minimum_soc,
-            "terminal_soc_minimum_shortfall_percent": (None if minimum_soc is None else
+            "initial_soc_percent": initial / capacity * 100 if capacity else None,
+            "final_soc_percent": final / capacity * 100 if capacity else None,
+            "terminal_soc_min_percent": minimum_soc if capacity else None,
+            "terminal_soc_minimum_shortfall_percent": (None if minimum_soc is None or not capacity else
                 max(0.0, float(minimum_soc) - final / capacity * 100)),
             "inventory_change_mwh": final - initial,
             "net_profit_eur": profit, "total_gain_eur": profit,
@@ -145,6 +145,8 @@ def _plot_strategy(config, destination, strategy, frame, plans):
         ("continuous_dispatch.png", "Power (MW AC)", "Continuous delivery", "dispatch"),
         ("cumulative_profit.png", "Cumulative profit (EUR)", "Settled operating profit", "profit"))
     for filename, ylabel, title, kind in specs:
+        if kind == "soc" and capacity == 0:
+            continue
         fig, axis = plt.subplots(figsize=(13, 4), layout="constrained")
         if kind == "soc":
             plot_boundary_series(axis, starts, ends, frame.energy_start_mwh / capacity * 100,
@@ -235,6 +237,8 @@ def _plot_projection_errors(config, destination, projections, *, filename_suffix
     import matplotlib.pyplot as plt
 
     timezone = config.get("market", {}).get("timezone", "Europe/Rome")
+    if float(config["battery"]["capacity_mwh"]) == 0:
+        return []
     scale = 100 / float(config["battery"]["capacity_mwh"])
     generated = []
     for kind, filename, label in (
@@ -356,8 +360,8 @@ def save_continuous_strategy_outputs(config, destination, strategy, dispatch, pl
         "min_daily_profit_eur": float(profits.min()), "max_daily_profit_eur": float(profits.max()),
         "initial_energy_mwh": float(daily.initial_energy_mwh.iloc[0]),
         "final_energy_mwh": float(daily.final_energy_mwh.iloc[-1]),
-        "initial_soc_percent": float(daily.initial_soc_percent.iloc[0]),
-        "final_soc_percent": float(daily.final_soc_percent.iloc[-1]),
+        "initial_soc_percent": float(daily.initial_soc_percent.iloc[0]) if config["battery"]["capacity_mwh"] else None,
+        "final_soc_percent": float(daily.final_soc_percent.iloc[-1]) if config["battery"]["capacity_mwh"] else None,
         "auction_solves": len(solves), "fallback_count": int(daily.fallback_count.sum()),
         "optimization_timing": timing, "daily_kpis": daily.to_dict("records"),
         "profit_attribution": "Delivery day; trade ledger preserves submission/publication timestamps and transaction-month fees",

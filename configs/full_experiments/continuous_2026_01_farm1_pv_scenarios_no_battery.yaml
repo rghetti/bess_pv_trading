@@ -1,0 +1,36 @@
+include: ../standard.yaml
+farm_id: 1
+continuous_optimization:
+  start_date: '2026-01-01'
+  end_date: '2026-01-31'
+  planning_modes: [integrated]
+  perfect_pv_reference: true
+  perfect_pv_reoptimize_at_each_auction: false
+  run_id: continuous_farm1_2026_01_pv_scenarios_no_battery
+  pv_ensemble:
+    enabled: true
+battery:
+  capacity_mwh: 0.0
+  max_power_mw: 0.0
+state:
+  initial_soc_percent: 90.0
+  terminal_soc_percent: null
+  terminal_soc_min_percent: null
+degradation:
+  replacement_economics: null
+  throughput_lifetime: null
+  cost_eur_per_mwh_throughput: 0.0
+solver:
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+pv:
+  direct_exceeds_ghi: clip_and_flag
+trading:
+  optimize_imbalances: false
+transaction_fees:
+  mode: gme_real
+execution:
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+settlement:
+  enabled: true

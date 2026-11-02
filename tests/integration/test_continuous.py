@@ -186,6 +186,60 @@ def test_scenario_replay_carries_committed_orders_and_settles_without_penalty_ch
         dispatch.transaction_fee_eur).sum())
 
 
+def test_no_battery_replay_has_no_battery_flows_or_soc(continuous_config, tmp_path):
+    """A zero-capacity plant remains a valid continuous execution and report."""
+    config = continuous_config
+    config["battery"].update(capacity_mwh=0.0, max_power_mw=0.0)
+    config["state"].update(initial_energy_mwh=0.0, terminal_target_mwh=None,
+                           terminal_soc_percent=None, terminal_soc_min_percent=None)
+    config["degradation"].update(replacement_economics=None, throughput_lifetime=None,
+                                 cost_eur_per_mwh_throughput=0.0)
+    config["experiment_outputs"]["plots"] = True
+    prepared, _ = _prepared(config, one_day=True)
+    replay = _module().ContinuousReplay(config, prepared, "integrated", tmp_path / "no_battery",
+        progress=lambda message: None)
+    summary = replay.run()
+    dispatch = pd.read_csv(tmp_path / "no_battery/csv/realized_dispatch.csv")
+    assert summary["initial_soc_percent"] is None
+    assert summary["final_soc_percent"] is None
+    np.testing.assert_allclose(dispatch[["charge_mw", "discharge_mw", "energy_end_mwh", "degradation_eur"]], 0)
+    assert (tmp_path / "no_battery/plots/cumulative_profit.png").is_file()
+    assert not (tmp_path / "no_battery/plots/continuous_soc.png").exists()
+
+
+def test_no_battery_scenario_planning_uses_all_members(continuous_config, tmp_path):
+    """A PV-only plant can form an exact-delivery shared-scenario plan."""
+    config = continuous_config
+    config["battery"].update(capacity_mwh=0.0, max_power_mw=0.0)
+    config["state"].update(initial_energy_mwh=0.0, terminal_target_mwh=None,
+                           terminal_soc_percent=None, terminal_soc_min_percent=None)
+    config["degradation"].update(replacement_economics=None, throughput_lifetime=None,
+                                 cost_eur_per_mwh_throughput=0.0)
+    config["continuous_optimization"]["pv_ensemble"]["enabled"] = True
+    prepared, _ = _prepared(config, one_day=True)
+    day = prepared["days"][0]
+    daily = prepared["days_data"][day]
+    daily["ensemble_members"] = ("1", "2")
+    daily["ensemble_pv"] = np.stack([daily["initial_forecast"] * 0.8, daily["initial_forecast"] * 1.2])
+    first = daily["schedule"][0]
+    prepared["provenance"]["pv_ensemble"] = {day: {"forecast_vintage_utc": str(first.submission_at),
+        "available_at_utc": str(first.submission_at)}}
+    replay = _module().ContinuousReplay(config, prepared, "integrated", tmp_path / "pv_only")
+    inputs, _ = replay._planning_inputs(_module().ContinuousAuction(day, first), first.submission_at)
+    assert inputs.scenarios.pv_ac_mw.shape[0] == 3
+    assert inputs.plant.battery.capacity_mwh == 0
+    assert not inputs.optimize_imbalances
+    built = _module().build_model(inputs)
+    try:
+        result = _module().solve_model(built)
+    finally:
+        built.model.dispose()
+    assert result.has_incumbent
+    assert _module().validate_solution(inputs, result).valid
+    np.testing.assert_allclose(result.arrays["charge_mw"], 0, atol=1e-8)
+    np.testing.assert_allclose(result.arrays["discharge_mw"], 0, atol=1e-8)
+
+
 @pytest.mark.parametrize("mode", ["integrated", "current_auction_only"])
 def test_one_day_matches_existing_price_oracle(continuous_config, tmp_path, mode):
     prepared, fixtures = _prepared(continuous_config, one_day=True)

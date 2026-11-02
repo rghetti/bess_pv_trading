@@ -712,8 +712,10 @@ class ContinuousReplay:
             # When `self.progress`, set `day` using `self.day_for_product[self.grid.interval_ids[event.payload]]`.
             if self.progress:
                 day = self.day_for_product[self.grid.interval_ids[event.payload]]
+                capacity = self.plant.battery.capacity_mwh
+                soc = f"{100 * self.state.energy_mwh / capacity:.2f}%" if capacity else "not applicable"
                 self.progress(f"Continuous {self.strategy}: completed {day}; "
-                    f"SOC {100 * self.state.energy_mwh / self.plant.battery.capacity_mwh:.2f}%; "
+                    f"SOC {soc}; "
                     f"{len(self.solves)} auction solves")
 
     def _final_dispatch_and_ledger(self):
@@ -835,9 +837,12 @@ def run_continuous_experiment(config, *, progress=None):
         revision = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=False).stdout.strip()
         manifest = {"status": "running", **identity, "run_id": run_id, "output_dir": str(destination),
             "delivery_days": list(prepared["days"]), "code_revision": revision,
-            "completed_strategies": [], "initial_soc_percent": config["state"]["initial_soc_percent"],
-            "final_planned_soc_percent": config["state"]["terminal_soc_percent"],
-            "terminal_soc_min_percent": config["state"].get("terminal_soc_min_percent"),
+            "completed_strategies": [], "initial_soc_percent": (config["state"]["initial_soc_percent"]
+                if config["battery"]["capacity_mwh"] else None),
+            "final_planned_soc_percent": (config["state"]["terminal_soc_percent"]
+                if config["battery"]["capacity_mwh"] else None),
+            "terminal_soc_min_percent": (config["state"].get("terminal_soc_min_percent")
+                if config["battery"]["capacity_mwh"] else None),
             "terminal_target_policy": "study_end_only_with_daily_minimum_floor",
             "delivery_timezone": prepared["calendar"].timezone}
         _atomic_json(manifest_path, manifest)
