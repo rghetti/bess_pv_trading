@@ -423,6 +423,8 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     if inputs.imbalance_cvar_weight_eur_per_mwh:
         threshold = variable["imbalance_cvar_threshold"].X
         excess = np.array([variable["imbalance_cvar_excess"][s].X for s in range(count)])
+        diagnostics["imbalance_cvar_threshold_mwh"] = float(threshold)
+        diagnostics["imbalance_cvar_excess_mwh"] = excess.tolist()
         diagnostics["imbalance_cvar_mwh"] = float(threshold + np.dot(inputs.scenarios.probabilities, excess)
                                                     / (1.0 - inputs.imbalance_cvar_confidence))
     # Process each `(source, destination, direction)` in this collection.
@@ -434,6 +436,7 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     if inputs.transaction_fees.mode != "none":
         diagnostics["transaction_fees_by_scenario"] = scenario_fee_details(inputs, result.trades)
     result.components = {name: np.array([expression[s].getValue() for s in range(count)]) for name, expression in built.components.items()}
+    diagnostics["objective_at_extracted_solution_eur"] = float(model.getObjective().getValue())
     result.objective_eur = float(model.ObjVal)
     if built.original_inputs is not None:
         lift_envelope_result(built.original_inputs, result)

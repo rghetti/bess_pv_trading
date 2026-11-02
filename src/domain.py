@@ -750,3 +750,5 @@ class ValidationReport:
     violations: tuple[str, ...] = ()
     # Maximum model-split versus physical-balance accounting differences (EUR).
     accounting_differences_eur: Mapping[str, float] = field(default_factory=dict)
+    # Absolute-plus-relative tolerance applied only to the solver objective.
+    objective_tolerance_eur: float | None = None

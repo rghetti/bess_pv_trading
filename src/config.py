@@ -318,6 +318,10 @@ def validate_config(config: dict[str, Any]) -> None:
     # Enforce the input contract: execution.save_infeasibility_diagnostics must be a YAML boolean.
     if not isinstance(execution.get("save_infeasibility_diagnostics", False), bool):
         raise ConfigurationError("execution.save_infeasibility_diagnostics must be a YAML boolean")
+    relative_tolerance = execution.get("validation_objective_relative_tolerance", 1e-8)
+    if (isinstance(relative_tolerance, bool) or not isinstance(relative_tolerance, (int, float))
+            or not math.isfinite(relative_tolerance) or relative_tolerance < 0):
+        raise ConfigurationError("execution.validation_objective_relative_tolerance must be finite and nonnegative")
     from .participation import auction_subset, participation_profiles
     # Enforce the input contract: gme_oracle_experiment.auction_planning_mode must be integrated or current_auction_only.
     if config.get("gme_oracle_experiment", {}).get("auction_planning_mode", "integrated") not in {"integrated", "current_auction_only"}:

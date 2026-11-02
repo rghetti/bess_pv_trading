@@ -265,3 +265,51 @@ def test_validation_keeps_physical_balance_and_model_accounting_separate(cvar_we
     changed_arrays = dict(arrays, imbalance_positive_mwh=np.full((1, 1), 1e-4))
     assert not validate_solution(inputs, replace(result, arrays=changed_arrays)).valid
     assert not validate_solution(inputs, replace(result, objective_eur=objective + 0.01)).valid
+
+
+def test_objective_relative_tolerance_is_separate_from_physical_and_component_checks():
+    """A near-1e-8 objective discrepancy does not loosen other residuals."""
+    extracted = 5116.782653892849
+    reported = 5116.782705014111
+    inputs = example_inputs(prices=[[extracted]], pv=np.ones((1, 1)))
+    arrays = {"charge_mw": np.zeros((1, 1)), "discharge_mw": np.zeros((1, 1)),
+        "mode_charge": np.zeros((1, 1)), "curtailment_mw": np.zeros((1, 1)),
+        "pv_injection_mw": np.ones((1, 1)), "grid_mw": np.ones((1, 1)),
+        "energy_mwh": np.zeros((1, 2)), "net_position_mwh": np.ones((1, 1)),
+        "imbalance_mwh": np.zeros((1, 1)), "imbalance_positive_mwh": np.zeros((1, 1)),
+        "imbalance_negative_mwh": np.zeros((1, 1))}
+    result = OptimizationResult("optimal", True, reported, arrays, {("DA", "root", "t0"): 1.0},
+        {"auction_revenue": np.array([extracted]), "operating_profit": np.array([extracted])},
+        {"objective_at_extracted_solution_eur": extracted})
+    assert not validate_solution(inputs, result).valid
+    validation = validate_solution(inputs, result, objective_relative_tolerance=1e-8)
+    assert validation.valid
+    assert validation.max_errors["expected_objective_eur"] == pytest.approx(reported - extracted)
+    assert validation.objective_tolerance_eur == pytest.approx(1e-6 + 1e-8 * reported)
+    assert not validate_solution(inputs, replace(result, objective_eur=reported + 0.01),
+                                 objective_relative_tolerance=1e-8).valid
+    assert not validate_solution(inputs, replace(result, diagnostics={"objective_at_extracted_solution_eur": extracted + 0.01}),
+                                 objective_relative_tolerance=1e-8).valid
+    changed = dict(arrays, grid_mw=np.full((1, 1), 0.9))
+    assert not validate_solution(inputs, replace(result, arrays=changed), objective_relative_tolerance=1e-8).valid
+
+
+def test_cvar_validation_accepts_feasible_nonminimal_epigraph_and_rejects_bad_tail():
+    """A time-limited incumbent may retain a feasible but nonminimal threshold."""
+    inputs = replace(example_inputs(prices=[[100.0]], pv=np.ones((1, 1))),
+                     imbalance_penalty_eur_per_mwh=0.0, imbalance_cvar_weight_eur_per_mwh=100.0)
+    arrays = {"charge_mw": np.zeros((1, 1)), "discharge_mw": np.zeros((1, 1)),
+        "mode_charge": np.zeros((1, 1)), "curtailment_mw": np.zeros((1, 1)),
+        "pv_injection_mw": np.ones((1, 1)), "grid_mw": np.ones((1, 1)),
+        "energy_mwh": np.zeros((1, 2)), "net_position_mwh": np.ones((1, 1)),
+        "imbalance_mwh": np.zeros((1, 1)), "imbalance_positive_mwh": np.zeros((1, 1)),
+        "imbalance_negative_mwh": np.zeros((1, 1))}
+    diagnostics = {"imbalance_cvar_threshold_mwh": 0.5, "imbalance_cvar_excess_mwh": [0.0],
+                   "objective_at_extracted_solution_eur": 50.0}
+    result = OptimizationResult("feasible_time_limit", True, 50.0, arrays,
+        {("DA", "root", "t0"): 1.0}, diagnostics=diagnostics)
+    assert validate_solution(inputs, result).valid
+    bad = {**diagnostics, "imbalance_cvar_threshold_mwh": -0.5}
+    report = validate_solution(inputs, replace(result, diagnostics=bad))
+    assert not report.valid
+    assert any("imbalance_cvar_epigraph_mwh" in violation for violation in report.violations)

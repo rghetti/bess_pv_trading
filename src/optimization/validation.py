@@ -53,14 +53,16 @@ def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray]
 
 
 def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tolerance: float = 1e-6,
-                      integrality_tolerance: float | None = None) -> ValidationReport:
+                      integrality_tolerance: float | None = None,
+                      objective_relative_tolerance: float = 0.0) -> ValidationReport:
     """Recompute balances, signs, sharing and accounting independently of Gurobi."""
     # When `integrality_tolerance is None`, set `integrality_tolerance` using `tolerance`.
     if integrality_tolerance is None:
         integrality_tolerance = tolerance
     # Enforce the input contract: Validation tolerances must be finite and positive.
     if (not np.isfinite(tolerance) or tolerance <= 0
-            or not np.isfinite(integrality_tolerance) or integrality_tolerance <= 0):
+            or not np.isfinite(integrality_tolerance) or integrality_tolerance <= 0
+            or not np.isfinite(objective_relative_tolerance) or objective_relative_tolerance < 0):
         raise ValueError("Validation tolerances must be finite and positive")
     # Return `ValidationReport(False, {}, None, (f'No incumbent: {result.status}',))` when `not result.has_incumbent`.
     if not result.has_incumbent:
@@ -267,16 +269,41 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
             equality(f"component_{name}_eur", np.asarray(values) - components[name])
     objective = float(np.dot(inputs.scenarios.probabilities, components["operating_profit"]))
     if inputs.imbalance_cvar_weight_eur_per_mwh:
-        # Minimize the discrete CVaR epigraph independently of solver variables.
+        # Validate the returned CVaR epigraph, including time-limit incumbents
+        # whose threshold and excess variables need not minimize CVaR exactly.
         totals = (arrays["imbalance_positive_mwh"] + arrays["imbalance_negative_mwh"]).sum(axis=1)
-        candidates = np.unique(np.concatenate(([0.0], totals[totals >= 0])))
-        cvar = min(float(threshold + np.dot(inputs.scenarios.probabilities,
-            np.maximum(totals - threshold, 0.0)) / (1.0 - inputs.imbalance_cvar_confidence))
-            for threshold in candidates)
+        threshold = result.diagnostics.get("imbalance_cvar_threshold_mwh")
+        excess = result.diagnostics.get("imbalance_cvar_excess_mwh")
+        if (threshold is None) != (excess is None):
+            return ValidationReport(False, errors, None, ("Incomplete imbalance CVaR epigraph values",))
+        if threshold is not None and excess is not None:
+            excess = np.asarray(excess, dtype=float)
+            if excess.shape != totals.shape or not np.isfinite(threshold) or not np.isfinite(excess).all():
+                return ValidationReport(False, errors, None, ("Invalid imbalance CVaR epigraph values",))
+            upper("imbalance_cvar_threshold_lower_mwh", -float(threshold))
+            upper("imbalance_cvar_excess_lower_mwh", -excess)
+            upper("imbalance_cvar_epigraph_mwh", totals - float(threshold) - excess)
+            cvar = float(threshold + np.dot(inputs.scenarios.probabilities, excess)
+                         / (1.0 - inputs.imbalance_cvar_confidence))
+        else:
+            # Older or hand-built results have no epigraph values to check.
+            candidates = np.unique(np.concatenate(([0.0], totals[totals >= 0])))
+            cvar = min(float(candidate + np.dot(inputs.scenarios.probabilities,
+                np.maximum(totals - candidate, 0.0)) / (1.0 - inputs.imbalance_cvar_confidence))
+                for candidate in candidates)
         objective -= inputs.imbalance_cvar_weight_eur_per_mwh * cvar
     equality("expected_objective_eur", np.inf if result.objective_eur is None else result.objective_eur - objective)
+    # When available, verify the model objective evaluated at extracted variable
+    # values separately from Gurobi's recorded incumbent objective attribute.
+    expression_objective = result.diagnostics.get("objective_at_extracted_solution_eur")
+    if expression_objective is not None:
+        equality("objective_expression_eur", float(expression_objective) - objective)
+    objective_scale = max(abs(objective), abs(result.objective_eur or 0.0))
+    objective_tolerance = tolerance + objective_relative_tolerance * objective_scale
     def allowed_error(name):
         """Use the solver's distinct binary tolerance only on discrete residuals."""
+        if name == "expected_objective_eur":
+            return objective_tolerance
         discrete = (name == "mode_integrality" or name in {"mode_lower", "mode_upper"}
             or "configured_dispatch_mode_" in name
             or "nonanticipativity_mode_charge" in name)
@@ -286,4 +313,5 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
         if error > allowed_error(name))
     accounting_differences = {name: float(np.max(np.abs(components[name] - physical_components[name]), initial=0))
         for name in ("imbalance_cashflow", "imbalance_penalty", "operating_profit")}
-    return ValidationReport(not violations, errors, objective, violations, accounting_differences)
+    return ValidationReport(not violations, errors, objective, violations, accounting_differences,
+                            objective_tolerance)

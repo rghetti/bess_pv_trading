@@ -652,10 +652,13 @@ class ContinuousReplay:
         solver_integrality_tolerance = float(result.diagnostics.get("integrality_tolerance") or 1e-5)
         validation_tolerance = max(1e-6, 2.0 * solver_feasibility_tolerance)
         validation_integrality_tolerance = solver_integrality_tolerance
+        objective_relative_tolerance = self.config["execution"].get("validation_objective_relative_tolerance", 1e-8)
         validation = validate_solution(inputs, result, tolerance=validation_tolerance,
-            integrality_tolerance=validation_integrality_tolerance)
+            integrality_tolerance=validation_integrality_tolerance,
+            objective_relative_tolerance=objective_relative_tolerance)
         diagnostic["solution_validation_tolerance"] = validation_tolerance
         diagnostic["solution_validation_integrality_tolerance"] = validation_integrality_tolerance
+        diagnostic["solution_validation_objective_relative_tolerance"] = objective_relative_tolerance
         diagnostic["validation"] = asdict(validation)
         # Enforce the input contract: Continuous solution validation failed: `validation.violations`.
         if not validation.valid:
