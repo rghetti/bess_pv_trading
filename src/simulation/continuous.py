@@ -866,6 +866,9 @@ def replay_continuous_strategy(config, prepared, strategy, destination, resume=F
 def run_continuous_experiment(config, *, progress=None):
     """Preflight local inputs once and run independent continuous trajectories."""
     validate_continuous_optimization(config, require_dates=True)
+    if config.get("continuous_participation_study", {}).get("enabled", False):
+        from .continuous_participation import run_continuous_participation
+        return run_continuous_participation(config, progress=progress)
     settings = config["continuous_optimization"]
     # Preflight local inputs once and run independent continuous trajectories when `progress`.
     if progress:

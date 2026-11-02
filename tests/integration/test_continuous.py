@@ -617,3 +617,22 @@ def test_future_prices_cannot_change_current_sequential_order(continuous_config,
     np.testing.assert_allclose(pd.DataFrame(original.plan_snapshots[day][first])[columns],
         pd.DataFrame(perturbed.plan_snapshots[day][first])[columns],
         atol=continuous_config["test_case"]["comparison_atol"])
+
+
+def test_continuous_participation_carries_state_and_filters_gates(continuous_config, tmp_path):
+    """A fixed subset retains its own physical state across the day boundary."""
+    from bess_pv_trading.simulation.continuous_participation import _profile_inputs
+
+    config = continuous_config
+    config["experiment_outputs"]["plots"] = False
+    prepared, _ = _prepared(config)
+    selected = _profile_inputs(prepared, ("DA",))
+    assert all(all(event.auction == "DA" for event in daily["schedule"])
+               for daily in selected["days_data"].values())
+    assert any(event.auction != "DA" for event in prepared["days_data"][prepared["days"][0]]["schedule"])
+    replay, summary = _run(config, selected, "integrated", tmp_path / "da")
+    daily = summary["daily_kpis"]
+    assert len(daily) >= 2
+    assert daily[1]["initial_energy_mwh"] == pytest.approx(daily[0]["final_energy_mwh"])
+    assert {row["current_auction"] for row in replay.solves} == {"DA"}
+    assert all(row["auction"] == "DA" for row in replay.projections)

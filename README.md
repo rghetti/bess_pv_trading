@@ -831,3 +831,45 @@ cp docs/generated/latex/mathematical_model.pdf docs/mathematical_model.pdf
 ```
 
 The LaTeX is maintained from the actual implementations in `optimization/model.py`, `optimization/degradation.py`, `simulation/replay.py`, `simulation/synthetic.py`, `simulation/gme_oracle.py`, and `simulation/settlement.py`. Update both the equations and practical config descriptions when behavior changes. Further details are in [battery physics](docs/battery_physical_model.md), [DuckDB/API workflow](docs/api_pipeline.md), [source notes](docs/sources.md), and the new [model document](docs/mathematical_model.tex).
+
+### Continuous auction participation study
+
+The continuous participation variant runs every nonempty subset of DA, IDA1,
+IDA2 and IDA3 as one fixed strategy for the complete delivery window. Each
+profile has its own chronological SOC, degradation and fee state, commitments,
+projections and realized settlement; all use the same preflighted inputs and
+initial state. Two extra all-auction trajectories use sequential planning and
+perfect PV. The perfect-PV trajectory follows the continuous reference policy
+above; it is not a single optimization over the month or a guaranteed upper
+bound on cash profit. Daily differences can also reflect inventories carried
+from earlier days; final realized SOC is reported alongside monthly profit.
+
+The supplied January 2026 farm 1 configurations provide matched deterministic
+and 51-scenario studies (one updated deterministic forecast plus 50 frozen
+weather members):
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading experiment-continuous --config configs/full_experiments/continuous_participation_2026_01_deterministic.yaml
+PYTHONPATH=src python -m bess_pv_trading experiment-continuous --config configs/full_experiments/continuous_participation_2026_01_ensemble.yaml
+```
+
+The ensemble uses the preceding delivery day's 00 UTC weather cycle and checks
+its configured availability at the first auction. The historical publication
+lag is an assumption, not verified archival release evidence. The deterministic
+forecast refreshes at each gate; it also supplies the locked-prefix projection.
+With exact delivery, common auction prices and shared decisions, the existing
+optimizer reduces the 51 target-day trajectories to their pointwise minimum;
+this envelope is a feasibility construction, not a coherent weather member.
+Actual auction prices are known in planning, and measured PV and imbalance
+prices determine realized settlement. The actual-PV fallback and input snapshot
+provenance are recorded in each run. This is a historical price-oracle study,
+not a causal price-forecast evaluation.
+
+Each output directory contains `csv/monthly_participation.csv`,
+`csv/daily_participation.csv`, a monthly profit comparison and common-bin daily
+profit histograms. `strategies/` retains each trajectory's dispatch, ledger,
+forecasts, projected and actual SOC, solver diagnostics and daily KPIs. Resume
+checks configuration, input and per-profile replay identities; incomplete
+profiles restart from their latest midnight checkpoint. Canceled auctions are
+skipped under the configured missing-auction policy. Study-end SOC is a planned
+constraint; realized final SOC can differ and profits do not value that difference.
