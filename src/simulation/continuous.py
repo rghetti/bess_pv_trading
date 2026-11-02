@@ -28,7 +28,7 @@ from .replay import execute_interval
 from .synthetic import json_default, write_json
 
 
-CONTINUOUS_POLICY_VERSION = "continuous-retained-plan-v3-curtailment-recovery"
+CONTINUOUS_POLICY_VERSION = "continuous-retained-plan-v4-exact-pv-envelope"
 
 # These sections were previously inherited by every run but are not used by
 # continuous replay. Retaining their old values must not prevent resuming a
@@ -503,6 +503,10 @@ class ContinuousReplay:
             rolled_back_for_resume=row.get("rolled_back_for_resume", False)) for row in self.attempts]
         _atomic_json(self.destination / "json/optimization_timing.json", optimization_timing_report(records))
 
+    def _build_model(self, inputs):
+        """Build the planning model using the standard exact-PV reduction."""
+        return build_model(inputs)
+
     def _submit(self, event):
         """Submit one immutable order and scope every change to its delivery book."""
         instance, cutoff = event.payload, event.at
@@ -529,7 +533,7 @@ class ContinuousReplay:
                 "plan_source_cutoff_utc": snapshot[0]["optimizer_cutoff_utc"],
                 "submitted_product_count": len(quantities)}
         inputs, diagnostic = self._planning_inputs(instance, cutoff)
-        built = build_model(inputs)
+        built = self._build_model(inputs)
         diagnostic.update(trade_variable_count=len(built.variables["trades"]),
             trade_variable_counts_by_auction={name: sum(key[0] == name for key in built.variables["trades"])
                 for name in inputs.auction_eligibility})

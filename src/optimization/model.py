@@ -11,6 +11,7 @@ from ..domain import BuiltModel, OptimizationInput, OptimizationResult, SolverSe
 from .degradation import build_xu_degradation
 from .market_regime import configured_auction_product_groups, configured_dispatch_groups, market_product_groups
 from .transaction_fees import build_transaction_fees
+from .pv_envelope import lift_envelope_result, reduce_exact_pv
 from ..transaction_fees import scenario_fee_details
 
 
@@ -241,9 +242,14 @@ def _degradation(model: Any, inputs: OptimizationInput, variables: dict[str, Any
     return {s: inputs.degradation.cost_eur_per_mwh_throughput * gp.quicksum((variables["charge"][t, inputs.tree.control_nodes[s][t]] + variables["discharge"][t, inputs.tree.control_nodes[s][t]]) * duration for t, duration in enumerate(inputs.grid.delta_hours)) for s in range(len(inputs.scenarios.scenario_ids))}
 
 
-def build_model(inputs: OptimizationInput) -> BuiltModel:
+def build_model(inputs: OptimizationInput, *, reduce_exact_pv_scenarios: bool = True) -> BuiltModel:
     """Build one stochastic program; no data reads, fitting or plotting occur here."""
     started = perf_counter()
+    original_inputs = None
+    if reduce_exact_pv_scenarios:
+        reduced = reduce_exact_pv(inputs)
+        if reduced is not None:
+            original_inputs, inputs = inputs, reduced
     try:
         import gurobipy as gp
         model = gp.Model(f"pv_bess_farm_{inputs.plant.farm_id}")
@@ -276,7 +282,7 @@ def build_model(inputs: OptimizationInput) -> BuiltModel:
     components["operating_profit"] = profit
     model.setObjective(gp.quicksum(float(probability) * profit[s] for s, probability in enumerate(inputs.scenarios.probabilities)), gp.GRB.MAXIMIZE)
     model.update() #imports the changes to the model
-    return BuiltModel(inputs, model, variables, components, perf_counter() - started)
+    return BuiltModel(inputs, model, variables, components, perf_counter() - started, original_inputs)
 
 
 def classify_status(status: int, solution_count: int) -> str:
@@ -338,8 +344,14 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
     except Exception as error:
         return OptimizationResult("solver_error", False, diagnostics={"build_seconds": built.build_seconds,
             "solve_seconds": perf_counter() - started, "runtime_seconds": None,
-            "optimize_call_runtimes_seconds": optimize_runtimes}, message=str(error))
+            "optimize_call_runtimes_seconds": optimize_runtimes,
+            "pv_scenario_formulation": "pointwise_minimum" if built.original_inputs is not None else "unreduced",
+            "original_pv_scenario_count": len((built.original_inputs or inputs).scenarios.scenario_ids),
+            "modeled_pv_scenario_count": len(inputs.scenarios.scenario_ids)}, message=str(error))
     diagnostics = {"status_code": model.Status, "solution_count": model.SolCount, "build_seconds": built.build_seconds, "solve_seconds": perf_counter() - started, "runtime_seconds": sum(optimize_runtimes), "optimize_call_runtimes_seconds": optimize_runtimes, "variables": model.NumVars, "binary_variables": model.NumBinVars, "constraints": model.NumConstrs, "nodes": len(inputs.tree.nodes), "leaves": len(inputs.scenarios.scenario_ids), "accepted_contractual_cashflow_eur": inputs.market.cashflow_eur, "pending_contractual_cashflow_in_objective": False, "pending_contractual_cashflow_status": "Unpublished-price contractual constant excluded; submitted quantities remain fixed positions"}
+    diagnostics['pv_scenario_formulation'] = ('pointwise_minimum' if built.original_inputs is not None else 'unreduced')
+    diagnostics['original_pv_scenario_count'] = len((built.original_inputs or inputs).scenarios.scenario_ids)
+    diagnostics['modeled_pv_scenario_count'] = len(inputs.scenarios.scenario_ids)
     diagnostics["relative_mip_gap_tolerance"] = settings.mip_gap
     diagnostics["feasibility_tolerance"] = model.Params.FeasibilityTol
     diagnostics["integrality_tolerance"] = model.Params.IntFeasTol
@@ -401,6 +413,8 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
         diagnostics["transaction_fees_by_scenario"] = scenario_fee_details(inputs, result.trades)
     result.components = {name: np.array([expression[s].getValue() for s in range(count)]) for name, expression in built.components.items()}
     result.objective_eur = float(model.ObjVal)
+    if built.original_inputs is not None:
+        lift_envelope_result(built.original_inputs, result)
     return result
 
 

@@ -717,6 +717,7 @@ class BuiltModel:
     variables: dict[str, Any]
     components: dict[str, Any]
     build_seconds: float
+    original_inputs: OptimizationInput | None = None
 
 
 @dataclass

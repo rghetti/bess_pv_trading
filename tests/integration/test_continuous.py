@@ -28,6 +28,10 @@ def continuous_config():
     except gp.GurobiError as error:
         pytest.skip(str(error))
     config = load_config(CASES)
+    # The synthetic oracle below uses its supplied PV curve directly. Keep the
+    # continuous provider on that same curve for these cross-replay checks;
+    # seasonal clipping has separate dedicated coverage.
+    config["policy"]["forecast_pv_night"] = {"enabled": False}
     config["state"].update(
         initial_energy_mwh=config["battery"]["capacity_mwh"] * config["state"]["initial_soc_percent"] / 100,
         terminal_target_mwh=config["battery"]["capacity_mwh"] * config["state"]["terminal_soc_percent"] / 100)
@@ -178,12 +182,36 @@ def test_scenario_replay_carries_committed_orders_and_settles_without_penalty_ch
     solves = _read(tmp_path / "scenario", "solves.json")
     assert len(solves) == len(daily["schedule"])
     assert all(row["pv_scenario_count"] == 3 for row in solves)
+    assert all(row["pv_scenario_formulation"] == "unreduced" for row in solves)
     assert np.isclose(dispatch.imbalance_penalty_eur.sum(), 0.0)
     assert summary["components"]["illustrative_imbalance_penalty_eur"] == pytest.approx(
         100.0 * dispatch.imbalance_mwh.abs().sum())
     assert summary["net_profit_eur"] == pytest.approx((dispatch.auction_revenue_eur +
         dispatch.imbalance_cashflow_eur - dispatch.degradation_eur - dispatch.import_fee_eur -
         dispatch.transaction_fee_eur).sum())
+
+
+def test_exact_scenario_replay_reconstructs_deterministic_curtailment(continuous_config, tmp_path):
+    config = continuous_config
+    config["continuous_optimization"]["pv_ensemble"]["enabled"] = True
+    prepared, _ = _prepared(config, one_day=True)
+    day = prepared["days"][0]
+    daily = prepared["days_data"][day]
+    daily["ensemble_members"] = ("1", "2")
+    daily["ensemble_pv"] = np.stack([daily["initial_forecast"] * 0.8, daily["initial_forecast"] * 1.2])
+    first = daily["schedule"][0]
+    prepared["provenance"]["pv_ensemble"] = {day: {"forecast_vintage_utc": str(first.submission_at),
+        "available_at_utc": str(first.submission_at)}}
+    _, summary = _run(config, prepared, "integrated", tmp_path / "exact")
+    solves = _read(tmp_path / "exact", "solves.json")
+    assert len(solves) == len(daily["schedule"])
+    assert all(row["pv_scenario_formulation"] == "pointwise_minimum" for row in solves)
+    assert all(row["original_pv_scenario_count"] == 3 and row["modeled_pv_scenario_count"] == 1
+               for row in solves)
+    plans = pd.read_csv(tmp_path / "exact/csv/expected_dispatch_plans.csv")
+    injection = plans.expected_grid_mw - plans.discharge_mw + plans.charge_mw
+    np.testing.assert_allclose(plans.pv_ac_forecast_mw - plans.curtailment_mw, injection, atol=1e-6)
+    assert summary["fallback_count"] == 0
 
 
 def test_no_battery_replay_has_no_battery_flows_or_soc(continuous_config, tmp_path):
@@ -236,6 +264,11 @@ def test_no_battery_scenario_planning_uses_all_members(continuous_config, tmp_pa
         built.model.dispose()
     assert result.has_incumbent
     assert _module().validate_solution(inputs, result).valid
+    assert result.diagnostics["pv_scenario_formulation"] == "pointwise_minimum"
+    assert result.diagnostics["original_pv_scenario_count"] == 3
+    assert result.diagnostics["modeled_pv_scenario_count"] == 1
+    np.testing.assert_allclose(result.arrays["curtailment_mw"] + result.arrays["pv_injection_mw"],
+                               inputs.scenarios.pv_ac_mw, atol=1e-6)
     np.testing.assert_allclose(result.arrays["charge_mw"], 0, atol=1e-8)
     np.testing.assert_allclose(result.arrays["discharge_mw"], 0, atol=1e-8)
 

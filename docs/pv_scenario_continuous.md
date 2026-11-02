@@ -30,7 +30,12 @@ commitment-tracking feedback, which may change battery commands. This is an idea
 interval-average controller, not a physical telemetry simulation.
 
 The exact configuration enforces zero planned imbalance in every scenario. The
-penalty configuration permits deviations, values planned imbalance settlement at
+optimizer solves this eligible shared-dispatch formulation using the pointwise
+minimum of the input PV members, then reconstructs and validates all original
+members' curtailments. The input and forecast records still contain all members;
+solver diagnostics report both original and modeled scenario counts. The
+imbalance-permitting configuration is not reduced. The penalty configuration
+permits deviations, values planned imbalance settlement at
 zero, and subtracts EUR 100/MWh of expected absolute deviation from the objective.
 Both settle actual deviations at recorded imbalance prices. The illustrative penalty
 on realized deviations is reported separately and is not a cash charge. Perfect

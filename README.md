@@ -62,6 +62,8 @@ Farm IDs `1`, `345`, `901` and `910` select their own weather, measured PV, meta
 
 Experiments default to replacing previous outputs for the same ID and run scope (`experiment_outputs.overwrite_existing: true`). Keep `resume: false` for a fresh rerun after changing parameters; explicit resume preserves and validates checkpoints. Output roots remain configurable, allowing separate comparisons without changing experiment IDs. Single-day reruns preserve other farm/day scopes.
 
+For exact-delivery PV scenario models with shared orders and battery commands, identical auction prices and compatible PV curtailment recourse, the optimizer uses the pointwise minimum PV envelope by default. It reconstructs every original member's curtailment and validates the resulting scenario-shaped solution before execution. Models with optimized imbalance, scenario-dependent prices or incompatible decision ownership retain their full scenario tree. Solver diagnostics identify the formulation and original/modeled scenario counts. See [the envelope comparison](docs/pv_lower_envelope_replay.md) for the argument and the historical ten-day study.
+
 Then run it offline:
 
 ```bash

@@ -305,6 +305,21 @@ probabilities only weight the objective. In the current one-scenario historical
 price oracle, the tree degenerates to deterministic planning with known future
 prices and a forecast PV trajectory.
 
+\subsection{Exact-delivery PV envelope reduction}
+For a multi-member input with exact interval delivery, common auction
+orders and battery commands, identical member prices and compatible instantaneous
+PV-curtailment owners, the optimizer uses one pointwise-minimum PV trajectory.
+The common position and battery dispatch imply identical PV injection $i_t$ in
+every member, so $0\le i_t\le\min_s V_{s,t}$. Conversely, an envelope solution
+can be lifted by setting $u_{s,t}=V_{s,t}-i_t$ for each member. Physical costs,
+trades and objective remain unchanged; zero-probability members still constrain
+the minimum. The solver reconstructs the original scenario-shaped solution and
+independently validates it. The full model is retained when these conditions do
+not hold, including when planned imbalances are enabled. Diagnostics record the
+original and modeled member counts. This reduction changes neither the weather
+inputs nor real-time feedback, and equivalence at a fixed planning state does
+not guarantee identical trajectories when alternative optima are selected.
+
 \subsection{Physical variables and balances}
 For every scenario and remaining interval:
 \begin{align}

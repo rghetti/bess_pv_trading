@@ -1,0 +1,67 @@
+# Ten continuous delivery days; August 1 lacks its preceding-day ensemble cycle.
+include: ../standard.yaml
+continuous_optimization:
+  start_date: '2026-08-02'
+  end_date: '2026-08-11'
+  planning_modes:
+  - integrated
+  perfect_pv_reference: false
+  perfect_pv_reoptimize_at_each_auction: false
+  run_id: envelope_2026_08_02_to_11
+  pv_ensemble:
+    enabled: true
+    zarr: data/farms/nwp_ens_20260801_20260930.zarr
+    member_count: 50
+  resume: true
+state:
+  initial_soc_percent: 90.0
+  terminal_soc_percent: 50.0
+  terminal_soc_min_percent: 40.0
+solver:
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+pv:
+  direct_exceeds_ghi: clip_and_flag
+  forecast_replacement:
+    enabled: true
+    fallback: pvlib
+    allow_retrospective_artifacts: true
+trading:
+  optimize_imbalances: false
+transaction_fees:
+  mode: gme_real
+execution:
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+settlement:
+  enabled: true
+gme_oracle_experiment:
+  study_id: null
+  delivery_day: null
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA:
+      dataset: day_ahead_prices
+      native_interval_minutes: null
+    IDA1:
+      dataset: ida1_prices
+      native_interval_minutes: 15
+    IDA2:
+      dataset: ida2_prices
+      native_interval_minutes: 15
+    IDA3:
+      dataset: ida3_prices
+      native_interval_minutes: 15
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions: null
+envelope_replay_experiment:
+  farm_id: 1
+  output_root: outputs/continuous_optimization/comparisons/farm_1/envelope_replay_2026_08_02_to_11
+  objective_tolerance_eur: 0.01
