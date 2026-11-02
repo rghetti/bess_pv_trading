@@ -230,8 +230,8 @@ def _plots(data, methods, farm, section, destination, tables, daily, history, *,
                 # Process each `(column, label)` in this collection.
                 for column,label in (("measured_ac_mw","Measured AC"),("prediction_fixed_mw","Fixed forecast"),("prediction_selected_mw","Selected physical forecast")):
                     # Extend each interval-mean curve to its last boundary.
-                    axis.step(times.append(pd.DatetimeIndex([times[-1]+pd.Timedelta(minutes=15)])),
-                        np.r_[view[column].to_numpy(),view[column].iloc[-1]],where="post",label=label,linewidth=1)
+                    axis.plot(times.append(pd.DatetimeIndex([times[-1]+pd.Timedelta(minutes=15)])),
+                        np.r_[view[column].to_numpy(),view[column].iloc[-1]],label=label,linewidth=1)
                 axis.set(title=auction,ylabel="MW",ylim=(0,farm.ac_capacity_mw));axis.legend(fontsize=8)
             fig.suptitle(f"Farm {farm.farm_id} — {day} ({season})")
             fig.savefig(plot_root/f"forecast_{day}.png",dpi=140);plt.close(fig)

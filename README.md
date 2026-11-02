@@ -344,11 +344,13 @@ execution:
 
 experiment_outputs:
   plots: true
-  save_model_files: true
+  save_model_files: false
   pv_only_baseline: true
 ```
 
 `optimize_imbalances: false` omits optimized imbalance variables and requires forecast grid energy to equal the contracted position in every planning interval. Actual deviations are then an execution/settlement outcome. The general formulation also has an optional optimized-deviation mode, which is not used by the current farm-910 experiment. Curtailment has no explicit cost in the current objective.
+
+Solver LP exports are disabled by default. Set `experiment_outputs.save_model_files: true` in a study only when those files are needed; infeasibility diagnostics remain separately controlled by `execution.save_infeasibility_diagnostics`.
 
 The alternative PV policy is `freeze_initial_forecast_for_unobserved_delivery_intervals`. The alternative execution policy is `follow_battery_plan`, with the same physical protection. The GME workflow always disables additional physical-control optimizations, retaining one solve per active auction.
 

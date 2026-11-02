@@ -154,13 +154,13 @@ def _farm_plots(data, metrics, diagnostics, farm, section, destination):
             if not next_actual.empty:
                 measured_times = measured_times.append(pd.DatetimeIndex([midnight]))
                 measured = np.r_[measured, next_actual.measured_ac_mw.iloc[0]]
-            axis.step(measured_times, measured, where="post", label="Measured AC", color="black", linewidth=1.6)
+            axis.plot(measured_times, measured, label="Measured AC", color="black", linewidth=1.6)
             extended = times.append(pd.DatetimeIndex([midnight]))
             # Process each `(name, label, color)` in this collection.
             for name, label, color in (("pvlib", "Calibrated pvlib", "tab:orange"),
                                        ("selected", "Validation-selected neural", "tab:blue")):
-                axis.step(extended, np.r_[group[f"prediction_{name}_mw"], group[f"prediction_{name}_mw"].iloc[-1]],
-                          where="post", label=label, color=color)
+                axis.plot(extended, np.r_[group[f"prediction_{name}_mw"], group[f"prediction_{name}_mw"].iloc[-1]],
+                          label=label, color=color)
             axis.axhline(farm.ac_capacity_mw, color="crimson", linestyle="--", label="Installed AC rating")
             axis.set(title=auction, ylabel="AC MW", ylim=(0, farm.ac_capacity_mw*1.08))
             axis.xaxis.set_major_formatter(mdates.DateFormatter("%H:%M", tz=ZoneInfo(section["delivery_timezone"])))

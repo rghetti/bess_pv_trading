@@ -4,7 +4,14 @@ The two farm 1 configurations `continuous_2026_01_farm1_pv_scenarios_exact.yaml`
 and `continuous_2026_01_farm1_pv_scenarios_penalty.yaml` use the existing
 `experiment-continuous` command. Each runs an integrated policy and a perfect-realized-PV
 reference solved once at day ahead, with its subsequent intraday orders retained.
-Both continue physical execution against realized PV. Obtain experiment approval before running.
+Both continue physical execution against measured PV after the configured
+month-specific `policy.realized_pv_night` clipping. The raw source remains
+unchanged and clipping is recorded in the run's PV provenance; approved episode
+exclusions are not applied to execution. The perfect-PV reference uses the same
+effective realized series. Obtain experiment approval before running.
+The deterministic forecast and every ensemble member also use the configured
+month-specific `policy.forecast_pv_night` at model inference. The selected
+weather vintage and forecast-model provenance remain separately recorded.
 
 At each auction the optimizer receives 50 equally weighted raw weather trajectories
 converted to PV by the existing PVLib baseline, plus the latest deterministic PV

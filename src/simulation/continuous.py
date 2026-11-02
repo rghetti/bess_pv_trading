@@ -14,7 +14,7 @@ import numpy as np
 import pandas as pd
 
 from ..config import validate_continuous_optimization
-from ..data import config_path
+from ..data import config_path, night_window_mask
 from ..domain import AcceptedTrade, DeliveryGrid, MarketState, OptimizationInput, PhysicalState, SolverSettings
 from ..optimization import build_model, solve_model, validate_solution
 from ..optimization.degradation import degradation_settings_from_config
@@ -81,6 +81,9 @@ def _relocated_configuration_fingerprint(config, previous_config, previous_finge
         historical.pop(key, None)
     previous_outputs = historical.get("experiment_outputs", {})
     current_outputs = comparable.get("experiment_outputs", {})
+    # Stopping optional LP exports does not change decisions or realized state.
+    if previous_outputs.get("save_model_files") is True and current_outputs.get("save_model_files") is False:
+        previous_outputs["save_model_files"] = False
     if (previous_outputs.get("root") == "outputs/full_experiments/gme_oracle"
             and current_outputs.get("root") == "outputs/full_experiments"):
         previous_outputs["root"] = current_outputs["root"]
@@ -279,6 +282,7 @@ class ContinuousReplay:
         if not np.isfinite(values).all() or (values < 0).any():
             raise ValueError("Continuous PV forecast must be finite nonnegative AC power")
         model_settings = self.config["pv"].get("forecast_replacement", {})
+        forecast_night = self.config.get("policy", {}).get("forecast_pv_night")
         model = model_settings.get("models_by_farm", {}).get(str(self.plant.farm_id),
             model_settings.get("models_by_farm", {}).get(self.plant.farm_id))
         model_provenance = {"pv_forecast_model": "pvlib", "pv_forecast_model_status": "baseline"}
@@ -316,7 +320,8 @@ class ContinuousReplay:
                 # Apply predict bundle when `model['kind'] == 'weather_bundle'`.
                 if model["kind"] == "weather_bundle":
                     from ..forecasting.inference.pv_forecast_bundle import predict_bundle
-                    replacement = predict_bundle(model_frame,artifact.parent,farm_id=self.plant.farm_id)
+                    options = {"night_policy": forecast_night} if forecast_night is not None else {}
+                    replacement = predict_bundle(model_frame,artifact.parent,farm_id=self.plant.farm_id, **options)
                 # Operational trajectories never inspect future measured production when `model['kind'] == 'neural'`.
                 elif model["kind"] == "neural":
                     from ..forecasting.inference.pv_neural_predict import predict_neural_frame
@@ -343,7 +348,7 @@ class ContinuousReplay:
                 if replacement.shape != values.shape or not np.isfinite(replacement).all() or (replacement < 0).any():
                     raise ValueError("PV replacement must return finite nonnegative AC power on the requested grid")
                 # When `'nighttime_zero' in model_frame`, set `replacement[model_frame['nighttime_zero'].to_numpy(dtype=bool)]` using `0.0`.
-                if "nighttime_zero" in model_frame:
+                if forecast_night is None and "nighttime_zero" in model_frame:
                     replacement[model_frame["nighttime_zero"].to_numpy(dtype=bool)] = 0.0
                 bundle.values.loc[:, "pv_ac_mw"] = replacement
                 values = replacement
@@ -352,6 +357,12 @@ class ContinuousReplay:
                     "pv_forecast_model_kind": model["kind"], "pv_forecast_model_artifact": str(artifact),
                     "pv_forecast_model_available_at_utc": available_at.isoformat(),
                     "pv_forecast_model_retrospective": bool(retrospective)}
+        if forecast_night is not None:
+            values = values.copy()
+            values[night_window_mask(starts, forecast_night)] = 0.0
+            model_provenance["pv_forecast_night_policy"] = (
+                "disabled" if not forecast_night.get("enabled", True) else
+                "configured_monthly" if "monthly_windows" in forecast_night else "configured_fixed")
         return values, {"pv_forecast_policy": "latest_available_forecast_at_each_reoptimization",
             "pv_forecast_vintage_utc": bundle.forecast_vintage.isoformat(),
             "pv_forecast_available_at_utc": bundle.available_at.isoformat(), **model_provenance}
@@ -524,8 +535,8 @@ class ContinuousReplay:
                 for name in inputs.auction_eligibility})
         settings = dict(self.config["solver"])
         name = f"{day}_{auction}_{cutoff.strftime('%Y%m%dT%H%M%SZ')}"
-        # When `self.config['experiment_outputs'].get('save_model_files', True)`, set `settings['export_path']` using `str(self.destination / 'models' / f'{name}.lp')`.
-        if self.config["experiment_outputs"].get("save_model_files", True):
+        # Export LP files only when the study explicitly requests them.
+        if self.config["experiment_outputs"].get("save_model_files", False):
             settings["export_path"] = str(self.destination / "models" / f"{name}.lp")
         # When `self.config['execution'].get('save_infeasibility_diagnostics', False)`, set `settings['iis_path']` using `str(self.destination / 'models' / f'{name}_infeasible.ilp')`.
         if self.config["execution"].get("save_infeasibility_diagnostics", False):

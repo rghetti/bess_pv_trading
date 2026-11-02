@@ -11,7 +11,7 @@ from matplotlib.figure import Figure
 
 from battery_case_config import battery_config, case_config, configured_battery
 from bess_pv_trading.domain import DeliveryGrid
-from bess_pv_trading.reporting.plots import plot_interval_series, plot_dispatch, pv_power_allocation
+from bess_pv_trading.reporting.plots import plot_interval_series, plot_pv_series, plot_dispatch, pv_power_allocation
 from bess_pv_trading.simulation.gme_oracle import _plot_experiment, _plot_settlement
 
 
@@ -55,6 +55,23 @@ def test_mixed_interval_steps_preserve_energy_and_include_end_without_bridging_g
         # An absent middle interval must remain a visible break.
         kept = [0, len(dispatch)-1]
         gap_line, = plot_interval_series(axis, dispatch.start.iloc[kept],
+            dispatch.end.iloc[kept], dispatch.pv_ac_mw.iloc[kept])
+        assert np.isnan(gap_line.get_ydata()).any()
+    finally:
+        plt.close(fig)
+
+
+def test_pv_curves_connect_interval_samples_and_preserve_missing_intervals():
+    _, grid, dispatch, _, _ = plot_fixture()
+    fig, axis = plt.subplots()
+    try:
+        line, = plot_pv_series(axis, dispatch.start, dispatch.end, dispatch.pv_ac_mw)
+        times, values = date2num(line.get_xdata()), line.get_ydata()
+        assert times[-1] == pytest.approx(date2num(grid.ends[-1]))
+        np.testing.assert_allclose(values[::2], dispatch.pv_ac_mw)
+        np.testing.assert_allclose(values[1:-1:2], dispatch.pv_ac_mw.iloc[1:])
+        kept = [0, len(dispatch) - 1]
+        gap_line, = plot_pv_series(axis, dispatch.start.iloc[kept],
             dispatch.end.iloc[kept], dispatch.pv_ac_mw.iloc[kept])
         assert np.isnan(gap_line.get_ydata()).any()
     finally:

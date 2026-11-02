@@ -166,6 +166,20 @@ def test_resume_accepts_removed_unused_study_settings_but_not_active_inputs():
         _relocated_configuration_fingerprint(changed, previous, fingerprint)
 
 
+def test_resume_can_stop_exporting_models_without_changing_optimization():
+    from bess_pv_trading.simulation.continuous import (
+        _configuration_fingerprint, _relocated_configuration_fingerprint)
+    current = load_config(JANUARY)
+    assert current["experiment_outputs"]["save_model_files"] is False
+    previous = deepcopy(current)
+    previous["experiment_outputs"]["save_model_files"] = True
+    fingerprint = _configuration_fingerprint(previous)
+    assert _relocated_configuration_fingerprint(current, previous, fingerprint) == fingerprint
+    current["solver"]["mip_gap"] *= 2
+    with pytest.raises(ValueError, match="non-location"):
+        _relocated_configuration_fingerprint(current, previous, fingerprint)
+
+
 def test_relocated_run_preserves_resume_identity(monkeypatch, tmp_path):
     """A moved run can resume without treating a changed solver as a rename."""
     import json

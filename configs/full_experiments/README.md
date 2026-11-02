@@ -19,6 +19,17 @@ Small synthetic solver examples remain here for software validation. Add real-da
 
 ## Continuous optimization
 
+Market replays apply `policy.realized_pv_night` to the measured PV series:
+outside each month's local production window, measured power is set to zero.
+The raw source stays unchanged. The saved PV provenance records the policy,
+affected interval IDs, count and energy removed. Missing-data fallbacks remain
+separately recorded, and CSV episode exclusions are not applied to replay
+execution. This setting also changes the effective PV used by the perfect-PV
+reference; historical results retain the policy recorded when they were run.
+Forecasts use `policy.forecast_pv_night`, which defaults to the same monthly
+windows. It is passed to the weather-to-PV bundle at inference and applied to
+all deterministic and ensemble PV trajectories; it does not retrain the model.
+
 For the January 2026 three-way comparison on any of the four farms, use
 `continuous_2026_01_pv_deterministic_four_farms.yaml` and
 `continuous_2026_01_pv_scenarios_four_farms.yaml`. The launcher below runs both
@@ -79,7 +90,8 @@ boundary, with 50% in this example. Intermediate days have no terminal target
 and no inventory salvage; realized terminal SOC may differ through feedback.
 All battery, POI, conversion, solver and settlement settings retain their usual
 shared YAML sections. `experiment_outputs.plots` and `save_model_files` control
-plots and model exports. Farm selection works with root `farm_id` or
+plots and model exports. LP exports default to false; infeasibility diagnostics
+are configured separately. Farm selection works with root `farm_id` or
 `--farm-id` as in the single-day workflow.
 
 Outputs under `outputs/continuous_optimization/farm_<id>/<run_id>/` include per-strategy

@@ -28,6 +28,18 @@ def plot_interval_series(axis, starts, ends, values, **kwargs):
     return _plot_interval_boundaries(axis, starts, ends, values, values, **kwargs)
 
 
+def plot_pv_series(axis, starts, ends, values, **kwargs):
+    """Connect PV interval samples visually while preserving gaps and the final end."""
+    starts, ends = pd.DatetimeIndex(starts), pd.DatetimeIndex(ends)
+    values = np.asarray(values, dtype=float)
+    if not (len(starts) == len(ends) == len(values)):
+        raise ValueError("Plot interval boundaries and values must have equal lengths")
+    right = values.copy()
+    if len(values) > 1:
+        right[:-1] = np.where(ends[:-1] == starts[1:], values[1:], values[:-1])
+    return _plot_interval_boundaries(axis, starts, ends, values, right, **kwargs)
+
+
 def plot_boundary_series(axis, starts, ends, start_values, end_values, **kwargs):
     """Plot state or accumulated cash at every known start and end boundary."""
     return _plot_interval_boundaries(axis, starts, ends, start_values, end_values, **kwargs)
@@ -80,7 +92,7 @@ def plot_pv_allocation(frame: pd.DataFrame, path: Path, *, timezone: str) -> pd.
             align="edge", linewidth=0, color=color, alpha=0.7,
             label=f"{label} ({energy:.2f} MWh)")
         bottom += values
-    plot_interval_series(axis, starts, ends, allocation.pv_ac_mw,
+    plot_pv_series(axis, starts, ends, allocation.pv_ac_mw,
         color="black", linewidth=1.7, label="Realized PV production")
     axis.set_title("Realized PV production: grid export, battery charging and curtailment")
     axis.set_ylabel("PV power (MW AC)")
@@ -105,7 +117,8 @@ def plot_dispatch(frame, prices, summary, path: Path, *, timezone: str) -> None:
     durations = (ends - starts).dt.total_seconds().to_numpy() / 3600
     fig, axes = plt.subplots(4,1,figsize=(12,11),sharex=True,layout="constrained")
     for name in ("pv_ac_mw","charge_mw","discharge_mw","grid_mw"):
-        plot_interval_series(axes[0], starts, ends, frame[name], label=name)
+        plot = plot_pv_series if name == "pv_ac_mw" else plot_interval_series
+        plot(axes[0], starts, ends, frame[name], label=name)
     axes[0].set_ylabel("AC MW"); axes[0].legend(ncol=4)
     plot_boundary_series(axes[1], starts, ends, frame.energy_start_mwh,
                          frame.energy_end_mwh, label="internal battery energy")

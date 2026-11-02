@@ -12,7 +12,7 @@ from typing import Any, Callable, Mapping
 import numpy as np
 import pandas as pd
 
-from ..data import config_path
+from ..data import config_path, night_window_mask
 from ..data.gme import native_price_resolution_minutes
 from ..domain import DeliveryGrid, PlantParameters, battery_parameters_from_config
 from ..markets import AuctionCalendar
@@ -79,6 +79,8 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
     from ..forecasting.models.pv import forecast_pv
 
     settings = config["continuous_optimization"]["pv_ensemble"]
+    policy = config.get("policy", {})
+    forecast_night = policy.get("forecast_pv_night", policy.get("night", {}))
     source = config_path(config, settings["zarr"])
     farm_id = int(config["forecast"]["farm_id"])
     replacement = config["pv"].get("forecast_replacement", {})
@@ -121,7 +123,8 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
                 frame["auction"] = "DA"
                 frame["forecast_cycle_utc"] = cycle
                 frame["_scenario_member"] = frame["member"].astype(str)
-                predicted = predict_bundle(frame, artifact.parent, farm_id=farm_id)
+                predicted = predict_bundle(frame, artifact.parent, farm_id=farm_id,
+                                           night_policy=forecast_night)
                 values = np.stack([predicted[frame["_scenario_member"].to_numpy() == member]
                                    for member in members])
                 conversion = {"model": model.get("name"), "kind": model["kind"],
@@ -129,22 +132,17 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
                     "available_at_utc": available_at.isoformat(),
                     "retrospective": bool(available_at > pd.Timestamp(first_cutoff))}
             else:
-                converted = forecast_pv(weather, farm, config["pv"], config.get("policy", {}).get("night", {}))
+                converted = forecast_pv(weather, farm, config["pv"], forecast_night)
                 values = np.stack([converted.values.loc[converted.values.member == member, "pv_ac_mw"].to_numpy(float)
                                    for member in members])
                 conversion = converted.provenance
             # Match the deterministic loader's explicit nighttime-only missing-data policy.
             missing = ~np.isfinite(values)
-            night_policy = config.get("policy", {}).get("night", {})
-            local = starts.tz_convert(night_policy.get("timezone", "Europe/Rome"))
-            minutes = local.hour * 60 + local.minute
-            start_h, start_m = map(int, night_policy.get("start", "21:30").split(":"))
-            end_h, end_m = map(int, night_policy.get("end", "05:00").split(":"))
-            night_start, night_end = start_h * 60 + start_m, end_h * 60 + end_m
-            night = ((minutes >= night_start) | (minutes < night_end) if night_start > night_end
-                     else (minutes >= night_start) & (minutes < night_end))
-            if missing.any() and config["forecast"]["missing_forecast_policy"] == "zero_only_when_policy_marks_night" and night_policy.get("enabled", True):
+            night = night_window_mask(starts, forecast_night)
+            if missing.any() and config["forecast"]["missing_forecast_policy"] == "zero_only_when_policy_marks_night" and forecast_night.get("enabled", True):
                 values[missing & np.broadcast_to(night, values.shape)] = 0.0
+            # Apply the same prior to every trajectory, independently of model kind.
+            values[:, night] = 0.0
             if values.shape != (len(members), len(starts)) or not np.isfinite(values).all() or (values < 0).any():
                 raise ValueError(f"PV ensemble for {day} has incomplete or invalid AC trajectories")
             daily["ensemble_pv"] = values
@@ -153,7 +151,7 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
                 "available_at_utc": weather.available_at.isoformat(), "availability": "assumed cycle plus configured latency",
                 "member_ids": list(members), "values_sha256": _fingerprint(values),
                 "nighttime_missing_filled_zero_member_intervals": int(missing.sum()),
-                "conversion": conversion}
+                "conversion": conversion, "forecast_pv_night_policy": forecast_night}
             if progress:
                 progress(f"Preflight {day}: converted {len(members)} raw PV ensemble members")
     return provenance

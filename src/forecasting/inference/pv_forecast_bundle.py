@@ -55,7 +55,7 @@ def export_bundle(farm_directory,model_name,destination):
     return manifest
 
 
-def predict_bundle(frame,bundle_directory,*,farm_id):
+def predict_bundle(frame,bundle_directory,*,farm_id,night_policy=None):
     """Predict AC MW from issue-time weather only; never read observed production.
 
     Sequence routing uses day/view identifiers only to prevent mixing forecast
@@ -77,7 +77,8 @@ def predict_bundle(frame,bundle_directory,*,farm_id):
     # The saved preprocessor defines the exact feature subset and order.
     features=features.loc[:,manifest['preprocessor']['columns']]
     x=transform_features(features,manifest['preprocessor']).astype(np.float32)
-    night=night_window_mask(pd.DatetimeIndex(frame.interval_start_utc),manifest['night_policy'])
+    night=night_window_mask(pd.DatetimeIndex(frame.interval_start_utc),
+                            manifest['night_policy'] if night_policy is None else night_policy)
     baseline_model=joblib.load(bundle_directory/manifest['baseline'])
     baseline=np.clip(baseline_model.predict(x),0,1);baseline[night]=0
     # Predict AC MW from issue-time weather only; never read observed production when `spec['family'] == 'neural'`.

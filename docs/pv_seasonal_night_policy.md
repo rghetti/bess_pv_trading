@@ -34,10 +34,12 @@ the policy and treatment. Older cached inputs without this treatment cannot be
 reused as if they followed the new policy; prepare a fresh study run. Existing
 saved predictions and model results are not rewritten.
 
-The independent general `policy.night` remains unchanged for other workflows;
-this study policy does not silently modify existing simulation settings. The
-seasonal night window also defines which intervals are included in the physical
-search's non-night selection score.
+The independent general `policy.night` remains unchanged for forecast workflows.
+Market replays use the matching monthly `policy.realized_pv_night` to zero
+realized PV in the night windows, and record affected intervals and energy in
+their provenance. `policy.forecast_pv_night` defaults to the same monthly
+windows and applies to deterministic and ensemble forecasts. The seasonal night window also defines which intervals are
+included in the physical search's non-night selection score.
 
 An audit of the user-selected windows against all original Zarr quarter-hours
 for 2025 through August 2026 is saved under

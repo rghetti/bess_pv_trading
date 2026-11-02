@@ -349,21 +349,22 @@ def _plot_pv_forecast(frame: pd.DataFrame, output: Path) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    from ...reporting.plots import plot_interval_series
-    def plot_values(axis, values, **kwargs):
+    from ...reporting.plots import plot_interval_series, plot_pv_series
+    def plot_values(axis, values, *, continuous_pv=False, **kwargs):
         """Close the last forecast interval when its explicit end is available."""
         # Return the selected result for this condition.
         if "interval_end_utc" in frame:
-            return plot_interval_series(axis, frame.index,
+            plot = plot_pv_series if continuous_pv else plot_interval_series
+            return plot(axis, frame.index,
                 pd.to_datetime(frame.interval_end_utc, utc=True), values, **kwargs)
         return axis.plot(frame.index, values, **kwargs)
     fig, axes = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
     plot_values(axes[0], frame.modeled_dc_mw, label="modeled DC diagnostic MW")
-    plot_values(axes[0], frame.pv_ac_mw, label="predicted farm AC MW")
+    plot_values(axes[0], frame.pv_ac_mw, continuous_pv=True, label="predicted farm AC MW")
     # Save forecast output/radiation and display required-input gaps explicitly when `'raw_actual_ac_mw' in frame`.
     if "raw_actual_ac_mw" in frame:
-        plot_values(axes[0], frame.raw_actual_ac_mw, label="raw measured AC MW", linewidth=1.2)
-        plot_values(axes[0], frame.treated_actual_ac_mw, linestyle="--", label="policy-treated AC MW", linewidth=1.0)
+        plot_values(axes[0], frame.raw_actual_ac_mw, continuous_pv=True, label="raw measured AC MW", linewidth=1.2)
+        plot_values(axes[0], frame.treated_actual_ac_mw, continuous_pv=True, linestyle="--", label="policy-treated AC MW", linewidth=1.0)
     missing = frame.pv_ac_mw.isna()
     axes[0].scatter(frame.index[missing], np.zeros(missing.sum()), color="red", marker="x", label="missing required PV input")
     axes[0].set_ylabel("MW")

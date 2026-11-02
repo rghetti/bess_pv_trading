@@ -96,7 +96,7 @@ def plot_global_trajectories(study_root: str | Path, config_file: str | Path,
                     "delivery_day": day, "measured_ac_mw": actual,
                     "ac_rating_mw": rating, "next_midnight_boundary": starts == grid.ends[-1]})
                 local = starts.tz_convert(calendar.timezone)
-                axis.step(local, actual, where="post", color="black", linewidth=2, label="Measured AC", zorder=5)
+                axis.plot(local, actual, color="black", linewidth=2, label="Measured AC", zorder=5)
                 day_checks = {"delivery_day": day, "measured_peak_mw": float(np.nanmax(actual)),
                     "measured_above_rating_intervals": int(np.sum(actual[:-1] > rating)),
                     "midnight_measurement_available": bool(np.isfinite(actual[-1]))}
@@ -109,7 +109,7 @@ def plot_global_trajectories(study_root: str | Path, config_file: str | Path,
                     forecast = _forecast_pv_at_cutoff(config, calendar, dataset, farm,
                                                       event.submission_at, forecast_starts)
                     values = forecast.values.pv_ac_mw.to_numpy(dtype=float)
-                    axis.step(forecast_starts.tz_convert(calendar.timezone), values, where="post",
+                    axis.plot(forecast_starts.tz_convert(calendar.timezone), values,
                               color=colors[event.auction], linewidth=1.2, alpha=.85, label=event.auction)
                     frame[f"{event.auction}_forecast_mw"] = pd.Series(values, index=forecast_starts).reindex(starts).to_numpy()
                     frame[f"{event.auction}_forecast_cycle_utc"] = forecast.forecast_vintage

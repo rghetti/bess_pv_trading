@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 
 from ..data import (align_forecast, config_path, load_metadata, load_observations,
-                    open_store, select_forecast_vintage)
+                    night_window_mask, open_store, select_forecast_vintage)
 from ..data.api_catalog import load_api_cache_records
 from ..data.gme import native_price_resolution_minutes
 from ..domain import (BatteryParameters, DegradationSettings, InformationNode,
@@ -25,7 +25,7 @@ from ..optimization.model import build_model, solve_model
 from ..optimization.prepared import terminal_minimum_energy_mwh
 from ..optimization.validation import validate_solution
 from ..reporting.artifacts import organize_run_outputs, prepare_experiment_output
-from ..reporting.plots import plot_boundary_series, plot_interval_series, plot_pv_allocation
+from ..reporting.plots import plot_boundary_series, plot_interval_series, plot_pv_series, plot_pv_allocation
 from ..scenarios import synthetic_price_tree
 from ..transaction_fees import transaction_fees_from_config
 from ..participation import auction_subset, profile_id
@@ -239,7 +239,7 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
         transaction_fees=fees,
         auction_submission_times={event.auction: event.submission_at for event in schedule})
 
-    save_model = bool(config["experiment_outputs"].get("save_model_files", True))
+    save_model = bool(config["experiment_outputs"].get("save_model_files", False))
     model_file = destination / "models" / f"{artifact_name}.lp" if save_model else None
     settings = SolverSettings(**{**config["solver"],
         "export_path": str(model_file) if model_file is not None else None})
@@ -599,18 +599,12 @@ def _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts):
         numeric_lead_units=config.get("source", {}).get("numeric_lead_units", "hours"))
     weather = align_forecast(weather, starts, config["forecast_semantics"],
         config.get("policy", {}).get("nonnegative_forecasts", []))
-    pv = forecast_pv(weather, metadata, config["pv"], config.get("policy", {}).get("night", {}))
+    policy = config.get("policy", {})
+    forecast_night = policy.get("forecast_pv_night", policy.get("night", {}))
+    pv = forecast_pv(weather, metadata, config["pv"], forecast_night)
     forecast = pd.to_numeric(pv.values["pv_ac_mw"], errors="coerce").to_numpy(dtype=float, copy=True)
     missing = ~np.isfinite(forecast)
-    night = np.zeros(len(forecast), dtype=bool)
-    # Update `local` when this condition is met.
-    if config.get("policy", {}).get("night", {}).get("enabled", True):
-        local = starts.tz_convert(config["policy"]["night"].get("timezone", calendar.timezone))
-        minute = local.hour * 60 + local.minute
-        start_h, start_m = map(int, config["policy"]["night"].get("start", "21:30").split(":"))
-        end_h, end_m = map(int, config["policy"]["night"].get("end", "05:00").split(":"))
-        start, end = start_h * 60 + start_m, end_h * 60 + end_m
-        night = (minute >= start) | (minute < end) if start > end else (minute >= start) & (minute < end)
+    night = night_window_mask(starts, forecast_night)
     # Convert the latest eligible weather cycle on the requested remaining grid when `missing.any()`.
     if missing.any():
         # Enforce the input contract: PV forecast has `int(missing.sum())` unresolved intervals; the configured policy only permits explicit nighttime zero fill.
@@ -622,6 +616,7 @@ def _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts):
         raise ValueError("PV forecast must be a finite nonnegative AC trajectory")
     pv.values["pv_ac_mw"] = forecast
     pv.provenance["forecast_missing_filled_night_zero_intervals"] = int(missing.sum())
+    pv.provenance["forecast_pv_night_policy"] = forecast_night
     return pv
 
 
@@ -631,6 +626,18 @@ def _load_pv_forecast(config, calendar, cutoff, starts):
     with open_store(config) as dataset:
         metadata = load_metadata(config_path(config, config["inputs"]["metadata_parquet"]), [farm_id])[farm_id]
         return _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts)
+
+
+def _clip_realized_pv_night(actual, grid, policy):
+    """Zero realized PV in explicitly configured seasonal night windows."""
+    result = np.asarray(actual, dtype=float).copy()
+    mask = night_window_mask(pd.DatetimeIndex(grid.starts), policy)
+    changed = mask & np.isfinite(result) & (result != 0.0)
+    removed = float(np.dot(np.where(changed, result, 0.0), np.asarray(grid.delta_hours)))
+    result[mask] = 0.0
+    return result, {"policy": policy, "night_intervals": int(mask.sum()),
+        "zeroed_intervals": int(changed.sum()), "zeroed_energy_mwh": removed,
+        "zeroed_interval_ids": [grid.interval_ids[i] for i in np.flatnonzero(changed)]}
 
 
 def _load_pv(config: dict[str, Any], calendar: AuctionCalendar, grid, *, decision_cutoff=None):
@@ -659,7 +666,13 @@ def _load_pv(config: dict[str, Any], calendar: AuctionCalendar, grid, *, decisio
     if not np.isfinite(scale) or scale <= 0:
         raise ValueError("realized_power_scale_to_mw must be finite and positive")
     actual = raw.to_numpy(dtype=float) * scale
-    actual_missing = ~np.isfinite(actual)
+    raw_missing = ~np.isfinite(actual)
+    night_policy = config.get("policy", {}).get("realized_pv_night", {"enabled": False})
+    night_mask = night_window_mask(pd.DatetimeIndex(grid.starts), night_policy)
+    missing_night = raw_missing & night_mask
+    # Night observations are explicitly defined as zero, including missing values.
+    actual[missing_night] = 0.0
+    actual_missing = raw_missing & ~night_mask
     missing_actual_policy = forecast_settings["missing_realized_power_policy"]
     maximum_missing = int(forecast_settings["maximum_missing_realized_intervals"])
     # Enforce the input contract: Realized PV has `int(actual_missing.sum())` missing intervals, exceeding configured maximum `maximum_missing`.
@@ -671,6 +684,11 @@ def _load_pv(config: dict[str, Any], calendar: AuctionCalendar, grid, *, decisio
         if missing_actual_policy != "use_frozen_pv_forecast":
             raise ValueError("Missing measured PV execution inputs require an explicit configured fallback")
         actual[actual_missing] = forecast[actual_missing]
+    # Apply the seasonal measurement policy after missing-data accounting and fallback.
+    actual, night_provenance = _clip_realized_pv_night(actual, grid, night_policy)
+    night_provenance["missing_zeroed_intervals"] = int(missing_night.sum())
+    night_provenance["missing_zeroed_interval_ids"] = [
+        grid.interval_ids[i] for i in np.flatnonzero(missing_night)]
     # Enforce the input contract: Realized AC PV must be finite and nonnegative after configured fallback.
     if not np.isfinite(actual).all() or np.any(actual < -1e-9):
         raise ValueError("Realized AC PV must be finite and nonnegative after configured fallback")
@@ -686,7 +704,9 @@ def _load_pv(config: dict[str, Any], calendar: AuctionCalendar, grid, *, decisio
         "realized_power_variable": variable, "realized_power_scale_to_mw": scale,
         "realized_power_source_basis": observed.provenance.get("power_basis", "AC"),
         "realized_power_missing_fallback_intervals": int(actual_missing.sum()),
+        "realized_power_raw_missing_intervals": int(raw_missing.sum()),
         "realized_power_fallback_interval_ids": [grid.interval_ids[i] for i in np.flatnonzero(actual_missing)],
+        "realized_pv_night_clipping": night_provenance,
         "pv_conversion_provenance": pv.provenance}
 
 
@@ -733,7 +753,7 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
         for index, (label, selected) in enumerate(forecast_curves):
             times = pd.to_datetime(selected.interval_start_utc, utc=True).dt.tz_convert(timezone)
             ends = pd.to_datetime(selected.interval_end_utc, utc=True).dt.tz_convert(timezone)
-            plot_interval_series(axis, times, ends, selected.pv_ac_forecast_mw, linestyle="--",
+            plot_pv_series(axis, times, ends, selected.pv_ac_forecast_mw, linestyle="--",
                       color=f"C{index}", linewidth=1.5, label=label)
 
     fig, axis = plt.subplots(figsize=(12, 5), layout="constrained")
@@ -801,9 +821,9 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
         fig, axes = plt.subplots(2, 1, figsize=(12, 8), sharex=True,
                                  gridspec_kw={"height_ratios": [1, 1]},
                                  layout="constrained")
-        plot_interval_series(axes[0], plan_times, plan_ends,
+        plot_pv_series(axes[0], plan_times, plan_ends,
             selected.pv_ac_forecast_mw, linestyle="--", label=f"PV forecast used at {auction}")
-        plot_interval_series(axes[0], realized_pv_times,
+        plot_pv_series(axes[0], realized_pv_times,
             pd.to_datetime(dispatch.end, utc=True).dt.tz_convert(timezone),
             dispatch.pv_ac_mw, color="black", linewidth=2, label="Realized PV")
         axes[0].set_ylabel("PV power (MW AC)")
@@ -854,7 +874,7 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
         fig, axis = plt.subplots(figsize=(12, 5), layout="constrained")
         plot_pv_forecasts(axis)
         times = pd.to_datetime(dispatch.start, utc=True).dt.tz_convert(timezone)
-        plot_interval_series(axis, times, executed_ends, dispatch.pv_ac_mw, color="black", linewidth=2,
+        plot_pv_series(axis, times, executed_ends, dispatch.pv_ac_mw, color="black", linewidth=2,
                   label="Realized PV (execution input)")
         axis.set_title("PV forecasts used at each auction and realized generation")
         axis.set_ylabel("PV power (MW AC)")
@@ -899,7 +919,7 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
     if "grid_target_mw" in dispatch and "requested_charge_mw" in dispatch:
         fig, axes = plt.subplots(3, 1, figsize=(13, 9), sharex=True, layout="constrained")
         plot_pv_forecasts(axes[0])
-        plot_interval_series(axes[0], starts, ends, dispatch.pv_ac_mw, color="black", linewidth=2,
+        plot_pv_series(axes[0], starts, ends, dispatch.pv_ac_mw, color="black", linewidth=2,
                      label="Realized PV")
         axes[0].set_ylabel("PV MW")
         plot_interval_series(axes[1], starts, ends, dispatch.grid_target_mw, linestyle="--", label="Committed grid target")
@@ -991,7 +1011,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         for auction in actual_prices}
     config["execution"] = {**config.get("execution", {}), "reoptimize_physical_controls": False}
     config["outputs"] = {"plots": bool(config["experiment_outputs"].get("plots", True)),
-        "save_model_files": bool(config["experiment_outputs"].get("save_model_files", True))}
+        "save_model_files": bool(config["experiment_outputs"].get("save_model_files", False))}
 
     auction_order = [event.auction for event in schedule]
     first_auction = auction_order[0] if auction_order else None
@@ -1033,8 +1053,8 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     # Run the single-day GME price oracle with causally available PV updates when `config['experiment_outputs'].get('plots', True)`.
     if config["experiment_outputs"].get("plots", True):
         (day_output / "plots").mkdir()
-    # Run the single-day GME price oracle with causally available PV updates when `config['experiment_outputs'].get('save_model_files', True)`.
-    if config["experiment_outputs"].get("save_model_files", True):
+    # Create a model directory only when exports are explicitly enabled.
+    if config["experiment_outputs"].get("save_model_files", False):
         (day_output / "models").mkdir()
     oracle_dir = day_output / "oracle"
     summary = _replay_strategy(config, fixture, "oracle", oracle_dir)
@@ -1432,16 +1452,16 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         # Run the single-day GME price oracle with causally available PV updates when `(day_output / 'plots/reoptimization_value.png').is_file()`.
         if (day_output / "plots/reoptimization_value.png").is_file():
             manifest["artifacts"].append("plots/reoptimization_value.png")
-    # Run the single-day GME price oracle with causally available PV updates when `config['experiment_outputs'].get('save_model_files', True)`.
-    if config["experiment_outputs"].get("save_model_files", True):
+    # Advertise LP artifacts only when exports are explicitly enabled.
+    if config["experiment_outputs"].get("save_model_files", False):
         manifest["artifacts"].append("models/perfect_pv_counterfactual.lp")
     # Run the single-day GME price oracle with causally available PV updates when `include_pv_only`.
     if include_pv_only:
         manifest["artifacts"].extend([
             "csv/perfect_pv_only_counterfactual_schedule.csv",
             "json/perfect_pv_only_counterfactual.json"])
-        # Run the single-day GME price oracle with causally available PV updates when `config['experiment_outputs'].get('save_model_files', True)`.
-        if config["experiment_outputs"].get("save_model_files", True):
+        # The optional PV-only reference follows the same export setting.
+        if config["experiment_outputs"].get("save_model_files", False):
             manifest["artifacts"].append("models/perfect_pv_only_counterfactual.lp")
     # Run the single-day GME price oracle with causally available PV updates when `config['outputs']['plots']`.
     if config["outputs"]["plots"]:

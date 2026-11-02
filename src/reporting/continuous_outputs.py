@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from .optimization_timing import optimization_timing_report, solve_timing, timing_statistics
-from .plots import plot_boundary_series, plot_interval_series, pv_power_allocation
+from .plots import plot_boundary_series, plot_interval_series, plot_pv_series, pv_power_allocation
 
 
 def _json_value(value):
@@ -179,13 +179,13 @@ def _plot_strategy(config, destination, strategy, frame, plans):
             for auction, selected in plans.loc[plans.delivery_day.astype(str).eq(day)].groupby("auction", sort=False):
                 if {"interval_start_utc", "interval_end_utc", "pv_ac_forecast_mw"}.issubset(selected):
                     selected = selected.sort_values("interval_start_utc")
-                    plot_interval_series(axes[0], pd.to_datetime(selected.interval_start_utc, utc=True).dt.tz_convert(timezone),
+                    plot_pv_series(axes[0], pd.to_datetime(selected.interval_start_utc, utc=True).dt.tz_convert(timezone),
                         pd.to_datetime(selected.interval_end_utc, utc=True).dt.tz_convert(timezone),
                         selected.pv_ac_forecast_mw, linestyle="--", alpha=0.7, label=f"{auction} PV forecast")
         elif "pv_ac_forecast_mw" in daily:
-            plot_interval_series(axes[0], starts, ends, daily.pv_ac_forecast_mw,
+            plot_pv_series(axes[0], starts, ends, daily.pv_ac_forecast_mw,
                 linestyle="--", label="Active PV forecast")
-        plot_interval_series(axes[0], starts, ends, daily.pv_ac_mw, color="black", label="Realized PV")
+        plot_pv_series(axes[0], starts, ends, daily.pv_ac_mw, color="black", label="Realized PV")
         plot_interval_series(axes[1], starts, ends, daily.discharge_mw - daily.charge_mw,
             color="C2", label="Realized battery (+ discharge)")
         if {"requested_charge_mw", "requested_discharge_mw"}.issubset(daily):
