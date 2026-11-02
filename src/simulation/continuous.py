@@ -286,6 +286,10 @@ class ContinuousReplay:
         model = model_settings.get("models_by_farm", {}).get(str(self.plant.farm_id),
             model_settings.get("models_by_farm", {}).get(self.plant.farm_id))
         model_provenance = {"pv_forecast_model": "pvlib", "pv_forecast_model_status": "baseline"}
+        models = model_settings.get("models_by_farm", {})
+        if (model_settings.get("enabled") and model is None
+                and (str(self.plant.farm_id) in models or self.plant.farm_id in models)):
+            model_provenance["pv_forecast_model_status"] = "configured_pvlib"
         # When `model_settings.get('enabled') and model is not None`, set `artifact` using `config_path(self.config, model['artifact_path'])`.
         if model_settings.get("enabled") and model is not None:
             artifact = config_path(self.config, model["artifact_path"])

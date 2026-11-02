@@ -84,10 +84,14 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
     source = config_path(config, settings["zarr"])
     farm_id = int(config["forecast"]["farm_id"])
     replacement = config["pv"].get("forecast_replacement", {})
-    model = replacement.get("models_by_farm", {}).get(str(farm_id),
-        replacement.get("models_by_farm", {}).get(farm_id))
-    if replacement.get("enabled"):
-        if not model or model.get("kind") != "weather_bundle":
+    models = replacement.get("models_by_farm", {})
+    has_model = str(farm_id) in models or farm_id in models
+    model = models.get(str(farm_id), models.get(farm_id))
+    if replacement.get("enabled") and not has_model:
+        raise ValueError("PV ensemble model selection is missing for the selected farm")
+    use_bundle = bool(replacement.get("enabled") and model is not None)
+    if use_bundle:
+        if model.get("kind") != "weather_bundle":
             raise ValueError("PV ensemble model requires a configured weather bundle for the selected farm")
         artifact = config_path(config, model["artifact_path"])
         if not artifact.is_file():
@@ -111,7 +115,7 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
             first_cutoff = min(event.submission_at for event in daily["schedule"])
             if weather.available_at > first_cutoff:
                 raise ValueError(f"PV ensemble for {day} is not available at the first auction cutoff")
-            if replacement.get("enabled"):
+            if use_bundle:
                 if available_at > pd.Timestamp(first_cutoff) and not replacement.get("allow_retrospective_artifacts", False):
                     raise ValueError(f"PV ensemble model was not available at the first cutoff for {day}")
                 from ..forecasting.inference.pv_forecast_bundle import predict_bundle

@@ -28,14 +28,17 @@ def main() -> None:
 
     # Fail before any solve if the requested farm model is incomplete or corrupt.
     model = configs[0]["pv"]["forecast_replacement"]["models_by_farm"][str(args.farm_id)]
-    manifest_path = ROOT / model["artifact_path"]
-    manifest = json.loads(manifest_path.read_text())
-    if manifest["farm_id"] != args.farm_id:
-        raise ValueError("Forecast model belongs to another farm")
-    for name, checksum in manifest["checksums"].items():
-        artifact = manifest_path.parent / name
-        if hashlib.sha256(artifact.read_bytes()).hexdigest() != checksum:
-            raise ValueError(f"Forecast model checksum mismatch: {artifact}")
+    if model is not None:
+        manifest_path = ROOT / model["artifact_path"]
+        manifest = json.loads(manifest_path.read_text())
+        if manifest["farm_id"] != args.farm_id:
+            raise ValueError("Forecast model belongs to another farm")
+        for name, checksum in manifest["checksums"].items():
+            artifact = manifest_path.parent / name
+            if hashlib.sha256(artifact.read_bytes()).hexdigest() != checksum:
+                raise ValueError(f"Forecast model checksum mismatch: {artifact}")
+    elif args.farm_id != 345:
+        raise ValueError("No forecast model is configured for this farm")
 
     # Complete both independent trajectories before reading their comparison inputs.
     for path in CONFIGS:
@@ -46,7 +49,7 @@ def main() -> None:
     # Derive paths from the resolved configs so output settings have one source.
     roots = [ROOT / item["continuous_optimization"]["output_root"] / f"farm_{args.farm_id}"
              / item["continuous_optimization"]["run_id"] for item in configs]
-    output = ROOT / "outputs/continuous_optimization/comparisons" / f"farm_{args.farm_id}" / "2026_01_four_farms_model_pv_comparison"
+    output = ROOT / "outputs/continuous_optimization/comparisons" / f"farm_{args.farm_id}" / "2026_01_mixed_models_pv_comparison"
     compare(roots[0], roots[1], output)
     print(f"Comparison saved to {output}", flush=True)
 

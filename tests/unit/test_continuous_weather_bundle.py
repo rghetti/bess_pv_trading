@@ -67,6 +67,24 @@ def test_replay_uses_seasonal_night_policy_for_neural_forecasts(tmp_path, monkey
     assert provenance['pv_forecast_night_policy'] == 'configured_monthly'
 
 
+def test_farm_345_replay_uses_unfitted_pvlib_and_seasonal_windows():
+    from bess_pv_trading.config import load_config
+
+    paths = ['configs/full_experiments/continuous_2026_01_pv_deterministic_four_farms.yaml',
+             'configs/full_experiments/continuous_2026_01_pv_scenarios_four_farms.yaml']
+    for path in paths:
+        config = load_config(path, overrides={'farm_id': 345})
+        pv = config['pv']
+        assert pv['forecast_replacement']['models_by_farm']['345'] is None
+        assert pv['output']['method'] == 'explicit_efficiency'
+        assert pv['output']['calibrated_coefficient'] is None
+        assert pv['temperature']['u0'] == 25.0 and pv['temperature']['u1'] == 6.84
+        assert config['policy']['forecast_pv_night']['monthly_windows']['01'] == {
+            'start': '18:30', 'end': '06:45'}
+        assert pv['location']['latitude'] == 44.4056
+        assert pv['location']['longitude'] == 8.9463
+
+
 @pytest.mark.parametrize('provided_lead', [False, True])
 def test_weather_bundle_uses_aligned_or_midpoint_lead(tmp_path, monkeypatch, provided_lead):
     """Fallback lead uses quarter midpoints; existing adapter leads remain intact."""

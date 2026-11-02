@@ -40,15 +40,34 @@ comparison. Supply `--farm-id` as 1, 345, 901 or 910:
 PYTHONPATH=src python scripts/run_january_pv_farm_comparison.py --farm-id 1
 ```
 
-Both replays use the configured farm-specific saved weather-to-PV model and exact
-planned delivery. These models were selected retrospectively after January 2026;
+Both replays use the configured farm-specific weather-to-PV model and exact
+planned delivery. Farm 345 uses shared PVLib defaults and the Genoa solar-position
+proxy; that proxy was selected using data after January 2026. The other farms use
+TCN bundles selected retrospectively after January 2026;
 their use is explicitly allowed and recorded, so this is a retrospective study.
 The scenario replay uses the preceding delivery day's 00 UTC weather
 ensemble, with historical availability assumed after the configured latency;
 the deterministic member updates at auction cutoffs. The perfect-PV reference
 solves once per day at DA or the first available auction. Runs replace existing
 outputs with the same IDs; the plot and tables are saved in
-`outputs/continuous_optimization/comparisons/farm_<id>/2026_01_four_farms_model_pv_comparison`.
+`outputs/continuous_optimization/comparisons/farm_<id>/2026_01_mixed_models_pv_comparison`.
+
+The corresponding August comparison uses
+`continuous_2026_08_pv_deterministic_four_farms.yaml` and
+`continuous_2026_08_pv_scenarios_four_farms.yaml`:
+
+```bash
+PYTHONPATH=src python scripts/run_august_pv_farm_comparison.py --farm-id 345
+```
+
+Both replays cover local delivery days **2–31 August 2026**. The August 1
+weather archive lacks the July 31 00 UTC ensemble cycle, so the first day is
+excluded rather than using a later forecast or filling missing scenarios. The
+August 2 opening SOC is initialized from the configured 90% target; it is not
+carried from August 1. The price data record IDA1 cancellations on August 4,
+5, 7 and 19, and an IDA2 cancellation on August 27; the replay records and
+skips those auctions. Outputs are grouped under each farm, with comparison
+tables and plot in `comparisons/farm_<id>/2026_08_mixed_models_pv_comparison`.
 
 `continuous_optimization_2025-01.yaml` is a separate consecutive-delivery
 experiment. From the repository root, run:
