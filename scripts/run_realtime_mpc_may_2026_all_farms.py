@@ -21,7 +21,7 @@ from run_realtime_mpc_comparison import comparison_plan
 
 
 FARMS = (1, 345, 901, 910)
-MODES = ("frozen_commitments", "continuous")
+MODES = ("continuous",)
 CONTROLLERS = ("track_committed_grid", "deterministic_mpc", "deterministic_mpc_price_oracle")
 SUMMARY_NAME = "MAY_2026_ALL_FARMS_SUMMARY.md"
 
@@ -68,8 +68,7 @@ def _summary_text(records, status, output_root):
         "",
         "- Delivery period: 1–31 May 2026, Europe/Rome; four auctions where available.",
         "- Controllers: committed-grid tracking, deterministic MPC, deterministic MPC with the explicit price oracle.",
-        "- Frozen-ledger mode compares physical control under one shared set of auction submissions.",
-        "- Continuous mode allows each controller's auction reoptimization to change later commitments.",
+        "- Continuous mode lets each controller's auction reoptimization change later commitments.",
         "- Current-interval realized PV is disclosed to physical control. The configured farm TCN supplies future PV.",
         "- Model artifacts postdate May 2026; the TCN comparison is retrospective. No training is performed.",
         "- Price-blind imbalance penalty: €500/MWh; oracle additional-imbalance budget: zero; two solver threads.",
@@ -112,15 +111,15 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--check-only", action="store_true", help="Preflight all four farms without optimization")
-    action.add_argument("--run", action="store_true", help="Run both comparison modes for all four farms")
+    action.add_argument("--run", action="store_true", help="Run continuous optimization for all four farms")
     parser.add_argument("--output-dir", type=Path,
         default=ROOT / "outputs/realtime_mpc/may_2026_all_farms",
         help="One parent folder for all farm runs and the combined Markdown summary")
-    parser.add_argument("--workers", type=int, default=min(8, max(1, (os.cpu_count() or 2) // 2)),
-        help="Parallel farm-by-mode processes; each Gurobi model uses the configured two threads (default: 8)")
+    parser.add_argument("--workers", type=int, default=min(len(FARMS), max(1, (os.cpu_count() or 2) // 2)),
+        help="Parallel farm processes; each Gurobi model uses the configured two threads (default: 4)")
     args = parser.parse_args(argv)
     if not 1 <= args.workers <= len(FARMS) * len(MODES):
-        parser.error("--workers must be between 1 and 8")
+        parser.error("--workers must be between 1 and 4")
     output_root = args.output_dir if args.output_dir.is_absolute() else ROOT / args.output_dir
     output_root.mkdir(parents=True, exist_ok=True)
     summary_path = output_root / SUMMARY_NAME
@@ -129,7 +128,7 @@ def main(argv=None):
     summary_path.write_text(_summary_text(records, status, output_root))
     jobs = [(farm, mode, args.check_only, str(output_root)) for farm in FARMS for mode in MODES]
     failures = []
-    print(f"Launching {len(jobs)} farm-by-mode jobs with {args.workers} workers; "
+    print(f"Launching {len(jobs)} continuous farm jobs with {args.workers} workers; "
           "two Gurobi threads per job, no GPU work.", file=sys.stderr, flush=True)
     try:
         with ProcessPoolExecutor(max_workers=args.workers,

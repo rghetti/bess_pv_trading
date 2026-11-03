@@ -69,7 +69,7 @@ gme_oracle_experiment:
   price_display_resolution_minutes: 15
   participating_auctions: [DA, IDA1, IDA2, IDA3]
 realtime_mpc_comparison:
-  mode: frozen_commitments
+  mode: continuous
   controllers: [track_committed_grid, deterministic_mpc, deterministic_mpc_price_oracle]
   frozen_source: null
   check_only: false
