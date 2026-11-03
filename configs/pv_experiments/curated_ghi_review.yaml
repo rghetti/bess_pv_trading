@@ -1,0 +1,64 @@
+# Preparation and episode review only; this workflow never fits a model.
+include: ../standard.yaml
+
+pv_curated_review:
+  farm_ids: [1, 345, 901, 910]
+  workers: 10
+  threads_per_worker: 1
+  run_id: historical_ghi_20261103
+  output_root: outputs/pv_curated_review
+  dataset_root: data/farms/curated
+  report_root: docs/results/pv_curated_ghi_review_20261103
+  exclusions_csv: configs/data_quality/pv_curated_ghi_exclusions_2025_to_2026_08.csv
+  start_day: '2025-01-01'
+  train_end_day_exclusive: '2026-01-01'
+  validation_end_day_exclusive: '2026-05-01'
+  end_day_exclusive: '2026-09-01'
+  delivery_timezone: Europe/Rome
+  split_embargo_days: 1
+  night_policy: ${policy.realized_pv_night}
+  include_night_training: true
+  ghi_gap_fill: linear_inside_each_split
+  weather_cycle: preceding_day_00_utc
+  # This explicitly authorized exclusion retains valid nighttime zeros.
+  exclude_positive_night_farms: [345]
+  night_positive_threshold_kw: 0.0
+  night_extreme_fraction_of_rating: 0.01
+  # Keep original review definitions and expose the reference change explicitly.
+  low_power:
+    minimum_ghi_w_m2: 300.0
+    maximum_reference_ratio: 0.55
+    minimum_reference_fraction_of_rating: 0.15
+    minimum_gap_fraction_of_rating: 0.15
+    minimum_quarters: 4
+  absolute_low_power:
+    minimum_ghi_w_m2: 300.0
+    maximum_fraction_of_rating: 0.10
+    minimum_quarters: 3
+  zero_power:
+    minimum_ghi_w_m2: 100.0
+    minimum_quarters: 4
+  extreme_low_power:
+    minimum_ghi_w_m2: 300.0
+    maximum_reference_ratio: 0.25
+    minimum_reference_fraction_of_rating: 0.25
+    minimum_gap_fraction_of_rating: 0.25
+    minimum_quarters: 8
+  test_reconstruction:
+    farm_id: 910
+    month: '2026-08'
+    approved_csv_reasons: [low_power, low_output_high_ghi, sustained_zero_outage]
+    include_detected_low_power: true
+    # All additional farms/months remain pending review, regardless of severity.
+    apply_elsewhere: false
+  plot_days_per_farm: 20  # All low-power days, plus this many prioritized night/review days.
+  plot_dpi: 110
+  # Study settings are recorded here for subsequent training, which is not run.
+  proposed_training:
+    workers: 10
+    input_regime: historical_ghi
+    target_interval_minutes: 15
+    include_night_training: true
+    selection_window: outside_month_specific_night_window
+    candidate_families: [spline, boosting_direct, boosting_residual, direct_tcn, residual_tcn]
+    status: waiting_for_episode_review

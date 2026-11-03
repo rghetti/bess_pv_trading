@@ -1,0 +1,627 @@
+{
+  "status": "prepared_waiting_for_episode_review",
+  "training_started": false,
+  "workers": 10,
+  "source_zarr": "data/farms/pv_farms_timeseries_20250101_20260831.zarr",
+  "source_quality_csv_sha256": "0003d39ac7dea1562b27fa39b95fe025ac1873dd0140732ac66680f071c8b8d9",
+  "configuration": {
+    "farm_ids": [
+      1,
+      345,
+      901,
+      910
+    ],
+    "workers": 10,
+    "threads_per_worker": 1,
+    "run_id": "historical_ghi_20261103",
+    "output_root": "outputs/pv_curated_review",
+    "dataset_root": "data/farms/curated",
+    "report_root": "docs/results/pv_curated_ghi_review_20261103",
+    "exclusions_csv": "configs/data_quality/pv_curated_ghi_exclusions_2025_to_2026_08.csv",
+    "start_day": "2025-01-01",
+    "train_end_day_exclusive": "2026-01-01",
+    "validation_end_day_exclusive": "2026-05-01",
+    "end_day_exclusive": "2026-09-01",
+    "delivery_timezone": "Europe/Rome",
+    "split_embargo_days": 1,
+    "night_policy": {
+      "enabled": true,
+      "timezone": "Europe/Rome",
+      "monthly_windows": {
+        "01": {
+          "start": "18:30",
+          "end": "06:45"
+        },
+        "02": {
+          "start": "19:15",
+          "end": "06:00"
+        },
+        "03": {
+          "start": "21:00",
+          "end": "05:15"
+        },
+        "04": {
+          "start": "21:45",
+          "end": "05:15"
+        },
+        "05": {
+          "start": "21:30",
+          "end": "05:00"
+        },
+        "06": {
+          "start": "21:30",
+          "end": "05:00"
+        },
+        "07": {
+          "start": "21:30",
+          "end": "05:00"
+        },
+        "08": {
+          "start": "21:30",
+          "end": "05:00"
+        },
+        "09": {
+          "start": "21:15",
+          "end": "05:45"
+        },
+        "10": {
+          "start": "20:00",
+          "end": "06:00"
+        },
+        "11": {
+          "start": "18:15",
+          "end": "06:00"
+        },
+        "12": {
+          "start": "18:00",
+          "end": "06:45"
+        }
+      }
+    },
+    "include_night_training": true,
+    "ghi_gap_fill": "linear_inside_each_split",
+    "weather_cycle": "preceding_day_00_utc",
+    "exclude_positive_night_farms": [
+      345
+    ],
+    "night_positive_threshold_kw": 0.0,
+    "night_extreme_fraction_of_rating": 0.01,
+    "low_power": {
+      "minimum_ghi_w_m2": 300.0,
+      "maximum_reference_ratio": 0.55,
+      "minimum_reference_fraction_of_rating": 0.15,
+      "minimum_gap_fraction_of_rating": 0.15,
+      "minimum_quarters": 4
+    },
+    "absolute_low_power": {
+      "minimum_ghi_w_m2": 300.0,
+      "maximum_fraction_of_rating": 0.1,
+      "minimum_quarters": 3
+    },
+    "zero_power": {
+      "minimum_ghi_w_m2": 100.0,
+      "minimum_quarters": 4
+    },
+    "extreme_low_power": {
+      "minimum_ghi_w_m2": 300.0,
+      "maximum_reference_ratio": 0.25,
+      "minimum_reference_fraction_of_rating": 0.25,
+      "minimum_gap_fraction_of_rating": 0.25,
+      "minimum_quarters": 8
+    },
+    "test_reconstruction": {
+      "farm_id": 910,
+      "month": "2026-08",
+      "approved_csv_reasons": [
+        "low_power",
+        "low_output_high_ghi",
+        "sustained_zero_outage"
+      ],
+      "include_detected_low_power": true,
+      "apply_elsewhere": false
+    },
+    "plot_days_per_farm": 20,
+    "plot_dpi": 110,
+    "proposed_training": {
+      "workers": 10,
+      "input_regime": "historical_ghi",
+      "target_interval_minutes": 15,
+      "include_night_training": true,
+      "selection_window": "outside_month_specific_night_window",
+      "candidate_families": [
+        "spline",
+        "boosting_direct",
+        "boosting_residual",
+        "direct_tcn",
+        "residual_tcn"
+      ],
+      "status": "waiting_for_episode_review"
+    }
+  },
+  "farms": {
+    "1": {
+      "raw_time_ac_ghi_sha256": "4c22a337664e4ae058e3443cebec5cc7df351a930816e2f9d53dea64c20fa299",
+      "source_weather_sha256": "38f48ef18e94922f89d9ea1503b83e51365055f08ff481f3c0efff323b5722b2",
+      "corpus_sha256": "a358e7217aa73ed6fbb1825d3651e0c821d41b87753b1bebab8576b6348ded54",
+      "settings": {
+        "parameter_registry": null,
+        "forecast_replacement": {
+          "enabled": false,
+          "fallback": "pvlib",
+          "allow_retrospective_artifacts": false,
+          "models_by_farm": {
+            "1": {
+              "name": "farm_1_direct_tcn",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_1/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            },
+            "345": {
+              "name": "farm_345_direct_tcn",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_345/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            },
+            "901": {
+              "name": "farm_901_direct_tcn_timing",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_901/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            },
+            "910": {
+              "name": "farm_910_direct_tcn_timing",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_910/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            }
+          }
+        },
+        "transposition_model": "isotropic",
+        "bifacial": {
+          "enabled": false,
+          "bifaciality": 0.8,
+          "height_to_pitch_ratio": 0.4,
+          "shade_factor": -0.02,
+          "transmission_factor": 0.0
+        },
+        "shortwave_interpretation": "ghi",
+        "shortwave_interpretation_status": "user_confirmed",
+        "direct_radiation_interpretation": "horizontal_direct",
+        "direct_radiation_interpretation_status": "user_working_assumption",
+        "fraction_diffuse_enabled": false,
+        "source_azimuth_positive": "east",
+        "location": {
+          "latitude": 45.4642,
+          "longitude": 9.19,
+          "location_status": "proxy",
+          "acknowledged": true
+        },
+        "irradiance_redistribution": "uniform",
+        "direct_exceeds_ghi": "clip_and_flag",
+        "ghi_only_decomposition": null,
+        "low_sun_zenith_deg": 85.0,
+        "dni_limit_w_m2": 1400.0,
+        "dni_limit_action": "cap_and_flag",
+        "tracker": {
+          "assumptions_acknowledged": true,
+          "axis_tilt": 0.0,
+          "axis_azimuth": 0.0,
+          "max_angle": 60.0,
+          "backtrack": true,
+          "gcr": 0.35
+        },
+        "bifacial_front_side_only_enabled": true,
+        "albedo": 0.2,
+        "temperature": {
+          "model": "faiman",
+          "u0": 25.0,
+          "u1": 6.84,
+          "wind_height_m": 10,
+          "wind_as_module_proxy_acknowledged": true
+        },
+        "dc": {
+          "model": "pvwatts",
+          "reference_conversion_efficiency": 0.96,
+          "gamma_pdc_per_c": -0.004,
+          "reference_temperature_c": 25.0
+        },
+        "output": {
+          "method": "calibrated_scale",
+          "pv_output_efficiency": 0.96,
+          "calibrated_coefficient": 0.5319403177692952,
+          "assumption_status": "global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_1.json",
+          "transformer_efficiency": 1.0,
+          "transformer_assumption_status": "no_measured_transformer_loss_assumed",
+          "ac_limit_mw": 0.953280029296875
+        }
+      },
+      "verification": {
+        "physical_quarters_unique": true,
+        "raw_ac_preserved": true,
+        "observed_ghi_preserved": true,
+        "previous_splits_preserved": true,
+        "synthetic_targets_only_in_authorized_test_month": true,
+        "training_masks_exclude_synthetic_and_excluded_targets": true,
+        "evaluation_uses_month_specific_windows": true
+      },
+      "raw_ac_unchanged": true,
+      "raw_zarr_unchanged": true
+    },
+    "345": {
+      "raw_time_ac_ghi_sha256": "8962b96b07c7722c9f8903ce3d1912a693f02eb75a1038bb73a40028ee3ede5f",
+      "source_weather_sha256": "e24001bda22569d8e1a6e032004f44bec2e662736dc1faadbe2977b1d1a68d6a",
+      "corpus_sha256": "6b4806bf7f5c15bf79f701f587cb456c7c1e4ace05269fdb0207ee9d5115588d",
+      "settings": {
+        "parameter_registry": null,
+        "forecast_replacement": {
+          "enabled": false,
+          "fallback": "pvlib",
+          "allow_retrospective_artifacts": false,
+          "models_by_farm": {
+            "1": {
+              "name": "farm_1_direct_tcn",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_1/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            },
+            "345": {
+              "name": "farm_345_direct_tcn",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_345/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            },
+            "901": {
+              "name": "farm_901_direct_tcn_timing",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_901/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            },
+            "910": {
+              "name": "farm_910_direct_tcn_timing",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_910/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            }
+          }
+        },
+        "transposition_model": "isotropic",
+        "bifacial": {
+          "enabled": false,
+          "bifaciality": 0.8,
+          "height_to_pitch_ratio": 0.4,
+          "shade_factor": -0.02,
+          "transmission_factor": 0.0
+        },
+        "shortwave_interpretation": "ghi",
+        "shortwave_interpretation_status": "user_confirmed",
+        "direct_radiation_interpretation": "horizontal_direct",
+        "direct_radiation_interpretation_status": "user_working_assumption",
+        "fraction_diffuse_enabled": false,
+        "source_azimuth_positive": "east",
+        "location": {
+          "latitude": 45.4642,
+          "longitude": 9.19,
+          "location_status": "proxy",
+          "acknowledged": true
+        },
+        "irradiance_redistribution": "uniform",
+        "direct_exceeds_ghi": "clip_and_flag",
+        "ghi_only_decomposition": null,
+        "low_sun_zenith_deg": 85.0,
+        "dni_limit_w_m2": 1400.0,
+        "dni_limit_action": "cap_and_flag",
+        "tracker": {
+          "assumptions_acknowledged": true,
+          "axis_tilt": 0.0,
+          "axis_azimuth": 0.0,
+          "max_angle": 60.0,
+          "backtrack": true,
+          "gcr": 0.35
+        },
+        "bifacial_front_side_only_enabled": true,
+        "albedo": 0.2,
+        "temperature": {
+          "model": "faiman",
+          "u0": 25.0,
+          "u1": 6.84,
+          "wind_height_m": 10,
+          "wind_as_module_proxy_acknowledged": true
+        },
+        "dc": {
+          "model": "pvwatts",
+          "reference_conversion_efficiency": 0.96,
+          "gamma_pdc_per_c": -0.004,
+          "reference_temperature_c": 25.0
+        },
+        "output": {
+          "method": "calibrated_scale",
+          "pv_output_efficiency": 0.96,
+          "calibrated_coefficient": 0.4626249301825054,
+          "assumption_status": "global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_345.json",
+          "transformer_efficiency": 1.0,
+          "transformer_assumption_status": "no_measured_transformer_loss_assumed",
+          "ac_limit_mw": 1.5245999755859374
+        }
+      },
+      "verification": {
+        "physical_quarters_unique": true,
+        "raw_ac_preserved": true,
+        "observed_ghi_preserved": true,
+        "previous_splits_preserved": true,
+        "synthetic_targets_only_in_authorized_test_month": true,
+        "training_masks_exclude_synthetic_and_excluded_targets": true,
+        "evaluation_uses_month_specific_windows": true
+      },
+      "raw_ac_unchanged": true,
+      "raw_zarr_unchanged": true
+    },
+    "901": {
+      "raw_time_ac_ghi_sha256": "965240ef140fc3a485781d740d7a3a6c847cafc85483d0ea3637dfa344f41fd2",
+      "source_weather_sha256": "d731f26270fa4ee11c81c58aa3c62f692600a842c8577fd42af627812dca1c13",
+      "corpus_sha256": "69f1b552215e2ab86498bc9d5d63acc7f5e56ea96409f32eac4a56c367918e5f",
+      "settings": {
+        "parameter_registry": null,
+        "forecast_replacement": {
+          "enabled": false,
+          "fallback": "pvlib",
+          "allow_retrospective_artifacts": false,
+          "models_by_farm": {
+            "1": {
+              "name": "farm_1_direct_tcn",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_1/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            },
+            "345": {
+              "name": "farm_345_direct_tcn",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_345/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            },
+            "901": {
+              "name": "farm_901_direct_tcn_timing",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_901/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            },
+            "910": {
+              "name": "farm_910_direct_tcn_timing",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_910/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            }
+          }
+        },
+        "transposition_model": "isotropic",
+        "bifacial": {
+          "enabled": false,
+          "bifaciality": 0.8,
+          "height_to_pitch_ratio": 0.4,
+          "shade_factor": -0.02,
+          "transmission_factor": 0.0
+        },
+        "shortwave_interpretation": "ghi",
+        "shortwave_interpretation_status": "user_confirmed",
+        "direct_radiation_interpretation": "horizontal_direct",
+        "direct_radiation_interpretation_status": "user_working_assumption",
+        "fraction_diffuse_enabled": false,
+        "source_azimuth_positive": "east",
+        "location": {
+          "latitude": 45.6495,
+          "longitude": 13.7768,
+          "location_status": "proxy",
+          "acknowledged": true
+        },
+        "irradiance_redistribution": "uniform",
+        "direct_exceeds_ghi": "clip_and_flag",
+        "ghi_only_decomposition": null,
+        "low_sun_zenith_deg": 85.0,
+        "dni_limit_w_m2": 1400.0,
+        "dni_limit_action": "cap_and_flag",
+        "tracker": {
+          "assumptions_acknowledged": true,
+          "axis_tilt": 0.0,
+          "axis_azimuth": 0.0,
+          "max_angle": 57.91350435093605,
+          "backtrack": true,
+          "gcr": 0.6385656354705106
+        },
+        "bifacial_front_side_only_enabled": true,
+        "albedo": 0.2,
+        "temperature": {
+          "model": "faiman",
+          "u0": 25.0,
+          "u1": 6.84,
+          "wind_height_m": 10,
+          "wind_as_module_proxy_acknowledged": true
+        },
+        "dc": {
+          "model": "pvwatts",
+          "reference_conversion_efficiency": 0.96,
+          "gamma_pdc_per_c": -0.004,
+          "reference_temperature_c": 25.0
+        },
+        "output": {
+          "method": "calibrated_scale",
+          "pv_output_efficiency": 0.96,
+          "calibrated_coefficient": 0.8899355438128487,
+          "assumption_status": "global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_901.json",
+          "transformer_efficiency": 1.0,
+          "transformer_assumption_status": "no_measured_transformer_loss_assumed",
+          "ac_limit_mw": 4.16
+        }
+      },
+      "verification": {
+        "physical_quarters_unique": true,
+        "raw_ac_preserved": true,
+        "observed_ghi_preserved": true,
+        "previous_splits_preserved": true,
+        "synthetic_targets_only_in_authorized_test_month": true,
+        "training_masks_exclude_synthetic_and_excluded_targets": true,
+        "evaluation_uses_month_specific_windows": true
+      },
+      "raw_ac_unchanged": true,
+      "raw_zarr_unchanged": true
+    },
+    "910": {
+      "raw_time_ac_ghi_sha256": "09313a3d361760c38f4ef64285ccc3c203e68eb93818b8ba0efe6169a8e9c314",
+      "source_weather_sha256": "252b4a665c2409ff1f26406c5721f835670d33296b91f9d1ac67c4e552bf8f54",
+      "corpus_sha256": "78c13f38e09596fd5a0a83a1599f507e473b81cffe8205508dc064cdada50b11",
+      "settings": {
+        "parameter_registry": null,
+        "forecast_replacement": {
+          "enabled": false,
+          "fallback": "pvlib",
+          "allow_retrospective_artifacts": false,
+          "models_by_farm": {
+            "1": {
+              "name": "farm_1_direct_tcn",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_1/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            },
+            "345": {
+              "name": "farm_345_direct_tcn",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_345/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            },
+            "901": {
+              "name": "farm_901_direct_tcn_timing",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_901/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            },
+            "910": {
+              "name": "farm_910_direct_tcn_timing",
+              "kind": "weather_bundle",
+              "artifact_path": "models/pv/farm_910/pilot_2025_train/direct_tcn/manifest.json",
+              "available_at_utc": "2026-10-27T00:00:00Z"
+            }
+          }
+        },
+        "transposition_model": "perez-driesse",
+        "bifacial": {
+          "enabled": false,
+          "bifaciality": 0.8,
+          "height_to_pitch_ratio": 0.4,
+          "shade_factor": -0.02,
+          "transmission_factor": 0.0
+        },
+        "shortwave_interpretation": "ghi",
+        "shortwave_interpretation_status": "user_confirmed",
+        "direct_radiation_interpretation": "horizontal_direct",
+        "direct_radiation_interpretation_status": "user_working_assumption",
+        "fraction_diffuse_enabled": false,
+        "source_azimuth_positive": "east",
+        "location": {
+          "latitude": 45.4384,
+          "longitude": 10.9916,
+          "location_status": "proxy",
+          "acknowledged": true
+        },
+        "irradiance_redistribution": "uniform",
+        "direct_exceeds_ghi": "clip_and_flag",
+        "ghi_only_decomposition": null,
+        "low_sun_zenith_deg": 85.0,
+        "dni_limit_w_m2": 1400.0,
+        "dni_limit_action": "cap_and_flag",
+        "tracker": {
+          "assumptions_acknowledged": true,
+          "axis_tilt": 0.0,
+          "axis_azimuth": 0.0,
+          "max_angle": 30.0,
+          "backtrack": true,
+          "gcr": 0.5667211662668288
+        },
+        "bifacial_front_side_only_enabled": true,
+        "albedo": 0.2,
+        "temperature": {
+          "model": "faiman",
+          "u0": 25.0,
+          "u1": 6.84,
+          "wind_height_m": 10,
+          "wind_as_module_proxy_acknowledged": true
+        },
+        "dc": {
+          "model": "pvwatts",
+          "reference_conversion_efficiency": 0.96,
+          "gamma_pdc_per_c": -0.004,
+          "reference_temperature_c": 25.0
+        },
+        "output": {
+          "method": "calibrated_scale",
+          "pv_output_efficiency": 0.96,
+          "calibrated_coefficient": 0.8050110294570347,
+          "assumption_status": "global_2025_fit_treated_as_prior_farm_metadata; source=configs/pv_parameters/2025/farm_910.json",
+          "transformer_efficiency": 1.0,
+          "transformer_assumption_status": "no_measured_transformer_loss_assumed",
+          "ac_limit_mw": 6.638
+        }
+      },
+      "verification": {
+        "physical_quarters_unique": true,
+        "raw_ac_preserved": true,
+        "observed_ghi_preserved": true,
+        "previous_splits_preserved": true,
+        "synthetic_targets_only_in_authorized_test_month": true,
+        "training_masks_exclude_synthetic_and_excluded_targets": true,
+        "evaluation_uses_month_specific_windows": true
+      },
+      "raw_ac_unchanged": true,
+      "raw_zarr_unchanged": true
+    }
+  },
+  "source_settings": {
+    "timezone": "UTC",
+    "historical_dimensions": [
+      "time",
+      "farm_id"
+    ],
+    "forecast_dimensions": [
+      "farm_id",
+      "cycle_time",
+      "lead_time"
+    ],
+    "measured_power_basis": "AC",
+    "capacity_basis": "AC",
+    "historical_interval_minutes": 15,
+    "historical_label": "start",
+    "forecast_radiation_label": "end",
+    "forecast_radiation_interval_hours": 1,
+    "cycle_cadence_hours": 6,
+    "availability_lag_hours": 6,
+    "explicit_availability_variable": null,
+    "telemetry_latency_minutes": 0,
+    "numeric_lead_units": "hours"
+  },
+  "forecast_semantics": {
+    "forecast_ghi": "hourly_mean",
+    "forecast_bhi": "hourly_mean",
+    "precipitation_mm": "hourly_accumulation",
+    "default": "instantaneous"
+  },
+  "metadata_sha256": "0879f14b39817717ffda39abea1a0421a6f9d31a10ce96704aad44a7c45caf70",
+  "review_code_sha256": "8a5a1ebc925ff51e2a636ddc352b4f47e60a0ad7847117856f15a70cfb6c65bf",
+  "training_contract": {
+    "measured_target_column": "measured_ac_raw_mw",
+    "historical_ghi_column": "ghi_w_m2",
+    "raw_ghi_column": "ghi_raw_w_m2",
+    "weather_feature_columns": [
+      "ghi_w_m2",
+      "temperature_c",
+      "wind_u_10m",
+      "wind_v_10m"
+    ],
+    "deterministic_features": "Local midpoint time and annual/month encodings; generated by the future trainer.",
+    "training_mask": "training_eligible",
+    "early_stopping_mask": "validation_eligible",
+    "testing_mask": "test_eligible",
+    "testing_target_column": "test_target_mw",
+    "warning": "Existing training readers must honor these masks; legacy daylight-only selection must not be reused."
+  },
+  "reference": "Frozen configured 2025 physical parameters; no new fits. Historical GHI; forecast BHI/GHI fraction, Erbs fallback; D\u22121 00 UTC temperature/wind.",
+  "limitations": "Retrospective curation and reused 2026 report period. Synthetic test values are pvlib estimates, not independent truth. Proxy coordinates and uncertain plant parameters limit low-power classification.",
+  "study_quality_csv": "configs/data_quality/pv_curated_ghi_exclusions_2025_to_2026_08.csv",
+  "study_quality_csv_sha256": "d4b2dbe9909c784fdfd0771c079b01ab987bffce224609db8bd149525ebe1759"
+}

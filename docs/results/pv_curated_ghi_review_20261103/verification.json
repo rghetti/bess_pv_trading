@@ -1,0 +1,37 @@
+{
+  "status": "passed",
+  "training_started": false,
+  "farm_checks": [
+    {
+      "farm_id": 1,
+      "raw_ac_and_ghi_match_source": true,
+      "compiled_csv_matches_mask": true,
+      "corpus_checksum_matches": true,
+      "mask_verification_passed": true
+    },
+    {
+      "farm_id": 345,
+      "raw_ac_and_ghi_match_source": true,
+      "compiled_csv_matches_mask": true,
+      "corpus_checksum_matches": true,
+      "mask_verification_passed": true
+    },
+    {
+      "farm_id": 901,
+      "raw_ac_and_ghi_match_source": true,
+      "compiled_csv_matches_mask": true,
+      "corpus_checksum_matches": true,
+      "mask_verification_passed": true
+    },
+    {
+      "farm_id": 910,
+      "raw_ac_and_ghi_match_source": true,
+      "compiled_csv_matches_mask": true,
+      "corpus_checksum_matches": true,
+      "mask_verification_passed": true
+    }
+  ],
+  "all_low_power_plot_links_exist": true,
+  "all_review_markdown_links_exist": true,
+  "synthetic_test_quarters": 290
+}

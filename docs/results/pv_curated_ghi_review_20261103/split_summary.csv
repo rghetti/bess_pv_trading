@@ -1,0 +1,17 @@
+farm_id,split,quarters,night_quarters,night_positive_quarters,new_night_excluded_quarters,existing_excluded_quarters,low_power_quarters,extreme_low_quarters,zero_high_ghi_quarters,training_quarters,night_training_quarters,validation_quarters,testing_quarters,synthetic_test_quarters,unresolved_test_reconstructions,ghi_interpolated_quarters,ghi_missing_after_interpolation
+1,train,35036,13583,1,0,114,179,20,48,34816,13522,0,0,0,0,78,2
+1,validation,11516,4642,0,0,67,58,13,52,0,0,6741,0,0,0,64,0
+1,test,11808,3690,10,0,52,37,0,27,0,0,0,8066,0,0,44,0
+1,outside,8,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+345,train,35036,13583,4327,2995,1926,294,17,27,30011,9197,0,0,0,0,74,2
+345,validation,11516,4642,37,25,461,36,0,0,0,0,6369,0,0,0,64,0
+345,test,11808,3690,7,7,58,11,0,0,0,0,0,8060,0,0,46,0
+345,outside,8,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+901,train,35036,13583,1,0,194,167,68,102,34736,13522,0,0,0,0,78,2
+901,validation,11516,4642,0,0,26,24,0,0,0,0,6786,0,0,0,69,0
+901,test,11808,3690,11,0,69,62,31,34,0,0,0,8049,0,0,44,0
+901,outside,8,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0
+910,train,35036,13583,3,0,811,385,216,285,34119,13522,0,0,0,0,75,2
+910,validation,11516,4642,8,0,3298,889,343,215,0,0,4529,0,0,0,65,0
+910,test,11808,3690,10,0,547,549,185,211,0,0,0,7799,290,0,36,0
+910,outside,8,8,0,0,0,0,0,0,0,0,0,0,0,0,0,0
