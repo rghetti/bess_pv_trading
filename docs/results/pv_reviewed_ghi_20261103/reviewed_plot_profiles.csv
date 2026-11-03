@@ -1,0 +1,11 @@
+farm_id,delivery_day,path
+1,2025-12-18,outputs/pv_reviewed_ghi_20261103/farm_1/plots/2025-12-18.png
+1,2026-07-27,outputs/pv_reviewed_ghi_20261103/farm_1/plots/2026-07-27.png
+345,2026-04-09,outputs/pv_reviewed_ghi_20261103/farm_345/plots/2026-04-09.png
+345,2026-06-14,outputs/pv_reviewed_ghi_20261103/farm_345/plots/2026-06-14.png
+345,2025-10-24,outputs/pv_reviewed_ghi_20261103/farm_345/plots/2025-10-24.png
+901,2026-06-12,outputs/pv_reviewed_ghi_20261103/farm_901/plots/2026-06-12.png
+910,2025-03-23,outputs/pv_reviewed_ghi_20261103/farm_910/plots/2025-03-23.png
+910,2025-07-29,outputs/pv_reviewed_ghi_20261103/farm_910/plots/2025-07-29.png
+910,2026-03-29,outputs/pv_reviewed_ghi_20261103/farm_910/plots/2026-03-29.png
+910,2026-08-02,outputs/pv_reviewed_ghi_20261103/farm_910/plots/2026-08-02.png

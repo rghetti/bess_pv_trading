@@ -1,0 +1,57 @@
+{
+  "status": "passed",
+  "training_started": false,
+  "source_and_selection_checks": [
+    {
+      "farm_id": 1,
+      "raw_and_ghi_preserved": true,
+      "all_requested_selections_exact": true,
+      "unlisted_prior_exclusions_kept": true,
+      "synthetic_values_and_night_zeros_correct": true,
+      "csv_exact_nonoverlapping_mask": true,
+      "corpus_and_parent_hashes_valid": true,
+      "synthetic_quarters": 1435
+    },
+    {
+      "farm_id": 345,
+      "raw_and_ghi_preserved": true,
+      "all_requested_selections_exact": true,
+      "unlisted_prior_exclusions_kept": true,
+      "synthetic_values_and_night_zeros_correct": true,
+      "csv_exact_nonoverlapping_mask": true,
+      "corpus_and_parent_hashes_valid": true,
+      "synthetic_quarters": 5531
+    },
+    {
+      "farm_id": 901,
+      "raw_and_ghi_preserved": true,
+      "all_requested_selections_exact": true,
+      "unlisted_prior_exclusions_kept": true,
+      "synthetic_values_and_night_zeros_correct": true,
+      "csv_exact_nonoverlapping_mask": true,
+      "corpus_and_parent_hashes_valid": true,
+      "synthetic_quarters": 426
+    },
+    {
+      "farm_id": 910,
+      "raw_and_ghi_preserved": true,
+      "all_requested_selections_exact": true,
+      "unlisted_prior_exclusions_kept": true,
+      "synthetic_values_and_night_zeros_correct": true,
+      "csv_exact_nonoverlapping_mask": true,
+      "corpus_and_parent_hashes_valid": true,
+      "synthetic_quarters": 7485
+    }
+  ],
+  "explicit_restoration_days": [
+    "345 2026-04-09",
+    "910 2025-03-23"
+  ],
+  "farm_910_march_2026_quarters": 2972,
+  "farm_910_august_2026_quarters": 2976,
+  "farm_910_2025_dst_full_days": [
+    92,
+    100
+  ],
+  "farm_345_selected_missing_ghi_quarters": 2
+}

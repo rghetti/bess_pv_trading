@@ -1,0 +1,145 @@
+# User-reviewed replacements; preparation only, never starts model training.
+include: ../standard.yaml
+
+pv_reviewed_ghi:
+  farm_ids: [1, 345, 901, 910]
+  input_root: data/farms/curated/historical_ghi_20261103
+  output_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
+  output_decisions_csv: configs/data_quality/pv_reviewed_ghi_decisions_2025_to_2026_08.csv
+  report_root: docs/results/pv_reviewed_ghi_20261103
+  delivery_timezone: Europe/Rome
+  night_policy: ${policy.realized_pv_night}
+  workers: 10
+  threads_per_worker: 1
+  # Explicit clarifications: unlisted prior exclusions remain, date-only means red.
+  keep_unlisted_prior_exclusions: true
+  date_only_selection: low_power_candidate
+  include_synthetic_labels_in_training: true
+  training_started: false
+  selections:
+    '1':
+      episode_days:
+        - '2025-01-22'
+        - '2025-02-13'
+        - '2025-08-19'
+        - '2025-08-29'
+        - '2026-01-27'
+        - '2026-06-19'
+        - '2026-07-27'
+        - '2026-07-28'
+      full_days:
+        # All twelve days present in the prior Nov 27–Dec 29 review, confirmed.
+        - '2025-11-27'
+        - '2025-11-28'
+        - '2025-11-29'
+        - '2025-12-08'
+        - '2025-12-09'
+        - '2025-12-12'
+        - '2025-12-13'
+        - '2025-12-18'
+        - '2025-12-26'
+        - '2025-12-27'
+        - '2025-12-28'
+        - '2025-12-29'
+        - '2026-01-29'
+        - '2026-02-17'
+      replace_flagged_night_production: true
+    '345':
+      episode_days:
+        - '2025-04-19'
+        - '2025-05-11'
+        - '2025-06-16'
+        - '2025-07-18'
+        - '2025-07-21'
+        - '2025-09-15'
+        - '2026-04-09'
+        - '2026-04-10'
+        - '2026-04-14'
+        - '2026-05-06'
+        - '2026-05-27'
+      full_days:
+        - '2025-03-08'
+        - '2025-03-29'
+        - '2025-04-15'
+        - '2025-04-16'
+        - '2025-04-21'
+        - '2025-05-01'
+        - '2025-05-05'
+        - '2025-06-27'
+        - '2025-09-13'
+        - '2025-09-14'
+        - '2025-11-20'
+      replace_before_local:
+        '2025-10-24': '12:00'
+      restore_days: ['2026-04-09']
+      zero_from_local:
+        '2026-06-14': '21:00'
+      replace_flagged_night_production: true
+    '901':
+      episode_days:
+        - '2025-03-10'
+        - '2025-04-28'
+        - '2025-04-29'
+        - '2025-09-02'
+        - '2025-09-12'
+        - '2026-03-22'
+        - '2026-05-01'
+        - '2026-05-14'
+        - '2026-06-05'
+        - '2026-07-17'
+      full_days: ['2025-11-03', '2025-11-04', '2025-11-05']
+      zero_from_local:
+        '2026-06-12': '20:45'
+        '2026-06-13': '20:45'
+        '2026-06-14': '20:45'
+      replace_flagged_night_production: true
+    '910':
+      episode_days:
+        - '2025-01-23'
+        - '2025-02-21'
+        - '2025-02-27'
+        - '2025-03-02'
+        - '2025-03-13'
+        - '2025-04-18'
+        - '2025-04-24'
+        - '2025-05-01'
+        - '2025-05-02'
+        - '2025-05-04'
+        - '2025-05-18'
+        - '2025-05-25'
+        - '2025-06-25'
+        - '2025-07-10'
+        - '2025-07-24'
+        - '2025-08-21'
+        - '2025-09-03'
+        - '2025-10-12'
+        - '2025-10-13'
+        - '2026-04-03'
+        - '2026-04-07'
+        - '2026-04-09'
+        - '2026-04-10'
+        - '2026-04-11'
+        - '2026-04-27'
+        - '2026-05-02'
+        - '2026-05-04'
+        - '2026-05-12'
+        - '2026-06-19'
+        - '2026-06-30'
+        - '2026-07-01'
+        - '2026-07-26'
+        - '2026-07-27'
+      full_days:
+        - '2025-03-30'
+        - '2025-10-26'
+        - '2026-01-04'
+        - '2026-01-08'
+        - '2026-04-05'
+        - '2026-04-06'
+        - '2026-04-25'
+        - '2026-04-26'
+        - '2026-05-01'
+        - '2026-05-03'
+      full_months: ['2026-03', '2026-08']
+      replace_before_local:
+        '2025-07-29': '11:00'
+      restore_days: ['2025-03-23']

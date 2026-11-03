@@ -1,0 +1,3 @@
+farm_id,delivery_day,previously_excluded_quarters,restored_to_raw_quarters,new_synthetic_quarters
+345,2026-04-09,15,8,7
+910,2025-03-23,5,5,0

@@ -1,0 +1,264 @@
+{
+  "status": "prepared",
+  "training_started": false,
+  "parent_manifest_sha256": "13a2ee7996a79bd985d272c9a06fa412018e7ae4a0724ee2a64cb90ba8c1d3fe",
+  "configuration": {
+    "farm_ids": [
+      1,
+      345,
+      901,
+      910
+    ],
+    "input_root": "data/farms/curated/historical_ghi_20261103",
+    "output_root": "data/farms/curated/reviewed_ghi_2025_to_2026_08",
+    "output_decisions_csv": "configs/data_quality/pv_reviewed_ghi_decisions_2025_to_2026_08.csv",
+    "report_root": "docs/results/pv_reviewed_ghi_20261103",
+    "delivery_timezone": "Europe/Rome",
+    "night_policy": {
+      "enabled": true,
+      "timezone": "Europe/Rome",
+      "monthly_windows": {
+        "01": {
+          "start": "18:30",
+          "end": "06:45"
+        },
+        "02": {
+          "start": "19:15",
+          "end": "06:00"
+        },
+        "03": {
+          "start": "21:00",
+          "end": "05:15"
+        },
+        "04": {
+          "start": "21:45",
+          "end": "05:15"
+        },
+        "05": {
+          "start": "21:30",
+          "end": "05:00"
+        },
+        "06": {
+          "start": "21:30",
+          "end": "05:00"
+        },
+        "07": {
+          "start": "21:30",
+          "end": "05:00"
+        },
+        "08": {
+          "start": "21:30",
+          "end": "05:00"
+        },
+        "09": {
+          "start": "21:15",
+          "end": "05:45"
+        },
+        "10": {
+          "start": "20:00",
+          "end": "06:00"
+        },
+        "11": {
+          "start": "18:15",
+          "end": "06:00"
+        },
+        "12": {
+          "start": "18:00",
+          "end": "06:45"
+        }
+      }
+    },
+    "workers": 10,
+    "threads_per_worker": 1,
+    "keep_unlisted_prior_exclusions": true,
+    "date_only_selection": "low_power_candidate",
+    "include_synthetic_labels_in_training": true,
+    "training_started": false,
+    "selections": {
+      "1": {
+        "episode_days": [
+          "2025-01-22",
+          "2025-02-13",
+          "2025-08-19",
+          "2025-08-29",
+          "2026-01-27",
+          "2026-06-19",
+          "2026-07-27",
+          "2026-07-28"
+        ],
+        "full_days": [
+          "2025-11-27",
+          "2025-11-28",
+          "2025-11-29",
+          "2025-12-08",
+          "2025-12-09",
+          "2025-12-12",
+          "2025-12-13",
+          "2025-12-18",
+          "2025-12-26",
+          "2025-12-27",
+          "2025-12-28",
+          "2025-12-29",
+          "2026-01-29",
+          "2026-02-17"
+        ],
+        "replace_flagged_night_production": true
+      },
+      "345": {
+        "episode_days": [
+          "2025-04-19",
+          "2025-05-11",
+          "2025-06-16",
+          "2025-07-18",
+          "2025-07-21",
+          "2025-09-15",
+          "2026-04-09",
+          "2026-04-10",
+          "2026-04-14",
+          "2026-05-06",
+          "2026-05-27"
+        ],
+        "full_days": [
+          "2025-03-08",
+          "2025-03-29",
+          "2025-04-15",
+          "2025-04-16",
+          "2025-04-21",
+          "2025-05-01",
+          "2025-05-05",
+          "2025-06-27",
+          "2025-09-13",
+          "2025-09-14",
+          "2025-11-20"
+        ],
+        "replace_before_local": {
+          "2025-10-24": "12:00"
+        },
+        "restore_days": [
+          "2026-04-09"
+        ],
+        "zero_from_local": {
+          "2026-06-14": "21:00"
+        },
+        "replace_flagged_night_production": true
+      },
+      "901": {
+        "episode_days": [
+          "2025-03-10",
+          "2025-04-28",
+          "2025-04-29",
+          "2025-09-02",
+          "2025-09-12",
+          "2026-03-22",
+          "2026-05-01",
+          "2026-05-14",
+          "2026-06-05",
+          "2026-07-17"
+        ],
+        "full_days": [
+          "2025-11-03",
+          "2025-11-04",
+          "2025-11-05"
+        ],
+        "zero_from_local": {
+          "2026-06-12": "20:45",
+          "2026-06-13": "20:45",
+          "2026-06-14": "20:45"
+        },
+        "replace_flagged_night_production": true
+      },
+      "910": {
+        "episode_days": [
+          "2025-01-23",
+          "2025-02-21",
+          "2025-02-27",
+          "2025-03-02",
+          "2025-03-13",
+          "2025-04-18",
+          "2025-04-24",
+          "2025-05-01",
+          "2025-05-02",
+          "2025-05-04",
+          "2025-05-18",
+          "2025-05-25",
+          "2025-06-25",
+          "2025-07-10",
+          "2025-07-24",
+          "2025-08-21",
+          "2025-09-03",
+          "2025-10-12",
+          "2025-10-13",
+          "2026-04-03",
+          "2026-04-07",
+          "2026-04-09",
+          "2026-04-10",
+          "2026-04-11",
+          "2026-04-27",
+          "2026-05-02",
+          "2026-05-04",
+          "2026-05-12",
+          "2026-06-19",
+          "2026-06-30",
+          "2026-07-01",
+          "2026-07-26",
+          "2026-07-27"
+        ],
+        "full_days": [
+          "2025-03-30",
+          "2025-10-26",
+          "2026-01-04",
+          "2026-01-08",
+          "2026-04-05",
+          "2026-04-06",
+          "2026-04-25",
+          "2026-04-26",
+          "2026-05-01",
+          "2026-05-03"
+        ],
+        "full_months": [
+          "2026-03",
+          "2026-08"
+        ],
+        "replace_before_local": {
+          "2025-07-29": "11:00"
+        },
+        "restore_days": [
+          "2025-03-23"
+        ]
+      }
+    }
+  },
+  "farms": {
+    "1": {
+      "parent_corpus_sha256": "a358e7217aa73ed6fbb1825d3651e0c821d41b87753b1bebab8576b6348ded54",
+      "corpus_sha256": "6ac82c5ddb099e53aecfe0faae21c70b52153fa0dee725cb45bb30f8799770e3"
+    },
+    "345": {
+      "parent_corpus_sha256": "6b4806bf7f5c15bf79f701f587cb456c7c1e4ace05269fdb0207ee9d5115588d",
+      "corpus_sha256": "fd3aba9d5bf2c0a3ae4d11355e3329fa4dba3e97f325d0ca6fa4c7f237429cb9"
+    },
+    "901": {
+      "parent_corpus_sha256": "69f1b552215e2ab86498bc9d5d63acc7f5e56ea96409f32eac4a56c367918e5f",
+      "corpus_sha256": "6ba7e5015469543eaba280a4b1e3299cd1fe5f838b6b29c5c45b6ea4a3d9a4d8"
+    },
+    "910": {
+      "parent_corpus_sha256": "78c13f38e09596fd5a0a83a1599f507e473b81cffe8205508dc064cdada50b11",
+      "corpus_sha256": "d82100f5b0252262199f0320bf73fa64e223fb432db5298068a9f5cea30e082f"
+    }
+  },
+  "target_contract": {
+    "measured": "measured_ac_raw_mw",
+    "training_and_scoring": "model_target_mw",
+    "source": "model_target_source",
+    "night_window": "monthly policy; synthetic PV is zero at night",
+    "training_mask": "training_eligible",
+    "validation_mask": "validation_eligible",
+    "testing_mask": "test_eligible",
+    "raw_exclusion_mask": "raw_target_excluded",
+    "warning": "Training readers must use model_target_mw and the supplied masks; reapplying raw-exclusion CSV as a training mask would remove the requested synthetic labels.",
+    "limitation": "Synthetic targets are physical-model estimates, not independent observations."
+  },
+  "decisions_csv": "configs/data_quality/pv_reviewed_ghi_decisions_2025_to_2026_08.csv",
+  "decisions_csv_sha256": "e0054d6d097541ac1647790caf0898a0b9ab451500d10c684341714943ed069d",
+  "preparation_code_sha256": "b8dbced947976ad43dadba7d0045f35648828acd59922a3ce50daad297775d46"
+}
