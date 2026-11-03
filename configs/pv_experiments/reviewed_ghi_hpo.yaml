@@ -1,0 +1,119 @@
+# Reviewable exhaustive model-family search; --check-only performs no fitting.
+include: ../standard.yaml
+
+pv_reviewed_hpo:
+  farm_ids: [1, 345, 901, 910]
+  dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
+  output_root: outputs/pv_reviewed_hpo
+  run_id: historical_ghi_all_farms_night3000_v1
+  report_root: docs/results/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1
+  resume: true
+  timezone: Europe/Rome
+  workers: 30
+  threads_per_worker: 1
+  seed: 418721
+  trials_per_family_per_feature: 64
+  features: [core, extended]
+  # The two unbracketed nighttime timestamps occur for all four farms.
+  missing_night_ghi: zero_at_night
+  nighttime_exclusions: keep_curated
+  night_training_samples_per_farm: 3000
+  training_ghi_source: historical
+  validation_ghi_source: preceding_day_forecast
+  testing_ghi_source: preceding_day_forecast
+  use_synthetic_labels: true
+  output_clip: [0.0, 1.0]
+  score: validation_day_balanced_normalized_rmse
+  include_missing_indicators: true
+  refit_replay_tolerance_nrmse_percent: 0.0001
+  standardization_floor: 1.0e-6
+  input_clip_standard_deviations: 12.0
+  core_weather: [ghi_w_m2, nwp_bhi_w_m2, temperature_c, wind_u_10m, wind_v_10m]
+  extended_weather:
+    - dew_point_c
+    - cloud_total_pct
+    - cloud_low_pct
+    - cloud_mid_pct
+    - cloud_high_pct
+    - precipitation_mm
+    - snow_water_equivalent_m
+    - visibility_km
+    - wind_u_100m
+    - wind_v_100m
+  calendar_features: [hour_sin, hour_cos, annual_sin, annual_cos, month_sin, month_cos]
+  # Every candidate has both a core and an extended version for each farm.
+  statistical_families:
+    ridge:
+      alpha: {kind: log_uniform, low: 1.0e-6, high: 10000.0}
+    elastic_net:
+      alpha: {kind: log_uniform, low: 1.0e-7, high: 0.1}
+      l1_ratio: {kind: uniform, low: 0.05, high: 0.95}
+    huber:
+      alpha: {kind: log_uniform, low: 1.0e-7, high: 100.0}
+      epsilon: {kind: uniform, low: 1.05, high: 2.5}
+    spline_ridge:
+      n_knots: {kind: choice, values: [4, 6, 8, 10, 12]}
+      degree: {kind: choice, values: [2, 3]}
+      alpha: {kind: log_uniform, low: 1.0e-5, high: 10000.0}
+    polynomial_ridge:
+      # Degree two bounds memory with 30 simultaneous extended-feature fits.
+      degree: {kind: choice, values: [2]}
+      alpha: {kind: log_uniform, low: 1.0e-5, high: 10000.0}
+    rbf_ridge:
+      n_components: {kind: choice, values: [128, 256, 512, 1024]}
+      gamma: {kind: log_uniform, low: 0.0005, high: 0.25}
+      alpha: {kind: log_uniform, low: 1.0e-5, high: 1000.0}
+    extra_trees:
+      n_estimators: {kind: choice, values: [100, 200, 400, 600]}
+      max_features: {kind: choice, values: [0.5, 0.75, 1.0]}
+      min_samples_leaf: {kind: choice, values: [2, 4, 8, 16, 32, 64]}
+      max_depth: {kind: choice, values: [10, 16, 24, null]}
+    random_forest:
+      n_estimators: {kind: choice, values: [100, 200, 400, 600]}
+      max_features: {kind: choice, values: [0.5, 0.75, 1.0]}
+      min_samples_leaf: {kind: choice, values: [2, 4, 8, 16, 32, 64]}
+      max_depth: {kind: choice, values: [10, 16, 24, null]}
+    hist_gradient_boosting:
+      max_iter: {kind: choice, values: [100, 250, 500, 800]}
+      max_leaf_nodes: {kind: choice, values: [7, 15, 31, 63]}
+      min_samples_leaf: {kind: choice, values: [10, 20, 40, 80]}
+      learning_rate: {kind: log_uniform, low: 0.01, high: 0.2}
+      l2_regularization: {kind: log_uniform, low: 1.0e-5, high: 100.0}
+      loss: {kind: choice, values: [squared_error, absolute_error]}
+    lightgbm:
+      n_estimators: {kind: choice, values: [200, 400, 800, 1200]}
+      num_leaves: {kind: choice, values: [7, 15, 31, 63]}
+      min_child_samples: {kind: choice, values: [10, 20, 40, 80]}
+      learning_rate: {kind: log_uniform, low: 0.01, high: 0.2}
+      reg_lambda: {kind: log_uniform, low: 1.0e-5, high: 100.0}
+      objective: {kind: choice, values: [regression, regression_l1]}
+    catboost:
+      iterations: {kind: choice, values: [200, 400, 800, 1200]}
+      depth: {kind: choice, values: [4, 6, 8, 10]}
+      learning_rate: {kind: log_uniform, low: 0.01, high: 0.2}
+      l2_leaf_reg: {kind: log_uniform, low: 0.001, high: 100.0}
+      loss_function: {kind: choice, values: [RMSE, MAE]}
+  neural_families: [mlp, tcn, bigru, bilstm, transformer]
+  neural_space:
+    width: {kind: choice, values: [32, 64, 128]}
+    depth: {kind: choice, values: [1, 2, 3, 4]}
+    kernel_size: {kind: choice, values: [3, 5, 7, 9]}
+    dropout: {kind: choice, values: [0.0, 0.05, 0.1, 0.2]}
+    learning_rate: {kind: log_uniform, low: 0.0001, high: 0.003}
+    weight_decay: {kind: log_uniform, low: 1.0e-7, high: 0.01}
+    batch_size: {kind: choice, values: [16, 32, 64]}
+    loss: {kind: choice, values: [mse, huber]}
+    heads: {kind: choice, values: [4, 8]}
+  neural_training:
+    max_epochs: 150
+    patience: 15
+    minimum_improvement: 1.0e-7
+    huber_delta: 0.05
+    gradient_clip_norm: 1.0
+  validation:
+    block_bootstrap_days: 7
+    bootstrap_repetitions: 1000
+    report_by_target_source: true
+    report_by_month: true
+    report_interpolated_ghi_separately: true
+    plot_days_per_split: 3

@@ -15,7 +15,7 @@ continuous_optimization:
     member_count: 50
     planning_policy: ensemble_stochastic
     include_deterministic_member: true
-    planning_imbalance_penalty_eur_per_mwh: 500.0
+    planning_imbalance_penalty_eur_per_mwh: 200.0
     cvar_confidence: 0.95
     cvar_weight_eur_per_mwh: 0.0
 state:
@@ -23,7 +23,7 @@ state:
   terminal_soc_percent: 50.0
   terminal_soc_min_percent: 40.0
 solver:
-  threads: 2
+  threads: 3
   feasibility_tolerance: 1.0e-08
   integrality_tolerance: 1.0e-08
 pv:
