@@ -277,7 +277,7 @@ class DuckDBCache:
             raise _error("DuckDB API cache identity mismatch")
         return self._decorate_manifest(identity, manifest, row[1])
 
-    def _snapshot_row(self, identity, *, manifest=None, snapshot_id=None):
+    def _snapshot_row(self, identity, *, manifest=None, snapshot_id=None, include_normalized=True):
         """Select exact immutable bytes with one short consistent read operation."""
         digest = _identity_hash(identity)
         parameters = [digest]
@@ -294,8 +294,10 @@ class DuckDBCache:
         with self._connect() as connection:
             if connection is None:
                 return None
-            return connection.execute("""SELECT snapshot.snapshot_id, snapshot.manifest_json,
-                snapshot.raw_payload, snapshot.normalized_parquet FROM api_snapshots snapshot
+            # Raw-only recovery must not materialize the unrelated Parquet BLOB.
+            normalized = "snapshot.normalized_parquet" if include_normalized else "NULL"
+            return connection.execute(f"""SELECT snapshot.snapshot_id, snapshot.manifest_json,
+                snapshot.raw_payload, {normalized} FROM api_snapshots snapshot
                 WHERE snapshot.identity_hash = ? AND """ + selector, parameters).fetchone()
 
     def load_snapshot(self, identity: Mapping[str, Any], manifest=None, *, snapshot_id=None,
@@ -330,7 +332,7 @@ class DuckDBCache:
 
     def load_raw(self, identity: Mapping[str, Any], *, snapshot_id=None) -> bytes | None:
         """Read a verified provider payload for offline parser correctness checks."""
-        row = self._snapshot_row(identity, snapshot_id=snapshot_id)
+        row = self._snapshot_row(identity, snapshot_id=snapshot_id, include_normalized=False)
         if row is None:
             return None
         manifest = json.loads(row[1])

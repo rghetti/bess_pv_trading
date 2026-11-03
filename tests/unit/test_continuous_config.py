@@ -18,6 +18,14 @@ STANDARD = ROOT / "configs/standard.yaml"
 JANUARY = ROOT / "configs/full_experiments/continuous_optimization_2025-01.yaml"
 
 
+@pytest.mark.parametrize("invalid", [0, -1, True, 1.5, "8"])
+def test_price_snapshot_cache_limit_is_validated_before_preparation(invalid):
+    config = load_config(STANDARD)
+    config["continuous_optimization"]["price_snapshot_cache_entries"] = invalid
+    with pytest.raises(ConfigurationError, match="price_snapshot_cache_entries"):
+        resolve_config(config)
+
+
 def test_continuous_template_requires_explicit_delivery_dates():
     config = load_config(STANDARD)
     assert config["continuous_optimization"]["start_date"] is None

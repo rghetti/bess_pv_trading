@@ -37,6 +37,7 @@ pv_online_crps_study:
   quantile_alpha: 0.01
   minimum_quantile_days: 7
   workers: 42
+  threads_per_worker: 1
   daylight_start: 06:00
   daylight_end: '21:30'
   seed: 202601

@@ -43,7 +43,7 @@ def prepared_case(monkeypatch):
         calls["weather"].append((pd.Timestamp(cutoff), pd.DatetimeIndex(starts)))
         return bundle(cutoff, starts)
 
-    def load_prices(daily, calendar, grid, events):
+    def load_prices(daily, calendar, grid, events, **kwargs):
         calls["prices"].append(deepcopy(daily["gme_oracle_experiment"]))
         prices = {event.auction: np.full(len(grid.starts), case["auction_price_eur_mwh"])
                   for event in events}
@@ -168,8 +168,8 @@ def test_cancelled_auctions_are_not_preflighted_for_submission(prepared_case, mo
     canceled = config["test_case"]["cancelled_auction"]
     original = continuous_inputs._load_auction_prices
 
-    def prices(*args):
-        result, sources, _ = original(*args)
+    def prices(*args, **kwargs):
+        result, sources, _ = original(*args, **kwargs)
         del result[canceled]
         return result, sources, [{"auction": canceled, "reason": "documented_cancelled_auction"}]
 
@@ -214,7 +214,7 @@ def test_missing_prices_remain_an_error_and_settlement_can_be_disabled(prepared_
         (None, {"status": "disabled"}))
     prepared = continuous_inputs.prepare_continuous_inputs(config)
     assert prepared["imbalance_prices_eur_per_mwh"] is None
-    monkeypatch.setattr(continuous_inputs, "_load_auction_prices", lambda *args:
+    monkeypatch.setattr(continuous_inputs, "_load_auction_prices", lambda *args, **kwargs:
         (_ for _ in ()).throw(ValueError("missing prices do not establish cancellation")))
     with pytest.raises(ValueError, match="Continuous preflight.*missing prices"):
         continuous_inputs.prepare_continuous_inputs(config)

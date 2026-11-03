@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 def main():
     from bess_pv_trading.config import load_config
     from bess_pv_trading.data import config_path
+    from bess_pv_trading.parallel import configure_worker_threads
     from bess_pv_trading.forecasting.online.pv_online_crps_prepare import prepare_farm
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', type=Path, required=True)
@@ -26,13 +27,16 @@ def main():
     settings = config['pv_online_crps_study']
     source = load_config(config_path(config, settings['source_config']))
     root = config_path(config, settings['output_root']) / settings['run_id']
-    workers = min(args.workers or settings['workers'], settings['workers'], 42)
+    workers = min(settings['workers'] if args.workers is None else args.workers, settings['workers'], 42)
+    worker_threads = settings.get('threads_per_worker', 1)
     # Enforce the input contract: workers must be positive.
     if workers < 1: raise ValueError('workers must be positive')
+    if isinstance(worker_threads, bool) or not isinstance(worker_threads, int) or worker_threads < 1:
+        raise ValueError('threads_per_worker must be a positive integer')
     # Perform main when `args.plan_only`.
     if args.plan_only:
         print(json.dumps({'settings': settings, 'source': settings['source_config'],
-                          'workers_max': workers, 'output': str(root),
+                          'workers_max': workers, 'threads_per_worker': worker_threads, 'output': str(root),
                           'limitation': 'Validation-selected predictors; first-day DA/IDA1/IDA2 retrospective'}, indent=2))
         return
     root.mkdir(parents=True, exist_ok=True)
@@ -54,7 +58,9 @@ def main():
         write_json(manifest_path, run_manifest)
     # Perform main when `args.stage in ('prepare', 'all')`.
     if args.stage in ('prepare', 'all'):
-        with ProcessPoolExecutor(max_workers=min(workers, len(settings['farms'])), mp_context=multiprocessing.get_context('fork')) as executor:
+        with ProcessPoolExecutor(max_workers=min(workers, len(settings['farms'])),
+                mp_context=multiprocessing.get_context('spawn'),
+                initializer=configure_worker_threads, initargs=(worker_threads,)) as executor:
             futures = {executor.submit(prepare_farm, config, source, int(farm), root): farm for farm in settings['farms']}
             # Perform main for each `future` in `as_completed(futures)`.
             for future in as_completed(futures):
@@ -63,7 +69,9 @@ def main():
     if args.stage in ('evaluate', 'all'):
         from bess_pv_trading.forecasting.online.pv_online_crps_evaluate import evaluate_farm_auction
         jobs = [(int(farm), auction) for farm in settings['farms'] for auction in settings['auctions']]
-        with ProcessPoolExecutor(max_workers=min(workers, len(jobs)), mp_context=multiprocessing.get_context('fork')) as executor:
+        with ProcessPoolExecutor(max_workers=min(workers, len(jobs)),
+                mp_context=multiprocessing.get_context('spawn'),
+                initializer=configure_worker_threads, initargs=(worker_threads, False)) as executor:
             futures = {executor.submit(evaluate_farm_auction, config, source, farm, auction, root): (farm, auction)
                        for farm, auction in jobs}
             # Perform main for each `future` in `as_completed(futures)`.

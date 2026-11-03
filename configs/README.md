@@ -21,7 +21,7 @@ PV studies keep their own sections in the relevant workflow YAML. A new study
 should define its own parameters there rather than extending the standard.
 
 - `api_experiments/`: downloads, provider diagnostics, workbook imports and DuckDB acquisition.
-- `price_experiments/`: price-model training, calibration and evaluation.
+- `price_experiments/`: the retained market-import example; earlier price-model research is archived outside this repository.
 - `full_experiments/`: historical/synthetic optimization and replay, participation studies and prepared-input templates.
 - Root files: data preparation, PV generation, audit and reporting entry points.
 

@@ -482,7 +482,7 @@ def _expected_product_starts(grid, eligible: tuple[int, ...], resolution: int,
 
 
 def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
-                         grid, events) -> tuple[dict[str, np.ndarray], dict[str, Any], list[dict]]:
+                         grid, events, *, snapshot_cache=None) -> tuple[dict[str, np.ndarray], dict[str, Any], list[dict]]:
     """Load exact native prices; skip documented cancellations and reject gaps."""
     study = config["gme_oracle_experiment"]
     timezone = str(study["timezone"])
@@ -525,7 +525,7 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
             continue
         frame, sources = load_api_cache_records(study["price_database"],
             provider=study["provider"], dataset=item["dataset"], zone=study["zone"],
-            start=first, end=stop, verify_checksums=True)
+            start=first, end=stop, verify_checksums=True, snapshot_cache=snapshot_cache)
         # Load exact native prices; skip documented cancellations and reject gaps when `frame.empty`.
         if frame.empty:
             # Apply this branch only when its condition is met.
@@ -546,9 +546,13 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
         if frame.duplicated("product_start").any():
             raise ValueError(f"{auction} has duplicate native delivery products")
         declared = pd.to_numeric(frame.get("native_interval_minutes", expected_resolution), errors="coerce")
-        # Enforce the input contract: `auction` cached native resolution differs from the experiment YAML.
-        if np.any(pd.Series(declared).dropna().to_numpy(dtype=int) != expected_resolution):
+        # Reject fractional/missing declarations and malformed product endpoints;
+        # matching start labels alone cannot prove the native delivery duration.
+        if not np.all(np.asarray(declared) == expected_resolution):
             raise ValueError(f"{auction} cached native resolution differs from the experiment YAML")
+        durations = frame.product_end - frame.product_start
+        if not (durations == pd.Timedelta(minutes=expected_resolution)).all():
+            raise ValueError(f"{auction} cached product duration differs from its native resolution")
         expected = _expected_product_starts(grid, event.eligible_intervals,
                                             expected_resolution, timezone)
         observed_starts = pd.DatetimeIndex(frame.product_start).sort_values()
@@ -566,12 +570,15 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
         if prices.isna().any() or not np.isfinite(prices.to_numpy(dtype=float)).all():
             raise ValueError(f"{auction} contains missing/nonfinite prices in an otherwise present auction")
         curve = np.full(len(grid.interval_ids), np.nan, dtype=float)
-        # Load exact native prices; skip documented cancellations and reject gaps for each `(product_start, price)` in `prices.items()`.
-        for product_start, price in prices.items():
-            product_end = product_start + pd.Timedelta(minutes=expected_resolution)
-            mask = np.asarray([(start >= product_start and start < product_end)
-                               for start in grid.starts])
-            curve[mask] = float(price)
+        # Map validated native products to physical intervals with one indexed
+        # lookup, preserving gaps before the first eligible IDA3 product.
+        starts = pd.DatetimeIndex(grid.starts)
+        positions = prices.index.get_indexer(starts, method="pad")
+        selected = positions >= 0
+        selected_indices = np.flatnonzero(selected)
+        contained = starts[selected] < (prices.index[positions[selected]]
+            + pd.Timedelta(minutes=expected_resolution))
+        curve[selected_indices[contained]] = prices.to_numpy(dtype=float)[positions[selected][contained]]
         eligible = np.zeros(len(grid.interval_ids), dtype=bool)
         eligible[list(event.eligible_intervals)] = True
         # Enforce the input contract: `auction` did not map every eligible physical interval.

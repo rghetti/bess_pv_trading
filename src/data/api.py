@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+from collections import Counter, defaultdict
 
 from dataclasses import asdict, dataclass, field
 import base64
@@ -626,8 +627,21 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
     gme_refresh_seconds=settings.get("gme_token_refresh_seconds",900.)
     if isinstance(gme_refresh_seconds,bool) or not np.isfinite(float(gme_refresh_seconds)) or float(gme_refresh_seconds)<=0:
         raise DataAPIError("api.gme_token_refresh_seconds must be finite and positive")
-    raw_responses={}
-    parsed_terna_responses={}
+    # Index transport siblings once; monthly recovery must not scan the full plan.
+    def transport_key(plan):
+        """Group only identical provider transports, schema versions and revisions."""
+        identity = plan["identity"]
+        specification = plan.get("transport_specification", plan["specification"])
+        return _json_bytes({"provider": identity["provider"], "specification": asdict(specification),
+            "vintage_revision": identity["vintage_revision"], "schema_version": identity["schema_version"]})
+
+    transport_groups = defaultdict(list)
+    for plan in plans:
+        transport_groups[transport_key(plan)].append(plan)
+    remaining_uses = Counter({key: len(group) for key, group in transport_groups.items()})
+    raw_responses = {}
+    parsed_terna_responses = {}
+    previous_key = None
     results=[]
     paused_providers={}
     http_gets,auth_requests=0,0
@@ -665,13 +679,18 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
         return True
 
     for plan in plans:
+        # Release a completed batch even when its last day took a cached/gap branch.
+        if previous_key is not None and remaining_uses[previous_key] == 0:
+            raw_responses.pop(previous_key, None)
+            parsed_terna_responses.pop(previous_key, None)
+        previous_key = transport_key(plan)
+        remaining_uses[previous_key] -= 1
         identity,specification=plan["identity"],plan["specification"]
         transport_specification = plan.get("transport_specification", specification)
         transport_metadata = ({"transport_request": asdict(transport_specification),
             "transport_first_day": plan["transport_first_day"],
             "transport_last_day": plan["transport_last_day"]} if identity["provider"] == "terna" else {})
-        raw_key=_json_bytes({"provider":identity["provider"],"specification":asdict(transport_specification),
-            "vintage_revision":identity["vintage_revision"],"schema_version":identity["schema_version"]})
+        raw_key = previous_key
         cached = None if refresh_cache else cache.load(identity)
         no_data = None if refresh_cache or cached is not None else cache.load_no_data(identity,no_data_hours)
         if no_data is not None:
@@ -682,11 +701,8 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
             continue
         if cached is not None:
             frame,manifest=cached
-            # Only seed a monthly request from a payload proven to cover it.
-            if (identity["provider"] != "terna" or
-                    manifest["metadata"].get("transport_request", identity["request"]) == asdict(transport_specification)):
-                raw_responses[raw_key]=(cache.load_raw(identity),
-                                        pd.Timestamp(manifest["metadata"]["retrieved_at"]))
+            # A cache hit already verifies its bytes. Load raw data only if a
+            # missing sibling actually needs reparsing, never on every cached day.
             status="cached"
         else:
             provider=identity["provider"]
@@ -698,15 +714,23 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
                 announce(identity)
                 continue
             reused=raw_responses.get(raw_key)
-            if provider == "terna" and reused is None and not refresh_cache:
-                # A sibling dataset or later day can already own this batch.
+            if reused is None and not refresh_cache and len(transport_groups[raw_key]) > 1:
+                # A sibling dataset, zone or later day can already own this
+                # exact response. Preserve offline reuse for every provider.
                 with cache.read_session() if consolidated else nullcontext():
-                    for candidate in plans:
-                        if candidate.get("transport_specification") != transport_specification or candidate["identity"]["vintage_revision"] != identity["vintage_revision"]:
-                            continue
-                        source = cache.load(candidate["identity"])
-                        if source is not None and source[1]["metadata"].get("transport_request", candidate["identity"]["request"]) == asdict(transport_specification):
-                            reused=(cache.load_raw(candidate["identity"]), pd.Timestamp(source[1]["metadata"]["retrieved_at"]))
+                    for candidate in transport_groups[raw_key]:
+                        candidate_identity = candidate["identity"]
+                        if consolidated:
+                            source_manifest = cache.manifest(candidate_identity)
+                        else:
+                            source = cache.load(candidate_identity)
+                            source_manifest = None if source is None else source[1]
+                        if source_manifest is not None and source_manifest["metadata"].get(
+                                "transport_request", candidate_identity["request"]) == asdict(transport_specification):
+                            # Pin the same immutable revision as the retrieval clock.
+                            options = {"snapshot_id": source_manifest["snapshot_id"]} if consolidated else {}
+                            reused = (cache.load_raw(candidate_identity, **options),
+                                      pd.Timestamp(source_manifest["metadata"]["retrieved_at"]))
                             break
             retained_identity = {**identity, **transport_metadata} if provider == "terna" else identity
             if provider in {"terna", "gme"} and reused is None and not refresh_cache:
@@ -721,6 +745,7 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
                         retained_identity = identity
                         raw_key=_json_bytes({"provider":provider,"specification":asdict(specification),
                             "vintage_revision":identity["vintage_revision"],"schema_version":identity["schema_version"]})
+                        previous_key = raw_key
                 if retained is not None:
                     reused=(retained[0],pd.Timestamp(retained[1]["retrieved_at"]))
             if provider=="entsoe":
@@ -768,13 +793,14 @@ def download_from_config(config: Mapping[str,Any], *, interactive: bool = False,
                 else:
                     payload,retrieved_at=reused
                 try:
-                    parsed_key = (raw_key, identity["dataset"], _json_bytes(identity["options"]))
-                    if parsed_key not in parsed_terna_responses:
-                        parsed_terna_responses[parsed_key]=parse_terna_json(payload,
+                    parsed_key = (identity["dataset"], _json_bytes(identity["options"]))
+                    parsed_batch = parsed_terna_responses.setdefault(raw_key, {})
+                    if parsed_key not in parsed_batch:
+                        parsed_batch[parsed_key]=parse_terna_json(payload,
                             dataset=identity["dataset"],options=identity["options"],retrieved_at=retrieved_at,
                             requested_day=transport_metadata["transport_first_day"],
                             requested_end_day=transport_metadata["transport_last_day"])
-                    frame = parsed_terna_responses[parsed_key]
+                    frame = parsed_batch[parsed_key]
                     if not frame.empty:
                         local_days = frame.reference_time.dt.tz_convert("Europe/Rome").dt.strftime("%Y-%m-%d")
                         frame = frame.loc[local_days == identity["local_day"]].copy().reset_index(drop=True)

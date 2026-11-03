@@ -343,6 +343,10 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     if progress:
         progress(f"Preflighting continuous delivery inputs for {days[0]} through {days[-1]} (offline)")
 
+    # Reuse verified workbook snapshots across days, keeping memory bounded and
+    # releasing database connections before weather conversion or inference.
+    from ..data.api_catalog import SnapshotReadCache
+    price_snapshot_cache = SnapshotReadCache(settings.get("price_snapshot_cache_entries", 8))
     # Read actual production once per day, with one strategy-independent fallback.
     for day, grid in zip(days, all_grids):
         daily = deepcopy(config)
@@ -354,7 +358,8 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             item["native_interval_minutes"] = native_price_resolution_minutes(item["dataset"], date.fromisoformat(day))
         scheduled = calendar.schedule(day)
         try:
-            prices, price_provenance, skipped = _load_auction_prices(daily, calendar, grid, scheduled)
+            prices, price_provenance, skipped = _load_auction_prices(daily, calendar, grid, scheduled,
+                snapshot_cache=price_snapshot_cache)
             schedule = tuple(event for event in scheduled if event.auction in prices and event.available)
             first_cutoff = min(pd.Timestamp(grid.starts[0]), *(event.submission_at for event in scheduled))
             initialization = config["forecast"].get("initialization_cutoff") if day == days[0] else None

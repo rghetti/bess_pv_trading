@@ -65,6 +65,7 @@ def main(argv=None):
     actions.add_argument("--run", action="store_true", help="Execute the explicitly approved historical study")
     args = parser.parse_args(argv)
     config = load_config(args.config)
+    config["_project_root"] = str(ROOT)
     modes = ("frozen_commitments", "continuous") if args.mode == "both" else (args.mode,)
     plan = comparison_plan(config, modes)
     print(json.dumps(plan, indent=2))

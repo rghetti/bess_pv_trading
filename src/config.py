@@ -209,6 +209,10 @@ def validate_continuous_optimization(config: dict[str, Any], *, require_dates: b
     # Enforce the input contract: continuous_optimization must be a YAML mapping.
     if not isinstance(section, dict):
         raise ConfigurationError("continuous_optimization must be a YAML mapping")
+    # Bound decoded workbook retention before any input preparation is started.
+    cache_entries = section.get("price_snapshot_cache_entries", 8)
+    if isinstance(cache_entries, bool) or not isinstance(cache_entries, int) or cache_entries < 1:
+        raise ConfigurationError("continuous_optimization.price_snapshot_cache_entries must be a positive integer")
     start, end = (section.get(key) for key in ("start_date", "end_date"))
     # Shared templates leave the workflow inactive until both dates are supplied.
     if not require_dates and start is None and end is None:

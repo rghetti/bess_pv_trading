@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import nullcontext
+from collections import OrderedDict
 from dataclasses import dataclass
 import json
 from pathlib import Path
@@ -31,6 +32,34 @@ class ApiCacheEntry:
     def directory(self) -> Path:
         """Locate filesystem payloads or identify a database request virtually."""
         return self.manifest_path.parent
+
+
+class SnapshotReadCache:
+    """Bound decoded immutable snapshots to one caller-owned offline operation.
+
+    Cache keys include the database path, revision and verification policy.
+    Connections are never retained, and refreshing a current pointer cannot
+    return an older revision under a newer snapshot ID.
+    """
+
+    def __init__(self, max_entries: int = 8):
+        if isinstance(max_entries, bool) or not isinstance(max_entries, int) or max_entries < 1:
+            raise DataAPIError("Snapshot cache max_entries must be a positive integer")
+        self.max_entries = max_entries
+        self._snapshots = OrderedDict()
+
+    def load(self, cache, identity, *, snapshot_id, verify_checksums):
+        """Verify once per immutable revision and evict least recently used data."""
+        key = (str(cache.directory.resolve()), snapshot_id, verify_checksums)
+        if key in self._snapshots:
+            self._snapshots.move_to_end(key)
+            return self._snapshots[key]
+        loaded = cache.load_snapshot(identity, snapshot_id=snapshot_id, verify_checksums=verify_checksums)
+        if loaded is not None:
+            self._snapshots[key] = loaded
+            if len(self._snapshots) > self.max_entries:
+                self._snapshots.popitem(last=False)
+        return loaded
 
 
 def discover_api_caches(cache_directory: str | Path, *, provider: str | None = None,
@@ -83,7 +112,8 @@ def _aware_bound(value: Any, label: str) -> pd.Timestamp | None:
 def load_api_cache_records(cache_directory: str | Path, *, provider: str | None = None,
                            dataset: str | None = None, zone: str | None = None,
                            start: Any = None, end: Any = None,
-                           verify_checksums: bool = True) -> tuple[pd.DataFrame, list[dict]]:
+                           verify_checksums: bool = True,
+                           snapshot_cache: SnapshotReadCache | None = None) -> tuple[pd.DataFrame, list[dict]]:
     """Load complete immutable daily snapshots and their exact source provenance.
 
     Records retain native parser fields, repeated-block markers and unverified
@@ -99,11 +129,11 @@ def load_api_cache_records(cache_directory: str | Path, *, provider: str | None 
     session = nullcontext() if isinstance(cache, DownloadCache) else cache.read_session()
     with session:
         return _load_api_cache_records(cache, provider=provider, dataset=dataset, zone=zone,
-                                        first=first, stop=stop, verify_checksums=verify_checksums)
+            first=first, stop=stop, verify_checksums=verify_checksums, snapshot_cache=snapshot_cache)
 
 
 def _load_api_cache_records(cache, *, provider, dataset, zone, first, stop,
-                            verify_checksums: bool) -> tuple[pd.DataFrame, list[dict]]:
+                            verify_checksums: bool, snapshot_cache=None) -> tuple[pd.DataFrame, list[dict]]:
     """Read pinned revisions through one database connection and transaction."""
     database_backend = not isinstance(cache, DownloadCache)
     frames, provenance = [], []
@@ -114,9 +144,13 @@ def _load_api_cache_records(cache, *, provider, dataset, zone, first, stop,
         if stop is not None and pd.Timestamp(identity["start"]) >= stop:
             continue
         if verify_checksums or database_backend:
-            loaded = (cache.load_snapshot(identity, snapshot_id=entry.manifest["snapshot_id"],
+            if database_backend and snapshot_cache is not None:
+                loaded = snapshot_cache.load(cache, identity, snapshot_id=entry.manifest["snapshot_id"],
+                                             verify_checksums=verify_checksums)
+            else:
+                loaded = (cache.load_snapshot(identity, snapshot_id=entry.manifest["snapshot_id"],
                                            verify_checksums=verify_checksums)
-                      if database_backend else cache.load(identity))
+                          if database_backend else cache.load(identity))
             if loaded is None:  # A concurrent writer has not published this cache yet.
                 continue
             frame, manifest = loaded

@@ -346,7 +346,7 @@ plant:
   farm_id: ${farm_id}
   poi_import_mw: auto
   poi_export_mw: auto
-  assumption_status: illustrative_symmetric_POI_equal_to_DC_nameplate_not_measured
+  assumption_status: illustrative_symmetric_POI_equal_to_AC_nameplate_not_measured
 battery:
   # Resolve from farms.<plant.farm_id>.battery; numeric study overrides remain supported.
   capacity_mwh: auto
@@ -488,6 +488,8 @@ solver:
 # CONTINUOUS OPTIMIZATION: dates are inclusive local delivery dates in market.timezone.
 # First-day auction orders can be submitted on the preceding date.
 continuous_optimization:
+  # Reuse immutable price workbook snapshots across daily preflight reads.
+  price_snapshot_cache_entries: 8
   start_date: null
   end_date: null
   planning_modes:

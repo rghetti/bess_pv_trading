@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from bess_pv_trading.config import load_config
+from bess_pv_trading.parallel import configure_worker_threads as _configure_worker_threads
 from bess_pv_trading.simulation.continuous_inputs import prepare_continuous_inputs
 from bess_pv_trading.simulation.realtime_mpc_study import run_realtime_mpc_experiment
 from run_realtime_mpc_comparison import comparison_plan
@@ -31,6 +32,7 @@ def _run_comparison_job(job):
     farm, mode, check_only, output_root = job
     config_path = ROOT / f"configs/full_experiments/realtime_farm{farm}_may_2026_all_auctions.yaml"
     config = load_config(config_path)
+    config["_project_root"] = str(ROOT)
     config["continuous_optimization"]["output_root"] = str(output_root)
     config["realtime_mpc_comparison"]["controllers"] = list(CONTROLLERS)
     config["realtime_mpc_comparison"].update(mode=mode, check_only=check_only)
@@ -56,7 +58,7 @@ def _markdown_table(rows, columns):
 
 
 def _summary_text(records, status, output_root):
-    """Write a single cross-farm report with both study modes kept distinct."""
+    """Write the continuous-mode results and completion status for every farm."""
     lines = [
         "# May 2026 all-farm real-time MPC comparison",
         "",
@@ -107,7 +109,7 @@ def _summary_text(records, status, output_root):
 
 
 def main(argv=None):
-    """Run eight farm-by-mode jobs concurrently and update one combined summary."""
+    """Run four independent farm jobs with bounded inference and solver pools."""
     parser = argparse.ArgumentParser(description=__doc__)
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--check-only", action="store_true", help="Preflight all four farms without optimization")
@@ -117,9 +119,13 @@ def main(argv=None):
         help="One parent folder for all farm runs and the combined Markdown summary")
     parser.add_argument("--workers", type=int, default=min(len(FARMS), max(1, (os.cpu_count() or 2) // 2)),
         help="Parallel farm processes; each Gurobi model uses the configured two threads (default: 4)")
+    parser.add_argument("--native-threads", type=int, default=1,
+        help="BLAS and PyTorch inference threads per worker (default: 1); solver threads stay in YAML")
     args = parser.parse_args(argv)
     if not 1 <= args.workers <= len(FARMS) * len(MODES):
         parser.error("--workers must be between 1 and 4")
+    if args.native_threads < 1:
+        parser.error("--native-threads must be positive")
     output_root = args.output_dir if args.output_dir.is_absolute() else ROOT / args.output_dir
     output_root.mkdir(parents=True, exist_ok=True)
     summary_path = output_root / SUMMARY_NAME
@@ -129,10 +135,13 @@ def main(argv=None):
     jobs = [(farm, mode, args.check_only, str(output_root)) for farm in FARMS for mode in MODES]
     failures = []
     print(f"Launching {len(jobs)} continuous farm jobs with {args.workers} workers; "
-          "two Gurobi threads per job, no GPU work.", file=sys.stderr, flush=True)
+          f"{args.native_threads} native threads and two Gurobi threads per job, no GPU work.",
+          file=sys.stderr, flush=True)
     try:
         with ProcessPoolExecutor(max_workers=args.workers,
-                                 mp_context=multiprocessing.get_context("spawn")) as executor:
+                                 mp_context=multiprocessing.get_context("spawn"),
+                                 initializer=_configure_worker_threads,
+                                 initargs=(args.native_threads,)) as executor:
             futures = {executor.submit(_run_comparison_job, job): job for job in jobs}
             for future in as_completed(futures):
                 farm, mode, _, _ = futures[future]
@@ -141,7 +150,7 @@ def main(argv=None):
                     records.append(record)
                     print(f"Completed farm {farm} / {mode}: {record['status']}",
                           file=sys.stderr, flush=True)
-                except BaseException as error:
+                except Exception as error:
                     failures.append({"farm": farm, "mode": mode, "error": str(error)})
                     records.append({"farm": farm, "mode": mode, "status": "failed", "error": str(error)})
                     print(f"Failed farm {farm} / {mode}: {error}", file=sys.stderr, flush=True)
