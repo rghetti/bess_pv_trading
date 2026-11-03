@@ -33,19 +33,32 @@ def _run_profile_case(case):
     """Replay one profile and its matched PV-only trajectory in the same worker."""
     name, profile, strategy = case
     config, prepared, pv_config, pv_prepared, destination, resume, fingerprint = _worker_context
+    strategy_config = _strategy_output_config(config)
     def progress(message):
         print(f"[{name}] {message}", flush=True)
     case_fingerprint = hashlib.sha256(f"{fingerprint}:{name}".encode()).hexdigest()
-    summary = replay_continuous_strategy(config, _profile_inputs(prepared, profile), strategy,
+    summary = replay_continuous_strategy(strategy_config, _profile_inputs(prepared, profile), strategy,
         destination / "strategies" / name, resume=resume, progress=progress,
         config_fingerprint=case_fingerprint)
     pv_summary = None
     if pv_config is not None:
         pv_fingerprint = hashlib.sha256(f"{fingerprint}:{name}:pv_only".encode()).hexdigest()
-        pv_summary = replay_continuous_strategy(pv_config, _profile_inputs(pv_prepared, profile),
+        pv_summary = replay_continuous_strategy(_strategy_output_config(pv_config),
+            _profile_inputs(pv_prepared, profile),
             strategy, destination / "pv_only" / name, resume=resume, progress=progress,
             config_fingerprint=pv_fingerprint)
     return summary, pv_summary
+
+
+def _strategy_output_config(config):
+    """Disable per-trajectory plots while preserving study-level comparison plots."""
+    return {
+        **config,
+        "experiment_outputs": {
+            **config.get("experiment_outputs", {}),
+            "plots": False,
+        },
+    }
 
 
 def _profile_inputs(prepared, profile):
@@ -221,12 +234,13 @@ def run_continuous_participation(config, *, progress=None):
                 for index, (name, profile, strategy) in enumerate(cases, start=1):
                     announce(index, name)
                     case_fingerprint = hashlib.sha256(f"{fingerprint}:{name}".encode()).hexdigest()
-                    summaries[name] = replay_continuous_strategy(config, _profile_inputs(prepared, profile), strategy,
+                    summaries[name] = replay_continuous_strategy(_strategy_output_config(config),
+                        _profile_inputs(prepared, profile), strategy,
                         destination / "strategies" / name, resume=resume, progress=progress,
                         config_fingerprint=case_fingerprint)
                     if study.get("matched_pv_only", False):
                         pv_fingerprint = hashlib.sha256(f"{fingerprint}:{name}:pv_only".encode()).hexdigest()
-                        pv_summaries[name] = replay_continuous_strategy(pv_config,
+                        pv_summaries[name] = replay_continuous_strategy(_strategy_output_config(pv_config),
                             _profile_inputs(pv_prepared, profile), strategy,
                             destination / "pv_only" / name, resume=resume, progress=progress,
                             config_fingerprint=pv_fingerprint)
