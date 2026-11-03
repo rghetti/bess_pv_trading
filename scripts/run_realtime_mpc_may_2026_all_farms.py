@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
-from copy import deepcopy
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 import json
+import multiprocessing
+import os
 from pathlib import Path
 import sys
 
@@ -22,6 +24,27 @@ FARMS = (1, 345, 901, 910)
 MODES = ("frozen_commitments", "continuous")
 CONTROLLERS = ("track_committed_grid", "deterministic_mpc", "deterministic_mpc_price_oracle")
 SUMMARY_NAME = "MAY_2026_ALL_FARMS_SUMMARY.md"
+
+
+def _run_comparison_job(job):
+    """Prepare one farm's inputs and execute one independent comparison mode."""
+    farm, mode, check_only, output_root = job
+    config_path = ROOT / f"configs/full_experiments/realtime_farm{farm}_may_2026_all_auctions.yaml"
+    config = load_config(config_path)
+    config["continuous_optimization"]["output_root"] = str(output_root)
+    config["realtime_mpc_comparison"]["controllers"] = list(CONTROLLERS)
+    config["realtime_mpc_comparison"].update(mode=mode, check_only=check_only)
+
+    def progress(message):
+        print(f"[farm {farm} / {mode}] {message}", file=sys.stderr, flush=True)
+
+    progress("preparing May 2026 inputs")
+    prepared = prepare_continuous_inputs(config, progress=progress)
+    plan = comparison_plan(config, (mode,))
+    progress(f"{plan['physical_intervals_per_trajectory']} intervals; "
+             f"{plan['mpc_decisions']} MPC decisions in this mode")
+    result = run_realtime_mpc_experiment(config, progress=progress, prepared_inputs=prepared)
+    return {"farm": farm, "mode": mode, **result}
 
 
 def _markdown_table(rows, columns):
@@ -80,12 +103,12 @@ def _summary_text(records, status, output_root):
         else:
             lines.append("Not completed.")
         lines.append("")
-    lines.extend(["## Run records", "", _markdown_table(records, ["farm", "mode", "status", "output_dir"]), ""])
+    lines.extend(["## Run records", "", _markdown_table(records, ["farm", "mode", "status", "output_dir", "error"]), ""])
     return "\n".join(lines)
 
 
 def main(argv=None):
-    """Run the four studies sequentially and update the shared summary as work completes."""
+    """Run eight farm-by-mode jobs concurrently and update one combined summary."""
     parser = argparse.ArgumentParser(description=__doc__)
     action = parser.add_mutually_exclusive_group(required=True)
     action.add_argument("--check-only", action="store_true", help="Preflight all four farms without optimization")
@@ -93,44 +116,49 @@ def main(argv=None):
     parser.add_argument("--output-dir", type=Path,
         default=ROOT / "outputs/realtime_mpc/may_2026_all_farms",
         help="One parent folder for all farm runs and the combined Markdown summary")
+    parser.add_argument("--workers", type=int, default=min(8, max(1, (os.cpu_count() or 2) // 2)),
+        help="Parallel farm-by-mode processes; each Gurobi model uses the configured two threads (default: 8)")
     args = parser.parse_args(argv)
+    if not 1 <= args.workers <= len(FARMS) * len(MODES):
+        parser.error("--workers must be between 1 and 8")
     output_root = args.output_dir if args.output_dir.is_absolute() else ROOT / args.output_dir
     output_root.mkdir(parents=True, exist_ok=True)
     summary_path = output_root / SUMMARY_NAME
     records = []
     status = "preflighting" if args.check_only else "running"
-    progress = lambda message: print(message, file=sys.stderr, flush=True)
     summary_path.write_text(_summary_text(records, status, output_root))
-
+    jobs = [(farm, mode, args.check_only, str(output_root)) for farm in FARMS for mode in MODES]
+    failures = []
+    print(f"Launching {len(jobs)} farm-by-mode jobs with {args.workers} workers; "
+          "two Gurobi threads per job, no GPU work.", file=sys.stderr, flush=True)
     try:
-        for farm in FARMS:
-            config_path = ROOT / f"configs/full_experiments/realtime_farm{farm}_may_2026_all_auctions.yaml"
-            config = load_config(config_path)
-            config["continuous_optimization"]["output_root"] = str(output_root)
-            config["realtime_mpc_comparison"]["controllers"] = list(CONTROLLERS)
-            progress(f"Farm {farm}: preparing shared May 2026 inputs")
-            prepared = prepare_continuous_inputs(config, progress=progress)
-            plan = comparison_plan(config, MODES)
-            progress(f"Farm {farm}: {plan['physical_intervals_per_trajectory']} intervals, "
-                     f"{plan['mpc_decisions']} MPC decisions across both modes")
-            for mode in MODES:
-                selected = deepcopy(config)
-                selected["realtime_mpc_comparison"].update(mode=mode, check_only=args.check_only)
-                result = run_realtime_mpc_experiment(selected, progress=progress, prepared_inputs=prepared)
-                record = {"farm": farm, "mode": mode, **result}
-                records.append(record)
+        with ProcessPoolExecutor(max_workers=args.workers,
+                                 mp_context=multiprocessing.get_context("spawn")) as executor:
+            futures = {executor.submit(_run_comparison_job, job): job for job in jobs}
+            for future in as_completed(futures):
+                farm, mode, _, _ = futures[future]
+                try:
+                    record = future.result()
+                    records.append(record)
+                    print(f"Completed farm {farm} / {mode}: {record['status']}",
+                          file=sys.stderr, flush=True)
+                except BaseException as error:
+                    failures.append({"farm": farm, "mode": mode, "error": str(error)})
+                    records.append({"farm": farm, "mode": mode, "status": "failed", "error": str(error)})
+                    print(f"Failed farm {farm} / {mode}: {error}", file=sys.stderr, flush=True)
+                records.sort(key=lambda record: (record["farm"], MODES.index(record["mode"])))
                 summary_path.write_text(_summary_text(records, status, output_root))
-            progress(f"Farm {farm}: both modes complete")
-    except BaseException as error:
-        status = "interrupted" if isinstance(error, KeyboardInterrupt) else "failed"
-        summary_path.write_text(_summary_text(records, status, output_root) + f"\nError: `{error}`\n")
+    except KeyboardInterrupt:
+        status = "interrupted"
+        summary_path.write_text(_summary_text(records, status, output_root))
         raise
 
-    status = "preflight passed" if args.check_only else "complete"
+    status = ("preflight passed" if args.check_only else "complete") if not failures else "completed with failures"
     summary_path.write_text(_summary_text(records, status, output_root))
     print(json.dumps({"status": status, "output_root": str(output_root),
-                      "summary": str(summary_path), "farm_modes": len(records)}, indent=2))
-    return 0
+                      "summary": str(summary_path), "farm_modes": len(records),
+                      "failures": failures}, indent=2))
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
