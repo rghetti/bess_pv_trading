@@ -373,10 +373,15 @@ def validate_config(config: dict[str, Any]) -> None:
     # Enforce the input contract: trading.optimize_imbalances must be a YAML boolean.
     if "optimize_imbalances" in trading and not isinstance(trading["optimize_imbalances"], bool):
         raise ConfigurationError("trading.optimize_imbalances must be a YAML boolean")
-    # Enforce the input contract: execution.dispatch_policy must be follow_battery_plan or track_committed_grid.
+    from .optimization.mpc import MPC_POLICIES, CAUSAL_TRACKER, MpcSettings
+    try:
+        MpcSettings.from_config(config)
+    except (ValueError, TypeError) as error:
+        raise ConfigurationError(str(error)) from error
+    # MPC is opt-in; legacy selectors and defaults retain their meaning.
     if config.get("execution", {}).get("dispatch_policy", "follow_battery_plan") not in {
-            "follow_battery_plan", "track_committed_grid"}:
-        raise ConfigurationError("execution.dispatch_policy must be follow_battery_plan or track_committed_grid")
+            "follow_battery_plan", "track_committed_grid", CAUSAL_TRACKER, *MPC_POLICIES}:
+        raise ConfigurationError("Unknown execution.dispatch_policy")
     solver = config.get("solver", {})
     # Check common settings; specialized adapters validate their own inputs for each `key` in `('threads', 'time_limit_seconds', 'time_limit')`.
     for key in ("threads", "time_limit_seconds", "time_limit"):

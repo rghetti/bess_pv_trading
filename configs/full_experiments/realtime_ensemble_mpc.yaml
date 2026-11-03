@@ -1,0 +1,76 @@
+# Approved Farm 1 smoke: 15-16 January 2026; no training or automatic sensitivity runs.
+include: ../standard.yaml
+farm_id: 1
+continuous_optimization:
+  start_date: '2026-01-15'
+  end_date: '2026-01-16'
+  planning_modes: [integrated]
+  perfect_pv_reference: false
+  resume: false
+  output_root: outputs/realtime_mpc
+  run_id: farm1_2026_01_15_16_mpc_tcn_current_pv
+  pv_ensemble:
+    enabled: false
+    zarr: data/farms/nwp_ens_20260101_20260131.zarr
+    member_count: 50
+    planning_policy: deterministic
+state:
+  initial_soc_percent: 90.0
+  terminal_soc_percent: 50.0
+  terminal_soc_min_percent: null
+solver:
+  threads: 2
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+pv:
+  direct_exceeds_ghi: clip_and_flag
+  forecast_replacement:
+    enabled: true
+    allow_retrospective_artifacts: true
+trading:
+  optimize_imbalances: false
+execution:
+  dispatch_policy: ensemble_mpc
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+settlement:
+  enabled: true
+realtime_mpc:
+  current_pv_information: realized_interval_average
+  planning_imbalance_penalty_eur_per_mwh: 500.0
+  terminal_inventory_mode: soft_target
+  terminal_soc_target_percent: 50.0
+  terminal_inventory_penalty_eur_per_mwh: 50.0
+  terminal_inventory_value_eur_per_mwh: null
+  oracle_relative_imbalance_budget: 0
+  oracle_absolute_imbalance_budget_mwh: 0.0
+  ensemble_include_deterministic_member: true
+  solver_time_limit_seconds: 10.0
+  horizon: remaining_delivery_day
+  reoptimization_minutes: 15
+  projection_mode: deterministic_open_loop
+  fallback_controller: track_committed_grid
+gme_oracle_experiment:
+  study_id: null
+  delivery_day: null
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA: {dataset: day_ahead_prices, native_interval_minutes: null}
+    IDA1: {dataset: ida1_prices, native_interval_minutes: 15}
+    IDA2: {dataset: ida2_prices, native_interval_minutes: 15}
+    IDA3: {dataset: ida3_prices, native_interval_minutes: 15}
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions: null
+realtime_mpc_comparison:
+  mode: continuous
+  controllers: [track_committed_grid, ensemble_mpc]
+  frozen_source: null
+  check_only: false
+  representative_days: 2

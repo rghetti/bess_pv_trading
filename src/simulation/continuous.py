@@ -1,4 +1,4 @@
-"""Causal continuous execution with one delivery-day optimization at each gate."""
+"""Continuous auction books with retained feedback or explicitly configured MPC."""
 from __future__ import annotations
 
 from copy import deepcopy
@@ -27,6 +27,8 @@ from .continuous_inputs import prepare_continuous_inputs
 from .events import Event, EventEngine, EventKind
 from .replay import execute_interval
 from .synthetic import json_default, write_json
+from ..optimization.mpc import MPC_POLICIES, CAUSAL_TRACKER, MpcControllerState
+from .realtime_control import RealtimeControl
 
 
 CONTINUOUS_POLICY_VERSION = "continuous-retained-plan-v4-exact-pv-envelope"
@@ -146,8 +148,9 @@ class ContinuousReplay:
         self.trading = config["trading"]
         self.numerical_tolerances = continuous_tolerances(config)
         self.dispatch_policy = config["execution"].get("dispatch_policy", "track_committed_grid")
+        self.realtime = RealtimeControl(self) if self.dispatch_policy in MPC_POLICIES | {CAUSAL_TRACKER} else None
         self.config_fingerprint = config_fingerprint or _configuration_fingerprint(config)
-        self.identity = {"policy_version": CONTINUOUS_POLICY_VERSION, "strategy": strategy,
+        self.identity = {"policy_version": CONTINUOUS_POLICY_VERSION + ("-mpc-v1" if self.realtime else ""), "strategy": strategy,
             "config_fingerprint": self.config_fingerprint, "input_fingerprint": prepared["input_fingerprint"]}
         # Enforce the input contract: Continuous strategy output exists: `self.destination`.
         if self.destination.exists() and not resume:
@@ -227,6 +230,8 @@ class ContinuousReplay:
                      "forecast_inputs", "initial_expectations", "initial_revenues"):
             setattr(self, name, checkpoint[name])
         self.cursor = checkpoint["event_cursor"]
+        if self.realtime is not None:
+            self.realtime.state = MpcControllerState(**checkpoint["mpc_state"])
 
     def save_checkpoint(self, event):
         """Commit a midnight after observation, next control and settlement events."""
@@ -238,6 +243,8 @@ class ContinuousReplay:
             "submitted", "known", "fee_records", "control_plan", "pending", "records", "plan_snapshots",
             "solves", "projections", "event_trace", "publications", "forecast_inputs",
             "initial_expectations", "initial_revenues")})
+        if self.realtime is not None:
+            checkpoint["mpc_state"] = asdict(self.realtime.state)
         _atomic_json(self.destination / "json/checkpoint.json", checkpoint)
 
     def _position(self, product):
@@ -261,10 +268,10 @@ class ContinuousReplay:
         policy = "track_committed_grid" if row["auction"] == "pre_participation" else self.dispatch_policy
         return commands, row, policy, self._position(product) / self.grid.delta_hours[index]
 
-    def _forecast(self, cutoff, starts, auction):
+    def _forecast(self, cutoff, starts, auction, *, causal=False):
         """Operational trajectories never inspect future measured production."""
         # When `self.perfect`, set `indices` using `self.starts.get_indexer(starts)`.
-        if self.perfect:
+        if self.perfect and not causal:
             indices = self.starts.get_indexer(starts)
             return np.asarray(self.prepared["full_realized_pv"])[indices].copy(), {
                 "pv_forecast_policy": "perfect_pv_reference",
@@ -312,7 +319,9 @@ class ContinuousReplay:
                 model_frame["interval_start_utc"] = starts
                 local = starts.tz_convert(self.prepared["calendar"].timezone)
                 model_frame["delivery_day"] = local.strftime("%Y-%m-%d")
-                model_frame["auction"] = str(auction)
+                # Weather bundles use this only for sequence routing. MPC has
+                # no auction identity; use a supported label for the packer.
+                model_frame["auction"] = str(auction) if auction in {"DA", "IDA1", "IDA2", "IDA3"} else "DA"
                 model_frame["forecast_cycle_utc"] = pd.Timestamp(bundle.forecast_vintage)
                 # Update `midpoint` when this condition is met.
                 if "lead_hours" not in model_frame:
@@ -385,7 +394,8 @@ class ContinuousReplay:
         if self.state.timestamp > cutoff and not (day == self.days[0] and cutoff < pd.Timestamp(self.grid.starts[0])):
             raise ValueError("Actual state lies beyond the auction information cutoff")
         update_starts = self.starts[update_first:stop_global]
-        forecast, provenance = self._forecast(cutoff, update_starts, event.auction)
+        forecast, provenance = self._forecast(cutoff, update_starts, event.auction,
+                                              causal=self.realtime is not None)
         ensemble_settings = self.config["continuous_optimization"].get("pv_ensemble", {})
         pv_policy = ensemble_settings.get("planning_policy", "envelope")
         deterministic_forecast = forecast.copy()
@@ -406,6 +416,8 @@ class ContinuousReplay:
                 "pv_forecast_vintage_utc": target_info["forecast_vintage_utc"],
                 "pv_forecast_available_at_utc": target_info["available_at_utc"]}
         by_product = dict(zip(self.grid.interval_ids[update_first:stop_global], map(float, forecast)))
+        # MPC boundary projection always uses deterministic PV, even for ensemble auctions.
+        projection_pv = dict(zip(self.grid.interval_ids[update_first:stop_global], map(float, deterministic_forecast)))
         # Projection intervals may belong to another day's frozen ensemble.
         for product, start, value in zip(self.grid.interval_ids[update_first:stop_global], update_starts, forecast):
             row_provenance = dict(provenance)
@@ -422,24 +434,34 @@ class ContinuousReplay:
         # Project retained operation, then construct only the target day's MILP for each `index` in `range(update_first, first_global)`.
         for index in range(update_first, first_global):
             product = self.grid.interval_ids[index]
+            projected_pv = projection_pv[product] if self.realtime else by_product[product]
+            projection_pv_source = "eligible_deterministic_forecast"
             # When `product in self.pending`, set `pending` using `self.pending[product]`.
-            if product in self.pending:
+            if self.realtime is not None:
+                projected_pv, projection_pv_source = self.realtime.projection_pv(product, projected_pv)
+                commands, row, policy, target = self.realtime.projection_commands(product, projected_pv)
+            elif product in self.pending:
                 pending = self.pending[product]
                 commands, row, policy, target = tuple(pending["commands"]), pending["detail"], pending["policy"], pending["target"]
             else:
                 commands, row, policy, target = self._commands(product)
             boundary, record = execute_interval(state=boundary, start=self.grid.starts[index],
-                end=self.grid.ends[index], pv_ac_mw=by_product[product],
+                end=self.grid.ends[index], pv_ac_mw=projected_pv,
                 requested_charge_mw=commands[0], requested_discharge_mw=commands[1],
                 requested_curtailment_mw=commands[2], plant=self.plant,
                 degradation_settings=self.aging, dispatch_policy=policy, grid_target_mw=target,
                 numerical_tolerance=self.numerical_tolerances.physical_absolute)
             projection.append({"interval_id": product, "start": str(self.grid.starts[index]),
                 "end": str(self.grid.ends[index]), "plan_source_auction": row.get("auction"),
-                "plan_source_delivery_day": self.day_for_product[product], **record})
+                "plan_source_delivery_day": self.day_for_product[product],
+                **({"mpc_solve_id": row.get("mpc_solve_id"), "projection_fallback": row.get("projection_fallback")}
+                   if self.realtime else {}), **record})
+            if self.realtime is not None:
+                projection[-1]["projection_pv_information_source"] = projection_pv_source
         # When `projection`, set `boundary` using `replace(boundary, origin='forecast_projected_continuous_boundary')`.
         if projection:
-            boundary = replace(boundary, origin="forecast_projected_continuous_boundary")
+            boundary = replace(boundary, origin="projected_soc_mpc_deterministic" if self.realtime
+                               else "forecast_projected_continuous_boundary")
         grid = DeliveryGrid(day_grid.interval_ids[first:], day_grid.starts[first:], day_grid.ends[first:])
         schedule = tuple(daily["schedule"])
         prices = daily["prices"]
@@ -545,7 +567,11 @@ class ContinuousReplay:
             "cutoff_utc": cutoff.isoformat(), "planning_start_utc": str(grid.starts[0]),
             "boundary_kind": "ida3_noon" if first else "delivery_midnight",
             "predicted_initial_energy_mwh": boundary.energy_mwh,
-            "actual_initial_energy_mwh": None, "prediction_error_mwh": None, **provenance})
+            "actual_initial_energy_mwh": None, "prediction_error_mwh": None,
+            **({"projection_mode": "projected_soc_mpc_deterministic",
+                "mpc_plan_cutoff_utc": next(iter(self.realtime.state.latest_plan.values()), {}).get("issued_at"),
+                "projection_fallback_intervals": sum(bool(row.get("projection_fallback")) for row in projection),
+                "deterministic_projection_provenance": deterministic_provenance} if self.realtime else {}), **provenance})
         return inputs, diagnostic
 
     def _save_attempts(self):
@@ -568,6 +594,16 @@ class ContinuousReplay:
         # Enforce the input contract: Duplicate continuous submission `day`/`auction`.
         if auction in self.submitted[day]:
             raise RuntimeError(f"Duplicate continuous submission {day}/{auction}")
+        frozen = self.prepared.get("frozen_commitments")
+        if frozen is not None:
+            source = frozen["submissions"][day][auction]
+            if pd.Timestamp(source["cutoff_utc"]) != cutoff:
+                raise ValueError("Frozen ledger submission time differs from the auction calendar")
+            self._commit_quantities(day, auction, cutoff, source["quantities"])
+            snapshot = deepcopy(frozen["plan_snapshots"][day][auction])
+            self.plan_snapshots[day][auction] = snapshot
+            self.control_plan.update({row["interval_id"]: row for row in snapshot})
+            return {"optimization_performed": False, "order_policy": "immutable_frozen_ledger"}
         # Perfect information needs only the first solve of this delivery day.
         # Later gates submit its saved orders without replacing physical commands.
         if self.perfect and not self.perfect_reoptimizes and self.plan_snapshots[day]:
@@ -762,8 +798,11 @@ class ContinuousReplay:
                 prediction["prediction_error_mwh"] = self.state.energy_mwh - prediction["predicted_initial_energy_mwh"]
 
     def _control(self, event):
-        """Issue retained commands; no optimization occurs at physical boundaries."""
+        """Issue baseline retained commands or the first validated physical MPC action."""
         self._update_projection_actuals()
+        if self.realtime is not None:
+            self.realtime.issue(event.payload, event.at)
+            return
         product = self.grid.interval_ids[event.payload]
         commands, detail, policy, target = self._commands(product)
         # Update `(projected, _)` when this condition is met.
@@ -777,11 +816,15 @@ class ContinuousReplay:
         self.pending[product] = {"commands": commands, "detail": dict(detail), "policy": policy, "target": target}
 
     def _observe(self, event):
-        """Reveal interval-average PV only to execution and subsequent observations."""
+        """Advance actual physical state with realized interval-average production."""
         index = event.payload
         product = self.grid.interval_ids[index]
         pending = self.pending[product]
         charge, discharge, curtail = pending["commands"]
+        # An issued fraction is an actuator policy, not knowledge given to the optimizer.
+        fraction = pending["detail"].get("pv_utilization_fraction")
+        if fraction is not None:
+            curtail = (1 - fraction) * float(self.prepared["full_realized_pv"][index])
         self.state, record = execute_interval(state=self.state,
             start=self.grid.starts[index], end=self.grid.ends[index],
             pv_ac_mw=float(self.prepared["full_realized_pv"][index]),
@@ -797,7 +840,14 @@ class ContinuousReplay:
             "pv_ac_forecast_mw": detail.get("pv_ac_forecast_mw"),
             "pv_forecast_vintage_utc": detail.get("pv_forecast_vintage_utc"),
             "pv_forecast_available_at_utc": detail.get("pv_forecast_available_at_utc"),
-            "planned_energy_end_mwh": detail.get("soc_end_mwh")}
+            "planned_energy_end_mwh": detail.get("soc_end_mwh"),
+            **({"controller": self.dispatch_policy, "mpc_solve_id": detail.get("mpc_solve_id"),
+                "pv_utilization_fraction": fraction, "mpc_fallback": detail.get("mpc_fallback", False),
+                "mpc_failure_reason": detail.get("mpc_failure_reason"),
+                "expected_absolute_imbalance_mwh": detail.get("expected_absolute_imbalance_mwh"),
+                "expected_shortfall_mwh": detail.get("expected_shortfall_mwh")} if self.realtime else {})}
+        if self.realtime is not None:
+            self.realtime.state.outstanding_action = None
         self._update_projection_actuals()
 
     def _settle(self, event):
@@ -820,6 +870,14 @@ class ContinuousReplay:
                 if self.trading.get("optimize_imbalances", True) and
                 self.config["continuous_optimization"].get("pv_ensemble", {}).get("enabled", False) else 0.0),
             import_fee_eur=max(0.0, -record["grid_mw"]) * self.grid.delta_hours[index] * self.trading["grid_import_fee_eur_per_mwh"])
+        if self.realtime is not None:
+            # Planning deterrence and terminal values are never real cash charges.
+            record["imbalance_penalty_eur"] = 0.0
+            record["illustrative_imbalance_penalty_eur"] = 0.0
+        negative = self.prepared.get("imbalance_negative_prices_eur_per_mwh")
+        if negative is not None:
+            record["imbalance_negative_price_eur_mwh"] = float(negative[index])
+            record["imbalance_cashflow_eur"] = max(imbalance, 0) * float(curve[index]) + min(imbalance, 0) * float(negative[index])
         self.pending.pop(product)
 
     def _handle(self, event):
@@ -911,7 +969,7 @@ class ContinuousReplay:
                 "perfect_pv_reoptimize_at_each_auction": self.perfect_reoptimizes if self.perfect else None,
                 "retained_auction_submission_count": sum(row.get("optimization_performed") is False
                     for row in self.event_trace),
-                "policy_version": CONTINUOUS_POLICY_VERSION, "input_fingerprint": self.prepared["input_fingerprint"],
+                "policy_version": self.identity["policy_version"], "input_fingerprint": self.prepared["input_fingerprint"],
                 "numerical_tolerances": asdict(self.numerical_tolerances),
                 "final_state": asdict(self.state), "final_fee_state": asdict(self.market.transaction_fee_state),
                 "terminal_target_mwh": self.prepared["terminal_energy_mwh"],
@@ -919,7 +977,14 @@ class ContinuousReplay:
                 "terminal_error_mwh": (None if self.prepared["terminal_energy_mwh"] is None else
                     self.state.energy_mwh - self.prepared["terminal_energy_mwh"]),
                 "replay_wall_seconds_this_invocation": perf_counter() - started,
-                "comparison_scope": "Continuous physical execution, retained-plan boundary projection, one delivery-day planning horizon; no intermediate terminal target or salvage value"})
+                "comparison_scope": ("Continuous physical MPC execution, deterministic open-loop boundary projection; configured terminal inventory treatment"
+                    if self.realtime else "Continuous physical execution, retained-plan boundary projection, one delivery-day planning horizon; no intermediate terminal target or salvage value")})
+        if self.realtime is not None or self.prepared.get("frozen_commitments") is not None:
+            from ..reporting.realtime_mpc import save_mpc_outputs
+            extra = save_mpc_outputs(self.config, self.destination, dispatch,
+                None if self.realtime is None else self.realtime.state, self.projections)
+            summary.update(extra)
+            write_json(self.destination / "json/kpis.json", summary)
         from ..reporting.continuous_decomposition import save_continuous_decomposition
         save_continuous_decomposition(self.config, dispatch, ledger, self.daily, self.destination)
         from ..reporting.continuous_ensemble import save_ensemble_diagnostics

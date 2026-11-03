@@ -15,6 +15,21 @@ from .continuous_summary import write_continuous_markdown
 from ..numerical_tolerances import continuous_tolerances
 
 
+REALTIME_MAX_DAILY_PLOT_DAYS = 3
+
+
+def realtime_daily_plot_limit(config):
+    """Cap detailed realtime figures without truncating daily data or aggregate plots."""
+    from ..optimization.mpc import MPC_POLICIES, CAUSAL_TRACKER
+
+    is_realtime = ("realtime_mpc_comparison" in config or
+        config.get("execution", {}).get("dispatch_policy") in MPC_POLICIES | {CAUSAL_TRACKER})
+    if not is_realtime:
+        return None
+    requested = config.get("realtime_mpc_comparison", {}).get("representative_days", REALTIME_MAX_DAILY_PLOT_DAYS)
+    return min(REALTIME_MAX_DAILY_PLOT_DAYS, int(requested))
+
+
 def _json_value(value):
     """Serialize diagnostics without non-standard JSON NaN or leaked object reprs."""
     if is_dataclass(value):
@@ -179,7 +194,20 @@ def _plot_strategy(config, destination, strategy, frame, plans, *, daily_plots=T
         return
     daily_destination = destination / "daily"
     daily_destination.mkdir(exist_ok=True)
-    for day, daily in frame.groupby("delivery_day", sort=True):
+    limit = realtime_daily_plot_limit(config)
+    groups = list(frame.groupby("delivery_day", sort=True))
+    if limit is not None:
+        groups = groups[:limit]
+        selected_days = {str(day) for day, _ in groups}
+        # Remove obsolete generated daily figures when reporting an existing run.
+        for previous in daily_destination.glob("*.png"):
+            try:
+                date.fromisoformat(previous.stem)
+            except ValueError:
+                continue
+            if previous.stem not in selected_days:
+                previous.unlink()
+    for day, daily in groups:
         starts, ends = daily.start.dt.tz_convert(timezone), daily.end.dt.tz_convert(timezone)
         fig, axes = plt.subplots(2, 1, sharex=True, figsize=(12, 7), layout="constrained")
         if not plans.empty and "delivery_day" in plans:

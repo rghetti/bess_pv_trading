@@ -19,7 +19,7 @@
 \DeclareMathOperator{\clip}{clip}
 \title{PV and Battery Trading in MGP and MI Auctions\\Current Mathematical Model and Execution Workflow}
 \author{\texttt{bess\_pv\_trading} repository}
-\date{Implementation audited on 2 November 2026}
+\date{Implementation audited on 3 November 2026}
 \begin{document}
 \maketitle
 \begin{abstract}
@@ -28,7 +28,7 @@ photovoltaic plant with a shared point of interconnection and a hypothetical
 AC-coupled battery. It specifies the Italian day-ahead and three intraday
 auction timeline used by the code, the residual mixed-integer optimization,
 immutable auction commitments, battery degradation, interval-level feedback
-controller and ex-post imbalance settlement. It distinguishes the general
+controller, optional real-time economic MPC, and ex-post imbalance settlement. It distinguishes the general
 scenario-tree interface from the deterministic actual-price oracle used in the
 historical studies. The report follows current source code and shared YAML
 defaults; it is not a market strategy validation or an investment valuation.
@@ -49,10 +49,12 @@ IDA2, IDA3). Every submitted signed quantity is assumed to execute in full at th
 auction clearing price. Bid prices, acceptance uncertainty, market impact, and
 continuous intraday trading are outside this formulation.
 
-The implementation has three distinct objects:
+The implementation keeps four distinct objects:
 \begin{enumerate}
 \item An optimization plan, which includes the current actionable auction order,
 future auction recourse, and a battery/PV schedule over the remaining horizon.
+\item An optional real-time MPC plan over fixed submitted commitments, with a
+separately recorded first executable physical action.
 \item An immutable commitment ledger, updated at submission and publication.
 \item A physical trajectory produced by a feedback/protection policy using
 realized interval-average PV. Its energy, wear, and deviations are settled
@@ -64,6 +66,8 @@ separately from the optimization objective.
 \midrule\endhead
 \path{src/domain.py} & Validated grids, assets, scenarios, information nodes, states and solver contracts.\\
 \path{src/optimization/model.py} & Physical, trading, product-resolution, optional imbalance constraints and objective.\\
+\path{src/optimization/mpc.py} & Common-control real-time MILP and budget-constrained imbalance-price oracle.\\
+\path{src/optimization/physical.py} & Shared AC battery equations, exclusive controls and degradation.\\
 \path{src/optimization/pv_envelope.py} & Conditional exact-delivery PV-envelope reduction and reconstruction of original member results.\\
 \path{src/optimization/degradation.py} & Throughput coefficient and segmented cycle-depth model.\\
 \path{src/optimization/validation.py} & Numerical validation independent of the solver constraint objects.\\
@@ -74,6 +78,9 @@ separately from the optimization objective.
 \path{src/simulation/gme_oracle.py} & Manual-data historical price oracle, rolling PV and full-information asset comparisons.\\
 \path{src/simulation/continuous.py} & Consecutive delivery-day books, shadow boundary projections and uninterrupted execution.\\
 \path{src/simulation/continuous_inputs.py} & Offline input preflight, deterministic forecast snapshots and optional frozen weather ensembles.\\
+\path{src/simulation/realtime_control.py} & Interval-start MPC actions and deterministic open-loop shadow controls.\\
+\path{src/simulation/realtime_mpc_study.py} & Frozen-ledger and continuous comparisons using the same event runner.\\
+\path{src/reporting/realtime_mpc.py} & Paired controller metrics, plans, signed cash accounting and plots.\\
 \path{src/reporting/continuous_outputs.py} & Continuous trajectory accounting, paired comparisons and native solve timing.\\
 \path{src/simulation/settlement.py} & Exact-grid actual settlement and expected/realized KPI reconciliation.\\
 \path{src/forecasting/models/pv.py} & Weather-to-AC PV conversion.\\
@@ -313,7 +320,8 @@ no ensemble calibration, reweighting or post-processing is implicit. By default,
 the cutoff-updated deterministic forecast is prepended as another member. If the
 archive has 50 members, the scenario count is 51 and each weight is $1/51$;
 the optional weather-only sensitivity instead has 50 equal weights.
-The deterministic member can change at each gate, while the other 50 paths
+The deterministic member can change at each gate, and at each selected MPC
+cutoff, while the other 50 paths
 remain fixed over the day. The weather-bundle inference records its model
 artifact and retrospective availability; the six-hour historical ensemble
 availability is an assumption, not a measured publication timestamp. Ensemble
@@ -723,8 +731,10 @@ At publication, known prices are updated, and actual contractual revenue
 $\pi^{\rm real}_{a,t}q^{\rm sub}_{a,t}$ is entered exactly once in the ledger.
 Publication does not reopen a market. The current GME experiment forces
 \texttt{reoptimize\_physical\_controls=false}; it uses four auction solves for
-four active auctions, not an extra set of publication solves or 96 physical
-optimizations. Physical feedback is algebraic. Synthetic replay can separately
+four active auctions, not an extra set of publication solves or physical
+optimizations. Physical feedback is algebraic under this retained-plan policy.
+The optional continuous MPC policy adds interval-start solves as described below.
+Synthetic replay can separately
 enable interval-control reoptimization, so its solve count need not be four.
 
 At the next auction, closed commitments are carried, remaining open opportunities
@@ -733,6 +743,120 @@ oracle all future auction prices are already supplied as a benchmark, so price
 publication does not remove price uncertainty there. In a forecast-based route,
 known results condition subsequent price distributions without changing the
 commitments that produced them.
+
+\section{Optional real-time economic MPC}
+\label{sec:realtime-mpc}
+
+The default remains \texttt{track\_committed\_grid}. Four additional continuous
+execution selectors combine deterministic/ensemble PV with price-blind/oracle
+imbalance treatment: \texttt{deterministic\_mpc},
+\texttt{deterministic\_mpc\_price\_oracle}, \texttt{ensemble\_mpc}, and
+\texttt{ensemble\_mpc\_price\_oracle}. They add physical control solves at each
+quarter-hour start, over the remainder of that local delivery day. Auction
+submission, publication, fees and eligibility are unchanged. In particular,
+planned future orders are not fixed positions in this lower-level model.
+
+For each MPC horizon, $Q_t^{\rm sub}$ contains only quantities already submitted,
+including unpriced commitments. Battery powers $c_t,d_t$, mode binaries, energy
+$e_t$ and a utilization fraction $a_t\in[0,1]$ are common across \emph{all}
+scenarios for the \emph{entire} horizon. The additional equations are
+\begin{align}
+ i_{s,t}&=a_t V_{s,t}, &
+ g_{s,t}&=i_{s,t}+d_t-c_t,\\
+ \delta_{s,t}&=g_{s,t}\Delta_t-Q_t^{\rm sub}, &
+ L&=\sum_s w_s\sum_t |\delta_{s,t}|.
+\end{align}
+The shared battery transition~\eqref{eq:soc}, power exclusivity, efficiencies,
+SOC box and POI bounds apply. MPC and auction builders reuse common battery and
+degradation helpers. Scenario-specific battery recourse and arbitrary
+scenario-specific curtailment are absent. The first utilization fraction is
+applied to realized available PV by the execution environment after issuance.
+
+Price-blind MPC minimizes
+\begin{equation}
+ \kappa L+D^{\rm plan}+C^{\rm import}+C^{\rm terminal},\qquad
+ \kappa=500\ \mathrm{EUR/MWh}\ \text{by default}.
+\end{equation}
+There is no independent curtailment penalty. The default terminal cost is
+$50|e_T-0.5E|$ EUR, with energy in MWh; no-value and configurable linear-value
+alternatives are supported. Separately configured final-study hard targets and
+explicit horizon-end minima remain constraints. A hard 50\% equality is not
+imposed on ordinary operating midnights. Planning terminal costs never become
+real cash charges.
+
+The imbalance-price oracle first minimizes $L$ with the same physical and hard
+terminal constraints. After solver certification within the recorded tolerance,
+it maximizes expected \emph{signed} settlement minus degradation, import and
+terminal costs, subject to
+\begin{equation}
+ L\le L_{\min}(1+r)+b.
+\end{equation}
+The relative and absolute budgets $r,b$ default to zero. Actual future Terna
+prices enter only an explicitly marked noncausal input object; price-blind MPC
+does not accept it. Single-price cash flow is $\lambda_t\delta_{s,t}$, including
+negative prices, rather than $-|\lambda_t||\delta_{s,t}|$. Distinct directional
+curves retain sign exclusivity. With a single curve, the nonnegative split is
+exact in the minimum-volume stage and conservatively bounds true absolute
+volume in the economic stage; reporting reconstructs physical volume directly.
+
+One configurable ten-second wall budget covers building and both solver stages.
+Stage objectives, bounds, gaps and actual additional imbalance are logged.
+An uncertified first-stage incumbent cannot authorize an economic second stage;
+it can supply a validated price-blind action. If economic refinement has no
+usable solution, a validated first-stage action is retained. No valid action
+invokes the explicitly logged existing tracking fallback. Solver tolerances
+remain relative MIP gap $10^{-4}$ with no configured absolute gap.
+
+Information comprises current observed energy and degradation memory, completed
+interval PV, submitted commitments, issued commands and eligible forecast
+vintages. By default current and future realized PV are absent from MPC inputs.
+The explicit \path{realtime_mpc.current_pv_information} option can instead
+disclose the realized current-interval average before solving. It replaces
+$V_{s,0}$ by that same measured/effective PV value in every member while all
+later intervals remain forecast-only. This is a retrospective current-PV oracle,
+separate from the imbalance-price oracle; both disclosures are recorded.
+The ensemble
+uses the preceding delivery day's frozen 00 UTC weather members and a latest
+eligible deterministic member, uniformly weighted by default; explicit normalized
+weights and a weather-only sensitivity are supported. The weights are not
+calibrated probability claims. The revised two-day Farm~1 examples use the
+selected \texttt{direct\_tcn\_02} bundle for deterministic/ensemble conversion,
+initialization, measurement fallbacks and the common auction-source forecasts,
+without fitting. Its training period is 2025; its January--April 2026 selection
+and October 2026 artifact registration make January reuse retrospective.
+Checksums and this hindsight selection are retained. The initial pvlib/current-
+forecast comparison is preserved separately; the operational default remains
+pvlib with replacement disabled.
+
+Only the first action executes, through \texttt{follow\_battery\_plan} protection
+without economic grid-tracking replacement. Interval-average realized PV can
+change controls only through declared physical protection. Full plans, first
+commands and overrides are saved separately. Auction events cannot retrospectively
+replace an unfinished interval's command.
+
+MPC auction-boundary projection follows the last completed open-loop plan from
+the latest actual state, preserving an outstanding action and using the latest
+eligible \emph{deterministic} PV forecast at the auction cutoff, even for
+ensemble MPC. It does not solve hypothetical future MPCs or choose a weather
+member. Missing plan coverage invokes logged forecast-only tracking/protection.
+In current-PV-known mode the locked unfinished interval uses the scalar already
+disclosed at issuance, while subsequent intervals retain deterministic forecast
+PV; the shadow rollout never retrieves future actual production.
+The result, \texttt{projected\_soc\_mpc\_deterministic}, never overwrites actual
+state. Pure battery-power commands can make projected energy independent of PV
+until protection acts. Realized noon/midnight projection errors are recorded;
+actual carryover is not reset to tomorrow's earlier assumed state.
+
+The primary comparison freezes one existing integrated deterministic auction
+ledger and replays identical timed submissions with each controller. Auction
+revenue and fees must match. The secondary full continuous comparison lets
+actual SOC and MPC projections change later auction orders. Their interpretations
+remain separate. The auction-price oracle is unchanged and distinct from the
+new lower-level imbalance-price oracle. Tracking's interval-average PV feedback
+advantage is disclosed in causal mode; the current-PV-known variant supplies
+the same interval-average production to MPC. An optional causal tracking diagnostic
+is available. Detailed configuration, metrics, limitations and commands are in
+\path{docs/realtime_economic_mpc.md}.
 
 \section{Physical feedback with realized PV}
 
@@ -1256,7 +1380,7 @@ cannot reopen submitted next-day DA quantities. The current-day commands and
 book enter next-day planning through the projected boundary state below.
 
 \subsection{Forecast-based projection of the next initial state}
-At a decision cutoff $c_k$, let $x_k^{\rm obs}$ be the most recent observed
+For the default retained-plan controller, at a decision cutoff $c_k$, let $x_k^{\rm obs}$ be the most recent observed
 physical state at boundary $\tau_{i_k}\le c_k$. This state includes energy,
 cumulative executed throughput/degradation and, when relevant, depth-model
 segment history. The current continuous controller requires zero configured
@@ -1295,6 +1419,8 @@ execution advances separately:
 Neither solving nor revising a shadow projection overwrites actual energy or
 aging state. The realized midnight state may differ from the previously
 projected state; later solves carry the actual state as it becomes available.
+MPC instead uses the deterministic open-loop procedure in
+Section~\ref{sec:realtime-mpc}, supplying one state to the same auction MILP.
 Saved boundary records retain prediction, actual state and signed error
 $E_b^{\rm real}-\widehat E_{b\mid k}$. Midnight projections are distinguished
 from IDA3 noon projections in diagnostics and plots.
@@ -1331,7 +1457,9 @@ delivery day and only when the target is non-null:
    =E^{\rm nominal}\,s_F/100,\qquad s_F=50
        \quad\hbox{(SOC percentage in the January example)}.
 \end{equation}
-Intermediate midnight states have no equality target or energy salvage price.
+Under the default retained-plan controller, intermediate midnight states have
+no equality target or energy salvage price. Optional MPC instead uses its
+configured inventory treatment from Section~\ref{sec:realtime-mpc}.
 They remain inside their SOC box and, when configured, satisfy the additional
 planned minimum in~\eqref{eq:terminal-minimum}. The January 2025 template
 leaves that minimum disabled; the paired January 2026 studies use 40\%. Actual terminal energy remains

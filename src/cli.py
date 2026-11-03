@@ -220,6 +220,10 @@ def dispatch(command: str, config: dict) -> dict:
         from .simulation.continuous import run_continuous_experiment
         return run_continuous_experiment(config,
             progress=lambda message: print(message, file=sys.stderr, flush=True))
+    if command == "experiment-realtime-mpc":
+        from .simulation.realtime_mpc_study import run_realtime_mpc_experiment
+        return run_realtime_mpc_experiment(config,
+            progress=lambda message: print(message, file=sys.stderr, flush=True))
     # Import optional workflows only when their commands are requested when `command == 'api-cache-status'`.
     if command == "api-cache-status":
         from .data.api_catalog import summarize_api_cache
@@ -259,9 +263,10 @@ def main(argv: list[str] | None = None) -> int:
         "api-cache-status","migrate-api-cache","diagnose-terna",
         "import-gme-workbooks","import-terna-workbooks","stage-market-workbooks",
         "merge-market-workbooks","check-market-history","experiment-gme-oracle","experiment-participation",
-        "experiment-continuous",
+        "experiment-continuous", "experiment-realtime-mpc",
         "report-optimization-timing"))
     parser.add_argument("--config",required=True,type=Path)
+    parser.add_argument("--check-only", action="store_true", help="Preflight realtime MPC inputs without running a study")
     parser.add_argument("--farm-id",type=int,help="Select farm metadata, PV/weather series and automatic POI limits")
     parser.add_argument("--study-days", type=int, choices=range(1, 32),
                         help="Run the first N January days of a ten-day continuous participation configuration")
@@ -273,6 +278,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         config = load_config(args.config, overrides={"farm_id": args.farm_id} if args.farm_id is not None else None)
+        if args.check_only:
+            if args.command != "experiment-realtime-mpc":
+                raise ValueError("--check-only applies only to experiment-realtime-mpc")
+            config.setdefault("realtime_mpc_comparison", {})["check_only"] = True
         if args.study_days is not None:
             if args.command not in {"experiment-continuous", "resolve-config"}:
                 raise ValueError("--study-days applies only to continuous participation and resolve-config")

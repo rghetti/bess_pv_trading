@@ -1,0 +1,51 @@
+{
+  "frozen_commitments": {
+    "status": "passed",
+    "controllers": {
+      "track_committed_grid": {
+        "intervals": 192,
+        "mpc_solves": 0
+      },
+      "deterministic_mpc": {
+        "intervals": 192,
+        "mpc_solves": 192,
+        "max_first_action_imbalance_error_mwh": 1.0408340855860843e-16,
+        "price_oracle_economic_stages_used": 0
+      },
+      "deterministic_mpc_price_oracle": {
+        "intervals": 192,
+        "mpc_solves": 192,
+        "max_first_action_imbalance_error_mwh": 6.245004513516507e-16,
+        "price_oracle_economic_stages_used": 192
+      },
+      "ensemble_mpc": {
+        "intervals": 192,
+        "mpc_solves": 192,
+        "max_first_action_imbalance_error_mwh": 8.326672684688674e-17,
+        "price_oracle_economic_stages_used": 0
+      },
+      "ensemble_mpc_price_oracle": {
+        "intervals": 192,
+        "mpc_solves": 192,
+        "max_first_action_imbalance_error_mwh": 2.220446049250313e-16,
+        "price_oracle_economic_stages_used": 192
+      }
+    },
+    "frozen_ledger_sha256": "ba1cd5a441a3289ee27a783ab8449ac1dcc6ad05a8bfbc1ae6b330b8823c41b4"
+  },
+  "continuous": {
+    "status": "passed",
+    "controllers": {
+      "track_committed_grid": {
+        "intervals": 192,
+        "mpc_solves": 0
+      },
+      "deterministic_mpc": {
+        "intervals": 192,
+        "mpc_solves": 192,
+        "max_first_action_imbalance_error_mwh": 9.71445146547012e-17,
+        "price_oracle_economic_stages_used": 0
+      }
+    }
+  }
+}

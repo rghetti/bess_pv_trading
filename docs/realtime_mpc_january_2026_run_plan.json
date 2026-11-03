@@ -1,0 +1,35 @@
+{
+  "status": "plan_only",
+  "delivery_days": 31,
+  "start_date": "2026-01-01",
+  "end_date": "2026-01-31",
+  "timezone": "Europe/Rome",
+  "controllers": [
+    "track_committed_grid",
+    "deterministic_mpc"
+  ],
+  "modes": [
+    "frozen_commitments",
+    "continuous"
+  ],
+  "participating_auctions": [
+    "DA",
+    "IDA1",
+    "IDA2",
+    "IDA3"
+  ],
+  "physical_intervals_per_trajectory": 2976,
+  "mpc_decisions": 5952,
+  "auction_solves_if_sources_are_generated": 372,
+  "mpc_time_limit_seconds": 10.0,
+  "auction_time_limit_seconds": 120.0,
+  "threads": 2,
+  "gpus": 0,
+  "current_pv_information": "realized_interval_average",
+  "forecast_model": "farm_1_direct_tcn",
+  "retrospective_model_artifacts": true,
+  "run_id": "farm1_january_2026_tcn_current_pv_all_auctions",
+  "data_read": false,
+  "solves_started": 0,
+  "detailed_daily_plot_day_limit": 3
+}

@@ -878,3 +878,41 @@ For the four-policy, DA-required January 1–10 participation comparison with
 matched PV-only trajectories, see the [study commands and settings](configs/full_experiments/README.md#four-policy-da-required-participation-study).
 The same launcher accepts `--days N` for the first 1–31 days of January 2026
 and writes one matched comparison `summary.md` per farm after all policies finish.
+
+## Real-time economic MPC
+
+Optional Gurobi MPC controls battery power and a common PV-utilization fraction
+every quarter-hour, while the existing auction runner retains all market orders
+and cash accounting. The default remains grid tracking. Deterministic and
+ensemble policies each have a price-blind and an explicitly noncausal
+imbalance-price-oracle variant. See the [MPC methodology](docs/realtime_economic_mpc.md)
+for equations, information limits, terminal inventory, safeguards and outputs.
+
+The revised Farm 1 smoke covers 15–16 January 2026, with the selected TCN bundle
+for all weather-to-PV conversion and current-interval realized PV supplied to MPC.
+It uses one shared frozen ledger across five policies, followed by deterministic
+MPC in continuous operation. Current-PV access and hindsight TCN selection are
+labeled retrospective; future realized PV remains hidden. Earlier pvlib results
+are preserved under their original run ID.
+
+```bash
+PYTHONPATH=src python -m bess_pv_trading experiment-realtime-mpc --config configs/full_experiments/realtime_frozen_comparison.yaml --check-only
+PYTHONPATH=src python -m bess_pv_trading experiment-realtime-mpc --config configs/full_experiments/realtime_frozen_comparison.yaml
+PYTHONPATH=src python -m bess_pv_trading experiment-realtime-mpc --config configs/full_experiments/realtime_continuous_smoke.yaml
+```
+
+Historical experiments require approval of their concrete run plan under the
+project guidance. Loading or validating a configuration starts no experiment.
+
+The [full-January all-auction study plan](docs/realtime_mpc_january_2026_study_plan.md)
+compares deterministic MPC with feedback using both frozen commitments and full
+continuous operation. The launcher defaults to plan-only:
+
+```bash
+python scripts/run_realtime_mpc_comparison.py
+python scripts/run_realtime_mpc_comparison.py --check-only
+# Launch the month only after approval:
+python scripts/run_realtime_mpc_comparison.py --run
+```
+
+Detailed daily figures in real-time MPC outputs are capped at three delivery days.

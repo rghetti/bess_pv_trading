@@ -8,11 +8,11 @@ from typing import Any
 import numpy as np
 
 from ..domain import BuiltModel, OptimizationInput, OptimizationResult, SolverSettings
-from .degradation import build_xu_degradation
 from .market_regime import configured_auction_product_groups, configured_dispatch_groups, market_product_groups
 from .transaction_fees import build_transaction_fees
 from .pv_envelope import lift_envelope_result, reduce_exact_pv
 from ..transaction_fees import scenario_fee_details
+from .physical import add_battery_controls, energy_transition, build_battery_degradation
 
 
 class SolverUnavailableError(RuntimeError):
@@ -31,11 +31,8 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
         # Each information node receives one mutually exclusive charge/discharge choice.
         for node in sorted({owners[s][t] for s in range(scenario_count)}):
             suffix = f"f{inputs.plant.farm_id},n{node},t{inputs.grid.interval_ids[t]}"
-            charge[t, node] = model.addVar(ub=battery.max_power_mw, name=f"charge[{suffix}]")
-            discharge[t, node] = model.addVar(ub=battery.max_power_mw, name=f"discharge[{suffix}]")
-            mode[t, node] = model.addVar(vtype=gp.GRB.BINARY, name=f"charge_mode[{suffix}]")
-            model.addConstr(charge[t, node] <= battery.max_power_mw * mode[t, node], name=f"charge_mode_limit[{suffix}]")
-            model.addConstr(discharge[t, node] <= battery.max_power_mw * (1 - mode[t, node]), name=f"discharge_mode_limit[{suffix}]")
+            charge[t, node], discharge[t, node], mode[t, node] = add_battery_controls(
+                model, battery, gp, suffix)
         # Shared curtailment cannot exceed the least PV available at this node.
         for node in sorted({curtailment_owners[s][t] for s in range(scenario_count)}):
             available = min(inputs.scenarios.pv_ac_mw[s, t] for s in range(scenario_count) if curtailment_owners[s][t] == node)
@@ -69,8 +66,9 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
         for t, duration in enumerate(inputs.grid.delta_hours):
             suffix = f"s{scenario},t{inputs.grid.interval_ids[t]}"
             owner = owners[s][t]
-            retention = (1 - battery.self_discharge_per_hour) ** duration
-            model.addConstr(energy[s, t + 1] == retention * energy[s, t] + battery.eta_charge * charge[t, owner] * duration - discharge[t, owner] * duration / battery.eta_discharge, name=f"battery_balance[{suffix}]")
+            model.addConstr(energy[s, t + 1] == energy_transition(energy[s, t],
+                charge[t, owner], discharge[t, owner], battery, duration),
+                name=f"battery_balance[{suffix}]")
             grid[s, t] = model.addVar(lb=-inputs.plant.poi_import_mw, ub=inputs.plant.poi_export_mw, name=f"grid[{suffix}]")
             pv_injection[s, t] = model.addVar(lb=0.0,
                 ub=float(inputs.scenarios.pv_ac_mw[s, t]), name=f"pv_injection[{suffix}]")
@@ -236,10 +234,7 @@ def _imbalance_interval(model, inputs, variables, gp, s, t, duration,
 
 def _degradation(model: Any, inputs: OptimizationInput, variables: dict[str, Any], gp: Any) -> dict[int, Any]:
     """Cost new throughput or depth-dependent discharge; carried aging is sunk."""
-    # Return `build_xu_degradation(model, inputs, variables, gp)` when `inputs.degradation.mode == 'xu_segmented'`.
-    if inputs.degradation.mode == "xu_segmented":
-        return build_xu_degradation(model, inputs, variables, gp)
-    return {s: inputs.degradation.cost_eur_per_mwh_throughput * gp.quicksum((variables["charge"][t, inputs.tree.control_nodes[s][t]] + variables["discharge"][t, inputs.tree.control_nodes[s][t]]) * duration for t, duration in enumerate(inputs.grid.delta_hours)) for s in range(len(inputs.scenarios.scenario_ids))}
+    return build_battery_degradation(model, inputs, variables, gp)
 
 
 def build_model(inputs: OptimizationInput, *, reduce_exact_pv_scenarios: bool = True) -> BuiltModel:

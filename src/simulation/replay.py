@@ -12,6 +12,7 @@ from bess_pv_trading.domain import (
     PhysicalState, ScenarioBundle,
 )
 from bess_pv_trading.optimization.degradation import advance_degradation_state
+from bess_pv_trading.optimization.physical import energy_transition, retained_energy
 
 
 def condition_and_slice(inputs: OptimizationInput, *, first_interval: int,
@@ -99,8 +100,9 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
                      ) -> tuple[PhysicalState, dict[str, Any]]:
     """Execute pre-interval commands with declared interval-average protection.
 
-    The final average PV is used only by physical feedback/protection and ex-post
-    settlement. It is never given to the planner as a pre-interval observation.
+    This function consumes average PV for physical feedback/protection and ex-post
+    accounting. Any deliberate pre-interval disclosure to an MPC is separately
+    marked by that controller's current_pv_information setting.
     This is an idealized interval simulator, not a hardware telemetry model.
     """
     # Enforce the input contract: Execution state timestamp differs from interval start.
@@ -137,7 +139,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
     if not battery.energy_min_mwh <= state.energy_mwh <= battery.maximum_energy:
         raise ValueError("Execution starts outside battery energy bounds")
     duration = (end - start).total_seconds() / 3600
-    retained = state.energy_mwh * (1 - battery.self_discharge_per_hour) ** duration
+    retained = retained_energy(state.energy_mwh, battery, duration)
     charge = max(0.0, min(requested_charge_mw, battery.max_power_mw,
         max(0.0, battery.maximum_energy - retained) / (duration * battery.eta_charge)))
     discharge = max(0.0, min(requested_discharge_mw, battery.max_power_mw,
@@ -187,7 +189,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         curtailment += max(0.0, grid - plant.poi_export_mw)
         grid = min(grid, plant.poi_export_mw)
     safety_adjustment += sum(abs(a-b) for a,b in zip((charge,discharge,curtailment),before_poi))
-    energy = retained + battery.eta_charge * charge * duration - discharge * duration / battery.eta_discharge
+    energy = energy_transition(state.energy_mwh, charge, discharge, battery, duration)
     # Enforce the input contract: Execution would violate battery energy bounds.
     if energy < battery.energy_min_mwh-numerical_tolerance or energy > battery.maximum_energy+numerical_tolerance:
         raise ValueError("Execution would violate battery energy bounds")

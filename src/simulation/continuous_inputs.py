@@ -19,6 +19,7 @@ from ..markets import AuctionCalendar
 from ..optimization.prepared import terminal_minimum_energy_mwh
 from .gme_oracle import _load_auction_prices, _load_pv, _load_pv_forecast, _soc_energy_targets
 from .settlement import load_realized_imbalance_prices
+from ..optimization.mpc import uses_realtime_control, needs_mpc_ensemble
 
 
 def _json_value(value: Any) -> Any:
@@ -68,6 +69,73 @@ def _utc_index(starts) -> pd.DatetimeIndex:
     if index.tz is None or index.hasnans or not index.is_unique or not index.is_monotonic_increasing:
         raise ValueError("Continuous forecast starts must be unique increasing timezone-aware timestamps")
     return index.tz_convert("UTC").as_unit("ns")
+
+
+def _replacement_evidence(config):
+    """Pin the selected frozen model and its declared dependencies before replay."""
+    settings = config.get("pv", {}).get("forecast_replacement", {})
+    if not settings.get("enabled", False):
+        return None
+    farm = int(config["forecast"]["farm_id"])
+    models = settings.get("models_by_farm", {})
+    model = models.get(str(farm), models.get(farm))
+    if model is None:
+        return None
+    artifact = config_path(config, model["artifact_path"])
+    if not artifact.is_file():
+        return {"status": "fallback_artifact_missing", "artifact": str(artifact)}
+    metadata = json.loads(artifact.read_text()) if model.get("kind") == "weather_bundle" else {}
+    checksums = {artifact.name: hashlib.sha256(artifact.read_bytes()).hexdigest()}
+    # A model can change independently of YAML; pin and validate every bundle file.
+    for name, expected in metadata.get("checksums", {}).items():
+        actual = hashlib.sha256((artifact.parent / name).read_bytes()).hexdigest()
+        if actual != expected:
+            raise ValueError(f"Forecast bundle checksum mismatch: {name}")
+        checksums[name] = actual
+    if model.get("kind") in {"weather_bundle", "neural"}:
+        import torch
+        torch.set_num_threads(int(config["solver"]["threads"]))
+    return {"status": "pinned", "model": model["name"], "artifact": str(artifact),
+        "available_at_utc": model["available_at_utc"], "checksums": checksums,
+        "training_period": metadata.get("training_period"), "selection_period": metadata.get("selection_period"),
+        "train_last_target_utc": metadata.get("train_last_target_utc"),
+        "specification": metadata.get("specification"), "inference_threads": int(config["solver"]["threads"])}
+
+
+def _replace_initial_forecast(config, day, cutoff, grid, bundle, forecast, actual, provenance, evidence):
+    """Use the same selected bundle for initialization and frozen measurement fallback."""
+    if evidence is None or evidence.get("status") != "pinned":
+        return forecast, actual, bundle, provenance
+    settings = config["pv"]["forecast_replacement"]
+    models = settings["models_by_farm"]
+    farm = int(config["forecast"]["farm_id"])
+    model = models.get(str(farm), models.get(farm))
+    available = pd.Timestamp(evidence["available_at_utc"])
+    if model["kind"] != "weather_bundle" or (available > cutoff and not settings.get("allow_retrospective_artifacts", False)):
+        return forecast, actual, bundle, provenance
+    from ..forecasting.inference.pv_forecast_bundle import predict_bundle
+
+    frame = bundle.values.copy(deep=True)
+    frame["interval_start_utc"] = pd.DatetimeIndex(grid.starts)
+    frame["delivery_day"] = day
+    # The weather-only network does not consume auction identity. DA is a valid
+    # routing label required by the existing sequence packer, not a feature.
+    frame["auction"] = "DA"
+    frame["forecast_cycle_utc"] = pd.Timestamp(bundle.forecast_vintage)
+    policy = config.get("policy", {}).get("forecast_pv_night", {})
+    forecast = predict_bundle(frame, Path(evidence["artifact"]).parent, farm_id=farm, night_policy=policy)
+    values = bundle.values.copy(deep=True)
+    values["pv_ac_mw"] = forecast
+    bundle = replace(bundle, values=values)
+    actual = np.asarray(actual).copy()
+    fallback_ids = set(provenance.get("realized_power_fallback_interval_ids", []))
+    for index, product in enumerate(grid.interval_ids):
+        if product in fallback_ids:
+            actual[index] = forecast[index]
+    provenance = {**provenance, "initial_forecast_model": evidence["model"],
+        "initial_forecast_model_retrospective": bool(available > cutoff),
+        "realized_fallback_model": evidence["model"], "forecast_model_evidence": evidence}
+    return forecast, actual, bundle, provenance
 
 
 def _prepare_pv_ensembles(config, days_data, progress=None):
@@ -229,6 +297,9 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     never acquires data or changes configuration, caches or source snapshots.
     """
     settings = config["continuous_optimization"]
+    # Keep legacy tracking preflight/fingerprints unchanged. MPC workflows pin
+    # model artifacts and use the selected model for their initial fallback too.
+    replacement_evidence = _replacement_evidence(config) if uses_realtime_control(config) else None
     try:
         first = date.fromisoformat(str(settings["start_date"]))
         last = date.fromisoformat(str(settings["end_date"]))
@@ -295,6 +366,8 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
                 first_cutoff = stamp
             forecast, actual, bundle, pv_provenance = _load_pv(daily, calendar, grid,
                                                               decision_cutoff=first_cutoff)
+            forecast, actual, bundle, pv_provenance = _replace_initial_forecast(
+                config, day, first_cutoff, grid, bundle, forecast, actual, pv_provenance, replacement_evidence)
             _validate_bundle(bundle, first_cutoff, _utc_index(grid.starts))
         except (ValueError, RuntimeError) as error:
             raise ValueError(f"Continuous preflight for {day}: {error}") from error
@@ -321,13 +394,26 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
         if progress:
             progress(f"Preflight {day}: {len(schedule)} available auctions, {len(grid.interval_ids)} delivery intervals")
 
+        # Pin each interval-start information set; no later vintage can enter an MPC.
+        if uses_realtime_control(config):
+            day_starts = _utc_index(grid.starts)
+            for index, cutoff in enumerate(day_starts):
+                key = cutoff.isoformat()
+                starts = day_starts[index:]
+                forecast_requests[key] = forecast_requests.get(key, starts).union(starts)
+
     # Freeze union forecasts covering both current-day projection and next-day plan.
     forecasts = _PreparedForecasts()
     # Pin exact prices, common measured PV/fallbacks and every causal forecast for each `(key, (starts, _))` in `initial_requests.items()`.
     for key, (starts, _) in initial_requests.items():
         forecast_requests[key] = forecast_requests.get(key, starts).union(starts)
-    # Pin exact prices, common measured PV/fallbacks and every causal forecast for each `(key, starts)` in `sorted(forecast_requests.items())`.
-    for key, starts in sorted(forecast_requests.items()):
+    # MPC has many more cutoffs than auctions; distinguish this scan from the
+    # completed daily checks and report progress during long cached-data reads.
+    forecast_request_count = len(forecast_requests)
+    show_forecast_progress = progress is not None and uses_realtime_control(config)
+    if show_forecast_progress:
+        progress(f"Daily input checks complete; preflighting {forecast_request_count} forecast cutoffs")
+    for request_index, (key, starts) in enumerate(sorted(forecast_requests.items()), start=1):
         initial = initial_requests.get(key)
         try:
             bundle = (initial[1] if initial is not None and starts.equals(initial[0]) else
@@ -335,8 +421,10 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             forecasts.add(pd.Timestamp(key), starts, bundle)
         except (ValueError, RuntimeError) as error:
             raise ValueError(f"Continuous weather preflight at {key}: {error}") from error
+        if show_forecast_progress and (request_index % 100 == 0 or request_index == forecast_request_count):
+            progress(f"Forecast preflight {request_index}/{forecast_request_count}: {key}")
     ensemble_provenance = None
-    if settings.get("pv_ensemble", {}).get("enabled", False):
+    if settings.get("pv_ensemble", {}).get("enabled", False) or needs_mpc_ensemble(config):
         ensemble_provenance = _prepare_pv_ensembles(config, days_data, progress)
     settlement, settlement_provenance = load_realized_imbalance_prices(config, full_grid)
     settlement_values = (None if settlement is None else
@@ -356,6 +444,7 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             "auction_price_sha256": {name: _fingerprint(curve) for name, curve in item["prices"].items()}}
             for day, item in days_data.items()},
         "weather_forecasts": forecasts.provenance, "pv_ensemble": ensemble_provenance,
+        **({"forecast_model_artifacts": replacement_evidence} if replacement_evidence is not None else {}),
         "settlement": settlement_provenance,
         "settlement_values_sha256": None if settlement_values is None else _fingerprint(settlement_values)}
     fingerprint = _fingerprint(provenance)

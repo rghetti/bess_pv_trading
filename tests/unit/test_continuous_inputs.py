@@ -83,6 +83,7 @@ def test_continuous_preflight_shares_inputs_and_reads_no_previous_day_observatio
     before = deepcopy(config)
     prepared = continuous_inputs.prepare_continuous_inputs(config)
     assert config == before
+    assert "forecast_model_artifacts" not in prepared["provenance"]
     assert [day for day, _, _ in calls["pv"]] == list(prepared["days"])
     first_day = prepared["days"][0]
     assert calls["pv"][0][1].tz_convert(prepared["calendar"].timezone).date() < pd.Timestamp(first_day).date()
@@ -93,6 +94,40 @@ def test_continuous_preflight_shares_inputs_and_reads_no_previous_day_observatio
     for item in prepared["days_data"].values():
         assert item["native_interval_minutes_by_auction"]["DA"] == config["test_case"]["expected_da_hourly_minutes"]
         assert item["native_interval_minutes_by_auction"]["IDA3"] == config["test_case"]["expected_da_quarter_minutes"]
+
+
+def test_mpc_preflight_pins_every_physical_cutoff_without_enabling_auction_ensemble(prepared_case):
+    config, _, _ = prepared_case
+    config["execution"]["dispatch_policy"] = "deterministic_mpc"
+    prepared = continuous_inputs.prepare_continuous_inputs(config)
+    for day in prepared["days"]:
+        grid = prepared["days_data"][day]["grid"]
+        for index, cutoff in enumerate(grid.starts):
+            bundle = prepared["forecast_provider"](cutoff, grid.starts[index:])
+            assert bundle.available_at <= cutoff
+    assert not config["continuous_optimization"]["pv_ensemble"]["enabled"]
+
+
+def test_selected_bundle_initialization_and_artifacts_are_pinned(prepared_case, monkeypatch, tmp_path):
+    import hashlib
+
+    config, _, _ = prepared_case
+    config["solver"]["threads"] = 1
+    config["execution"]["dispatch_policy"] = "deterministic_mpc"
+    config["pv"]["forecast_replacement"]["enabled"] = True
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text('{"checksums": {}, "training_period": "2025"}')
+    model = config["pv"]["forecast_replacement"]["models_by_farm"][str(config["farm_id"])]
+    model.update(artifact_path=str(manifest), available_at_utc="2020-01-01T00:00:00Z")
+    monkeypatch.setattr("bess_pv_trading.forecasting.inference.pv_forecast_bundle.predict_bundle",
+        lambda frame, *args, **kwargs: np.full(len(frame), 0.2))
+    prepared = continuous_inputs.prepare_continuous_inputs(config)
+    for item in prepared["days_data"].values():
+        np.testing.assert_array_equal(item["initial_forecast"], 0.2)
+        assert item["pv_provenance"]["initial_forecast_model"] == model["name"]
+    evidence = prepared["provenance"]["forecast_model_artifacts"]
+    assert evidence["checksums"]["manifest.json"] == hashlib.sha256(manifest.read_bytes()).hexdigest()
+    assert evidence["training_period"] == "2025"
 
 
 def test_forecast_provider_covers_projection_and_target_and_is_defensive(prepared_case):

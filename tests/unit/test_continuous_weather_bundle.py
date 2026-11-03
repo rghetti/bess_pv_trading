@@ -34,7 +34,8 @@ def test_scenario_members_are_interpolated_and_packed_independently():
     np.testing.assert_array_equal(packed['indices'], [[0, 1, 2], [3, 4, 5]])
 
 
-def test_replay_uses_seasonal_night_policy_for_neural_forecasts(tmp_path, monkeypatch):
+@pytest.mark.parametrize("context", ["DA", "realtime_mpc"])
+def test_replay_uses_seasonal_night_policy_for_neural_forecasts(tmp_path, monkeypatch, context):
     from bess_pv_trading.config import load_config
 
     manifest = tmp_path / 'manifest.json'
@@ -58,10 +59,11 @@ def test_replay_uses_seasonal_night_policy_for_neural_forecasts(tmp_path, monkey
 
     def predict(model_frame, folder, *, farm_id, night_policy):
         captured['policy'] = night_policy
+        assert model_frame.auction.eq("DA").all()
         return np.ones(len(model_frame))
 
     monkeypatch.setattr('bess_pv_trading.forecasting.inference.pv_forecast_bundle.predict_bundle', predict)
-    values, provenance = replay._forecast(pd.Timestamp('2026-01-09T08:00Z'), starts, 'DA')
+    values, provenance = replay._forecast(pd.Timestamp('2026-01-09T08:00Z'), starts, context)
     np.testing.assert_array_equal(values, [0., 1., 1., 0.])
     assert captured['policy'] == replay.config['policy']['realized_pv_night']
     assert provenance['pv_forecast_night_policy'] == 'configured_monthly'
