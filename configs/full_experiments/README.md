@@ -460,7 +460,34 @@ trajectories per farm: 4 policies × (8 subsets + 2 references) × 2 assets.
 All four farms therefore require 320 trajectories and 16 processes. Each
 study config requests two Gurobi threads per solve (32 total); adjust `solver.threads`
 in all four corresponding policy YAMLs if a different budget is desired.
-Numerical-library thread pools are limited to one thread per child. The database
+Numerical-library thread pools are limited to one thread per child.
+For a single farm, each of the four policies runs two independent profiles in
+parallel. Each worker finishes a profile's PV+BESS and matched PV-only replays
+sequentially, carrying each trajectory's own state across days. This permits up
+to eight simultaneous solves; multiply eight by the configured solver thread
+counts to estimate the maximum solver threads. All-farm runs retain one profile
+worker per policy to avoid multiplying the existing 16-way concurrency.
+Profile concurrency does not change run identities or checkpoint compatibility.
+
+After the extended participation launcher finishes a farm, it writes a
+`trade_attribution/` directory beside each forecast-policy run. The report uses
+the immutable submitted-trade ledger and realized dispatch to validate gates,
+reconcile auction revenue into final DA-reference position value plus intraday
+spreads, compare integrated and sequential full-auction results, and render the
+paired plots. Regenerate it from existing saved results with:
+
+```bash
+PYTHONPATH=src python scripts/report_continuous_trade_attribution.py \
+  --run-dir outputs/continuous_optimization/farm_1/2026_01_participation_ten_days_deterministic
+```
+
+It does not solve or modify the trading trajectories. The report records the
+native product resolution in each saved ledger. Some January 2026 DA records
+are quarter-hourly, as shown by distinct observed DA prices within an hour;
+they remain quarter-hourly in the accounting rather than being combined into
+an artificial hourly price.
+
+The database
 is read-only during preflight; do not start an
 API downloader or another database writer while the studies are reading it.
 

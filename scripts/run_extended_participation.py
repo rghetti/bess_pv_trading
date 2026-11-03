@@ -5,6 +5,7 @@ import argparse
 from copy import deepcopy
 import json
 import os
+import signal
 from pathlib import Path
 import subprocess
 import sys
@@ -34,6 +35,8 @@ def _common_config(config):
     settings = common["continuous_optimization"]
     for key in ("pv_ensemble", "run_id", "resume"):
         settings.pop(key, None)
+    # Thread budgets affect runtime, not the economic setup being compared.
+    common.get("solver", {}).pop("threads", None)
     return common
 
 
@@ -165,6 +168,10 @@ def summarize(configs, roots, output):
         f"CVaR weight: {stochastic.get('cvar_weight_eur_per_mwh', 0.0)} EUR/MWh. "
         "Realized imbalance prices are not used in planning. Each profile carries its own state across days.", ""]
     (output / "summary.md").write_text("\n".join(lines), encoding="utf-8")
+    trade_lines = _trade_attribution_summary(roots)
+    if trade_lines:
+        with (output / "summary.md").open("a", encoding="utf-8") as summary_file:
+            summary_file.write("\n" + "\n".join(trade_lines) + "\n")
     # Plot daily values for each profile without generating per-day images.
     import matplotlib.pyplot as plt
     for name in names:
@@ -184,6 +191,76 @@ def summarize(configs, roots, output):
     return output / "summary.md"
 
 
+def _trade_attribution_summary(roots):
+    """Append paired full-auction revenue and profit explanations to the final report."""
+    rows = []
+    for policy, root in zip(POLICIES, roots):
+        base = root / "trade_attribution"
+        financial_path = base / "integrated_minus_sequential_financials_monthly.csv"
+        decomposition_path = base / "revenue_decomposition_monthly.csv"
+        volumes_path = base / "integrated_minus_sequential_trade_volumes_monthly.csv"
+        if not all(path.is_file() for path in (financial_path, decomposition_path, volumes_path)):
+            continue
+        financial = pd.read_csv(financial_path)
+        decomposition = pd.read_csv(decomposition_path)
+        volumes = pd.read_csv(volumes_path)
+        for case in ("strategies", "pv_only"):
+            record = {"policy": policy, "case": case}
+            fin = financial.loc[financial.case.eq(case)]
+            if len(fin) != 1:
+                continue
+            record.update(fin.iloc[0].to_dict())
+            revenue = decomposition.loc[(decomposition.case.eq(case))
+                & decomposition.profile.eq("DA+IDA1+IDA2+IDA3")]
+            integrated = revenue.loc[revenue.strategy.eq("integrated")]
+            sequential = revenue.loc[revenue.strategy.eq("sequential_all_auctions")]
+            if len(integrated) != 1 or len(sequential) != 1:
+                continue
+            record["difference_da_reference_value_eur"] = (
+                integrated.da_reference_value_eur.iloc[0] - sequential.da_reference_value_eur.iloc[0])
+            for auction in ("IDA1", "IDA2", "IDA3"):
+                field = "da_referenced_spread_eur"
+                # Preserve the auction-specific spread amounts from the native-product summary.
+                product_path = base / "auction_revenue_monthly.csv"
+                products = pd.read_csv(product_path)
+                selected = products.loc[(products.case.eq(case))
+                    & products.profile.eq("DA+IDA1+IDA2+IDA3")
+                    & products.auction.eq(auction)]
+                intg = selected.loc[selected.strategy.eq("integrated"), field].sum(min_count=1)
+                seq = selected.loc[selected.strategy.eq("sequential_all_auctions"), field].sum(min_count=1)
+                record[f"difference_{auction}_spread_eur"] = intg - seq
+            offset = volumes.loc[(volumes.case.eq(case))
+            ]
+            if len(offset):
+                record["difference_cross_auction_offsetting_mwh"] = float(offset.difference_cross_auction_offsetting_mwh.sum())
+            rows.append(record)
+    if not rows:
+        return []
+    lines = ["", "## Integrated versus sequential attribution for full-auction participation", "",
+        "Profit, auction revenue and settlement columns are integrated minus sequential; cost savings are sequential minus integrated. These are accounting attributions over the realized trajectories, not causal effects.", "",
+        "| Forecast policy | Asset | Profit Δ (EUR) | Auction revenue Δ (EUR) | Imbalance settlement Δ (EUR) | Degradation savings (EUR) | Import savings (EUR) | Fee savings (EUR) | Imbalance penalty savings (EUR) |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    for row in rows:
+        fees = row.get("difference_transaction_fee_eur", 0.0)
+        lines.append("| " + " | ".join((str(row["policy"]), "PV-only" if row["case"] == "pv_only" else "PV+BESS",
+            f"{row.get('difference_net_profit_eur', 0.0):,.2f}",
+            f"{row.get('difference_auction_revenue_eur', 0.0):,.2f}",
+            f"{row.get('difference_imbalance_cashflow_eur', 0.0):,.2f}",
+            f"{-row.get('difference_degradation_eur', 0.0):,.2f}",
+            f"{-row.get('difference_import_fee_eur', 0.0):,.2f}", f"{-fees:,.2f}",
+            f"{-row.get('difference_imbalance_penalty_eur', 0.0):,.2f}")) + " |")
+    lines += ["", "Revenue and cross-auction volume explanation:", "",
+        "| Forecast policy | Asset | Final position DA value Δ (EUR) | IDA1 spread Δ (EUR) | IDA2 spread Δ (EUR) | IDA3 spread Δ (EUR) | Cross-auction offsets Δ (MWh) |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: |"]
+    for row in rows:
+        lines.append("| " + " | ".join((str(row["policy"]), "PV-only" if row["case"] == "pv_only" else "PV+BESS",
+            f"{row.get('difference_da_reference_value_eur', 0.0):,.2f}",
+            *(f"{row.get(f'difference_{auction}_spread_eur', 0.0):,.2f}" for auction in ("IDA1", "IDA2", "IDA3")),
+            f"{row.get('difference_cross_auction_offsetting_mwh', 0.0):,.3f}")) + " |")
+    lines += ["", "The DA value plus the three intraday spread differences reconciles to the auction-revenue difference when a DA reference curve is available. Per-policy reports retain the daily/product-level ledger reconstruction and gate checks.", ""]
+    return lines
+
+
 def _run_policies_parallel(farm_ids, paths, days=None):
     """Run one process per farm and forecast policy; stop the group on failure."""
     processes = []
@@ -192,6 +269,8 @@ def _run_policies_parallel(farm_ids, paths, days=None):
     # Limit numerical-library thread pools; Gurobi keeps its configured thread count.
     for key in ("OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "OMP_NUM_THREADS"):
         environment[key] = "1"
+    # A single farm has spare capacity for two independent profiles per policy.
+    environment["BESS_PARTICIPATION_WORKERS"] = "2" if len(farm_ids) == 1 else "1"
 
     def forward_output(process, farm_id, label):
         """Tag each child line so overlapping progress remains attributable."""
@@ -207,7 +286,8 @@ def _run_policies_parallel(farm_ids, paths, days=None):
                 if days is not None:
                     command.extend(["--study-days", str(days)])
                 process = subprocess.Popen(command, cwd=ROOT, env=environment, stdout=subprocess.PIPE,
-                                           stderr=subprocess.STDOUT, text=True, bufsize=1)
+                                           stderr=subprocess.STDOUT, text=True, bufsize=1,
+                                           start_new_session=len(farm_ids) == 1)
                 processes.append((farm_id, policy, process, command))
                 reader = Thread(target=forward_output, args=(process, farm_id, policy), daemon=True)
                 reader.start()
@@ -228,12 +308,19 @@ def _run_policies_parallel(farm_ids, paths, days=None):
         # Also clean up children after interruption or a failed process launch.
         for _, _, process, _ in processes:
             if process.poll() is None:
-                process.terminate()
+                if len(farm_ids) == 1:
+                    # Stop profile workers along with their policy parent.
+                    os.killpg(process.pid, signal.SIGTERM)
+                else:
+                    process.terminate()
         for _, _, process, _ in processes:
             try:
                 process.wait(timeout=10)
             except subprocess.TimeoutExpired:
-                process.kill()
+                if len(farm_ids) == 1:
+                    os.killpg(process.pid, signal.SIGKILL)
+                else:
+                    process.kill()
                 process.wait()
         for reader in readers:
             reader.join()
@@ -297,6 +384,13 @@ def run_farm(farm_id, args, paths):
              config["continuous_optimization"]["run_id"] for config in configs]
     period_label = args.period if args.days in (None, 10) else f"days_{args.days:02d}"
     output = ROOT / "outputs/continuous_optimization/comparisons" / f"farm_{farm_id}" / f"2026_01_participation_{period_label}_four_policies"
+    # Refresh the ledger attribution beside every completed forecast-policy run.
+    from bess_pv_trading.reporting.continuous_trade_attribution import generate_continuous_trade_attribution
+    for root in roots:
+        manifest = root / "json/manifest.json"
+        if manifest.is_file() and _json(manifest).get("status") == "complete":
+            attribution = generate_continuous_trade_attribution(root)
+            print(f"Trade attribution saved to {attribution}", flush=True)
     print(f"Comparison saved to {summarize(configs, roots, output)}", flush=True)
 
 

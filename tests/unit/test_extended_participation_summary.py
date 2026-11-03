@@ -53,6 +53,36 @@ def test_four_policy_summary_pairs_profiles_and_rejects_changed_sources(tmp_path
         MODULE.summarize(configs, roots, tmp_path / "other")
 
 
+def test_final_four_policy_markdown_includes_integrated_sequential_attribution(tmp_path):
+    """The launcher's final Markdown carries the ledger explanation."""
+    roots = []
+    for policy in MODULE.POLICIES:
+        root = tmp_path / policy / "trade_attribution"
+        roots.append(root.parent)
+        root.mkdir(parents=True)
+        pd.DataFrame([{"case": case, "difference_net_profit_eur": 50.0,
+            "difference_auction_revenue_eur": 40.0, "difference_imbalance_cashflow_eur": 10.0,
+            "difference_degradation_eur": 0.0, "difference_import_fee_eur": 0.0,
+            "difference_transaction_fee_eur": 0.0} for case in ("strategies", "pv_only")]).to_csv(
+                root / "integrated_minus_sequential_financials_monthly.csv", index=False)
+        pd.DataFrame([{"case": case, "profile": "DA+IDA1+IDA2+IDA3", "strategy": strategy,
+            "da_reference_value_eur": 10.0} for case in ("strategies", "pv_only")
+            for strategy in ("integrated", "sequential_all_auctions")]).to_csv(
+                root / "revenue_decomposition_monthly.csv", index=False)
+        pd.DataFrame([{"case": case, "profile": "DA+IDA1+IDA2+IDA3", "strategy": strategy,
+            "auction": auction, "da_referenced_spread_eur": 5.0}
+            for case in ("strategies", "pv_only") for strategy in ("integrated", "sequential_all_auctions")
+            for auction in ("IDA1", "IDA2", "IDA3")]).to_csv(
+                root / "auction_revenue_monthly.csv", index=False)
+        pd.DataFrame([{"case": case, "difference_cross_auction_offsetting_mwh": 2.0}
+            for case in ("strategies", "pv_only")]).to_csv(
+                root / "integrated_minus_sequential_trade_volumes_monthly.csv", index=False)
+    report = "\n".join(MODULE._trade_attribution_summary(roots))
+    assert "Integrated versus sequential attribution" in report
+    assert "deterministic | PV+BESS | 50.00 | 40.00" in report
+    assert "Cross-auction offsets Δ (MWh)" in report
+
+
 def test_all_farms_launcher_preflights_each_farm(monkeypatch):
     """The check-only option delegates each farm once in the configured order."""
     seen = []
@@ -120,6 +150,7 @@ def test_parallel_launcher_starts_all_farms_and_handles_failure(monkeypatch, cap
     assert len(launched) == 16
     assert [int(process.command[-1]) for process in launched] == [1] * 4 + [345] * 4 + [901] * 4 + [910] * 4
     assert all(process.environment["OPENBLAS_NUM_THREADS"] == "1" for process in launched)
+    assert all(process.environment["BESS_PARTICIPATION_WORKERS"] == "1" for process in launched)
     assert "[farm 345 envelope] progress" in capsys.readouterr().out
 
 
@@ -184,13 +215,23 @@ def test_worker_cli_resolves_same_duration_as_launcher(days, capsys):
     assert resolved == expected
 
 
+def test_policy_comparison_allows_different_solver_thread_counts():
+    """A different compute budget does not change the economic comparison."""
+    configs = [MODULE.load_config(ROOT / f"configs/full_experiments/participation_2026_01_ten_days_{policy}.yaml",
+                                  overrides={"farm_id": 1}) for policy in MODULE.POLICIES]
+    configs[3]["solver"]["threads"] = configs[0]["solver"]["threads"] + 1
+    assert MODULE._common_config(configs[3]) == MODULE._common_config(configs[0])
+
+
 def test_parallel_workers_receive_study_day_argument(monkeypatch):
     """Every actual worker command is configured with the requested length."""
     commands = []
+    environments = []
     class FakeProcess:
         def __init__(self, command, **kwargs):
             self.stdout = []
             commands.append(command)
+            environments.append(kwargs["env"])
         def poll(self):
             return 0
         def wait(self, timeout=None):
@@ -201,6 +242,7 @@ def test_parallel_workers_receive_study_day_argument(monkeypatch):
     paths = [ROOT / f"{policy}.yaml" for policy in MODULE.POLICIES]
     MODULE._run_policies_parallel((901,), paths, days=31)
     assert len(commands) == 4
+    assert all(env["BESS_PARTICIPATION_WORKERS"] == "2" for env in environments)
     assert all(command[-4:] == ["--farm-id", "901", "--study-days", "31"] for command in commands)
 
 

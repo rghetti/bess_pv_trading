@@ -5,6 +5,9 @@ import fcntl
 import hashlib
 import json
 import subprocess
+import multiprocessing
+import os
+from concurrent.futures import ProcessPoolExecutor, wait, FIRST_COMPLETED
 
 import numpy as np
 import pandas as pd
@@ -15,6 +18,34 @@ from ..reporting.artifacts import prepare_experiment_output
 from .continuous import _atomic_json, _configuration_fingerprint, replay_continuous_strategy
 from .continuous_inputs import prepare_continuous_inputs
 from .synthetic import write_json
+
+
+_worker_context = None
+
+
+def _initialize_profile_worker(config, prepared, pv_config, pv_prepared, destination, resume, fingerprint):
+    """Give each independent worker its own copy of the prepared inputs."""
+    global _worker_context
+    _worker_context = (config, prepared, pv_config, pv_prepared, destination, resume, fingerprint)
+
+
+def _run_profile_case(case):
+    """Replay one profile and its matched PV-only trajectory in the same worker."""
+    name, profile, strategy = case
+    config, prepared, pv_config, pv_prepared, destination, resume, fingerprint = _worker_context
+    def progress(message):
+        print(f"[{name}] {message}", flush=True)
+    case_fingerprint = hashlib.sha256(f"{fingerprint}:{name}".encode()).hexdigest()
+    summary = replay_continuous_strategy(config, _profile_inputs(prepared, profile), strategy,
+        destination / "strategies" / name, resume=resume, progress=progress,
+        config_fingerprint=case_fingerprint)
+    pv_summary = None
+    if pv_config is not None:
+        pv_fingerprint = hashlib.sha256(f"{fingerprint}:{name}:pv_only".encode()).hexdigest()
+        pv_summary = replay_continuous_strategy(pv_config, _profile_inputs(pv_prepared, profile),
+            strategy, destination / "pv_only" / name, resume=resume, progress=progress,
+            config_fingerprint=pv_fingerprint)
+    return summary, pv_summary
 
 
 def _profile_inputs(prepared, profile):
@@ -130,11 +161,17 @@ def run_continuous_participation(config, *, progress=None):
             cases.append(("perfect_pv_all_auctions", all_auctions, "perfect_pv"))
         summaries = {}
         pv_summaries = {}
+        pv_config = pv_prepared = None
         if study.get("matched_pv_only", False):
             from .continuous_pv_only import pv_only_inputs
             pv_config, pv_prepared = pv_only_inputs(config, prepared)
         try:
-            for index, (name, profile, strategy) in enumerate(cases, start=1):
+            workers = int(os.environ.get("BESS_PARTICIPATION_WORKERS", "1"))
+            if workers < 1:
+                raise ValueError("BESS_PARTICIPATION_WORKERS must be positive")
+
+            def announce(index, name):
+                """Keep the original profile counter for serial and parallel runs."""
                 if progress:
                     # Count auction subsets separately from the two reference trajectories.
                     if index <= len(profiles):
@@ -142,18 +179,59 @@ def run_continuous_participation(config, *, progress=None):
                     else:
                         counter = f"baseline {index - len(profiles)}/{len(cases) - len(profiles)}"
                     progress(f"Starting {name} [{counter}]: {len(prepared['days'])} delivery days")
-                case_fingerprint = hashlib.sha256(f"{fingerprint}:{name}".encode()).hexdigest()
-                summaries[name] = replay_continuous_strategy(config, _profile_inputs(prepared, profile), strategy,
-                    destination / "strategies" / name, resume=resume, progress=progress,
-                    config_fingerprint=case_fingerprint)
-                if study.get("matched_pv_only", False):
-                    pv_fingerprint = hashlib.sha256(f"{fingerprint}:{name}:pv_only".encode()).hexdigest()
-                    pv_summaries[name] = replay_continuous_strategy(pv_config,
-                        _profile_inputs(pv_prepared, profile), strategy,
-                        destination / "pv_only" / name, resume=resume, progress=progress,
-                        config_fingerprint=pv_fingerprint)
-                manifest["completed"].append(name)
-                _atomic_json(manifest_path, manifest)
+
+            if workers > 1:
+                # Spawn independent processes: Gurobi environments must not be shared across threads.
+                context = multiprocessing.get_context("spawn")
+                with ProcessPoolExecutor(max_workers=workers, mp_context=context,
+                        initializer=_initialize_profile_worker,
+                        initargs=(config, prepared, pv_config, pv_prepared, destination, resume, fingerprint)) as executor:
+                    pending = {}
+                    next_case = iter(enumerate(cases, start=1))
+                    def submit_next():
+                        """Start a profile only when a worker is available."""
+                        item = next(next_case, None)
+                        if item is not None:
+                            index, case = item
+                            announce(index, case[0])
+                            pending[executor.submit(_run_profile_case, case)] = case[0]
+                    for _ in range(min(workers, len(cases))):
+                        submit_next()
+                    try:
+                        while pending:
+                            done, _ = wait(pending, return_when=FIRST_COMPLETED)
+                            # Check every completed future before scheduling more work.
+                            finished = [(pending.pop(future), future.result()) for future in done]
+                            for name, (summary, pv_summary) in finished:
+                                summaries[name] = summary
+                                if pv_summary is not None:
+                                    pv_summaries[name] = pv_summary
+                                manifest["completed"].append(name)
+                                _atomic_json(manifest_path, manifest)
+                                submit_next()
+                    except BaseException:
+                        # Python 3.14 can terminate running workers promptly on failure.
+                        if hasattr(executor, "terminate_workers"):
+                            executor.terminate_workers()
+                        raise
+                # Preserve the configured profile order in all aggregate outputs.
+                summaries = {name: summaries[name] for name, _, _ in cases}
+                pv_summaries = {name: pv_summaries[name] for name, _, _ in cases} if pv_summaries else {}
+            else:
+                for index, (name, profile, strategy) in enumerate(cases, start=1):
+                    announce(index, name)
+                    case_fingerprint = hashlib.sha256(f"{fingerprint}:{name}".encode()).hexdigest()
+                    summaries[name] = replay_continuous_strategy(config, _profile_inputs(prepared, profile), strategy,
+                        destination / "strategies" / name, resume=resume, progress=progress,
+                        config_fingerprint=case_fingerprint)
+                    if study.get("matched_pv_only", False):
+                        pv_fingerprint = hashlib.sha256(f"{fingerprint}:{name}:pv_only".encode()).hexdigest()
+                        pv_summaries[name] = replay_continuous_strategy(pv_config,
+                            _profile_inputs(pv_prepared, profile), strategy,
+                            destination / "pv_only" / name, resume=resume, progress=progress,
+                            config_fingerprint=pv_fingerprint)
+                    manifest["completed"].append(name)
+                    _atomic_json(manifest_path, manifest)
             ranking = _save_comparison(destination, summaries, profiles, prepared["days"], study.get("plots", True))
             if pv_summaries:
                 from .continuous_pv_only import save_pv_only_comparison

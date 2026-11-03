@@ -717,9 +717,11 @@ def test_stochastic_replay_separates_planning_penalty_from_actual_settlement(con
     assert (tmp_path / "stochastic/csv/revenue_energy_daily.csv").is_file()
 
 
-def test_participation_driver_pairs_each_profile_with_pv_only(continuous_config, tmp_path, monkeypatch):
+@pytest.mark.parametrize("workers", [1, 2])
+def test_participation_driver_pairs_each_profile_with_pv_only(continuous_config, tmp_path, monkeypatch, workers):
     """Every requested auction subset receives its own zero-battery continuous replay."""
     from bess_pv_trading.simulation import continuous_participation
+    monkeypatch.setenv("BESS_PARTICIPATION_WORKERS", str(workers))
     config = continuous_config
     config["experiment_outputs"]["plots"] = False
     config["continuous_optimization"].update(output_root=str(tmp_path), run_id="matched", resume=False)
@@ -727,6 +729,16 @@ def test_participation_driver_pairs_each_profile_with_pv_only(continuous_config,
         "required_auctions": ["DA"], "profiles": [["DA"], ["DA", "IDA1", "IDA2", "IDA3"]],
         "matched_pv_only": True, "sequential_all_auctions_baseline": False, "perfect_pv_baseline": False, "plots": False}
     prepared, _ = _prepared(config, one_day=True)
+    if workers > 1:
+        # Mirror production's serializable, preflight-pinned forecast provider.
+        from bess_pv_trading.simulation.continuous_inputs import _PreparedForecasts
+        provider = prepared["forecast_provider"]
+        pinned = _PreparedForecasts()
+        starts = pd.DatetimeIndex(prepared["full_grid"].starts)
+        for daily in prepared["days_data"].values():
+            for event in daily["schedule"]:
+                pinned.add(event.submission_at, starts, provider(event.submission_at, starts))
+        prepared["forecast_provider"] = pinned
     monkeypatch.setattr(continuous_participation, "prepare_continuous_inputs", lambda config, progress=None: prepared)
     result = continuous_participation.run_continuous_participation(config)
     comparison = pd.read_csv(Path(result["output_dir"]) / "csv/pv_only_comparison_daily.csv")
