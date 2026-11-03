@@ -1,11 +1,14 @@
 # Full-January MPC versus feedback study plan
 
-Status: prepared for review; **the full-month study has not been run**.
+Status: prepared for review; **the full-month study optimization has not been run**.
 
-The 31 daily input/auction checks completed on 3 November 2026. An additional
-full-month forecast-cutoff scan was interrupted before completion; the complete
-month preflight is therefore not certified. The launcher completes that scan
-before starting any historical optimization.
+On 3 November 2026, the full January check-only preflight passed in 145.9 seconds.
+It validated 31 delivery dates, 2,976 physical intervals, 3,100 distinct forecast
+cutoffs and all available auctions. It started zero Gurobi solves. The cutoff scan
+used one Zarr handle and one metadata read; 126 selected weather cycles served
+3,069 cutoff reads, and 126 converted PV vintages served 2,883 cutoff requests.
+Per-day initialization inputs are read in their own phase. The resulting input
+fingerprint is recorded in `realtime_mpc_january_2026_preflight.json`.
 
 ## Objective and exact comparison
 

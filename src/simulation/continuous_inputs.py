@@ -17,7 +17,8 @@ from ..data.gme import native_price_resolution_minutes
 from ..domain import DeliveryGrid, PlantParameters, battery_parameters_from_config
 from ..markets import AuctionCalendar
 from ..optimization.prepared import terminal_minimum_energy_mwh
-from .gme_oracle import _load_auction_prices, _load_pv, _load_pv_forecast, _soc_energy_targets
+from .gme_oracle import (_forecast_preflight_session, _load_auction_prices, _load_pv,
+    _load_pv_forecast, _soc_energy_targets)
 from .settlement import load_realized_imbalance_prices
 from ..optimization.mpc import uses_realtime_control, needs_mpc_ensemble
 
@@ -413,16 +414,25 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     show_forecast_progress = progress is not None and uses_realtime_control(config)
     if show_forecast_progress:
         progress(f"Daily input checks complete; preflighting {forecast_request_count} forecast cutoffs")
-    for request_index, (key, starts) in enumerate(sorted(forecast_requests.items()), start=1):
-        initial = initial_requests.get(key)
-        try:
-            bundle = (initial[1] if initial is not None and starts.equals(initial[0]) else
-                      _load_pv_forecast(config, calendar, pd.Timestamp(key), starts))
-            forecasts.add(pd.Timestamp(key), starts, bundle)
-        except (ValueError, RuntimeError) as error:
-            raise ValueError(f"Continuous weather preflight at {key}: {error}") from error
-        if show_forecast_progress and (request_index % 100 == 0 or request_index == forecast_request_count):
-            progress(f"Forecast preflight {request_index}/{forecast_request_count}: {key}")
+    with _forecast_preflight_session(config, calendar) as forecast_reader:
+        for request_index, (key, starts) in enumerate(sorted(forecast_requests.items()), start=1):
+            initial = initial_requests.get(key)
+            try:
+                bundle = (initial[1] if initial is not None and starts.equals(initial[0]) else
+                          _load_pv_forecast(config, calendar, pd.Timestamp(key), starts))
+                forecasts.add(pd.Timestamp(key), starts, bundle)
+            except (ValueError, RuntimeError) as error:
+                raise ValueError(f"Continuous weather preflight at {key}: {error}") from error
+            if show_forecast_progress and (request_index % 100 == 0 or request_index == forecast_request_count):
+                progress(f"Forecast preflight {request_index}/{forecast_request_count}: {key}")
+        forecast_reader_stats = forecast_reader.stats
+    if show_forecast_progress:
+        progress(f"Cutoff forecast cache: {forecast_reader_stats['zarr_store_opens']} Zarr open, "
+            f"{forecast_reader_stats['metadata_reads']} metadata read, "
+            f"{forecast_reader_stats['distinct_raw_vintages']} raw vintages, "
+            f"{forecast_reader_stats['raw_vintage_cache_hits']} raw cache hits, "
+            f"{forecast_reader_stats['distinct_pv_conversions']} PV conversions, "
+            f"{forecast_reader_stats['pv_conversion_cache_hits']} PV cache hits")
     ensemble_provenance = None
     if settings.get("pv_ensemble", {}).get("enabled", False) or needs_mpc_ensemble(config):
         ensemble_provenance = _prepare_pv_ensembles(config, days_data, progress)

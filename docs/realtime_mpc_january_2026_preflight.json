@@ -1,0 +1,25 @@
+{
+  "status": "preflight_passed",
+  "run_id": "farm1_january_2026_tcn_current_pv_all_auctions",
+  "completed_at_utc": "2026-11-03T13:35:16.972Z",
+  "elapsed_seconds": 145.92,
+  "input_fingerprint": "5ca191847574c8d253f90c622dd16e26f36fa3560a1451d856bd79277b8a8a7d",
+  "delivery_days": 31,
+  "physical_intervals": 2976,
+  "forecast_cutoffs": 3100,
+  "participating_auctions": ["DA", "IDA1", "IDA2", "IDA3"],
+  "controllers": ["track_committed_grid", "deterministic_mpc"],
+  "comparison_modes": ["frozen_commitments", "continuous"],
+  "current_pv_information": "realized_interval_average",
+  "forecast_model": "farm_1_direct_tcn",
+  "retrospective_model_artifacts": true,
+  "solver_decisions_started": 0,
+  "cutoff_scan_cache": {
+    "zarr_store_opens": 1,
+    "metadata_reads": 1,
+    "distinct_raw_weather_vintages": 126,
+    "raw_vintage_cache_hits": 2973,
+    "distinct_converted_pv_vintages": 126,
+    "pv_conversion_cache_hits": 2883
+  }
+}

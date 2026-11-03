@@ -45,6 +45,16 @@ The weight mapping applies to ensemble MPC; deterministic MPC always has weight 
 Current PV disclosure does not identify an ensemble member or reweight future
 trajectories; future members retain their explicit raw weights.
 
+Preflight still checks every distinct UTC cutoff, but opens the Zarr store and
+reads farm metadata once for the cutoff scan. It caches raw weather values and
+aligned PV conversions by selected forecast cycle, then slices the remaining
+horizon for each cutoff. Converted PV is cached only when the physical
+parameters are fixed; a cutoff-varying parameter registry bypasses this cache.
+Eligibility and provenance are rebuilt for every request. The caches live for
+one preparation call, not across separate commands; the full study launcher
+shares one preparation between both comparison modes. Progress reports every
+100 cutoffs and gives the raw-weather and PV cache hit counts.
+
 The revised smoke uses the selected Farm 1 weather bundle `direct_tcn_02` for
 deterministic forecasts, all 50 ensemble trajectories, and the common auction
 source strategy. Its 12 frozen weather/calendar features feed a direct TCN
@@ -265,7 +275,9 @@ Completed smoke results and numerical evidence are in
 [full-January study plan](realtime_mpc_january_2026_study_plan.md) specifies the
 all-auction deterministic-MPC versus feedback comparison. Its launcher,
 `scripts/run_realtime_mpc_comparison.py`, prints the plan by default and starts
-optimization only with `--run`.
+optimization only with `--run`. The completed January input-only preflight and
+its input fingerprint are in
+[the preflight record](realtime_mpc_january_2026_preflight.json).
 
 Missing data is not downloaded or filled by this workflow. Existing nighttime
 priors and frozen-forecast measurement fallbacks remain part of preprocessing and

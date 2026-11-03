@@ -187,7 +187,7 @@ def prepare_analysis_data(config: dict[str, Any]) -> dict[str, Any]:
 
 
 # All forecast values from an eligible cycle share its publication time.
-def select_forecast_vintage(dataset: xr.Dataset, farm_id: int, cutoff: Any, mapping: dict[str, str], latency_hours: float = 4, explicit_availability_variable: str | None = None, numeric_lead_units: str = "hours") -> ForecastBundle:
+def select_forecast_vintage(dataset: xr.Dataset, farm_id: int, cutoff: Any, mapping: dict[str, str], latency_hours: float = 4, explicit_availability_variable: str | None = None, numeric_lead_units: str = "hours", vintage_cache: dict | None = None) -> ForecastBundle:
     """Select the latest available vintage; never average overlapping cycles."""
     if latency_hours < 0:
         raise ValueError("Forecast availability latency must be nonnegative")
@@ -207,20 +207,33 @@ def select_forecast_vintage(dataset: xr.Dataset, farm_id: int, cutoff: Any, mapp
         raise ValueError("No forecast vintage is available by this decision cutoff")
     position = eligible[np.argmax(cycles.asi8[eligible])]
     cycle = cycles[position]
-    selected = dataset.sel(farm_id=farm_id).isel(cycle_time=int(position))
-    leads = lead_timedeltas(selected.lead_time.values, numeric_lead_units)
-    values = pd.DataFrame(index=cycle + leads)
-    values.index.name = "valid_time"
-    units: dict[str, str] = {}
-    for canonical, raw in mapping.items():
-        if raw not in selected:
-            raise ValueError(f"Configured forecast mapping is absent: {canonical} -> {raw}")
-        if selected[raw].dims != ("lead_time",):
-            raise ValueError(f"Forecast {raw} does not have named lead_time dimension after farm/cycle selection")
-        values[canonical] = selected[raw].values
-        units[canonical] = selected[raw].attrs.get("units", "unknown")
-    values["lead_hours"] = leads / pd.Timedelta(hours=1)
-    provenance = {"availability_policy": status, "assumed_latency_hours": latency_hours, "source_lead_dtype": str(dataset.lead_time.dtype), "source_lead_encoding_units": dataset.lead_time.encoding.get("units", numeric_lead_units), "source_units": dict(units), "source_lead_attributes": dict(dataset.lead_time.attrs), "source_lead_values": list(map(str, selected.lead_time.values)), "canonical_to_raw": mapping, "decision_cutoff_utc": utc_timestamp(cutoff).isoformat(), "vintage_selection": "latest_available_single_cycle", "ensemble_axis": "explicit_length_one", "future_forecast_revision_assumption": "freeze_until_new_cycle_available"}
+    cache_key = (int(farm_id), int(cycle.value), tuple(mapping.items()), numeric_lead_units)
+    cached = None if vintage_cache is None else vintage_cache.get(cache_key)
+    if cached is None:
+        # Read and normalize raw weather values once per selected cycle.
+        selected = dataset.sel(farm_id=farm_id).isel(cycle_time=int(position))
+        leads = lead_timedeltas(selected.lead_time.values, numeric_lead_units)
+        values = pd.DataFrame(index=cycle + leads)
+        values.index.name = "valid_time"
+        units: dict[str, str] = {}
+        for canonical, raw in mapping.items():
+            if raw not in selected:
+                raise ValueError(f"Configured forecast mapping is absent: {canonical} -> {raw}")
+            if selected[raw].dims != ("lead_time",):
+                raise ValueError(f"Forecast {raw} does not have named lead_time dimension after farm/cycle selection")
+            values[canonical] = selected[raw].values
+            units[canonical] = selected[raw].attrs.get("units", "unknown")
+        values["lead_hours"] = leads / pd.Timedelta(hours=1)
+        cached = {"values": values.copy(deep=True), "units": dict(units),
+            "lead_attributes": dict(dataset.lead_time.attrs),
+            "lead_values": list(map(str, selected.lead_time.values))}
+        if vintage_cache is not None:
+            vintage_cache[cache_key] = cached
+    else:
+        # Each cutoff receives its own mutable frame for alignment and PV conversion.
+        values = cached["values"].copy(deep=True)
+        units = dict(cached["units"])
+    provenance = {"availability_policy": status, "assumed_latency_hours": latency_hours, "source_lead_dtype": str(dataset.lead_time.dtype), "source_lead_encoding_units": dataset.lead_time.encoding.get("units", numeric_lead_units), "source_units": dict(units), "source_lead_attributes": dict(cached["lead_attributes"]), "source_lead_values": list(cached["lead_values"]), "canonical_to_raw": mapping, "decision_cutoff_utc": utc_timestamp(cutoff).isoformat(), "vintage_selection": "latest_available_single_cycle", "ensemble_axis": "explicit_length_one", "future_forecast_revision_assumption": "freeze_until_new_cycle_available"}
     return ForecastBundle(int(farm_id), cycle, availability[position], values, units, provenance=provenance)
 
 

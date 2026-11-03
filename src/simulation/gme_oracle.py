@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
+from contextlib import contextmanager
+from contextvars import ContextVar
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
@@ -34,6 +37,9 @@ from ..reporting.optimization_timing import optimization_timing_report, solve_ti
 from .replay import execute_interval
 from .frozen_plans import plot_frozen_plan_comparison, simulate_frozen_auction_plans
 from .settlement import expected_realized_kpis, load_realized_imbalance_prices, settle_realized_dispatch
+
+
+_ACTIVE_FORECAST_PREFLIGHT = ContextVar("active_forecast_preflight", default=None)
 
 
 def _apply_actual_settlement(config, grid, dispatch, summary, destination):
@@ -584,7 +590,8 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
     return actual, provenance, skipped
 
 
-def _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts):
+def _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts,
+                           vintage_cache=None, pv_cache=None, pv_cache_counters=None):
     """Convert the latest eligible weather cycle on the requested remaining grid."""
     forecast_settings = config["forecast"]
     farm_id = int(forecast_settings["farm_id"])
@@ -596,7 +603,26 @@ def _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts):
     weather = select_forecast_vintage(dataset, farm_id, cutoff, config["forecast_mapping"],
         latency_hours=float(config.get("source", {}).get("availability_lag_hours", 4)),
         explicit_availability_variable=config.get("source", {}).get("explicit_availability_variable"),
-        numeric_lead_units=config.get("source", {}).get("numeric_lead_units", "hours"))
+        numeric_lead_units=config.get("source", {}).get("numeric_lead_units", "hours"),
+        vintage_cache=vintage_cache)
+    # A registered fitted parameter set can change at a cutoff. Cache converted
+    # PV only when the configured physical conversion is fixed for this session.
+    cache_key = (farm_id, int(pd.Timestamp(weather.forecast_vintage).value))
+    converted = (None if pv_cache is None or config["pv"].get("parameter_registry")
+                 else pv_cache.get(cache_key))
+    if converted is not None:
+        cached_bundle = converted["bundle"]
+        positions = cached_bundle.values.index.get_indexer(starts)
+        if np.all(positions >= 0):
+            provenance = {**deepcopy(cached_bundle.provenance), **weather.provenance,
+                "forecast_missing_filled_night_zero_intervals": int(
+                    np.count_nonzero(converted["night_missing_mask"][positions]))}
+            if pv_cache_counters is not None:
+                pv_cache_counters["hits"] += 1
+            return replace(cached_bundle, values=cached_bundle.values.iloc[positions].copy(deep=True),
+                           available_at=weather.available_at, provenance=provenance)
+    if pv_cache_counters is not None:
+        pv_cache_counters["misses"] += 1
     weather = align_forecast(weather, starts, config["forecast_semantics"],
         config.get("policy", {}).get("nonnegative_forecasts", []))
     policy = config.get("policy", {})
@@ -617,11 +643,77 @@ def _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts):
     pv.values["pv_ac_mw"] = forecast
     pv.provenance["forecast_missing_filled_night_zero_intervals"] = int(missing.sum())
     pv.provenance["forecast_pv_night_policy"] = forecast_night
+    if pv_cache is not None and not config["pv"].get("parameter_registry"):
+        pv_cache[cache_key] = {"bundle": replace(pv, values=pv.values.copy(deep=True),
+            provenance=deepcopy(pv.provenance)), "night_missing_mask": missing.copy()}
     return pv
+
+
+class _ForecastPreflightSession:
+    """Share one Zarr handle, farm metadata and raw vintage arrays per preflight."""
+
+    def __init__(self, config, calendar):
+        self.config = config
+        self.calendar = calendar
+        self.dataset = None
+        self.metadata = None
+        self.vintage_cache = {}
+        self.pv_cache = {}
+        self.pv_cache_counters = {"hits": 0, "misses": 0}
+        self.forecast_calls = 0
+        self.cache_hits = 0
+
+    def __enter__(self):
+        self.token = _ACTIVE_FORECAST_PREFLIGHT.set(self)
+        return self
+
+    def __exit__(self, exception_type, exception, traceback):
+        _ACTIVE_FORECAST_PREFLIGHT.reset(self.token)
+        if self.dataset is not None:
+            self.dataset.close()
+
+    def load(self, config, calendar, cutoff, starts):
+        """Read an eligible vintage while reusing this preflight's open sources."""
+        if config is not self.config or calendar is not self.calendar:
+            raise ValueError("Forecast preflight session used with different inputs")
+        if self.dataset is None:
+            self.dataset = open_store(config)
+            farm_id = int(config["forecast"]["farm_id"])
+            path = config_path(config, config["inputs"]["metadata_parquet"])
+            self.metadata = load_metadata(path, [farm_id])[farm_id]
+        prior_count = len(self.vintage_cache)
+        self.forecast_calls += 1
+        result = _forecast_pv_at_cutoff(config, calendar, self.dataset, self.metadata,
+            cutoff, starts, vintage_cache=self.vintage_cache, pv_cache=self.pv_cache,
+            pv_cache_counters=self.pv_cache_counters)
+        if len(self.vintage_cache) == prior_count:
+            self.cache_hits += 1
+        return result
+
+    @property
+    def stats(self):
+        """Report actual source reads and repeated-cycle reuse for run diagnostics."""
+        return {"zarr_store_opens": int(self.dataset is not None),
+            "metadata_reads": int(self.metadata is not None),
+            "forecast_requests": self.forecast_calls,
+            "distinct_raw_vintages": len(self.vintage_cache),
+            "raw_vintage_cache_hits": self.cache_hits,
+            "distinct_pv_conversions": len(self.pv_cache),
+            "pv_conversion_cache_hits": self.pv_cache_counters["hits"]}
+
+
+@contextmanager
+def _forecast_preflight_session(config, calendar):
+    """Activate a lazy shared reader; monkeypatched forecast providers remain usable."""
+    with _ForecastPreflightSession(config, calendar) as session:
+        yield session
 
 
 def _load_pv_forecast(config, calendar, cutoff, starts):
     """Read a causal weather/PV update without consulting realized production."""
+    session = _ACTIVE_FORECAST_PREFLIGHT.get()
+    if session is not None:
+        return session.load(config, calendar, cutoff, starts)
     farm_id = int(config["forecast"]["farm_id"])
     with open_store(config) as dataset:
         metadata = load_metadata(config_path(config, config["inputs"]["metadata_parquet"]), [farm_id])[farm_id]
