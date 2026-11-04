@@ -73,10 +73,10 @@ def draw_participation():
     ensemble = [float(row["net_profit_eur_ensemble"]) / 1000 for row in rows]
     vertical = list(range(len(rows)))
     figure, axis = plt.subplots(figsize=(8.6, 5.1), layout="constrained")
-    axis.scatter(deterministic, [value - 0.11 for value in vertical], color=BLUE,
-                 s=26, label="Updating deterministic", zorder=3)
-    axis.scatter(ensemble, [value + 0.11 for value in vertical], color=ORANGE,
-                 s=26, marker="D", label="Strict 51-path planning", zorder=3)
+    axis.barh([value - 0.18 for value in vertical], deterministic, height=0.32,
+              color=BLUE, label="Updating deterministic", zorder=3)
+    axis.barh([value + 0.18 for value in vertical], ensemble, height=0.32,
+              color=ORANGE, label="Strict 51-path planning", zorder=3)
     axis.set_yticks(vertical, labels)
     axis.invert_yaxis()
     axis.set_xlabel("January operating profit (thousand EUR)")

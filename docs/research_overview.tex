@@ -15,7 +15,7 @@
 \DeclareMathOperator{\clip}{clip}
 \hypersetup{pdftitle={From farm and weather data to solar and battery trading decisions},pdfauthor={PV--BESS research programme}}
 \title{From Farm and Weather Data\\to Solar and Battery Trading Decisions}
-\author{Data, forecast paths and auction participation}
+\author{Data, ensemble formulation and real-time delivery}
 \date{4 November 2026}
 \begin{document}
 \maketitle
@@ -25,12 +25,13 @@ Battery storage provides flexibility, while successive auctions create
 opportunities to revise the contracted position as weather information
 improves. We study this problem using four northern-Italian farms, historical
 production and irradiance, regularly updated weather forecasts, and 50-member
-weather ensembles. Weather is converted into possible AC production paths;
-these paths support physically feasible trading and battery decisions.
-Participation studies compare every nonempty subset of the day-ahead and three
-intraday auctions, with each strategy carrying its own state through time.
+weather ensembles. Weather is converted into possible AC production paths that
+are used to plan physically feasible trading and battery decisions.
+Auction participation studies investigate the importance of jointly optimizing current trades
+and future adjustments.
 This document explains the available data, the forecast-to-decision process,
-and the first participation results. The full optimization and supporting
+the deterministic and ensemble formulations, and physical delivery control.
+The full optimization and supporting
 equations are collected in appendices.
 \end{abstract}
 \tableofcontents
@@ -46,9 +47,9 @@ battery operation helps deliver it under uncertain solar production.
 
 Our core idea is to connect the information available at each auction with
 \emph{the decisions that can still be changed}. We transform eligible weather
-forecasts into production paths, optimize the remaining market opportunities
+forecasts (deterministic or ensemble) into production paths, optimize the remaining market opportunities
 and battery operation together, submit the current order, and repeat as new
-information arrives. Earlier commitments remain fixed. The actual battery
+information arrives. The actual battery
 state links the decisions across delivery intervals and days.
 
 The model maximizes expected remaining auction revenue less battery wear and
@@ -56,18 +57,14 @@ trading costs, subject to energy conservation, exclusive charging/discharging,
 stored-energy bounds and the shared grid limit. The full optimization is in
 Appendix~\ref{app:auction}.
 
-This allows us to ask three concrete questions. How does participation in
-additional auctions change the achievable operating outcome? What changes when
-a single production forecast is replaced by an ensemble? How much does joint
-planning of remaining auctions contribute relative to optimizing one auction
-at a time? We assess profit together with imbalance, curtailment, wear and
+We assess profit together with imbalance, curtailment, wear and
 ending stored energy.
 
 \section{The available data}
 \subsection{Four farms and their historical records}
 The dataset covers four anonymous farms in the northern-Italian bidding zone.
 Installed power is measured on the AC side. The supplied metadata describe
-fixed arrays and single-axis trackers:
+fixed arrays and single-axis trackers and the battery are hypothetical study assets:
 \begin{center}\small
 \begin{tabular}{rllrr}
 \toprule Farm & AC capacity (MW) & Declared technology & Battery (MWh) & Power (MW)\\\midrule
@@ -76,23 +73,19 @@ fixed arrays and single-axis trackers:
 901 & 4.16000 & Bifacial single-axis tracker & 2.00 & 1.0\\
 910 & 6.63800 & Single-axis tracker & 5.00 & 2.5\\
 \bottomrule\end{tabular}\end{center}
-The batteries are hypothetical study assets. Their energy and power ratings,
+ Their energy and power ratings,
 7--93\% state-of-charge range, 90\% round-trip efficiency and connection limits
-are modeling assumptions. The farm metadata also provide nominal orientation,
-tilt and elevation. Exact farm coordinates are unavailable, so solar-position
-calculations use documented geographical proxies; fitted effective geometry or
-rear-irradiance assumptions can differ from the metadata label.
+are modeling assumptions. Exact farm coordinates are unavailable, so solar-position
+calculations use documented geographical proxies;
 
 Historical records run from 1 January 2025 to 31 August 2026 on a 15-minute
 UTC grid: 58,368 timestamps for each farm. They contain AC power, historical
 satellite global horizontal irradiance (GHI), and historical diffuse fraction.
-This is the time grid's size, rather than a count of independently verified,
-complete measurements. Power is converted once from kW to MW; multiplying by
-the interval duration gives energy in MWh.
+
 
 Production quality and availability matter to both forecasting and trading.
 Reviewed modeling views distinguish retained measurements, approved synthetic
-replacements, seasonal night zeros and excluded intervals. Historical-GHI
+replacements in unpredictable scenarios, seasonal night zeros and excluded intervals. Historical-GHI
 reconstructions provide explicitly identified counterfactual production where
 used. Raw historical data, reviewed targets and reconstructed production have
 different evidential meanings. Forecast training and replay therefore retain
@@ -102,43 +95,27 @@ their target policy and provenance.
 The main weather archive contains 2,440 initialization times, every six hours,
 from 30 December 2024 to 31 August 2026. Each initialization supplies 49 hourly
 lead coordinates, from zero to 48 hours, for every farm. The weather fields
-include global and direct horizontal radiation, total and layered cloud cover,
-air temperature, dew point, wind components at 10 and 100 metres,
-precipitation, snow-water equivalent and visibility.
+include several irradiance components, temperature, wind and cloud cover.
 
-A forecast is identified by its initialization and lead time; their sum gives
-the valid time. Several issues can predict the same delivery interval. This
+
+
+ Several cycles therefore predict the same delivery interval with newly available information. This
 provides a record of forecast revision as delivery approaches. The four daily
 issues are successive information updates, each supplying one deterministic
 weather trajectory.
 
-Hourly radiation represents an interval mean, and precipitation an hourly
-accumulation. Alignment with the quarter-hour delivery grid respects those
-semantics. Issue time, assumed publication time and delivery time are retained
-separately. In the studies, forecasts become available six hours after
-initialization; this is an explicit release assumption.
+In the studies, forecasts are assumed to become available six or seven hours after
+initialization.
 
 \subsection{Weather ensembles}
 Two separate archives supply \emph{50 weather members for the same issue and
 lead times}, with the same four farms and 0--48-hour lead coordinates:
-\begin{center}\small
-\begin{tabular}{lll}
-\toprule Archive & Available 00 UTC initializations & Members / hourly leads\\\midrule
-Winter & 31 Dec. 2025--31 Jan. 2026 (32 issues) & 50 / 49\\
-Late summer & 1 Aug.--30 Sept. 2026 (61 issues) & 50 / 49\\
-\bottomrule\end{tabular}\end{center}
-These members represent alternative weather trajectories within one forecast
-issue. Keeping a member's identity through the horizon retains its supplied
-temporal evolution, including the duration of cloudy and sunny periods. The
-spread supplies uncertainty information that a single deterministic forecast
-cannot describe. Equal scenario weights are a modeling choice; coverage and
-calibration require separate assessment.
 
-The participation studies freeze the ensemble initialized at 00 UTC on the
-\emph{preceding delivery day}. The winter archive includes 31 December, which
-supports 1 January delivery. The late-summer archive begins on 1 August and
-therefore supports this convention from 2 August. Its September weather issues
-extend beyond the available farm-production record used here.
+These members represent alternative weather trajectories within one forecast
+issue. The spread supplies uncertainty information that a single deterministic forecast
+cannot describe. As more data becomes available, the ensemble can provide a more comprehensive view of potential outcomes,
+and act as training data for developing more sophisticated forecasting generation methods for stochastic methods.
+
 
 \subsection{Market observations}
 Historical clearing curves cover DA and the three intraday auctions, with
@@ -166,13 +143,14 @@ IDA2 & Previous day, 22:00 & Whole next day & Previous day, 12 UTC\\
 IDA3 & Delivery day, 10:00 & Noon to midnight & Delivery day, 00 UTC\\
 \bottomrule\end{tabular}\end{center}
 The last column follows the six-hour release assumption and requires sufficient
-remaining-horizon coverage. At every cutoff, the deterministic forecast is
-updated to the latest eligible issue. The 50 ensemble paths retain the frozen
-preceding-day issue, so their information age differs from the updating
-forecast. This distinction is part of the comparison design.
+remaining-horizon coverage. In our data weather forecasts have a 48-hour horizon allowing us
+to have prediction for trading in day ahead markets.
+ At every cutoff, the deterministic forecast is
+updated to the latest eligible issue. Given the raw data size of storing all 4 cycles of the ensemble,
+only the 00 UTC is used for the ensemble studies.
 
 \subsection{Converting weather into AC generation}
-The physical forecast first derives direct and diffuse irradiance components,
+The baseline physical forecast is taken from the pvlib library. It first derives direct and diffuse irradiance components,
 then projects them onto the array or tracker plane. It estimates module
 temperature from air temperature, wind and plane-of-array irradiance, computes
 DC production and converts it to AC power. Output is bounded by the farm AC
@@ -190,10 +168,10 @@ scores answer different questions.
 Each ensemble weather member passes separately through the selected conversion
 model, producing a complete AC power path on the delivery grid. The study's
 51-path input combines these 50 paths with the updating deterministic forecast.
-This ensemble construction differs from generating paths by independently
-sampling marginal quantiles at each time. The full path matters to a battery:
-a sustained production shortfall can exhaust stored energy even when its
-pointwise forecast spread resembles that of a shorter shortfall.
+This allows us to generate a set of possible coherent scenarios instead of using
+independent sampling. Future studies, when more data becomes available, will investigate ways
+to generate similar temporally correlated trajectories for stochastic optimization.
+
 
 \begin{figure}[htbp]
 \centering
@@ -207,16 +185,62 @@ and physical decisions. Realized delivery supplies the carried battery state.}
 At a given cutoff, a production path is a possible external input. A decision
 path consists of auction quantities and feasible battery/solar actions along
 the represented information history. Scenarios with the same information must
-share the decisions made before they can be distinguished. Future production
-is therefore not disclosed merely by representing several paths.
+share the decisions made before they can be distinguished.
 
-In the strict ensemble participation studies, orders and planned battery
-commands are common across all 51 production paths; curtailment can adapt to
-available production. Every represented path must support the contracted
-delivery. With identical price paths and the stated curtailment recourse, useful
-solar injection is bounded by the pointwise minimum across production paths.
-This makes the strict formulation conservative. An ensemble of forecasts does
-not automatically imply adaptive future battery decisions.
+\subsection{Deterministic and ensemble formulations}
+The deterministic case optimizes against one eligible AC production forecast.
+It chooses auction quantities, charging/discharging and curtailment so that the
+forecast grid exchange exactly matches the cumulative contracted position in
+each delivery interval. Energy, power, grid and terminal constraints apply to
+this one trajectory. At a later auction the same problem is solved again with
+updated information and the battery state appropriate to that decision.
+
+The ensemble case uses 50 production paths from the preceding delivery day's
+00 UTC weather issue plus the updating deterministic path, each weighted
+equally at $1/51$. Auction quantities
+and the entire planned battery schedule are shared across all represented
+paths. Their common initial energy and charging/discharging imply a common
+stored-energy trajectory. Solar curtailment can differ with available production.
+For contracted energy $Q_t$, common battery powers $c_t,d_t$ and path-specific
+curtailment $u_{s,t}$, exact delivery requires
+\begin{equation}\label{eq:main-ensemble-balance}
+ (V_{s,t}-u_{s,t}+d_t-c_t)\Delta_t=Q_t,
+ \qquad 0\le u_{s,t}\le V_{s,t},\qquad\forall s,t.
+\end{equation}
+Thus one submitted position and battery plan must be feasible under every
+represented production path. The full formulation and its information-sharing
+constraints are in Appendix~\ref{app:auction}.
+
+\begin{center}\small
+\begin{tabular}{>{\raggedright\arraybackslash}p{0.20\textwidth}
+                >{\raggedright\arraybackslash}p{0.34\textwidth}
+                >{\raggedright\arraybackslash}p{0.34\textwidth}}
+\toprule & Deterministic case & Strict ensemble case\\\midrule
+Production input & One updating forecast & 50 frozen weather paths and one updating forecast\\
+Trade and battery plan & One schedule & One schedule shared across all paths\\
+PV curtailment & For the single forecast & Adapts to production in each path\\
+Planned delivery & Exact for one forecast & Exact for every represented path\\
+Main effect & Feasibility for the forecast trajectory & Feasibility over the intersection of pathwise constraints\\
+\bottomrule\end{tabular}\end{center}
+
+Under the common actual-price curves used here, exact delivery makes useful
+solar injection identical across paths. It is therefore limited by the lowest
+available production at each interval: $0\le i_t\le\min_sV_{s,t}$, whereas the
+deterministic case has $0\le i_t\le V_{0,t}$. This envelope is an exact
+simplification under the shared-control assumptions. Its successive minima
+can come from different weather members; it is a feasibility bound rather
+than one meteorological trajectory. Averaging the ensemble first would instead
+give a single-forecast problem and remove this pathwise protection.
+
+The objective retains a scenario-weighted expectation, but weights do not
+soften constraints imposed on every member. With identical prices and common
+grid exchange, the represented cash and physical costs coincide across paths;
+the ensemble changes the feasible decisions through production uncertainty.
+This explains the conservatism of this strict formulation. Allowing planned
+deviations or future battery actions conditional on new observations defines
+a different stochastic formulation.
+
+\subsection{Reoptimizing the remaining decisions}
 
 Integrated planning optimizes the remaining participating auctions together.
 Only the closing auction's quantity is submitted. At the next gate, that order
@@ -227,89 +251,51 @@ wear and transaction-fee state carry into subsequent decisions and days. A
 forecast projection supplies the starting state for tomorrow's plan while
 today's delivery is still in progress; the realized state governs execution.
 
-\section{The auction participation studies}
-\subsection{What is compared}
-Four optional auctions give $2^4-1=15$ nonempty participation profiles: four
-single-auction profiles, six pairs, four triples and the all-auction profile.
-An auction omitted from a profile supplies no submission opportunity. The
-remaining gates retain their chronological order and delivery eligibility.
+\section{Imbalances and real-time control}
+Even an exactly balanced forecast plan can produce a realized imbalance:
+actual exported energy differs from the submitted position, and the signed
+deviation is valued at the applicable settlement price. Our baseline is a
+\emph{greedy grid-tracking policy}. In each quarter-hour it adjusts battery
+power to bring grid exchange toward the contracted target, discharging for
+a shortfall and charging for a surplus within available power and SOC limits.
+It releases scheduled curtailment when useful and curtails excess PV when
+charging cannot absorb it. This local correction uses interval-average PV
+feedback in the replay; it does not optimize the consequences for later
+intervals. The current \emph{model predictive control (MPC)} study instead
+reoptimizes over the remaining delivery day every 15 minutes, using the current
+battery state, fixed commitments and eligible deterministic or ensemble PV
+forecasts. It trades expected imbalance volume or forecast settlement value
+against wear and terminal energy, executes only the first action and repeats.
+The comparison asks whether anticipating later shortfalls and preserving
+flexibility improves delivery and operating profit relative to greedy tracking.
+The physical controller submits no new auction orders; its changed battery
+state can affect subsequent auction decisions.
 
-Every profile has its own continuous physical and financial trajectory. At the
-start of the study the initial state is common within a farm; afterward each
-strategy's actions determine its own SOC and later feasible trades. The
-January 2026 comparison starts at 90\% SOC and carries state over 31 days.
-Planning uses a 50\% terminal target and a 40\% floor; forecast error and physical
-execution can yield different realized ending inventories.
-
-The study runs each profile with an updating deterministic production forecast
-and with the 51-path input. Two references clarify the mechanism:
-\begin{itemize}
-\item \textbf{Sequential all-auction planning:} participate in every auction,
-but optimize only the current auction's quantities at each gate. Later gates
-can still revise the physical plan and add their own trades.
-\item \textbf{Perfect-production reference:} disclose future production while
-retaining the same asset and actual-price benchmark. It shows the outcome of
-that information counterfactual under its specified planning convention.
-\end{itemize}
-Integrated and sequential planning thus differ even when they have the same
-auction access. With price foresight, the integrated model can anticipate
-cross-auction spreads and coordinate earlier purchases/sales with later ones.
-The resulting difference combines that economic opportunity with forecast and
-physical effects.
-
-\subsection{First results and their interpretation}
-An earlier January 2025 farm-910 study compared all 15 profiles on independently
-initialized days. Its all-auction integrated profile ranked first, with mean
-profit EUR 3,520.06/day and total EUR 109,121.72 over 31 days. The continuous
-January 2026 studies then retained the actual trajectory across days for all
-four farms and both forecast variants. These two designs have different state
-assumptions and are evaluated separately.
-
-The following January 2026 cash totals summarize three key participation
-choices. D denotes deterministic production and E the strict 51-path input.
-All columns use the same actual-price benchmark:
-\begin{center}\small
-\begin{tabular}{rrrrr}
-\toprule Farm & DA only D & Sequential all D & Integrated all D & Integrated all E\\
- & EUR & EUR & EUR & EUR\\\midrule
-1 & 1,648.99 & 1,848.22 & 10,216.33 & 10,197.54\\
-345 & 6,494.09 & 6,916.97 & 20,306.16 & 18,555.04\\
-901 & 16,467.77 & 16,904.75 & 53,708.73 & 49,397.35\\
-910 & 19,804.62 & 20,500.95 & 78,971.91 & 76,171.83\\
-\bottomrule\end{tabular}\end{center}
-The large integrated/sequential difference is consistent with the ability to
-plan actual-price spreads across auctions. It cannot be attributed solely to
-more accurate solar forecasts. Figure~\ref{fig:participation} shows the full
-profile comparison for farm 1; it also makes the contribution of particular
-auction combinations visible.
+\section{Participation studies: a compact illustration}
+The four auctions give 15 nonempty participation profiles. We compare their
+integrated planning with sequential all-auction planning, which optimizes only
+the current auction's trade, and a perfect-production reference. Each profile
+carries its own SOC, commitments, wear and fees chronologically. The January
+2026 comparison starts at 90\% SOC and uses a 50\% planning terminal target.
+Figure~\ref{fig:participation} summarizes farm 1. Actual future auction prices
+are shared across paths, so integrated planning also benefits from anticipating
+cross-auction spreads.
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.96\textwidth]{docs/figures/research_report/participation_profiles.pdf}
 \caption{Farm 1, continuous January 2026: monthly operating profit for all
-15 auction subsets and the two references. Dots show the deterministic and
-strict 51-path inputs. Earlier orders remain fixed and each profile carries
-its own battery state. Perfect production is a separately labelled hindsight
-reference.}\label{fig:participation}
+15 auction subsets and the two references. Paired bars compare the updating
+deterministic and strict 51-path formulations under actual-price foresight.}
+\label{fig:participation}
 \end{figure}
 
-Strict ensemble planning reduces absolute imbalance for the all-auction
-profile on all four farms. For farm 1 it changes 5.818 to 1.577 MWh, with wear
-EUR 520.52 versus EUR 525.84 and final SOC 33.50\% versus 43.49\%. For farms
-345, 901 and 910, absolute imbalance changes from 2.447 to 0.780, 23.099 to
-4.320, and 70.412 to 21.643 MWh respectively. Cash profit decreases in each
-all-auction comparison. This illustrates how uncertainty representation changes
-market exposure and use of physical flexibility; reducing imbalance alone does
-not determine the economically preferred profile.
-
-Separate full January and August production-input comparisons provide winter
-and summer cases; August starts on the second because the required preceding
-ensemble issue is absent for its first day. Each month starts independently.
-Reported outcomes include daily profit distributions, settlement cash,
-curtailment, charge/discharge, wear and ending SOC. Cash profit excludes capital
-cost and terminal inventory valuation. The rankings are retrospective and use
-actual-price foresight; historical model selection and the target provenance
-further limit an operational interpretation.
+For the all-auction profile, deterministic/ensemble profit is EUR
+10,216.33/10,197.54, with absolute imbalance 5.818/1.577 MWh and ending SOC
+33.50/43.49\%. This illustrates the trade-off between exposure and conservative
+delivery planning. Price foresight, target provenance and unequal ending
+inventory remain part of the interpretation; cash profit excludes capital cost
+and terminal inventory valuation.
 
 \section{What this framework enables next}
 The available data connect forecast revision, production uncertainty and
@@ -399,6 +385,20 @@ other quantities are revisable plans. Sequential planning replaces
 $\mathcal A_k$ by the single current auction.
 
 \subsection{Exact envelope for the strict ensemble problem}
+The deterministic specialization has $\mathcal S=\{0\}$ and $w_0=1$.
+The strict ensemble specialization has $\mathcal S=\{0,\ldots,50\}$ and
+$w_s=1/51$, with trades and battery variables shared across all paths:
+\begin{equation}
+ q_{a,n_a(s),t}=q_{a,t},\quad
+ (c_{n_t(s),t},d_{n_t(s),t},z_{n_t(s),t})=(c_t,d_t,z_t),\quad
+ e_{s,t}=e_t.
+\end{equation}
+Curtailment remains path-dependent, subject to common actions when the
+represented observations coincide. Let
+$i_t=Q_t/\Delta_t-d_t+c_t$. Equation~\eqref{eq:main-ensemble-balance} gives
+$u_{s,t}=V_{s,t}-i_t$; nonnegative injection and curtailment then imply
+$0\le i_t\le V_{s,t}$ for every member.
+
 Under exact delivery, common trades/battery controls, identical price paths and
 compatible instantaneous curtailment recourse, $i_t$ is shared and
 \begin{equation}
@@ -431,6 +431,7 @@ aging~\cite{xu}.
 
 \subsection{Feedback, chronology and profit}
 Commitment tracking uses target $g_t^*=Q_t^{\rm sub}/\Delta_t$ and interval PV.
+Write $\rho_t=(1-\sigma)^{\Delta_t}$ for energy retention.
 Feasible charge and discharge are bounded by
 \begin{equation}
  C_t=\min\!\left(\bar P,\frac{\pos{E^{\max}-\rho_te_t}}{\eta_c\Delta_t}\right),
@@ -458,9 +459,11 @@ comparison.
 \subsection{Issue, availability and delivery}
 For forecast initialization $\tau_v$, lead $h$ and availability $A_v$, define
 \begin{align}
- t_{v,h}&=\tau_v+h,\qquad A_v=\tau_v+6\text{ hours},\\
+ t_{v,h}&=\tau_v+h,\qquad A_v=\tau_v+\ell_{\rm release},\\
  v^*(k)&=\max\{v:A_v\le k,\ \text{required delivery horizon covered}\}.
 \end{align}
+Here $\ell_{\rm release}$ is the study's assumed six- or seven-hour release
+lag; the main-body auction table illustrates the six-hour case.
 The deterministic production forecast at cutoff $k$ is
 $V_{0,t}^{(k)}=f_{\theta}(X_{v^*(k),t},M)$, where $M$ denotes farm assumptions.
 For delivery day $d$, let $v_d$ be the preceding day's 00 UTC ensemble issue.
