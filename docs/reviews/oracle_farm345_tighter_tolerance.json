@@ -1,0 +1,112 @@
+{
+  "batch": "/tmp/bess_research_reviewed_v2/outputs/energy_research/reviewed_january_matrix_v1",
+  "job_id": "january_development__farm_345__deterministic_price_oracle",
+  "interval_id": "2026-01-15T15:45:00+00:00",
+  "config_sha256": "373160d69d83c5fafa8b573af1fd5ae12b639043550694d1f4583e434a6de4bd",
+  "solver_settings": {
+    "feasibility_tolerance": 1e-09,
+    "integrality_tolerance": 1e-08,
+    "mip_gap": 0.0001,
+    "output_flag": false,
+    "seed": 17,
+    "threads": 1,
+    "time_limit_seconds": 120.0
+  },
+  "scope": "retrospective archived oracle horizon; no physical action or auction submission",
+  "status": "oracle_refinement_rejected",
+  "diagnostics": {
+    "cutoff_utc": "2026-01-15T15:45:00+00:00",
+    "controller": "deterministic_mpc_price_oracle",
+    "price_oracle_enabled": true,
+    "scenario_ids": [
+      "deterministic"
+    ],
+    "current_pv_information": "forecast",
+    "current_interval_pv_oracle_enabled": false,
+    "current_realized_pv_mw": null,
+    "scenario_weights": [
+      1.0
+    ],
+    "scenario_count": 1,
+    "horizon_intervals": 29,
+    "forecast_provenance": {},
+    "horizon_start_utc": "2026-01-15 15:45:00+00:00",
+    "horizon_end_utc": "2026-01-15 23:00:00+00:00",
+    "horizon_hours": 7.25,
+    "oracle_provenance": {
+      "diagnostic": true
+    },
+    "stages": [
+      {
+        "stage": "minimum_absolute_imbalance",
+        "status": "optimal",
+        "runtime_seconds": 0.0058460235595703125,
+        "time_limit_seconds": 10.0,
+        "objective": 9.640340795924462e-07,
+        "bound": 9.640340795646907e-07,
+        "gap": 0.0
+      },
+      {
+        "stage": "signed_settlement_economics",
+        "status": "optimal",
+        "runtime_seconds": 0.0071260929107666016,
+        "time_limit_seconds": 10.0,
+        "objective": -20.369139960800823,
+        "bound": -20.369139960800823,
+        "gap": 0.0
+      }
+    ],
+    "fallback_applied": false,
+    "absolute_mip_gap_configured": false,
+    "build_seconds": 0.1079882550984621,
+    "interval_support_count": 29,
+    "scenario_interval_count": 29,
+    "model_variables": 234,
+    "model_binary_variables": 29,
+    "model_constraints": 176,
+    "stage1_minimum_certified": true,
+    "stage1_incumbent_mwh": 9.640340795924462e-07,
+    "stage1_lower_bound_mwh": 9.640340795646907e-07,
+    "stage1_relative_gap_reconstructed": 2.8791073057669107e-11,
+    "oracle_fallback_qualified": false,
+    "oracle_fallback_max_relative_gap": null,
+    "oracle_cap_reference": "certified_incumbent",
+    "oracle_additional_budget_mwh": 0.0,
+    "oracle_imbalance_cap_mwh": 9.640340795924462e-07,
+    "stage1_l_min_mwh": 9.640340795924462e-07,
+    "oracle_candidate_reconstructed_imbalance_mwh": 1.9280681591848925e-06,
+    "failure_reason": "Oracle refinement exceeds reconstructed imbalance cap: 1.9280681591848925e-06 > 9.640340795924462e-07",
+    "oracle_stage2_used": false,
+    "accepted_action_source": "price_blind_stage1",
+    "physical_residuals": {
+      "initial_energy": 0.0,
+      "energy_transition": 0.0,
+      "energy_lower": -0.19211157554981084,
+      "energy_upper": -0.34462983358938126,
+      "charge_discharge_lower": -0.0,
+      "power": 0.0,
+      "exclusivity": 0.0,
+      "utilization_lower": -1.0,
+      "utilization_upper": 0.0,
+      "poi_import": -1.5246,
+      "poi_export": -1.0152079831066514,
+      "grid": 0.0,
+      "imbalance": 0.0,
+      "expected_absolute": 0.0,
+      "expected_shortfall": 0.0
+    },
+    "components": {
+      "absolute_imbalance_mwh": 9.640340795924462e-07,
+      "degradation_eur": 8.474870727159196,
+      "terminal_cost_eur": 11.894421222509457,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -0.00021785916954485815
+    },
+    "planning_objective_value": 9.640340795924462e-07,
+    "solve_wall_seconds": 0.1335105011239648,
+    "runtime_seconds": 0.012972116470336914,
+    "status": "oracle_refinement_rejected",
+    "planning_objective_units": "MWh",
+    "oracle_additional_imbalance_used_mwh": 0.0
+  }
+}

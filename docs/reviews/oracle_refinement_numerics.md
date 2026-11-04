@@ -40,6 +40,14 @@ across the complete study. The captured results are in
 case had the same seven rejection times, but was not independently replayed in
 this comparison. The running study remains unchanged.
 
+An additional recorded counterexample was found on farm 345 in the deterministic
+oracle case at 2026-01-15 15:45 UTC. At `1e-8` its second stage exceeded the
+reconstructed cap; replaying it at `1e-9` still rejected the second stage, with
+the same reconstructed `1.928068159e-6` MWh against a cap of `9.640340796e-7`
+MWh. The first-stage action remained the accepted plan. Thus the tighter setting
+is not a general fix, even among the already observed rejection cases. See
+`oracle_farm345_tighter_tolerance.json` for the replay diagnostic.
+
 The adjacent `oracle_rejection_*.json` files contain the individual diagnostic
 outputs, including solver stages, reconstructed components and failure reasons.
 The original-extraction comparison can be repeated with
