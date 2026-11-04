@@ -344,3 +344,15 @@ def test_ida_2025_validation_retains_quarter_hour_targets_and_prior_training():
     study = load_config(root / "configs/research/price_model_search_cleared_2025.yaml")["price_model_search"]
     assert all(group["native_minutes"] == 15 and group["validation_start"] == "2025-06-01"
                for group in study["product_groups"].values())
+
+
+def test_rolling_ida_uses_later_dates_and_earlier_market_selection():
+    """IDA refits are scheduled after model selection, with market-specific lags retained."""
+    from pathlib import Path
+    from bess_pv_trading.config import load_config
+
+    root = Path(__file__).resolve().parents[2]
+    study = load_config(root / "configs/research/price_model_rolling_ida.yaml")["price_model_search"]
+    assert study["rolling_refit"] == {"frequency_days": 7, "gap_days": 1}
+    assert all(group["validation_start"] == "2026-05-02" for group in study["product_groups"].values())
+    assert study["product_groups"]["ida3_quarter_hourly"]["lag_hours"] == [24, 48, 72, 168, 336]

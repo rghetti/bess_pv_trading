@@ -157,3 +157,7 @@ gap. This conservative implementation does not add excluded common-day rows or
 the day between the original training cutoff and the test period. Model weights
 remain fixed within each weekly block, while input lags update as configured.
 Each prediction file has a refit sidecar listing block dates and training counts.
+`configs/research/price_model_rolling_ida.yaml` applies the same weekly rule to
+the validation-selected IDA1--3 candidates with earlier-cleared-auction features
+and May--August 2026 evaluation. It selects from the completed February--April
+IDA search before each later-period refit and retains the half-day IDA3 lags.
