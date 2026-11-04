@@ -1,0 +1,38 @@
+# Price-only later-period evaluation, September–October 2026
+
+This study selects one model per market by February–April 2026 validation MAE
+from five candidates: ridge, Lasso, Elastic Net and two Extra Trees settings.
+It then refits that model weekly with the configured one-day training gap and
+scores the later September–October period. DA uses previous DA prices and daily
+curves. IDAs use past prices and previously cleared auctions, either directly
+or as a spread to cleared DA. The study excludes external fundamentals because
+several catalog series end in August. Early candidate and feature definitions,
+source snapshots and the selection checks are preserved in the corresponding
+`price_model_search_*_price_only_early.yaml` and
+`price_model_rolling_*_price_only_sep_oct.yaml` configurations and manifests.
+
+| Market | Selected model | Complete days | Products | MAE EUR/MWh | WAPE |
+| --- | --- | ---: | ---: | ---: | ---: |
+| DA | Elastic Net, DA curves | 52 | 4,992 | 16.850 | 7.852% |
+| IDA1 | Elastic Net, spread to DA | 50 | 4,800 | 8.781 | 4.116% |
+| IDA2 | Extra Trees, cleared prices | 49 | 4,704 | 10.319 | 4.817% |
+| IDA3 | Ridge, spread to DA | 50 | 2,400 | 14.964 | 6.996% |
+
+DA target coverage ends October 22 in this study; October 23–31 are excluded.
+IDA1 lacks targets on October 8 and October 22–31. IDA2 excludes October 8–9
+because cleared-auction inputs are missing and October 22–31 because targets
+are missing. IDA3 excludes October 8 for missing inputs and October 22–31 for
+missing targets. The IDA3 horizon contains 48 quarter-hour products per complete
+day, whereas DA and IDA1/2 use 96 over these evaluated dates. The workflow's
+configured target-clock fallback is used for some daily lag features; the
+manifests record fallback counts and source provenance. All four selected runs
+completed without recorded failures or convergence warnings.
+
+Selection used early-period results, not the later prices; the later data were
+not part of the earlier model comparisons reported in this study. This is a
+more temporally separated assessment but is not a fully independent prospective
+backtest: models, feature design and methods were developed after the historical
+dates, and publication clocks and forecast availability are partly assumed.
+Evaluation coverage differs between markets and excludes missing days. WAPE
+also depends on the level of prices, so its lower percentage relative to earlier
+periods does not necessarily indicate a lower error in EUR/MWh.
