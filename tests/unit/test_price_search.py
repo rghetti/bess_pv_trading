@@ -160,3 +160,15 @@ def test_cleared_search_includes_same_and_neighboring_historical_products():
     assert {23, 24, 25, 47, 48, 49, 167, 168, 169}.issubset(study["lag_hours"])
     assert all(group["market_neighbor_offsets_minutes"] == [-60, -15]
                for group in study["product_groups"].values())
+
+
+def test_expanded_day_ahead_search_respects_historical_feature_coverage():
+    """Do not force Swiss-only 2025 features into the hourly 2024 training split."""
+    from pathlib import Path
+    from bess_pv_trading.config import load_config
+
+    root = Path(__file__).resolve().parents[2]
+    study = load_config(root / "configs/research/price_model_search_da_expanded.yaml")["price_model_search"]
+    assert study["product_groups"]["hourly"].get("feature_sets", study["feature_sets"]) == ["price_only", "fundamentals"]
+    assert "combined" in study["product_groups"]["quarter_hourly"]["feature_sets"]
+    assert study["lag_hours"][0] == 24

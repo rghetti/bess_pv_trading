@@ -93,7 +93,10 @@ def _validation_selection(study, root):
             if split.get(name) != previous.get(name):
                 raise ValueError(f"Holdout {name} differs from validation search")
         rows = [row for row in manifest["results"] if row["group"] == group]
-        expected = {(feature, name) for feature in source_study["feature_sets"] for name in expected_candidates}
+        previous_features = previous.get("feature_sets", source_study["feature_sets"])
+        if split.get("feature_sets", study["feature_sets"]) != previous_features:
+            raise ValueError("Holdout feature sets differ from validation search")
+        expected = {(feature, name) for feature in previous_features for name in expected_candidates}
         observed = {(row["feature_set"], row["candidate"]) for row in rows}
         if len(rows) != len(expected) or observed != expected:
             raise ValueError(f"Incomplete or duplicate validation results for {group}")
@@ -101,7 +104,7 @@ def _validation_selection(study, root):
             raise ValueError("Validation selection requires finite MAE scores")
         ordered = sorted(rows, key=lambda row: (row["mae_eur_per_mwh"], row["feature_set"], row["candidate"]))
         chosen[group] = {(row["feature_set"], row["candidate"]) for row in ordered[:selection["top_n"]]}
-        for feature in study["feature_sets"]:
+        for feature in previous_features:
             for baseline in selection.get("baseline_candidates", []):
                 if baseline not in expected_candidates:
                     raise ValueError("Selection baseline is not a declared candidate")
@@ -234,7 +237,7 @@ def run_search(config, *, check_only=False):
                               "market_neighbor_offsets_minutes": offsets}
             extra_names = expanded_names
         datasets = {}
-        for feature_set in study["feature_sets"]:
+        for feature_set in split.get("feature_sets", study["feature_sets"]):
             base_name = study.get("feature_set_aliases", {}).get(feature_set, feature_set)
             names = tuple(item["name"] for item in feature_sets[base_name])
             if feature_set in study.get("add_market_price_features_to", []):
