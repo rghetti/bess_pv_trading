@@ -1,0 +1,9 @@
+# Diagnostic breakdown of the completed 2026 IDA feature search.
+include: ../standard.yaml
+price_monthly_report:
+  source_search: outputs/energy_price_forecasts/nord_ida_cleared_context_search_v1
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_ida_cleared_monthly_diagnostics_v1
+  timezone: Europe/Rome
+  near_zero_eur_per_mwh: 5.0
+  target_wape_percent: 4.0
