@@ -1,0 +1,114 @@
+# CPU MLP search with scaled targets and training-set early stopping.
+include: ../standard.yaml
+price_model_search:
+  run_id: nord_da_2026_regularized_mlp_v1
+  output_root: outputs/energy_price_forecasts
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  timezone: Europe/Rome
+  workers: 3
+  threads_per_worker: 1
+  seed: 17
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  feature_sets:
+  - curve_fundamentals
+  - ida_curve_fundamentals
+  product_groups:
+    quarter_hourly:
+      native_minutes: 15
+      history_start: '2025-10-01T00:00:00+02:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      feature_sets:
+      - curve_fundamentals
+      - ida_curve_fundamentals
+      lagged_market_price_features:
+      - market: IDA1
+        lag_hours: 24
+      - market: IDA1
+        lag_hours: 48
+      - market: IDA2
+        lag_hours: 24
+      - market: IDA2
+        lag_hours: 48
+  candidates:
+  - id: mlp_32_alpha0.01
+    family: mlp
+    parameters:
+      hidden_layer_sizes:
+      - 32
+      - 16
+      max_iter: 300
+      alpha: 0.01
+      early_stopping: true
+      validation_fraction: 0.15
+      n_iter_no_change: 15
+      learning_rate_init: 0.001
+  - id: mlp_64_alpha0.01
+    family: mlp
+    parameters:
+      hidden_layer_sizes:
+      - 64
+      - 32
+      max_iter: 300
+      alpha: 0.01
+      early_stopping: true
+      validation_fraction: 0.15
+      n_iter_no_change: 15
+      learning_rate_init: 0.001
+  - id: mlp_64_alpha0.1
+    family: mlp
+    parameters:
+      hidden_layer_sizes:
+      - 64
+      - 32
+      max_iter: 300
+      alpha: 0.1
+      early_stopping: true
+      validation_fraction: 0.15
+      n_iter_no_change: 15
+      learning_rate_init: 0.001
+  - id: mlp_128_alpha0.1
+    family: mlp
+    parameters:
+      hidden_layer_sizes:
+      - 128
+      - 64
+      max_iter: 300
+      alpha: 0.1
+      early_stopping: true
+      validation_fraction: 0.15
+      n_iter_no_change: 15
+      learning_rate_init: 0.001
+  feature_set_aliases:
+    curve_price: price_only
+    curve_fundamentals: fundamentals
+    curve_combined: combined
+    ida_curve_fundamentals: fundamentals
+    ida_curve_combined: combined
+  daily_curve_lag_days:
+  - 1
+  - 2
+  - 7
+  add_daily_curve_features_to:
+  - curve_fundamentals
+  - curve_combined
+  - ida_curve_fundamentals
+  - ida_curve_combined
+  add_lagged_market_features_to:
+  - ida_curve_fundamentals
+  - ida_curve_combined
+  common_training_rows: true
