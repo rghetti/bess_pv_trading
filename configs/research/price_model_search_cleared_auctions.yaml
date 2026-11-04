@@ -71,6 +71,12 @@ price_model_search:
       market_neighbor_offsets_minutes:
       - -60
       - -15
+      lag_hours:
+      - 24
+      - 48
+      - 72
+      - 168
+      - 336
   candidates:
   - id: ridge_1
     family: ridge

@@ -76,3 +76,7 @@ price models. This tests whether learning the cross-auction spread is easier
 than learning the absolute price without treating the DA value as an IDA target.
 The 4% WAPE target is an objective for evaluation, not a guaranteed result;
 selection and subsequent held-out scoring remain separate.
+IDA3 uses only same-product daily and weekly historical lags: an adjacent-hour
+IDA3 lag can cross its half-day delivery window and point to a nonexistent
+product, as a full validation-coverage check demonstrated. Its neighboring
+features from the earlier full-day auctions remain available when published.

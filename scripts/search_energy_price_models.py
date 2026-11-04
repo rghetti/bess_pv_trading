@@ -18,7 +18,8 @@ import pandas as pd
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.forecasting.energy_prices import PriceForecastSettings, load_price_history, prepare_exogenous_features
-from bess_pv_trading.forecasting.price_search import complete_shared_days, point_metrics, prepare_search_matrix
+from bess_pv_trading.forecasting.price_search import (complete_shared_days, point_metrics,
+                                                      prepare_search_matrix, project_search_matrix)
 from bess_pv_trading.forecasting.price_search_models import make_price_candidate
 from bess_pv_trading.parallel import configure_worker_threads
 
@@ -94,7 +95,7 @@ def _validation_selection(study, root):
             raise ValueError("Holdout model cutoff precedes the end of candidate selection")
         if split["native_minutes"] != previous["native_minutes"] or split.get("target", "DA") != previous.get("target", "DA"):
             raise ValueError("Holdout and validation must use the same target and native resolution")
-        for name in ("market_price_features", "market_neighbor_offsets_minutes"):
+        for name in ("market_price_features", "market_neighbor_offsets_minutes", "lag_hours"):
             if split.get(name) != previous.get(name):
                 raise ValueError(f"Holdout {name} differs from validation search")
         rows = [row for row in manifest["results"] if row["group"] == group]
@@ -199,6 +200,7 @@ def run_search(config, *, check_only=False):
     earlier_price_cache = {}
     for group, split in study["product_groups"].items():
         resolution = split["native_minutes"]
+        group_lags = tuple(split.get("lag_hours", study["lag_hours"]))
         target_name = split.get("target", "DA")
         target = source_manifest["plan"]["targets"][target_name]
         # Retain each market's actual delivery window and declared decision and
@@ -243,6 +245,7 @@ def run_search(config, *, check_only=False):
             extra_names = expanded_names
         datasets = {}
         residual_indices = {}
+        group_features = {}
         for feature_set in split.get("feature_sets", study["feature_sets"]):
             base_name = study.get("feature_set_aliases", {}).get(feature_set, feature_set)
             names = tuple(item["name"] for item in feature_sets[base_name])
@@ -252,13 +255,24 @@ def run_search(config, *, check_only=False):
             if residual_feature is not None and residual_feature not in names:
                 raise ValueError(f"Spread target anchor {residual_feature} is absent from {feature_set}")
             residual_index = (None if residual_feature is None else
-                              len(study["lag_hours"]) + 7 + names.index(residual_feature))
+                              len(group_lags) + 7 + names.index(residual_feature))
             residual_indices[feature_set] = residual_index
-            settings = PriceForecastSettings(lag_hours=tuple(study["lag_hours"]), interval_minutes=resolution,
-                timezone=study["timezone"], exogenous_features=names, daily_lag_fallback="target_clock",
-                **target.get("settings", {}))
-            datasets[feature_set] = prepare_search_matrix(history, settings, group_exogenous,
-                cutoff=split["cutoff"], validation_start=split["validation_start"], validation_end=split["validation_end"])
+            if len(names) != len(set(names)):
+                raise ValueError(f"Duplicate feature names in {feature_set}")
+            group_features[feature_set] = names
+        # Build each target's expensive lags, clocks and feature joins once.
+        # Individual feature groups keep their own missing-data masks.
+        all_names = tuple(dict.fromkeys(name for names in group_features.values() for name in names))
+        settings = PriceForecastSettings(lag_hours=group_lags, interval_minutes=resolution,
+            timezone=study["timezone"], exogenous_features=all_names, daily_lag_fallback="target_clock",
+            **target.get("settings", {}))
+        full = prepare_search_matrix(history, settings, group_exogenous, cutoff=split["cutoff"],
+                                     validation_start=split["validation_start"], validation_end=split["validation_end"])
+        base_count = len(group_lags) + 7
+        feature_index = {name: base_count + index for index, name in enumerate(all_names)}
+        for feature_set, names in group_features.items():
+            columns = list(range(base_count)) + [feature_index[name] for name in names]
+            datasets[feature_set] = project_search_matrix(full, columns)
         days = complete_shared_days(list(datasets.values()), start=split["validation_start"],
                                     end=split["validation_end"], settings=settings)
         if not days:

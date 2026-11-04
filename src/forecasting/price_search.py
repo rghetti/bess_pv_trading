@@ -25,12 +25,23 @@ def prepare_search_matrix(history, settings, exogenous, *, cutoff, validation_st
     valid_start = historical_decision_times(pd.DatetimeIndex([start]), settings)[0]
     if cutoff > valid_start:
         raise ValueError("Training cutoff occurs after the first validation decision")
-    training = finite & (history.available_at <= cutoff).to_numpy() & (history.product_end <= cutoff).to_numpy()
-    validation = finite & (starts >= start) & (starts < end)
+    training_clock = (history.available_at <= cutoff).to_numpy() & (history.product_end <= cutoff).to_numpy()
+    validation_clock = (starts >= start) & (starts < end)
+    training = finite & training_clock
+    validation = finite & validation_clock
     days = starts.tz_convert(settings.timezone).strftime("%Y-%m-%d")
     return {"matrix": matrix, "target": history.price_eur_per_mwh.to_numpy(float),
             "starts": starts, "days": days, "training": training, "validation": validation,
+            "training_clock": training_clock, "validation_clock": validation_clock,
             "fallback_count": fallback_count}
+
+
+def project_search_matrix(dataset, columns):
+    """Select one feature group, recomputing its missingness from the shared matrix."""
+    matrix = dataset["matrix"][:, columns]
+    finite = np.isfinite(matrix).all(axis=1)
+    return {**dataset, "matrix": matrix, "training": finite & dataset["training_clock"],
+            "validation": finite & dataset["validation_clock"]}
 
 
 def complete_shared_days(datasets, *, start, end, settings):

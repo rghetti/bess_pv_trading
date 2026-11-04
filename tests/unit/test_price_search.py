@@ -5,7 +5,8 @@ import pandas as pd
 import pytest
 
 from bess_pv_trading.forecasting.energy_prices import PriceForecastSettings
-from bess_pv_trading.forecasting.price_search import complete_shared_days, point_metrics, prepare_search_matrix
+from bess_pv_trading.forecasting.price_search import (complete_shared_days, point_metrics, prepare_search_matrix,
+                                                      project_search_matrix)
 
 
 def test_search_uses_only_labels_released_before_cutoff_and_shared_complete_days():
@@ -32,6 +33,37 @@ def test_point_metrics_preserve_zero_negative_prices_and_naive_scale():
     assert metrics["wape_percent"] == 40
     assert metrics["relative_mae_to_naive"] == pytest.approx(0.8)
     assert point_metrics([0], [1], [0])["wape_percent"] is None
+
+
+def test_feature_projection_does_not_transfer_other_groups_missingness():
+    """A missing optional feature cannot remove otherwise valid baseline rows."""
+    dataset = {"matrix": np.array([[1.0, 2.0, np.nan], [1.0, np.nan, 3.0]]),
+               "training_clock": np.array([True, True]), "validation_clock": np.array([False, True])}
+    baseline = project_search_matrix(dataset, [0])
+    first = project_search_matrix(dataset, [0, 1])
+    second = project_search_matrix(dataset, [0, 2])
+    assert baseline["training"].tolist() == [True, True]
+    assert first["training"].tolist() == [True, False]
+    assert second["training"].tolist() == [False, True]
+    assert baseline["validation"].tolist() == [False, True]
+
+
+def test_projected_union_matches_independently_prepared_features():
+    """Shared feature preparation produces the same values and masks as separate joins."""
+    starts = pd.date_range("2024-12-01T00:00Z", "2025-01-03T00:00Z", freq="h", inclusive="left")
+    history = pd.DataFrame({"product_start": starts, "product_end": starts + pd.Timedelta(hours=1),
+        "available_at": starts + pd.Timedelta(hours=1), "price_eur_per_mwh": np.arange(len(starts), dtype=float)})
+    exogenous = pd.DataFrame({"product_start": starts[::2], "available_at": starts[::2] - pd.Timedelta(days=2),
+                              "feature": "external", "value": 5.0})
+    base = dict(lag_hours=(24,), interval_minutes=60, timezone="UTC",
+                decision_local_time="00:00", decision_day_offset=-1)
+    arguments = dict(cutoff="2024-12-31T00:00Z", validation_start="2025-01-01", validation_end="2025-01-03")
+    union = prepare_search_matrix(history, PriceForecastSettings(**base, exogenous_features=("external",)), exogenous, **arguments)
+    independent = prepare_search_matrix(history, PriceForecastSettings(**base), exogenous, **arguments)
+    projected = project_search_matrix(union, list(range(8)))
+    np.testing.assert_allclose(projected["matrix"], independent["matrix"], equal_nan=True)
+    np.testing.assert_array_equal(projected["training"], independent["training"])
+    np.testing.assert_array_equal(projected["validation"], independent["validation"])
 
 
 def test_search_rejects_cutoff_after_first_decision():
@@ -176,6 +208,7 @@ def test_cleared_search_includes_same_and_neighboring_historical_products():
     assert {23, 24, 25, 47, 48, 49, 167, 168, 169}.issubset(study["lag_hours"])
     assert all(group["market_neighbor_offsets_minutes"] == [-60, -15]
                for group in study["product_groups"].values())
+    assert study["product_groups"]["ida3_quarter_hourly"]["lag_hours"] == [24, 48, 72, 168, 336]
 
 
 def test_expanded_day_ahead_search_respects_historical_feature_coverage():
