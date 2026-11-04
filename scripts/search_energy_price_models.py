@@ -269,6 +269,42 @@ def _verify_supplemental_selection_sources(study, validation_manifest):
             "verification": "exact_selection_period_feature_lineage_and_projected_row_hash"}
 
 
+def _verify_price_selection_sources(study, validation_manifest, source_targets):
+    """Check selection-period auction snapshots before using them in a holdout."""
+    selection_study = validation_manifest["config"]
+    verified = {}
+    for group, split in selection_study["product_groups"].items():
+        resolution = split["native_minutes"]
+        target = split.get("target", "DA")
+        old = validation_manifest["source_lineage"][group]
+
+        def verify(market, start, end, expected, native=None):
+            """Requery the original range and compare its complete snapshot evidence."""
+            _, current = load_price_history(study["database"], **source_targets[market]["source"],
+                interval_minutes=resolution, native_resolution_minutes=native, timezone=study["timezone"],
+                start=start, end=end)
+            if json.dumps(current, sort_keys=True, default=str) != json.dumps(expected, sort_keys=True, default=str):
+                raise ValueError(f"Auction price snapshots changed since selection for {group}/{market}")
+
+        # Old manifests add feature provenance alongside target provenance;
+        # compare the original target fields without those nested additions.
+        extensions = {"earlier_auction_features", "market_neighbor_offsets_minutes", "market_neighbor_boundary",
+                      "lagged_auction_features"}
+        target_evidence = {key: value for key, value in old.items() if key not in extensions}
+        verify(target, split["history_start"], split["history_end"], target_evidence, native=resolution)
+        for market in split.get("market_price_features", []):
+            verify(market, split["history_start"], split["history_end"], old["earlier_auction_features"][market])
+        for item in split.get("lagged_market_price_features", []):
+            market, lag = item["market"], item["lag_hours"]
+            name = _lagged_auction_name(market, lag)
+            verify(market, pd.Timestamp(split["history_start"]) - pd.Timedelta(hours=lag),
+                   pd.Timestamp(split["history_end"]) - pd.Timedelta(hours=lag),
+                   old["lagged_auction_features"][name])
+        verified[group] = {"target": target, "earlier_auctions": split.get("market_price_features", []),
+                           "lagged_auctions": len(split.get("lagged_market_price_features", []))}
+    return verified
+
+
 def _write_report(destination, manifest):
     """Publish readable scores and compact paired-sample comparison plots."""
     import matplotlib
@@ -369,6 +405,10 @@ def run_search(config, *, check_only=False):
     exogenous = prepare_exogenous_features(base_exogenous)
     feature_sets = source_manifest["plan"]["feature_sets"]
     selected_candidates, selection_evidence = _validation_selection(study, root)
+    if selection_evidence:
+        validation_manifest = json.loads(Path(selection_evidence["source_manifest"]).read_text())
+        selection_evidence["price_source_verification"] = _verify_price_selection_sources(
+            study, validation_manifest, source_manifest["plan"]["targets"])
     supplemental_specs = study.get("supplemental_features", [])
     if supplemental_specs and selection_evidence:
         validation_manifest = json.loads(Path(selection_evidence["source_manifest"]).read_text())

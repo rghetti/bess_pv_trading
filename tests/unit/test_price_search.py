@@ -467,6 +467,32 @@ def test_ida_2025_validation_retains_quarter_hour_targets_and_prior_training():
                for group in study["product_groups"].values())
 
 
+def test_price_holdout_rechecks_selection_period_snapshots(monkeypatch):
+    """Holdout preparation rejects a revised target or lagged auction snapshot."""
+    from scripts import search_energy_price_models as search
+
+    validation = {"config": {"product_groups": {"quarter": {"target": "DA", "native_minutes": 15,
+        "history_start": "2025-10-01T00:00:00Z", "history_end": "2026-05-01T00:00:00Z",
+        "lagged_market_price_features": [{"market": "IDA1", "lag_hours": 24}]}}},
+        "source_lineage": {"quarter": {"snapshot": "da-old", "lagged_auction_features": {
+            "past_ida1_24h": {"snapshot": "ida-old"}}}}}
+    targets = {"DA": {"source": {"dataset": "da"}}, "IDA1": {"source": {"dataset": "ida"}}}
+    study = {"database": "catalog.duckdb", "timezone": "UTC"}
+    calls = []
+
+    def load_price(database, **kwargs):
+        calls.append(kwargs)
+        return None, {"snapshot": f"{kwargs['dataset']}-old"}
+
+    monkeypatch.setattr(search, "load_price_history", load_price)
+    verified = search._verify_price_selection_sources(study, validation, targets)
+    assert verified["quarter"]["lagged_auctions"] == 1
+    assert calls[1]["start"] == pd.Timestamp("2025-09-30T00:00:00Z")
+    validation["source_lineage"]["quarter"]["lagged_auction_features"]["past_ida1_24h"]["snapshot"] = "revised"
+    with pytest.raises(ValueError, match="snapshots changed"):
+        search._verify_price_selection_sources(study, validation, targets)
+
+
 def test_supplemental_holdout_rechecks_selection_period_and_rejects_changed_rows(monkeypatch):
     """An extended holdout cannot silently reuse revised selection features."""
     from scripts import search_energy_price_models as search
