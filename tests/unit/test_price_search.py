@@ -139,6 +139,47 @@ def test_spread_worker_adds_cleared_price_back_before_scoring(tmp_path):
     assert result["mae_eur_per_mwh"] < 1e-10
 
 
+def test_rolling_blocks_use_only_complete_published_prior_labels():
+    """A day gap and publication clock both restrict every refit."""
+    from scripts.search_energy_price_models import _rolling_blocks
+
+    starts = pd.date_range("2026-05-01T00:00Z", periods=6, freq="D")
+    decisions = starts - pd.Timedelta(hours=1)
+    available = starts + pd.Timedelta(hours=1)
+    available = available.where(starts != pd.Timestamp("2026-05-03T00:00Z"), pd.Timestamp("2026-05-10T00:00Z"))
+    ends = starts + pd.Timedelta(hours=1)
+    blocks = _rolling_blocks(starts.astype(str), decisions.asi8, available.asi8, ends.asi8, "UTC", 2, 1)
+    assert len(blocks) == 3
+    assert blocks[1][2].tolist() == [0]
+    assert blocks[2][2].tolist() == [0, 1]
+    assert np.concatenate([block[3] for block in blocks]).tolist() == list(range(6))
+
+
+def test_rolling_worker_records_refit_counts_and_predictions(tmp_path):
+    """A weekly-style refit produces one prediction per product and saves its evidence."""
+    import json
+    from scripts.search_energy_price_models import _fit_candidate
+
+    starts = pd.date_range("2026-05-01T00:00Z", periods=6, freq="D")
+    data = tmp_path / "rolling.npz"
+    output = tmp_path / "forecast.csv"
+    train_x = np.arange(20, dtype=float).reshape(-1, 1)
+    test_x = np.arange(20, 26, dtype=float).reshape(-1, 1)
+    np.savez(data, train_x=train_x, train_y=train_x[:, 0], validation_x=test_x, validation_y=test_x[:, 0],
+        reference=test_x[:, 0] + 1, starts=np.asarray(starts.astype(str), dtype=str),
+        decisions_ns=(starts - pd.Timedelta(hours=1)).as_unit("ns").asi8,
+        available_ns=(starts + pd.Timedelta(hours=1)).as_unit("ns").asi8,
+        product_end_ns=(starts + pd.Timedelta(hours=1)).as_unit("ns").asi8)
+    result = _fit_candidate({"dataset": str(data), "output": str(output), "threads": 1, "seed": 1,
+        "group": "hourly", "feature_set": "price_only", "timezone": "UTC",
+        "rolling_refit": {"frequency_days": 2, "gap_days": 1},
+        "candidate": {"id": "ridge", "family": "ridge", "parameters": {"alpha": 1}}})
+    refits = json.loads(output.with_suffix(".refits.json").read_text())
+    assert result["rolling_refit_count"] == len(refits) == 3
+    assert [row["added_prior_intervals"] for row in refits] == [0, 1, 3]
+    assert len(pd.read_csv(output)) == 6
+
+
 def test_intraday_search_declares_separate_native_market_models():
     """Each auction and settlement is fitted as its own quarter-hour task."""
     from pathlib import Path

@@ -113,3 +113,16 @@ The source validation period has already been inspected in development, so
 April is a chronological later slice for this combination selection, not a
 globally untouched research test. The reported model selection, later-period
 predictions, daily error plots and source-manifest hash enable independent audit.
+
+`configs/research/price_model_rolling.yaml` tests weekly refits of the best
+three daily-curve candidates per native resolution plus ridge references. The
+selection uses the completed earlier curve-search manifest. The test spans
+July--September 2025 for native hourly prices and May--August 2026 for native
+quarter-hour prices; these dates have been inspected by earlier studies and are
+not globally untouched. At each weekly refit, the initial eligible training
+set is supplemented only by earlier common-day rows whose labels were published
+and whose products had ended by the first decision cutoff, with a one-local-day
+gap. This conservative implementation does not add excluded common-day rows or
+the day between the original training cutoff and the test period. Model weights
+remain fixed within each weekly block, while input lags update as configured.
+Each prediction file has a refit sidecar listing block dates and training counts.

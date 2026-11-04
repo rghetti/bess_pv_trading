@@ -92,6 +92,8 @@ def prepare_search_matrix(history, settings, exogenous, *, cutoff, validation_st
     days = starts.tz_convert(settings.timezone).strftime("%Y-%m-%d")
     return {"matrix": matrix, "target": history.price_eur_per_mwh.to_numpy(float),
             "starts": starts, "days": days, "training": training, "validation": validation,
+            "decisions": decisions, "label_available_at": pd.DatetimeIndex(history.available_at),
+            "label_product_end": pd.DatetimeIndex(history.product_end),
             "training_clock": training_clock, "validation_clock": validation_clock,
             "fallback_count": fallback_count}
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from datetime import timedelta
 import hashlib
 import json
 import multiprocessing
@@ -34,25 +35,80 @@ def _sha256(path):
     return digest.hexdigest()
 
 
+def _rolling_blocks(starts, decisions_ns, available_ns, product_end_ns, timezone, frequency_days, gap_days):
+    """Return nonoverlapping evaluation blocks and strictly earlier training rows."""
+    for name, value in (("frequency_days", frequency_days), ("gap_days", gap_days)):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"Rolling {name} must be a positive integer")
+    timestamps = pd.DatetimeIndex(pd.to_datetime(starts, utc=True))
+    if not len(timestamps) or not timestamps.is_monotonic_increasing or timestamps.has_duplicates:
+        raise ValueError("Rolling forecasts require unique increasing product starts")
+    decisions_ns = np.asarray(decisions_ns, dtype=np.int64)
+    available_ns = np.asarray(available_ns, dtype=np.int64)
+    product_end_ns = np.asarray(product_end_ns, dtype=np.int64)
+    if any(values.shape != (len(timestamps),) for values in (decisions_ns, available_ns, product_end_ns)):
+        raise ValueError("Rolling label and decision clocks must align with every product")
+    days = timestamps.tz_convert(timezone).date
+    first, last = days[0], days[-1]
+    result = []
+    begin = first
+    while begin <= last:
+        end = begin + timedelta(days=frequency_days)
+        # Exclude the immediately preceding configured number of local days;
+        # the older whole-day labels are the only added training observations.
+        train_before = begin - timedelta(days=gap_days)
+        test = np.flatnonzero((days >= begin) & (days < end))
+        if len(test):
+            cutoff = decisions_ns[test].min()
+            past = np.flatnonzero((days < train_before) & (available_ns <= cutoff) & (product_end_ns <= cutoff))
+            result.append((begin, end, past, test))
+        begin = end
+    return result
+
+
 def _fit_candidate(job):
     """Fit one estimator and retain its interval-level validation predictions."""
     configure_worker_threads(job["threads"], configure_torch=False)
     data = np.load(job["dataset"], allow_pickle=False)
     spec = job["candidate"]
-    estimator = make_price_candidate(spec["family"], spec["parameters"], seed=job["seed"], threads=job["threads"])
     # A spread model fits the residual to an already-cleared price, then adds
     # that price back so every score remains in actual EUR/MWh.
     residual_index = job.get("residual_feature_index")
     train_anchor = 0 if residual_index is None else data["train_x"][:, residual_index]
     validation_anchor = 0 if residual_index is None else data["validation_x"][:, residual_index]
-    estimator.fit(data["train_x"], data["train_y"] - train_anchor)
-    prediction = estimator.predict(data["validation_x"]) + validation_anchor
+    rolling = job.get("rolling_refit")
+    refits = []
+    if rolling is None:
+        estimator = make_price_candidate(spec["family"], spec["parameters"], seed=job["seed"], threads=job["threads"])
+        estimator.fit(data["train_x"], data["train_y"] - train_anchor)
+        prediction = estimator.predict(data["validation_x"]) + validation_anchor
+    else:
+        prediction = np.full(len(data["validation_y"]), np.nan)
+        for begin, end, past, test in _rolling_blocks(data["starts"], data["decisions_ns"], data["available_ns"],
+                                                     data["product_end_ns"], job["timezone"],
+                                                     rolling["frequency_days"], rolling["gap_days"]):
+            # All target features were generated at their own historical
+            # decision time. Only already completed older labels are appended.
+            train_x = np.concatenate([data["train_x"], data["validation_x"][past]])
+            initial_target = data["train_y"] - train_anchor
+            past_anchor = 0 if residual_index is None else data["validation_x"][past, residual_index]
+            train_y = np.concatenate([initial_target, data["validation_y"][past] - past_anchor])
+            estimator = make_price_candidate(spec["family"], spec["parameters"], seed=job["seed"], threads=job["threads"])
+            estimator.fit(train_x, train_y)
+            test_anchor = 0 if residual_index is None else data["validation_x"][test, residual_index]
+            prediction[test] = estimator.predict(data["validation_x"][test]) + test_anchor
+            refits.append({"start_day": begin.isoformat(), "end_day_exclusive": end.isoformat(),
+                           "added_prior_intervals": len(past), "training_intervals": len(train_y),
+                           "predicted_intervals": len(test)})
     metrics = point_metrics(data["validation_y"], prediction, data["reference"])
     output = Path(job["output"])
     pd.DataFrame({"product_start": data["starts"], "actual": data["validation_y"],
                   "point": prediction, "seasonal_naive": data["reference"]}).to_csv(output, index=False)
+    if rolling is not None:
+        output.with_suffix(".refits.json").write_text(json.dumps(refits, indent=2) + "\n")
     return {"group": job["group"], "feature_set": job["feature_set"], "candidate": spec["id"],
-            "family": spec["family"], "training_rows": len(data["train_y"]), **metrics}
+            "family": spec["family"], "training_rows": len(data["train_y"]),
+            "rolling_refit_count": len(refits), **metrics}
 
 
 def _validation_selection(study, root):
@@ -316,6 +372,9 @@ def run_search(config, *, check_only=False):
             np.savez(dataset, train_x=data["matrix"][data["training"]], train_y=data["target"][data["training"]],
                      validation_x=data["matrix"][selected], validation_y=data["target"][selected],
                      reference=data["matrix"][selected, 0],
+                     decisions_ns=data["decisions"].as_unit("ns").asi8[selected],
+                     available_ns=data["label_available_at"].as_unit("ns").asi8[selected],
+                     product_end_ns=data["label_product_end"].as_unit("ns").asi8[selected],
                      starts=np.asarray(data["starts"][selected].astype(str), dtype=str))
             for candidate in study["candidates"]:
                 if selected_candidates is not None and (feature_set, candidate["id"]) not in selected_candidates[group]:
@@ -323,7 +382,8 @@ def run_search(config, *, check_only=False):
                 jobs.append({"dataset": str(dataset), "output": str(destination / f"{group}__{feature_set}__{candidate['id']}.csv"),
                     "candidate": candidate, "group": group, "feature_set": feature_set,
                     "seed": study["seed"], "threads": study["threads_per_worker"],
-                    "residual_feature_index": residual_indices[feature_set]})
+                    "residual_feature_index": residual_indices[feature_set], "timezone": study["timezone"],
+                    "rolling_refit": study.get("rolling_refit")})
     if check_only:
         return {"status": "preflight_complete", "coverage": coverage, "feature_checksum": _sha256(feature_path),
                 "candidate_count": len(study["candidates"]), "selection": selection_evidence}
