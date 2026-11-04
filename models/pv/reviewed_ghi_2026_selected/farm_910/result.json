@@ -1,0 +1,265 @@
+{
+  "status": "complete",
+  "identity": "e8e1b55f600928d6c139d59cb176e59ebb3e6b2a8f04146b034fc80adff2af80",
+  "trial": {
+    "farm_id": 910,
+    "feature": "extended",
+    "family": "tcn",
+    "number": 3,
+    "seed": 402834387,
+    "parameters": {
+      "width": 32,
+      "depth": 4,
+      "kernel_size": 9,
+      "dropout": 0.0,
+      "learning_rate": 0.002437615727041936,
+      "weight_decay": 3.4154601452049696e-07,
+      "batch_size": 64,
+      "loss": "huber",
+      "heads": 4
+    },
+    "name": "tcn_extended_003"
+  },
+  "schema": "reviewed_ghi_forecast_bundle_v1",
+  "timezone": "Europe/Rome",
+  "rating_mw": 6.638,
+  "training": {
+    "epochs": 25,
+    "best_epoch": 10,
+    "validation_nrmse_percent": 8.976680666366263,
+    "parameters": 42625,
+    "history": [
+      {
+        "epoch": 1,
+        "validation_nrmse_percent": 22.600676021527473
+      },
+      {
+        "epoch": 2,
+        "validation_nrmse_percent": 19.592945599497053
+      },
+      {
+        "epoch": 3,
+        "validation_nrmse_percent": 14.481702725209397
+      },
+      {
+        "epoch": 4,
+        "validation_nrmse_percent": 11.97963376246018
+      },
+      {
+        "epoch": 5,
+        "validation_nrmse_percent": 10.677347750112476
+      },
+      {
+        "epoch": 6,
+        "validation_nrmse_percent": 9.467818413302842
+      },
+      {
+        "epoch": 7,
+        "validation_nrmse_percent": 9.288115211678686
+      },
+      {
+        "epoch": 8,
+        "validation_nrmse_percent": 9.438452550888925
+      },
+      {
+        "epoch": 9,
+        "validation_nrmse_percent": 9.147205986090261
+      },
+      {
+        "epoch": 10,
+        "validation_nrmse_percent": 8.976680666366263
+      },
+      {
+        "epoch": 11,
+        "validation_nrmse_percent": 9.061897580954458
+      },
+      {
+        "epoch": 12,
+        "validation_nrmse_percent": 9.057370946521054
+      },
+      {
+        "epoch": 13,
+        "validation_nrmse_percent": 9.155871989066052
+      },
+      {
+        "epoch": 14,
+        "validation_nrmse_percent": 9.551514530553003
+      },
+      {
+        "epoch": 15,
+        "validation_nrmse_percent": 9.390559913015755
+      },
+      {
+        "epoch": 16,
+        "validation_nrmse_percent": 9.549293150785765
+      },
+      {
+        "epoch": 17,
+        "validation_nrmse_percent": 9.572936320939116
+      },
+      {
+        "epoch": 18,
+        "validation_nrmse_percent": 9.656086799495572
+      },
+      {
+        "epoch": 19,
+        "validation_nrmse_percent": 9.748155708550273
+      },
+      {
+        "epoch": 20,
+        "validation_nrmse_percent": 9.809949217743656
+      },
+      {
+        "epoch": 21,
+        "validation_nrmse_percent": 9.796793998308948
+      },
+      {
+        "epoch": 22,
+        "validation_nrmse_percent": 9.912778180790315
+      },
+      {
+        "epoch": 23,
+        "validation_nrmse_percent": 9.758926966475581
+      },
+      {
+        "epoch": 24,
+        "validation_nrmse_percent": 9.881418290392483
+      },
+      {
+        "epoch": 25,
+        "validation_nrmse_percent": 10.240970737615191
+      }
+    ],
+    "training_loss": "huber"
+  },
+  "validation_replay_difference_percent": 0.0,
+  "metrics": [
+    {
+      "split": "train",
+      "target_source": "all",
+      "quarters": 21000,
+      "days": 364,
+      "day_balanced_nrmse_percent": 8.75250272573551,
+      "day_balanced_nmae_percent": 5.215216816231822,
+      "day_balanced_bias_percent": -0.6478284409475403,
+      "quarter_weighted_nrmse_percent": 8.924834880876212,
+      "quarter_weighted_nmae_percent": 5.33492266983362,
+      "window_energy_bias_mwh": -222.45219091681327
+    },
+    {
+      "split": "train",
+      "target_source": "measured",
+      "quarters": 20548,
+      "days": 362,
+      "day_balanced_nrmse_percent": 8.778179808082188,
+      "day_balanced_nmae_percent": 5.204963874407354,
+      "day_balanced_bias_percent": -0.6357335527718964,
+      "quarter_weighted_nrmse_percent": 8.936391754955789,
+      "quarter_weighted_nmae_percent": 5.317710509029834,
+      "window_energy_bias_mwh": -212.4496546146378
+    },
+    {
+      "split": "train",
+      "target_source": "synthetic",
+      "quarters": 452,
+      "days": 22,
+      "day_balanced_nrmse_percent": 8.976941776842363,
+      "day_balanced_nmae_percent": 6.890915958539358,
+      "day_balanced_bias_percent": -2.2509804174105756,
+      "quarter_weighted_nrmse_percent": 8.382648168660555,
+      "quarter_weighted_nmae_percent": 6.117390546373898,
+      "window_energy_bias_mwh": -10.00253630217542
+    },
+    {
+      "split": "validation",
+      "target_source": "all",
+      "quarters": 6784,
+      "days": 119,
+      "day_balanced_nrmse_percent": 8.976680666366228,
+      "day_balanced_nmae_percent": 5.60965233069338,
+      "day_balanced_bias_percent": -0.249973491942958,
+      "quarter_weighted_nrmse_percent": 9.02941751280074,
+      "quarter_weighted_nmae_percent": 5.645151258371723,
+      "window_energy_bias_mwh": -42.54543840880519
+    },
+    {
+      "split": "validation",
+      "target_source": "measured",
+      "quarters": 4411,
+      "days": 82,
+      "day_balanced_nrmse_percent": 9.160095226014434,
+      "day_balanced_nmae_percent": 5.807342218078426,
+      "day_balanced_bias_percent": 0.09261930706412042,
+      "quarter_weighted_nrmse_percent": 9.248269676029128,
+      "quarter_weighted_nmae_percent": 5.880242015713406,
+      "window_energy_bias_mwh": -2.421013897335186
+    },
+    {
+      "split": "validation",
+      "target_source": "synthetic",
+      "quarters": 2373,
+      "days": 43,
+      "day_balanced_nrmse_percent": 8.770940353425406,
+      "day_balanced_nmae_percent": 5.546585168607536,
+      "day_balanced_bias_percent": -0.8558825952805759,
+      "quarter_weighted_nrmse_percent": 8.607837105533855,
+      "quarter_weighted_nmae_percent": 5.208157861560022,
+      "window_energy_bias_mwh": -40.124424511469996
+    },
+    {
+      "split": "test",
+      "target_source": "all",
+      "quarters": 8075,
+      "days": 123,
+      "day_balanced_nrmse_percent": 10.992016920166519,
+      "day_balanced_nmae_percent": 6.62960823923984,
+      "day_balanced_bias_percent": 1.0714063301359307,
+      "quarter_weighted_nrmse_percent": 10.963206616218834,
+      "quarter_weighted_nmae_percent": 6.609845030855702,
+      "window_energy_bias_mwh": 146.8603813558226
+    },
+    {
+      "split": "test",
+      "target_source": "measured",
+      "quarters": 5735,
+      "days": 90,
+      "day_balanced_nrmse_percent": 12.04463574897915,
+      "day_balanced_nmae_percent": 7.326355713436268,
+      "day_balanced_bias_percent": 0.6693751039120918,
+      "quarter_weighted_nrmse_percent": 12.01217950889814,
+      "quarter_weighted_nmae_percent": 7.341670724862895,
+      "window_energy_bias_mwh": 65.37221083021807
+    },
+    {
+      "split": "test",
+      "target_source": "synthetic",
+      "quarters": 2340,
+      "days": 41,
+      "day_balanced_nrmse_percent": 8.701798391986346,
+      "day_balanced_nmae_percent": 5.615494952763892,
+      "day_balanced_bias_percent": 0.8026683049071363,
+      "quarter_weighted_nrmse_percent": 7.818243747480228,
+      "quarter_weighted_nmae_percent": 4.8162465884919206,
+      "window_energy_bias_mwh": 81.48817052560454
+    }
+  ],
+  "elapsed_seconds": 45.868406306020916,
+  "warnings": [],
+  "checksums": {
+    "model.pt": "1aa04ea930330b735c04a12b5cc38da6c74f2fe46a2589d187b0b6c3a7f9346f",
+    "prediction_mw.npy": "aa2186ae39c5a9ea42c6114b0acd9b8e3323b54dc519804a0228535f63722576",
+    "preprocessor.json": "28b14ff0a2ce691c4fd81197e68c313a209653572f282dccea8fac53ea73be5a"
+  },
+  "input_contract": {
+    "ghi_training": "historical",
+    "ghi_validation_test": "D-1 00 UTC forecast",
+    "hourly_radiation": "interval mean repeated across four quarters",
+    "context": "single frozen forecast cycle per local delivery day",
+    "target": "model_target_mw",
+    "pvlib_model_input": false,
+    "night_training_samples_per_farm": 3000,
+    "evaluation": "outside month-specific night window"
+  },
+  "availability": "D-1 00 UTC cycle with assumed configured release lag",
+  "limitations": "Selected on previously inspected 2026 validation; some labels are synthetic."
+}
