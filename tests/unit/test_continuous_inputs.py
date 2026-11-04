@@ -78,6 +78,16 @@ def test_continuous_preflight_instantiates_selected_farm_battery(prepared_case, 
     assert prepared["provenance"]["asset_input_settings"]["battery"] == config["battery"]
 
 
+def test_curated_continuous_provenance_discloses_synthetic_execution(prepared_case):
+    """Top-level labels must agree with the selected reviewed production source."""
+    config, _, _ = prepared_case
+    config["forecast"]["curated_realized"] = {"enabled": True, "dataset_root": "unused"}
+    prepared = continuous_inputs.prepare_continuous_inputs(config)
+    provenance = prepared["provenance"]
+    assert "retrospective" in provenance["measured_pv_basis"]
+    assert "no forecast fallback" in provenance["realized_pv_fallback"]
+
+
 def test_continuous_preflight_shares_inputs_and_reads_no_previous_day_observations(prepared_case):
     config, calls, _ = prepared_case
     before = deepcopy(config)

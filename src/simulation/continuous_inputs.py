@@ -470,10 +470,13 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     settlement_values = (None if settlement is None else
                          settlement.settlement_price_eur_mwh.to_numpy(float, copy=True))
     full_actual = np.concatenate([days_data[day]["realized_pv"] for day in days])
+    curated = config.get("forecast", {}).get("curated_realized", {}).get("enabled", False)
     provenance = {"schema_version": "continuous-inputs-v1", "offline": True,
         "start_date": days[0], "end_date": days[-1], "delivery_timezone": calendar.timezone,
-        "measured_pv_basis": "AC; no conversion losses applied",
-        "realized_pv_fallback": "one initial frozen forecast per day shared by all strategies",
+        "measured_pv_basis": ("reviewed AC MW; may include retrospective pvlib and night-zero counterfactuals"
+                              if curated else "AC; no conversion losses applied"),
+        "realized_pv_fallback": ("no forecast fallback; retained exclusions use reviewed historical-GHI pvlib and night policy"
+                                 if curated else "one initial frozen forecast per day shared by all strategies"),
         "plant": asdict(plant),
         "asset_input_settings": {key: deepcopy(config.get(key)) for key in
             ("plant", "battery", "state", "pv", "source", "forecast_mapping", "forecast_semantics",
