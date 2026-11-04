@@ -288,6 +288,14 @@ def audit_batch(batch, *, allow_partial=False):
             "position_change_mwh": float((target.net_position_mwh - tracking.net_position_mwh).abs().sum()),
             "oracle_relative_imbalance_budget": config.get("realtime_mpc", {}).get("oracle_relative_imbalance_budget", 0),
             "oracle_absolute_imbalance_budget_mwh": config.get("realtime_mpc", {}).get("oracle_absolute_imbalance_budget_mwh", 0),
+            "comparison_configuration": {
+                "terminal_soc_percent": config.get("state", {}).get("terminal_soc_percent"),
+                "terminal_soc_min_percent": config.get("state", {}).get("terminal_soc_min_percent"),
+                "mpc_terminal_inventory_mode": config.get("realtime_mpc", {}).get("terminal_inventory_mode"),
+                "mpc_terminal_soc_target_percent": config.get("realtime_mpc", {}).get("terminal_soc_target_percent"),
+                "mpc_current_pv_information": config.get("realtime_mpc", {}).get("current_pv_information"),
+                "auction_price_forecasts_enabled": config.get("energy_price_forecast", {}).get("auction_enabled", False),
+            },
             "controllers": controller_results})
     expected = manifest.get("plan", {}).get("job_count")
     if manifest.get("status") == "complete" and expected != len(jobs):
@@ -354,9 +362,9 @@ def markdown_audit(audit):
         lines.append(f"- `{job_id}`, `{detail['interval_id']}`: cap `{detail['cap_mwh']:.12g}` MWh; reconstructed `{detail['reconstructed_absolute_imbalance_mwh']:.12g}` MWh; excess `{detail['excess_mwh']:.8g}` MWh; allowance `{detail['allowed_numerical_tolerance_mwh']:.8g}` MWh.")
     lines += ["", f"{conflicts} explicit oracle solves retain nested source metadata saying settlement was supplied only for ex-post accounting. This is a provenance-label contradiction; the top-level oracle disclosure is explicit.", "",
         "## Interpretation", "",
-        "Grid tracking uses actual interval PV feedback; these MPC runs use forecast current PV. Perfect-foresight auction prices are common across members. Oracle physical controllers additionally see realized settlement prices, but retain the configured minimum-imbalance budget; an oracle controller is not a guaranteed upper bound on realized profit under uncertain PV.", "",
-        "The continuous comparisons include changed battery states and consequent later auction submissions. Profit differences therefore include auction cash-flow changes as well as physical dispatch. Final stored energy can differ, and reported profit has no inventory-value adjustment. These runs impose a soft 50% terminal-SOC penalty inside MPC while tracking has no equivalent soft terminal objective and the shared hard terminal target is null. Cash-profit rankings therefore do not isolate the controller from its terminal-inventory tradeoff. An increase in profit alongside more imbalance is possible under signed settlement; it is not by itself evidence of a forecasting improvement or a controller bug.", "",
-        "The short, selected January/August windows and shared prices across farms do not support precise extreme-tail estimates or independent-farm significance claims. Broader deterministic testing should retain paired tracking baselines, begin with the configured October 2025 week, and then include the full May 2026 month; these windows require no absent ensemble archive.", ""]
+        "Grid tracking uses actual interval PV feedback. MPC current-PV information, auction-price forecasts and terminal settings depend on the resolved job configuration; consult `comparison_configuration` in the accompanying JSON and the individual controller provenance. Physical settlement-price oracles are noncausal and are not guaranteed upper bounds on realized profit under uncertain PV.", "",
+        "The continuous comparisons include changed battery states and consequent later auction submissions. Profit differences therefore include auction cash-flow changes as well as physical dispatch. Final stored energy can differ, and reported profit has no inventory-value adjustment. A configured terminal constraint in auction planning does not by itself guarantee that the tracking controller physically ends at the target. Cash-profit rankings can reflect terminal-inventory tradeoffs. An increase in profit alongside more imbalance is possible under signed settlement; it is not by itself evidence of a forecasting improvement or a controller bug.", "",
+        "Interpret findings in light of the selected dates, forecast provenance, shared prices across farms and actual sample size. Short development windows do not support precise extreme-tail estimates or independent-farm significance claims.", ""]
     return "\n".join(lines)
 
 
