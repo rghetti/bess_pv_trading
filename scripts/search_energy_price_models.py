@@ -20,6 +20,7 @@ import pandas as pd
 from bess_pv_trading.config import load_config
 from bess_pv_trading.forecasting.energy_prices import (PreparedExogenous, PriceForecastSettings, historical_decision_times,
                                                        load_price_history, prepare_exogenous_features)
+from bess_pv_trading.forecasting.energy_price_features import load_catalog_features
 from bess_pv_trading.forecasting.price_search import (complete_shared_days, daily_price_curve_features, point_metrics,
                                                       prepare_search_matrix, project_search_matrix,
                                                       restrict_to_common_training_rows)
@@ -128,7 +129,8 @@ def _validation_selection(study, root):
         if study[name] != source_study[name]:
             raise ValueError(f"Holdout {name} differs from validation search")
     for name in ("feature_set_aliases", "add_market_price_features_to", "residual_target_features",
-                 "daily_curve_lag_days", "add_daily_curve_features_to", "common_training_rows"):
+                 "daily_curve_lag_days", "add_daily_curve_features_to", "common_training_rows",
+                 "supplemental_features", "add_supplemental_features_to"):
         if study.get(name) != source_study.get(name):
             raise ValueError(f"Holdout {name} differs from validation search")
     expected_candidates = {item["id"]: item for item in source_study["candidates"]}
@@ -250,6 +252,21 @@ def run_search(config, *, check_only=False):
     exogenous = prepare_exogenous_features(base_exogenous)
     feature_sets = source_manifest["plan"]["feature_sets"]
     selected_candidates, selection_evidence = _validation_selection(study, root)
+    supplemental_specs = study.get("supplemental_features", [])
+    if supplemental_specs and selection_evidence:
+        raise ValueError("Selected supplemental-feature holdouts require explicit matching of pinned source snapshots")
+    supplemental_evidence = None
+    supplemental_names = tuple(item["name"] for item in supplemental_specs)
+    if supplemental_specs:
+        first = min(pd.Timestamp(split["history_start"]) for split in study["product_groups"].values())
+        last = max(pd.Timestamp(split["history_end"]) for split in study["product_groups"].values())
+        supplemental, supplemental_evidence = load_catalog_features(study["database"], supplemental_specs,
+            start=first, end=last, timezone=study["timezone"], interval_minutes=15,
+            database_threads=study["threads_per_worker"])
+        supplement_index = prepare_exogenous_features(supplemental)
+        if set(exogenous.groups) & set(supplement_index.groups):
+            raise ValueError("Supplemental feature names collide with existing catalog features")
+        exogenous = PreparedExogenous({**exogenous.groups, **supplement_index.groups})
     if selection_evidence:
         validation_manifest = json.loads(Path(selection_evidence["source_manifest"]).read_text())
         if validation_manifest["feature_sha256"] != source_manifest["exogenous_sha256"]:
@@ -319,6 +336,8 @@ def run_search(config, *, check_only=False):
             names = tuple(item["name"] for item in feature_sets[base_name])
             if feature_set in study.get("add_market_price_features_to", []):
                 names += tuple(extra_names)
+            if feature_set in study.get("add_supplemental_features_to", []):
+                names += supplemental_names
             residual_feature = study.get("residual_target_features", {}).get(feature_set)
             if residual_feature == "latest_cleared_auction":
                 if not previous_markets:
@@ -391,9 +410,11 @@ def run_search(config, *, check_only=False):
                     "rolling_refit": study.get("rolling_refit")})
     if check_only:
         return {"status": "preflight_complete", "coverage": coverage, "feature_checksum": _sha256(feature_path),
+                "supplemental_features": supplemental_evidence,
                 "candidate_count": len(study["candidates"]), "selection": selection_evidence}
     manifest = {"status": "running", "config": study, "coverage": coverage, "source_lineage": lineage,
-                "feature_sha256": _sha256(feature_path), "selection": selection_evidence, "results": [], "failures": []}
+                "feature_sha256": _sha256(feature_path), "supplemental_features": supplemental_evidence,
+                "selection": selection_evidence, "results": [], "failures": []}
     (destination / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n")
     with ProcessPoolExecutor(max_workers=study["workers"], mp_context=multiprocessing.get_context("spawn")) as executor:
         pending = {executor.submit(_fit_candidate, job): job for job in jobs}

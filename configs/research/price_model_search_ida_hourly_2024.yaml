@@ -26,7 +26,7 @@ price_model_search:
   - cleared_only
   - spread_only
   product_groups:
-    ida1_quarter_hourly:
+    ida1_hourly_export_2024:
       target: IDA1
       native_minutes: 60
       history_start: '2024-06-14T00:00:00+02:00'
@@ -38,7 +38,7 @@ price_model_search:
       - DA
       market_neighbor_offsets_minutes:
       - -60
-    ida2_quarter_hourly:
+    ida2_hourly_export_2024:
       target: IDA2
       native_minutes: 60
       history_start: '2024-06-14T00:00:00+02:00'
@@ -51,7 +51,7 @@ price_model_search:
       - IDA1
       market_neighbor_offsets_minutes:
       - -60
-    ida3_quarter_hourly:
+    ida3_hourly_export_2024:
       target: IDA3
       native_minutes: 60
       history_start: '2024-06-14T00:00:00+02:00'

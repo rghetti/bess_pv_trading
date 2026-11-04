@@ -86,6 +86,15 @@ IDA-minus-DA targets on the same native delivery products. The latest earlier
 market is selected from a validated chronological ordering, and its configured
 publication clock still governs whether the anchor is usable.
 
+`configs/research/price_model_search_swiss_reservoir.yaml` tests weekly total
+Swiss reservoir fill percentage and Ticino stored energy with released-state
+age limits. Its forecast-source publication time is explicitly assumed, not
+historically verified. Reservoir and baseline feature groups use the same
+training rows and shared validation days. Supplemental feature snapshots and
+projected-row hashes are recorded separately. Selected-model holdout runs with
+supplemental features currently fail closed until matching the source
+snapshots across periods is implemented; no holdout result should be inferred.
+
 `configs/research/price_model_search_swiss_border.yaml` tests the previous-day
 Swiss--Italy commercial schedule, directional intraday NTC and Italian-NORD/
 Swiss spot spread, using only the current 2026 border archive. The spread is

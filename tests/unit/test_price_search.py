@@ -332,6 +332,7 @@ def test_historical_ida_export_search_starts_after_market_transition():
     assert study["common_training_rows"] is True
     assert all(group["native_minutes"] == 60 and group["history_start"].startswith("2024-06-14")
                for group in study["product_groups"].values())
+    assert all(name.endswith("_hourly_export_2024") for name in study["product_groups"])
     assert all(group["market_neighbor_offsets_minutes"] == [-60] for group in study["product_groups"].values())
 
 
@@ -356,3 +357,18 @@ def test_rolling_ida_uses_later_dates_and_earlier_market_selection():
     assert study["rolling_refit"] == {"frequency_days": 7, "gap_days": 1}
     assert all(group["validation_start"] == "2026-05-02" for group in study["product_groups"].values())
     assert study["product_groups"]["ida3_quarter_hourly"]["lag_hours"] == [24, 48, 72, 168, 336]
+
+
+def test_swiss_reservoir_ablation_uses_only_declared_state_features_and_matched_training():
+    """Reservoir levels are additional past state inputs, not target reconstruction."""
+    from pathlib import Path
+    from bess_pv_trading.config import load_config
+
+    root = Path(__file__).resolve().parents[2]
+    study = load_config(root / "configs/research/price_model_search_swiss_reservoir.yaml")["price_model_search"]
+    assert study["common_training_rows"] is True
+    assert {item["selectors"]["variable"] for item in study["supplemental_features"]} == {
+        "total_ch_percent", "ticino_gwh"}
+    assert all(item["kind"] == "released_state" and item["max_age_hours"] == 240
+               for item in study["supplemental_features"])
+    assert set(study["add_supplemental_features_to"]) == {"cleared_reservoir", "spread_reservoir"}
