@@ -108,6 +108,15 @@ The configured later-market publication clocks are retrospective assumptions,
 not evidence of 2024 gate or release times. Price-only and earlier-cleared
 feature groups use identical training and evaluation support.
 
+`configs/research/price_model_search_cleared_2025.yaml` declares an additional
+native-quarter-hour IDA validation period in June--August 2025, with training
+strictly before June. Its same-delivery day-ahead price is sourced from the
+then-hourly DA export and repeated as a coarse input over four quarter-hours;
+the IDA target remains the original quarter-hour product. This gives an
+additional historical regime without treating 2024 hourly IDA exports as
+quarter-hour training labels. It is still retrospective and uses the stated
+publication-clock assumptions.
+
 `configs/research/price_model_search_da_curves.yaml` adds the full 24-hour
 shape of the same market's previous 1, 2 and 7 local delivery days. Within a
 native quarter-hour task, each hourly input is the average of its four native

@@ -333,3 +333,14 @@ def test_historical_ida_export_search_starts_after_market_transition():
     assert all(group["native_minutes"] == 60 and group["history_start"].startswith("2024-06-14")
                for group in study["product_groups"].values())
     assert all(group["market_neighbor_offsets_minutes"] == [-60] for group in study["product_groups"].values())
+
+
+def test_ida_2025_validation_retains_quarter_hour_targets_and_prior_training():
+    """The additional historical regime cannot silently mix hourly IDA targets."""
+    from pathlib import Path
+    from bess_pv_trading.config import load_config
+
+    root = Path(__file__).resolve().parents[2]
+    study = load_config(root / "configs/research/price_model_search_cleared_2025.yaml")["price_model_search"]
+    assert all(group["native_minutes"] == 15 and group["validation_start"] == "2025-06-01"
+               for group in study["product_groups"].values())
