@@ -265,6 +265,36 @@ def test_intraday_search_declares_separate_native_market_models():
     assert all(group["native_minutes"] == 15 for group in study["product_groups"].values())
 
 
+def test_recent_training_window_uses_only_training_timestamps():
+    """A recent window is anchored to the latest available training product."""
+    from scripts.search_energy_price_models import _training_window
+
+    starts = pd.to_datetime(["2026-01-01T00:00Z", "2026-01-31T00:00Z", "2026-02-10T00:00Z"])
+    assert _training_window(starts, 30).tolist() == [False, True, True]
+    with pytest.raises(ValueError, match="positive integer"):
+        _training_window(starts, 0)
+    with pytest.raises(ValueError, match="positive integer"):
+        _training_window(starts, True)
+
+
+def test_candidate_fits_only_the_configured_recent_window(tmp_path):
+    """The saved candidate result reports rows actually used by the estimator."""
+    from scripts.search_energy_price_models import _fit_candidate
+
+    starts = pd.date_range("2026-01-01", periods=2400, freq="h", tz="UTC")
+    inputs = np.arange(len(starts), dtype=float).reshape(-1, 1)
+    path = tmp_path / "dataset.npz"
+    np.savez(path, train_x=inputs, train_y=inputs[:, 0], train_starts=np.asarray(starts.astype(str), dtype=str),
+             validation_x=np.array([[2400.0]]), validation_y=np.array([2400.0]),
+             starts=np.array(["2026-04-11T00:00:00+00:00"]), reference=np.array([2399.0]))
+    result = _fit_candidate({"dataset": str(path), "output": str(tmp_path / "pred.csv"), "threads": 1,
+        "candidate": {"id": "recent", "family": "ridge", "parameters": {"alpha": 1},
+                      "train_window_days": 30}, "seed": 1, "timezone": "UTC",
+        "group": "quarter", "feature_set": "base"})
+    assert result["training_rows"] == 721
+    assert result["train_window_days"] == 30
+
+
 def test_holdout_selection_uses_validation_and_rejects_early_cutoff(tmp_path):
     """Selection cannot consult held-out scores or occur before validation ends."""
     import json

@@ -114,6 +114,16 @@ def _validate_slot_coverage(train_starts, test_starts, timezone, minimum):
     return min(counts.values()) if counts else 0
 
 
+def _training_window(starts, window_days):
+    """Select the latest elapsed training window without looking at test labels."""
+    if isinstance(window_days, bool) or not isinstance(window_days, int) or window_days < 1:
+        raise ValueError("Training window must be a positive integer number of days")
+    times = pd.DatetimeIndex(pd.to_datetime(starts, utc=True))
+    if times.empty or times.hasnans:
+        raise ValueError("Training window requires nonempty valid timestamps")
+    return np.asarray(times >= times.max() - pd.Timedelta(days=window_days))
+
+
 def _fit_candidate(job):
     """Fit one estimator and retain its interval-level validation predictions."""
     configure_worker_threads(job["threads"], configure_torch=False)
@@ -126,11 +136,18 @@ def _fit_candidate(job):
     validation_anchor = 0 if residual_index is None else data["validation_x"][:, residual_index]
     rolling = job.get("rolling_refit")
     slot_model = spec["family"].startswith("slot_")
-    initial_starts = data["train_starts"] if slot_model else None
+    window_days = spec.get("train_window_days")
+    initial_starts = data["train_starts"] if slot_model or window_days is not None else None
+    initial_mask = (_training_window(initial_starts, window_days) if window_days is not None
+                    else np.ones(len(data["train_y"]), dtype=bool))
+    if window_days is not None and initial_mask.sum() < 100:
+        raise ValueError("Training window leaves fewer than 100 observations")
     refits = []
     if rolling is None:
-        prediction = _candidate_predict(spec, data["train_x"], data["train_y"] - train_anchor, data["validation_x"],
-            train_starts=initial_starts, test_starts=data["starts"] if slot_model else None,
+        target = (data["train_y"] - train_anchor)[initial_mask]
+        prediction = _candidate_predict(spec, data["train_x"][initial_mask], target, data["validation_x"],
+            train_starts=initial_starts[initial_mask] if slot_model else None,
+            test_starts=data["starts"] if slot_model else None,
             timezone=job.get("timezone"), seed=job["seed"], threads=job["threads"]) + validation_anchor
     else:
         prediction = np.full(len(data["validation_y"]), np.nan)
@@ -144,12 +161,19 @@ def _fit_candidate(job):
             past_anchor = 0 if residual_index is None else data["validation_x"][past, residual_index]
             train_y = np.concatenate([initial_target, data["validation_y"][past] - past_anchor])
             test_anchor = 0 if residual_index is None else data["validation_x"][test, residual_index]
-            train_starts = np.concatenate([initial_starts, data["starts"][past]]) if slot_model else None
-            prediction[test] = _candidate_predict(spec, train_x, train_y, data["validation_x"][test],
-                train_starts=train_starts, test_starts=data["starts"][test] if slot_model else None,
+            train_starts = (np.concatenate([initial_starts, data["starts"][past]])
+                            if slot_model or window_days is not None else None)
+            mask = (_training_window(train_starts, window_days) if window_days is not None
+                    else np.ones(len(train_y), dtype=bool))
+            if window_days is not None and mask.sum() < 100:
+                raise ValueError("Training window leaves fewer than 100 observations")
+            prediction[test] = _candidate_predict(spec, train_x[mask], train_y[mask], data["validation_x"][test],
+                train_starts=train_starts[mask] if slot_model else None,
+                test_starts=data["starts"][test] if slot_model else None,
                 timezone=job.get("timezone"), seed=job["seed"], threads=job["threads"]) + test_anchor
             refits.append({"start_day": begin.isoformat(), "end_day_exclusive": end.isoformat(),
-                           "added_prior_intervals": len(past), "training_intervals": len(train_y),
+                           "added_prior_intervals": int(mask[len(initial_target):].sum()),
+                           "training_intervals": int(mask.sum()),
                            "predicted_intervals": len(test)})
     metrics = point_metrics(data["validation_y"], prediction, data["reference"])
     output = Path(job["output"])
@@ -158,7 +182,7 @@ def _fit_candidate(job):
     if rolling is not None:
         output.with_suffix(".refits.json").write_text(json.dumps(refits, indent=2) + "\n")
     return {"group": job["group"], "feature_set": job["feature_set"], "candidate": spec["id"],
-            "family": spec["family"], "training_rows": len(data["train_y"]),
+            "family": spec["family"], "training_rows": int(initial_mask.sum()), "train_window_days": window_days,
             "rolling_refit_count": len(refits), **metrics}
 
 
