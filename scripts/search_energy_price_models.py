@@ -48,6 +48,101 @@ def _fit_candidate(job):
             "family": spec["family"], "training_rows": len(data["train_y"]), **metrics}
 
 
+def _validation_selection(study, root):
+    """Freeze top validation candidates and named baselines before any holdout fit."""
+    selection = study.get("selection")
+    if not selection:
+        return None, None
+    path = root / selection["source_manifest"]
+    manifest = json.loads(path.read_text())
+    if manifest.get("status") != "complete" or manifest.get("failures"):
+        raise ValueError("Selection requires a complete, failure-free validation search")
+    if not isinstance(selection["top_n"], int) or isinstance(selection["top_n"], bool) or selection["top_n"] < 1:
+        raise ValueError("Selection top_n must be a positive integer")
+    source_study = manifest["config"]
+    for name in ("lag_hours", "feature_sets", "seed", "timezone", "source_study"):
+        if study[name] != source_study[name]:
+            raise ValueError(f"Holdout {name} differs from validation search")
+    expected_candidates = {item["id"]: item for item in source_study["candidates"]}
+    requested_candidates = {item["id"]: item for item in study["candidates"]}
+    if expected_candidates != requested_candidates:
+        raise ValueError("Holdout candidates must match the validation search exactly")
+    chosen = {}
+    for group, split in study["product_groups"].items():
+        previous = source_study["product_groups"][group]
+        validation_end = pd.Timestamp(previous["validation_end"], tz=study["timezone"]).tz_convert("UTC")
+        availability = manifest["source_lineage"][group]["availability"]
+        if availability["kind"] == "assumed_lag_after_product_end":
+            selection_ready = validation_end + pd.Timedelta(hours=availability["lag_hours"])
+        elif availability["kind"] == "assumed_delivery_day_publication_clock":
+            # Conservatively wait through the end of any publication day
+            # after the last delivery day, even if its clock is earlier.
+            delay = max(0, availability["day_offset"])
+            local_end = validation_end.tz_convert(availability["timezone"])
+            selection_ready = (local_end + pd.DateOffset(days=delay)).tz_convert("UTC")
+        else:
+            raise ValueError("Selection needs an auditable validation-label publication policy")
+        if pd.Timestamp(split["cutoff"]) < selection_ready:
+            raise ValueError("Holdout model cutoff precedes the end of candidate selection")
+        if split["native_minutes"] != previous["native_minutes"] or split.get("target", "DA") != previous.get("target", "DA"):
+            raise ValueError("Holdout and validation must use the same target and native resolution")
+        rows = [row for row in manifest["results"] if row["group"] == group]
+        expected = {(feature, name) for feature in source_study["feature_sets"] for name in expected_candidates}
+        observed = {(row["feature_set"], row["candidate"]) for row in rows}
+        if len(rows) != len(expected) or observed != expected:
+            raise ValueError(f"Incomplete or duplicate validation results for {group}")
+        if any(not np.isfinite(row["mae_eur_per_mwh"]) for row in rows):
+            raise ValueError("Validation selection requires finite MAE scores")
+        ordered = sorted(rows, key=lambda row: (row["mae_eur_per_mwh"], row["feature_set"], row["candidate"]))
+        chosen[group] = {(row["feature_set"], row["candidate"]) for row in ordered[:selection["top_n"]]}
+        for feature in study["feature_sets"]:
+            for baseline in selection.get("baseline_candidates", []):
+                if baseline not in expected_candidates:
+                    raise ValueError("Selection baseline is not a declared candidate")
+                chosen[group].add((feature, baseline))
+    evidence = {"source_manifest": str(path), "source_manifest_sha256": _sha256(path),
+                "criterion": "pooled_validation_mae", "top_n": selection["top_n"],
+                "selected": {group: [list(pair) for pair in sorted(pairs)] for group, pairs in chosen.items()}}
+    return chosen, evidence
+
+
+def _write_report(destination, manifest):
+    """Publish readable scores and compact paired-sample comparison plots."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    results = pd.DataFrame(manifest["results"])
+    lines = ["# Native-resolution price model comparison", "",
+             f"Status: **{manifest['status']}**. Candidates are evaluated on shared complete delivery days.",
+             "WAPE is total absolute error divided by total absolute observed price. "
+             "Relative MAE compares the same intervals with the available seasonal lag. "
+             "These results are retrospective and contain no trading-profit evaluation.", ""]
+    if manifest.get("selection"):
+        lines.extend(["Candidates were fixed using the earlier validation manifest; "
+                      "this period is an evaluation of that selection, not a new selection stage.", ""])
+    for group in sorted(results.group.unique()) if not results.empty else []:
+        table = results.loc[results.group == group].sort_values(["feature_set", "candidate"])
+        lines.extend([f"## {group}", "", "| Feature set | Model | Training rows | MAE EUR/MWh | WAPE % | Relative MAE |",
+                      "|---|---|---:|---:|---:|---:|"])
+        for row in table.itertuples(index=False):
+            wape = "n/a" if pd.isna(row.wape_percent) else f"{row.wape_percent:.2f}"
+            relative = "n/a" if pd.isna(row.relative_mae_to_naive) else f"{row.relative_mae_to_naive:.3f}"
+            lines.append(f"| {row.feature_set} | {row.candidate} | {row.training_rows} | "
+                         f"{row.mae_eur_per_mwh:.3f} | {wape} | {relative} |")
+        lines.append("")
+        figure, axis = plt.subplots(figsize=(10, max(4, len(table) * 0.25)))
+        labels = table.feature_set + " / " + table.candidate
+        axis.barh(labels, table.mae_eur_per_mwh)
+        axis.set(xlabel="Point MAE (EUR/MWh)", title=f"{group}: matched validation days")
+        figure.tight_layout()
+        figure.savefig(destination / f"{group}__mae.png", dpi=130)
+        plt.close(figure)
+    if manifest["failures"]:
+        lines.extend(["## Failed fits", "", "Failure details are retained in the manifest.", ""])
+    (destination / "summary.md").write_text("\n".join(lines))
+
+
 def run_search(config, *, check_only=False):
     """Prepare source-native matrices, then fit candidate workers on shared days."""
     study = config["price_model_search"]
@@ -60,6 +155,11 @@ def run_search(config, *, check_only=False):
     configure_worker_threads(study["threads_per_worker"], configure_torch=False)
     exogenous = prepare_exogenous_features(pd.read_parquet(feature_path))
     feature_sets = source_manifest["plan"]["feature_sets"]
+    selected_candidates, selection_evidence = _validation_selection(study, root)
+    if selection_evidence:
+        validation_manifest = json.loads(Path(selection_evidence["source_manifest"]).read_text())
+        if validation_manifest["feature_sha256"] != source_manifest["exogenous_sha256"]:
+            raise ValueError("Holdout and validation feature snapshots differ")
     destination = root / study["output_root"] / study["run_id"]
     if destination.exists():
         raise FileExistsError(f"Search output already exists: {destination}")
@@ -104,14 +204,16 @@ def run_search(config, *, check_only=False):
                      reference=data["matrix"][selected, 0],
                      starts=np.asarray(data["starts"][selected].astype(str), dtype=str))
             for candidate in study["candidates"]:
+                if selected_candidates is not None and (feature_set, candidate["id"]) not in selected_candidates[group]:
+                    continue
                 jobs.append({"dataset": str(dataset), "output": str(destination / f"{group}__{feature_set}__{candidate['id']}.csv"),
                     "candidate": candidate, "group": group, "feature_set": feature_set,
                     "seed": study["seed"], "threads": study["threads_per_worker"]})
     if check_only:
         return {"status": "preflight_complete", "coverage": coverage, "feature_checksum": _sha256(feature_path),
-                "candidate_count": len(study["candidates"])}
+                "candidate_count": len(study["candidates"]), "selection": selection_evidence}
     manifest = {"status": "running", "config": study, "coverage": coverage, "source_lineage": lineage,
-                "feature_sha256": _sha256(feature_path), "results": [], "failures": []}
+                "feature_sha256": _sha256(feature_path), "selection": selection_evidence, "results": [], "failures": []}
     (destination / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n")
     with ProcessPoolExecutor(max_workers=study["workers"], mp_context=multiprocessing.get_context("spawn")) as executor:
         pending = {executor.submit(_fit_candidate, job): job for job in jobs}
@@ -126,6 +228,7 @@ def run_search(config, *, check_only=False):
     manifest["status"] = "complete" if not manifest["failures"] else "partial"
     (destination / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n")
     pd.DataFrame(manifest["results"]).to_csv(destination / "validation_scores.csv", index=False)
+    _write_report(destination, manifest)
     return manifest
 
 

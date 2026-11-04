@@ -43,3 +43,15 @@ every auction, training window, feature set, hyperparameter or held-out period.
 These estimators are not yet integrated as portable MPC forecast artifacts.
 Do not label them LEAR or claim a selected model or improved score until the
 chronological search and held-out evaluation have been completed.
+
+`configs/research/price_model_holdout.yaml` selects the three lowest pooled
+validation-MAE combinations per resolution plus a ridge reference for each
+feature set, using the completed validation manifest and its checksum. It
+refits only after the selection period and evaluates hourly products from
+2 July through 30 September 2025 and quarter-hour products from 2 May through
+31 August 2026. The intervening day ensures the last validation day has ended
+before the model-selection cutoff. Matching source data, feature definitions,
+lags, seed, candidate settings and native resolution are required. August 2026
+was inspected in an earlier ridge feature study, so this is held out from this
+particular candidate selection, not a globally untouched research test. Scores
+remain retrospective and apply only to complete common delivery days.

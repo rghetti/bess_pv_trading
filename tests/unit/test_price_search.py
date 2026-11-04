@@ -72,3 +72,41 @@ def test_intraday_search_declares_separate_native_market_models():
     study = load_config(root / "configs/research/price_model_search_intraday.yaml")["price_model_search"]
     assert {group["target"] for group in study["product_groups"].values()} == {"IDA1", "IDA2", "IDA3", "settlement"}
     assert all(group["native_minutes"] == 15 for group in study["product_groups"].values())
+
+
+def test_holdout_selection_uses_validation_and_rejects_early_cutoff(tmp_path):
+    """Selection cannot consult held-out scores or occur before validation ends."""
+    import json
+    from scripts.search_energy_price_models import _validation_selection
+
+    candidates = [{"id": "a", "family": "ridge", "parameters": {"alpha": 1}},
+                  {"id": "b", "family": "ridge", "parameters": {"alpha": 2}}]
+    source = {"lag_hours": [24], "feature_sets": ["price_only"], "seed": 1, "timezone": "UTC",
+              "source_study": "source", "candidates": candidates,
+              "product_groups": {"hourly": {"native_minutes": 60, "validation_end": "2025-07-01"}}}
+    manifest = {"status": "complete", "failures": [], "config": source,
+        "source_lineage": {"hourly": {"availability": {"kind": "assumed_delivery_day_publication_clock",
+                                                            "timezone": "UTC", "day_offset": -1}}},
+        "results": [{"group": "hourly", "feature_set": "price_only", "candidate": candidate,
+                     "mae_eur_per_mwh": error} for candidate, error in [("a", 2), ("b", 1)]]}
+    (tmp_path / "validation.json").write_text(json.dumps(manifest))
+    study = {**source, "product_groups": {"hourly": {"native_minutes": 60, "cutoff": "2025-07-01T01:00Z"}},
+             "selection": {"source_manifest": "validation.json", "top_n": 1, "baseline_candidates": ["a"]}}
+    selected, evidence = _validation_selection(study, tmp_path)
+    assert selected["hourly"] == {("price_only", "a"), ("price_only", "b")}
+    assert evidence["criterion"] == "pooled_validation_mae"
+    study["product_groups"]["hourly"]["cutoff"] = "2025-06-30T23:00Z"
+    with pytest.raises(ValueError, match="precedes"):
+        _validation_selection(study, tmp_path)
+
+
+def test_search_report_renders_metrics_and_plot(tmp_path):
+    """Report files contain relative metrics and a comparison plot."""
+    from scripts.search_energy_price_models import _write_report
+
+    manifest = {"status": "complete", "selection": None, "failures": [], "results": [{
+        "group": "hourly", "feature_set": "price_only", "candidate": "ridge", "training_rows": 100,
+        "mae_eur_per_mwh": 5.0, "wape_percent": 5.0, "relative_mae_to_naive": 0.8}]}
+    _write_report(tmp_path, manifest)
+    assert "Relative MAE" in (tmp_path / "summary.md").read_text()
+    assert (tmp_path / "hourly__mae.png").is_file()
