@@ -1,0 +1,18 @@
+# Retrospective within-validation ranking, weight tuning and later evaluation.
+include: ../standard.yaml
+price_ensemble_evaluation:
+  source_search: outputs/energy_price_forecasts/nord_ida_cleared_context_search_v1
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_ida_temporal_stacking_v1
+  timezone: Europe/Rome
+  rank_start: '2026-02-01'
+  rank_end_exclusive: '2026-03-16'
+  tune_start: '2026-03-16'
+  tune_end_exclusive: '2026-04-01'
+  test_start: '2026-04-01'
+  test_end_exclusive: '2026-05-01'
+  ensemble_sizes: [1, 3, 5, 10]
+  stacking:
+    weight_fit_fraction: 0.5
+    ensemble_sizes: [1, 3, 5, 10]
+    ridge_penalties: [0.0, 0.001, 0.01]

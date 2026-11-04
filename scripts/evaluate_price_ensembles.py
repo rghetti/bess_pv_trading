@@ -32,6 +32,73 @@ def _period_mask(days, start, end):
     return (days >= start) & (days < end)
 
 
+def evaluate_stacking(actual, reference, predictions, identifiers, days, settings):
+    """Rank, fit and select convex combinations on successive days before testing."""
+    from scipy.optimize import minimize
+
+    actual = np.asarray(actual, dtype=float)
+    reference = np.asarray(reference, dtype=float)
+    predictions = np.asarray(predictions, dtype=float)
+    days = np.asarray(days, dtype=str)
+    if (predictions.ndim != 2 or predictions.shape != (len(actual), len(identifiers))
+            or reference.shape != actual.shape or len(days) != len(actual) or not len(identifiers)
+            or len(set(identifiers)) != len(identifiers) or not np.isfinite(predictions).all()
+            or not np.isfinite(actual).all() or not np.isfinite(reference).all()):
+        raise ValueError("Stacking inputs must be aligned, unique and finite")
+    rank = _period_mask(days, settings["rank_start"], settings["rank_end_exclusive"])
+    tune = _period_mask(days, settings["tune_start"], settings["tune_end_exclusive"])
+    test = _period_mask(days, settings["test_start"], settings["test_end_exclusive"])
+    if not (settings["rank_start"] < settings["rank_end_exclusive"] <= settings["tune_start"]
+            < settings["tune_end_exclusive"] <= settings["test_start"] < settings["test_end_exclusive"]):
+        raise ValueError("Stacking periods must be chronological and nonoverlapping")
+    tuning_days = np.unique(days[tune])
+    fraction = settings["stacking"]["weight_fit_fraction"]
+    if not np.isfinite(fraction) or not 0 < fraction < 1 or len(tuning_days) < 4 or not rank.any() or not test.any():
+        raise ValueError("Stacking requires nonempty rank/test periods and at least four tuning days")
+    split = max(1, min(len(tuning_days) - 1, int(len(tuning_days) * fraction)))
+    fit = tune & np.isin(days, tuning_days[:split])
+    validate = tune & np.isin(days, tuning_days[split:])
+    errors = np.abs(predictions[rank] - actual[rank, None]).mean(axis=0)
+    order = sorted(range(len(identifiers)), key=lambda index: (errors[index], identifiers[index]))
+    sizes = settings["stacking"]["ensemble_sizes"]
+    penalties = settings["stacking"]["ridge_penalties"]
+    if (not sizes or len(set(sizes)) != len(sizes) or any(isinstance(k, bool) or not isinstance(k, int)
+            or k < 1 or k > len(order) for k in sizes) or not penalties
+            or any(not np.isfinite(value) or value < 0 for value in penalties)):
+        raise ValueError("Invalid stacking sizes or regularization penalties")
+
+    def fit_weights(indices, mask, penalty):
+        """Fit nonnegative weights summing to one with shrinkage to equal weights."""
+        x, y = predictions[mask][:, indices], actual[mask]
+        uniform = np.full(len(indices), 1 / len(indices))
+        # Scaling keeps regularization stable across differently priced periods.
+        scale = max(float(np.mean(np.abs(y))), 1.0)
+        objective = lambda weights: float(np.mean(((x @ weights - y) / scale) ** 2)
+                                          + penalty * np.sum((weights - uniform) ** 2))
+        result = minimize(objective, uniform, method="SLSQP", bounds=[(0, 1)] * len(indices),
+                          constraints=[{"type": "eq", "fun": lambda weights: weights.sum() - 1}],
+                          options={"maxiter": 500, "ftol": 1e-10})
+        if not result.success or not np.isfinite(result.x).all() or abs(result.x.sum() - 1) > 1e-6:
+            raise ValueError(f"Stacking optimization failed: {result.message}")
+        return result.x
+
+    trials = []
+    for size in sizes:
+        for penalty in penalties:
+            indices = order[:size]
+            weights = fit_weights(indices, fit, penalty)
+            metrics = point_metrics(actual[validate], predictions[validate][:, indices] @ weights, reference[validate])
+            trials.append({"size": size, "penalty": penalty, **metrics})
+    selected = min(trials, key=lambda row: (row["mae_eur_per_mwh"], row["size"], row["penalty"]))
+    indices = order[:selected["size"]]
+    weights = fit_weights(indices, tune, selected["penalty"])
+    forecast = predictions[test][:, indices] @ weights
+    return {"selected_candidates": [identifiers[index] for index in indices], "weights": weights.tolist(),
+            "selected_penalty": selected["penalty"], "trials": trials,
+            "weight_fit_days": tuning_days[:split].tolist(), "weight_validation_days": tuning_days[split:].tolist(),
+            "test": point_metrics(actual[test], forecast, reference[test])}, test, forecast
+
+
 def evaluate_group(actual, reference, predictions, identifiers, days, settings):
     """Rank individual models, choose ensemble size, then score later observations."""
     actual = np.asarray(actual, dtype=float)
@@ -127,6 +194,15 @@ def run(config):
             forecasts.append(frame.point.to_numpy(float))
         days = starts.tz_convert(settings["timezone"]).strftime("%Y-%m-%d").to_numpy()
         result, test, forecast = evaluate_group(actual, reference, np.column_stack(forecasts), identifiers, days, settings)
+        if settings.get("stacking"):
+            # Fit and validate weights on earlier tuning days before scoring the later slice.
+            stack, stack_test, stack_forecast = evaluate_stacking(
+                actual, reference, np.column_stack(forecasts), identifiers, days, settings)
+            if not np.array_equal(test, stack_test):
+                raise ValueError("Stacking and equal-weight evaluation periods differ")
+            result["stacking"] = stack
+            pd.DataFrame({"product_start": starts[test], "actual": actual[test], "stacking": stack_forecast}).to_csv(
+                output / f"{group}_stacking_predictions.csv", index=False)
         pd.DataFrame({"product_start": starts[test], "actual": actual[test], "seasonal_naive": reference[test],
                       "ensemble": forecast}).to_csv(output / f"{group}_test_predictions.csv", index=False)
         daily = pd.DataFrame({"day": days[test], "ensemble": np.abs(forecast - actual[test]),
@@ -154,6 +230,19 @@ def run(config):
         wape = "n/a" if scores["wape_percent"] is None else f"{scores['wape_percent']:.2f}"
         relative = "n/a" if scores["relative_mae_to_naive"] is None else f"{scores['relative_mae_to_naive']:.3f}"
         lines.append(f"| {group} | {result['selected_size']} | {scores['mae_eur_per_mwh']:.3f} | {wape} | {relative} |")
+    if settings.get("stacking"):
+        lines.extend(["", "## Convex weighted combinations", "",
+                      "Weights minimize scaled squared error with nonnegative weights summing to one. "
+                      "The tuning period is split chronologically to select size and regularization by MAE; "
+                      "weights are then refit on the full tuning period before later evaluation.", "",
+                      "| Market | Models | Later MAE EUR/MWh | Later WAPE % | Relative MAE |",
+                      "|---|---:|---:|---:|---:|"])
+        for group, result in results["groups"].items():
+            scores = result["stacking"]["test"]
+            wape = "n/a" if scores["wape_percent"] is None else f"{scores['wape_percent']:.2f}"
+            relative = "n/a" if scores["relative_mae_to_naive"] is None else f"{scores['relative_mae_to_naive']:.3f}"
+            lines.append(f"| {group} | {len(result['stacking']['weights'])} | {scores['mae_eur_per_mwh']:.3f} | "
+                         f"{wape} | {relative} |")
     (output / "summary.md").write_text("\n".join(lines) + "\n")
     return results
 
