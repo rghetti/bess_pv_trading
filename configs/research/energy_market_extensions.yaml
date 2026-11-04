@@ -243,6 +243,22 @@ energy_research_study:
         realtime_mpc_comparison: {controllers: [track_committed_grid, ensemble_mpc_price_oracle]}
         execution: {dispatch_policy: ensemble_mpc_price_oracle}
         realtime_mpc: {oracle_fallback_max_relative_gap: 0.01, oracle_stage2_time_limit_seconds: 10.0}
+    - id: deterministic_oracle_numeric_retry
+      family: numerical_recovery
+      baseline_case: deterministic_price_oracle
+      overrides:
+        energy_price_forecast: {settlement_enabled: false}
+        realtime_mpc_comparison: {controllers: [track_committed_grid, deterministic_mpc_price_oracle]}
+        execution: {dispatch_policy: deterministic_mpc_price_oracle}
+        realtime_mpc: {oracle_retry_numeric_focus: 3, oracle_retry_feasibility_tolerance: 1.0e-9}
+    - id: ensemble_oracle_numeric_retry
+      family: numerical_recovery
+      baseline_case: ensemble_price_oracle
+      overrides:
+        energy_price_forecast: {settlement_enabled: false}
+        realtime_mpc_comparison: {controllers: [track_committed_grid, ensemble_mpc_price_oracle]}
+        execution: {dispatch_policy: ensemble_mpc_price_oracle}
+        realtime_mpc: {oracle_retry_numeric_focus: 3, oracle_retry_feasibility_tolerance: 1.0e-9}
     - id: deterministic_economic
       family: price_information
       baseline_case: deterministic_penalty

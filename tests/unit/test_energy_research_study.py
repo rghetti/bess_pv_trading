@@ -35,16 +35,33 @@ def local_config(tmp_path, change=None):
 
 def test_default_matrix_counts_and_continuous_mode_are_exact():
     plan = study.research_plan(CONFIG)
-    assert plan["job_count"] == 208
-    assert plan["case_count"] == 26
+    assert plan["job_count"] == 224
+    assert plan["case_count"] == 28
     assert plan["farm_count"] == 4
     assert plan["window_count"] == 2
-    assert plan["mpc_decisions"] == 39936
-    assert plan["auction_submission_solves"] == 3136
-    assert plan["physical_controller_trajectories"] == 416
+    assert plan["mpc_decisions"] == 43008
+    assert plan["auction_submission_solves"] == 3392
+    assert plan["physical_controller_trajectories"] == 448
     assert plan["solves_started"] == plan["models_fitted"] == 0
     assert all(job["mode"] == "continuous" for job in plan["jobs"])
     assert plan["requested_workers"] == plan["workers"] == plan["configured_cpu_threads"] == 42
+
+
+@pytest.mark.parametrize("kind", ["deterministic", "ensemble"])
+def test_numeric_retry_case_only_changes_retry_settings(kind):
+    """The closed-loop comparison isolates the opt-in numerical recovery."""
+    baseline_id = f"{kind}_price_oracle"
+    retry_id = f"{kind}_oracle_numeric_retry"
+    _, _, jobs = study.expand_research_jobs(CONFIG, case_ids=[baseline_id, retry_id],
+        farms=[1], window_ids=["january_development"])
+    configs = {job["case_id"]: job["config"] for job in jobs}
+    baseline = configs[baseline_id]
+    retry = configs[retry_id]
+    assert retry["realtime_mpc"].pop("oracle_retry_numeric_focus") == 3
+    assert retry["realtime_mpc"].pop("oracle_retry_feasibility_tolerance") == 1e-9
+    # Run identifiers differ by case even though numerical and information inputs match.
+    retry["continuous_optimization"]["run_id"] = baseline["continuous_optimization"]["run_id"]
+    assert retry == baseline
 
 
 def test_fresh_raw_config_resolves_each_farm_before_asset_scaling():

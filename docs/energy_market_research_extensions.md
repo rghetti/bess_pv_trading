@@ -112,6 +112,11 @@ stage-one plan is retained. This does not retry a missing incumbent or an
 objective-component validation failure. The existing studies did not enable
 this option, and selected numerical replays are not evidence of its broad effect
 on closed-loop performance.
+The `deterministic_oracle_numeric_retry` and `ensemble_oracle_numeric_retry`
+study cases enable focus 3 and feasibility tolerance `1e-9` and compare against
+their respective no-retry oracle cases. Each retains its own continuous
+grid-tracking comparison. These cases are declarations for future runs; they
+are not part of the already running 104-job January batch.
 
 ## Data, forecast training and retrospective scope
 
