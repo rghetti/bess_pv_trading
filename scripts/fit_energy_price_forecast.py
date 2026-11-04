@@ -207,10 +207,25 @@ def write_training_report(destination):
                 selected = frame.loc[frame.day.isin(common)].copy()
                 selected["fold"], selected["target"], selected["model"] = fold, target, model
                 paired.append(selected)
+                # Pool absolute errors and absolute observations across matched
+                # intervals; unlike MAPE, individual zero prices do not explode.
+                prediction_path = destination / fold / model / target / "predictions.csv"
+                relative = None
+                mean_abs_price = None
+                if common and prediction_path.exists() and prediction_path.stat().st_size > 1:
+                    predictions = pd.read_csv(prediction_path, parse_dates=["product_start"])
+                    timezone = manifest["plan"].get("fitting", {}).get("timezone", "Europe/Rome")
+                    local_days = predictions.product_start.dt.tz_convert(timezone).dt.strftime("%Y-%m-%d")
+                    matched = predictions.loc[local_days.isin(common)]
+                    denominator = matched.actual.abs().sum()
+                    if len(matched) and denominator > 0:
+                        relative = float(100 * (matched.point - matched.actual).abs().sum() / denominator)
+                        mean_abs_price = float(matched.actual.abs().mean())
                 summaries.append({"fold": fold, "target": target, "model": model,
                     "paired_days": len(selected),
                     "point_mae_eur_per_mwh": None if selected.empty else float(selected.point_mae_eur_per_mwh.mean()),
-                    "crps_eur_per_mwh": None if selected.empty else float(selected.crps_eur_per_mwh.mean())})
+                    "crps_eur_per_mwh": None if selected.empty else float(selected.crps_eur_per_mwh.mean()),
+                    "wape_percent": relative, "mean_absolute_actual_eur_per_mwh": mean_abs_price})
     if paired:
         pd.concat(paired, ignore_index=True).to_csv(destination / "paired_daily_scores.csv", index=False)
     pd.DataFrame(summaries).to_csv(destination / "paired_scores.csv", index=False)
@@ -222,13 +237,16 @@ def write_training_report(destination):
         "Evaluation reports point MAE and empirical CRPS separately from downstream trading profit. "
         "No hyperparameter search or winner selection is performed.", "",
         "The table uses only delivery dates scored by every declared model for that market and fold. "
-        "Per-model exclusions remain in each output folder; gaps are never replaced by zero.", "",
-        "| Fold | Market | Model | Common days | Point MAE (EUR/MWh) | CRPS (EUR/MWh) |",
-        "|---|---|---|---:|---:|---:|"]
+        "Per-model exclusions remain in each output folder; gaps are never replaced by zero. "
+        "WAPE is 100 times the sum of absolute point errors divided by the sum of absolute observed prices "
+        "on those days; it is undefined if the denominator is zero. It is not mean individual percentage error.", "",
+        "| Fold | Market | Model | Common days | Point MAE (EUR/MWh) | WAPE (%) | CRPS (EUR/MWh) |",
+        "|---|---|---|---:|---:|---:|---:|"]
     for row in summaries:
         mae = "unavailable" if row["point_mae_eur_per_mwh"] is None else f"{row['point_mae_eur_per_mwh']:.3f}"
         crps = "unavailable" if row["crps_eur_per_mwh"] is None else f"{row['crps_eur_per_mwh']:.3f}"
-        lines.append(f"| {row['fold']} | {row['target']} | {row['model']} | {row['paired_days']} | {mae} | {crps} |")
+        relative = "unavailable" if row["wape_percent"] is None else f"{row['wape_percent']:.2f}"
+        lines.append(f"| {row['fold']} | {row['target']} | {row['model']} | {row['paired_days']} | {mae} | {relative} | {crps} |")
     lines.extend(["", "The current folds cover their configured months only. "
         "A future complete-2026 ensemble archive can be evaluated by adding chronological folds and explicit input coverage. "
         "The present partial-year results do not establish annual performance.", ""])

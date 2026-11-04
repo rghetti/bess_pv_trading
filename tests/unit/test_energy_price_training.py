@@ -163,6 +163,23 @@ def test_summary_compares_only_common_dates(tmp_path):
     assert "partial-year" in (tmp_path / "summary.md").read_text()
 
 
+def test_paired_report_uses_pooled_relative_error_with_zero_and_negative_prices(tmp_path):
+    """WAPE uses shared delivery dates and absolute observed prices in its denominator."""
+    module = training_script()
+    manifest = {"plan": {"models": [{"id": "a"}], "folds": {"fold": {}}, "targets": {"DA": {}},
+                         "fitting": {"timezone": "UTC"}}}
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    path = tmp_path / "fold" / "a" / "DA"
+    path.mkdir(parents=True)
+    pd.DataFrame({"day": ["2026-01-02"], "point_mae_eur_per_mwh": [2],
+                  "crps_eur_per_mwh": [1]}).to_csv(path / "daily_scores.csv", index=False)
+    pd.DataFrame({"product_start": ["2026-01-02T00:00:00Z", "2026-01-02T01:00:00Z"],
+                  "actual": [0, -10], "point": [1, -7]}).to_csv(path / "predictions.csv", index=False)
+    result = module.write_training_report(tmp_path)
+    assert result[0]["wape_percent"] == 40
+    assert result[0]["mean_absolute_actual_eur_per_mwh"] == 5
+
+
 def test_spawned_price_workers_fit_isolated_artifacts_without_database_reads(tmp_path, monkeypatch):
     import importlib
 
