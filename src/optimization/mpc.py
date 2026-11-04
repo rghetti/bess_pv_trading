@@ -796,6 +796,11 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
             settings.planning_imbalance_penalty_eur_per_mwh * components["absolute_imbalance_mwh"]
             + sum(components[k] for k in ("degradation_eur", "import_cost_eur", "terminal_cost_eur")))
         result.status = diagnostics["stages"][-1]["status"]
+        if qualified:
+            # Stage-two optimality is conditional on an approximate first-stage
+            # cap; do not label the combined lexicographic policy optimal.
+            result.status = ("feasible_gap_qualified_refined" if diagnostics["oracle_stage2_used"]
+                             else "feasible_gap_qualified_unrefined")
         diagnostics["accepted_action_source"] = "economic" if economic_stage else "price_blind_stage1"
     except Exception as error:
         diagnostics["failure_reason"] = str(error)

@@ -154,6 +154,7 @@ def test_oracle_gap_fallback_runs_economics_only_within_declared_bound(
     if expected_qualified:
         assert result.diagnostics["oracle_cap_reference"] == "gap_qualified_incumbent"
         assert result.diagnostics["oracle_stage2_used"]
+        assert result.status == "feasible_gap_qualified_refined"
         assert result.diagnostics["stages"][0]["time_limit_seconds"] == 10.0
         assert result.diagnostics["stages"][1]["time_limit_seconds"] == 10.0
         assert result.diagnostics["stage1_relative_gap_reconstructed"] == pytest.approx(reported_gap)
