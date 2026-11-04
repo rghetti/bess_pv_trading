@@ -1,0 +1,27 @@
+# Metadata-only annual readiness inventory. This configuration never launches a study.
+include: ../standard.yaml
+
+# Future calendar validity is a declared screening assumption local to this workflow.
+market:
+  valid_to: '2026-12-31'
+
+ensemble_inventory:
+  start_date: '2026-01-01'
+  end_date: '2026-12-31'
+  farm_ids: [1, 345, 901, 910]
+  sources:
+    - data/farms/nwp_ens_20260101_20260131.zarr
+    - data/farms/nwp_ens_20260801_20260930.zarr
+  measurement_source: ${inputs.zarr}
+  overlap_policy: error
+  output_directory: outputs/research_inventory/2026
+  calendar_assumption:
+    kind: unchanged_configured_gates_for_annual_coverage_screening
+    description: >-
+      Extend the study calendar through 2026-12-31 using the configured Europe/Rome
+      DA and IDA gates. The current GME timing reference supports these gates;
+      using them for future dates is an explicit projection, not a guarantee
+      against subsequent market-calendar changes.
+    sources:
+      - https://www.mercatoelettrico.org/Portals/0/Documents/it-IT/20251209DTF03rev14MPE.pdf
+      - https://gme.mercatoelettrico.org/it-it/Home/AvvisieComunicati/AvvisieComunicatiME?id=7282

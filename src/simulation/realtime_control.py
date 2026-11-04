@@ -9,7 +9,10 @@ import pandas as pd
 
 from ..domain import DeliveryGrid, SolverSettings
 from ..optimization.mpc import (CAUSAL_TRACKER, MpcAction, MpcControllerState,
-    MpcInput, MpcSettings, OraclePrices, solve_mpc)
+    MpcInput, MpcSettings, OraclePrices, RESEARCH_MPC_POLICIES, solve_mpc)
+from ..reporting.mpc_history import archive_completed_history, validate_mpc_history_settings
+from .energy_price_inputs import (settlement_forecasts, transform_mpc_scenarios,
+    conditional_terminal_value)
 from .replay import execute_interval
 
 
@@ -20,6 +23,17 @@ class RealtimeControl:
         self.replay = replay
         self.settings = MpcSettings.from_config(replay.config)
         self.state = MpcControllerState()
+        self.horizon_history_mode = validate_mpc_history_settings(replay.config)
+        self.history_archives = []
+        self.scenario_artifact_cache = {}
+
+    def archive_completed(self, cutoff):
+        """Spill finished delivery books while retaining the next midnight action."""
+        if self.horizon_history_mode == "daily_parquet":
+            completed = [day for day, daily in self.replay.daily.items()
+                         if pd.Timestamp(daily["grid"].ends[-1]) <= pd.Timestamp(cutoff)]
+            self.history_archives = archive_completed_history(self.replay.destination, self.state,
+                                                               self.history_archives, completed)
 
     def forecast(self, cutoff, starts, context):
         """Always request eligible forecasts, including under an upper PV oracle."""
@@ -62,6 +76,14 @@ class RealtimeControl:
         if weights is not None and set(weights) != set(ids):
             raise ValueError("MPC scenario_weights must identify every represented scenario exactly")
         probabilities = np.full(len(ids), 1 / len(ids)) if weights is None else np.array([weights[key] for key in ids])
+        commitments = np.array([replay._position(key) for key in grid.interval_ids])
+        prices = (settlement_forecasts(replay, daily, cutoff, pd.DatetimeIndex(grid.starts), len(ids))
+            if replay.dispatch_policy in RESEARCH_MPC_POLICIES else None)
+        law, prices, _, scenario_evidence = transform_mpc_scenarios(replay.config, grid, cutoff,
+            replay.plant, values, ids, probabilities, commitments, prices,
+            artifact_cache=self.scenario_artifact_cache)
+        values, ids, probabilities = law.pv_ac_mw, law.scenario_ids, law.weights
+        provenance["scenario_design"] = scenario_evidence
         forecast_values = values.copy()
         current_pv = None
         if self.settings.current_pv_information == "realized_interval_average":
@@ -77,14 +99,18 @@ class RealtimeControl:
             oracle = OraclePrices(replay.prepared["imbalance_prices_eur_per_mwh"][index:end],
                 None if negative is None else negative[index:end],
                 {"noncausal": True, "source": "actual_NORD_settlement",
-                 "settlement": replay.prepared["provenance"].get("settlement", {})})
+                 "settlement": {**replay.prepared["provenance"].get("settlement", {}),
+                     "status": "explicitly_disclosed_noncausal_mpc_oracle",
+                     "supplied_to_optimizer": True}})
         inputs = MpcInput(cutoff, grid, replay.plant, replay.state,
-            np.array([replay._position(key) for key in grid.interval_ids]), values, ids, probabilities,
+            commitments, values, ids, probabilities,
             replay.aging, policy=replay.dispatch_policy, settings=self.settings,
             import_fee_eur_per_mwh=replay.trading["grid_import_fee_eur_per_mwh"],
             hard_terminal_target_mwh=(replay.prepared["terminal_energy_mwh"] if day == replay.days[-1] else None),
             hard_terminal_minimum_mwh=replay.prepared["terminal_minimum_energy_mwh"],
-            forecast_provenance=provenance, oracle=oracle, current_realized_pv_mw=current_pv)
+            forecast_provenance=provenance, oracle=oracle, current_realized_pv_mw=current_pv,
+            price_forecast=prices,
+            terminal_value=conditional_terminal_value(replay, daily, cutoff, grid.ends[-1]))
         result = solve_mpc(inputs, SolverSettings(**replay.config["solver"]))
         diagnostic = {**result.diagnostics, "delivery_day": day, "interval_id": product,
                       "current_pv_observation_source": ("initial_frozen_forecast_fallback"
@@ -110,21 +136,37 @@ class RealtimeControl:
             return
         plan = result.plan
         current_plan = {}
-        # Common controls have one row; projected delivery and forecast PV retain all members.
+        # The first action is common. Adaptive rows after it are a labelled
+        # representative shadow path; every conditional command is saved below.
         for t, action in enumerate(plan.actions):
             row = {**asdict(action), "solve_id": diagnostic["solve_id"], "delivery_day": day,
                 "interval_start_utc": str(grid.starts[t]), "interval_end_utc": str(grid.ends[t]),
                 "energy_start_mwh": float(plan.energy_mwh[t]), "energy_end_mwh": float(plan.energy_mwh[t + 1]),
                 "expected_absolute_imbalance_mwh": float(plan.expected_absolute_imbalance_by_interval_mwh[t]),
-                "expected_shortfall_mwh": float(plan.expected_shortfall_by_interval_mwh[t]), **provenance}
+                "expected_shortfall_mwh": float(plan.expected_shortfall_by_interval_mwh[t]),
+                "future_plan_role": ("representative_shadow_path" if plan.scenario_actions is not None
+                    else "common_open_loop_controls"),
+                "representative_scenario_id": ids[plan.representative_path_index], **provenance}
             current_plan[action.interval_id] = row
             self.state.plans.append(row)
             for s, scenario in enumerate(ids):
                 self.state.scenarios.append({"solve_id": diagnostic["solve_id"], "interval_id": action.interval_id,
+                    "delivery_day": day,
                     "scenario_id": scenario, "weight": float(probabilities[s]), "pv_ac_mw": float(values[s, t]),
                     "weather_forecast_pv_ac_mw": float(forecast_values[s, t]),
                     "pv_input_role": "realized_current_interval" if t == 0 and current_pv is not None else "forecast",
-                    "grid_mw": float(plan.grid_mw[s, t]), "imbalance_mwh": float(plan.imbalance_mwh[s, t])})
+                    "grid_mw": float(plan.grid_mw[s, t]), "imbalance_mwh": float(plan.imbalance_mwh[s, t]),
+                    **({"charge_mw": float(plan.scenario_actions[s, t, 0]),
+                        "discharge_mw": float(plan.scenario_actions[s, t, 1]),
+                        "pv_utilization_fraction": float(plan.scenario_actions[s, t, 2]),
+                        "energy_start_mwh": float(plan.scenario_energy_mwh[s, t]),
+                        "energy_end_mwh": float(plan.scenario_energy_mwh[s, t + 1]),
+                        "control_node": plan.control_nodes[s][t]}
+                       if plan.scenario_actions is not None else {}),
+                    **({"forecast_positive_price_eur_per_mwh": float(prices.positive_eur_per_mwh[s, t]),
+                        "forecast_negative_price_eur_per_mwh": float((prices.positive_eur_per_mwh
+                            if prices.negative_eur_per_mwh is None else prices.negative_eur_per_mwh)[s, t])}
+                       if prices is not None else {})})
         self.state.latest_plan = current_plan
         self._pending(plan.actions[0], {**provenance, "pv_ac_forecast_mw": float(deterministic[0])}, current_plan[product], diagnostic)
 
@@ -161,7 +203,9 @@ class RealtimeControl:
         target = replay._position(product) / replay.grid.delta_hours[replay.index[product]]
         if row is not None:
             return (row["charge_mw"], row["discharge_mw"], (1 - row["pv_utilization_fraction"]) * pv), {
-                "auction": "realtime_mpc", "mpc_solve_id": row["solve_id"]}, "follow_battery_plan", target
+                "auction": "realtime_mpc", "mpc_solve_id": row["solve_id"],
+                "future_plan_role": row.get("future_plan_role", "common_open_loop_controls"),
+                "representative_scenario_id": row.get("representative_scenario_id")}, "follow_battery_plan", target
         # Coverage gaps are explicit forecast-only tracking rollouts, not invented commands.
         commands, detail, _, _ = replay._commands(product)
         return commands, {**detail, "projection_fallback": "MPC plan does not cover interval"}, "track_committed_grid", target

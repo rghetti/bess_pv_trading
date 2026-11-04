@@ -116,6 +116,7 @@ def test_gurobi_retry_preserves_both_native_runtimes(timing_config):
         market=MarketState(), degradation=degradation_settings_from_config(timing_config),
         transaction_fees=transaction_fees_from_config(timing_config), optimize_imbalances=False)
     built = SimpleNamespace(model=Model(), inputs=inputs, build_seconds=case["build_seconds"],
+        original_inputs=None,
         variables={"transaction_fee_formulation": timing_config["transaction_fees"]["mode"]})
     result = solve_model(built, SolverSettings(**timing_config["solver"]))
     assert result.status == "infeasible"

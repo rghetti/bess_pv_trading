@@ -1,4 +1,8 @@
 include: ../../../configs/standard.yaml
+# Study-specific reporting settings no longer belong in the shared defaults.
+participation_study:
+  output_root: outputs/test_timing
+  run_id: timing_report
 timing_cases:
   solves:
     - {category: replay, auction: DA, status: optimal, runtime_seconds: 1.0, solve_seconds: 1.2, build_seconds: 0.4}

@@ -27,6 +27,20 @@ def mpc_prepared(config, one_day=False):
             {"pv_ac_mw": "MW_AC"})
 
     prepared["forecast_provider"] = provider
+    if config["execution"].get("dispatch_policy", "").endswith("_economic"):
+        from bess_pv_trading.forecasting.energy_prices import PricePrediction
+
+        class Prices:
+            models = {"settlement": None}
+
+            def predict(self, name, cutoff, starts, scenario_count=1):
+                point = np.full(len(starts), 50.0)
+                return PricePrediction(point, np.tile(point, (scenario_count, 1)), cutoff,
+                    {"source": "synthetic_fixed_forecast"})
+
+        config["energy_price_forecast"] = {"settlement_enabled": True,
+            "artifacts": {"settlement": "unused-synthetic-artifact.json"}}
+        prepared["energy_price_provider"] = Prices()
     prepared["provenance"]["pv_ensemble"] = {}
     for day, daily in prepared["days_data"].items():
         daily["ensemble_members"] = ("1", "2")

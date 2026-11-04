@@ -1,0 +1,180 @@
+{
+  "fixture": "51 member 96 interval common-control PV supports; 48 shared zero-PV intervals",
+  "scope": "fixed synthetic software benchmark, one Gurobi thread, five repetitions after warmup; no historical performance claim",
+  "summary": {
+    "before": {
+      "build_seconds_median": 0.30621600802987814,
+      "solver_seconds_median": 0.25545310974121094,
+      "variables": 15169,
+      "constraints": 10129,
+      "objectives": [
+        2744.6184661805673,
+        2744.6184661805673,
+        2744.6184661805673,
+        2744.6184661805673,
+        2744.6184661805673
+      ],
+      "statuses": [
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    },
+    "after": {
+      "build_seconds_median": 0.1706164563074708,
+      "solver_seconds_median": 0.21313714981079102,
+      "variables": 7969,
+      "constraints": 5329,
+      "objectives": [
+        2744.618466180565,
+        2744.618466180565,
+        2744.618466180565,
+        2744.618466180565,
+        2744.618466180565
+      ],
+      "statuses": [
+        2,
+        2,
+        2,
+        2,
+        2
+      ]
+    }
+  },
+  "records": [
+    {
+      "version": "before",
+      "repetition": 0,
+      "warmup": true,
+      "build_seconds": 0.3404911421239376,
+      "solver_seconds": 0.2665398120880127,
+      "variables": 15169,
+      "constraints": 10129,
+      "status": 2,
+      "objective": 2744.6184661805673
+    },
+    {
+      "version": "before",
+      "repetition": 1,
+      "warmup": false,
+      "build_seconds": 0.3481557769700885,
+      "solver_seconds": 0.25621891021728516,
+      "variables": 15169,
+      "constraints": 10129,
+      "status": 2,
+      "objective": 2744.6184661805673
+    },
+    {
+      "version": "before",
+      "repetition": 2,
+      "warmup": false,
+      "build_seconds": 0.30621600802987814,
+      "solver_seconds": 0.25545310974121094,
+      "variables": 15169,
+      "constraints": 10129,
+      "status": 2,
+      "objective": 2744.6184661805673
+    },
+    {
+      "version": "before",
+      "repetition": 3,
+      "warmup": false,
+      "build_seconds": 0.2857163501903415,
+      "solver_seconds": 0.2520890235900879,
+      "variables": 15169,
+      "constraints": 10129,
+      "status": 2,
+      "objective": 2744.6184661805673
+    },
+    {
+      "version": "before",
+      "repetition": 4,
+      "warmup": false,
+      "build_seconds": 0.2847450291737914,
+      "solver_seconds": 0.250870943069458,
+      "variables": 15169,
+      "constraints": 10129,
+      "status": 2,
+      "objective": 2744.6184661805673
+    },
+    {
+      "version": "before",
+      "repetition": 5,
+      "warmup": false,
+      "build_seconds": 0.401706213131547,
+      "solver_seconds": 0.25768303871154785,
+      "variables": 15169,
+      "constraints": 10129,
+      "status": 2,
+      "objective": 2744.6184661805673
+    },
+    {
+      "version": "after",
+      "repetition": 0,
+      "warmup": true,
+      "build_seconds": 0.17632029112428427,
+      "solver_seconds": 0.2139720916748047,
+      "variables": 7969,
+      "constraints": 5329,
+      "status": 2,
+      "objective": 2744.618466180565
+    },
+    {
+      "version": "after",
+      "repetition": 1,
+      "warmup": false,
+      "build_seconds": 0.1706164563074708,
+      "solver_seconds": 0.21171903610229492,
+      "variables": 7969,
+      "constraints": 5329,
+      "status": 2,
+      "objective": 2744.618466180565
+    },
+    {
+      "version": "after",
+      "repetition": 2,
+      "warmup": false,
+      "build_seconds": 0.17397153191268444,
+      "solver_seconds": 0.21313714981079102,
+      "variables": 7969,
+      "constraints": 5329,
+      "status": 2,
+      "objective": 2744.618466180565
+    },
+    {
+      "version": "after",
+      "repetition": 3,
+      "warmup": false,
+      "build_seconds": 0.1702327774837613,
+      "solver_seconds": 0.21573400497436523,
+      "variables": 7969,
+      "constraints": 5329,
+      "status": 2,
+      "objective": 2744.618466180565
+    },
+    {
+      "version": "after",
+      "repetition": 4,
+      "warmup": false,
+      "build_seconds": 0.16710555646568537,
+      "solver_seconds": 0.2124769687652588,
+      "variables": 7969,
+      "constraints": 5329,
+      "status": 2,
+      "objective": 2744.618466180565
+    },
+    {
+      "version": "after",
+      "repetition": 5,
+      "warmup": false,
+      "build_seconds": 0.17772773001343012,
+      "solver_seconds": 0.22017908096313477,
+      "variables": 7969,
+      "constraints": 5329,
+      "status": 2,
+      "objective": 2744.618466180565
+    }
+  ]
+}

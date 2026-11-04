@@ -1,0 +1,46 @@
+# Two fixed parameters per farm; no automatic HPO or refitting on evaluation dates.
+include: ../standard.yaml
+
+solver:
+  threads: 1
+pv:
+  direct_exceeds_ghi: clip_and_flag
+  forecast_replacement:
+    enabled: false
+continuous_optimization:
+  pv_ensemble:
+    enabled: true
+    sources:
+      - data/farms/nwp_ens_20260101_20260131.zarr
+      - data/farms/nwp_ens_20260801_20260930.zarr
+    overlap_policy: error
+    member_count: auto
+
+pv_scenario_calibration:
+  farm_ids: [1, 345, 901, 910]
+  workers: 4
+  native_threads: 1
+  seed: 17
+  include_deterministic_member: true
+  output_directory: outputs/research_inputs/pv_calibration
+  plots: true
+  training:
+    start_date: '2026-01-01'
+    end_date: '2026-01-14'
+    # Jan 15 midnight Europe/Rome. Zero fitting latency is an explicit historical assumption.
+    fit_cutoff_utc: '2026-01-14T23:00:00Z'
+  evaluation_windows:
+    - id: january
+      start_date: '2026-01-15'
+      end_date: '2026-01-16'
+    - id: august_transfer
+      start_date: '2026-08-02'
+      end_date: '2026-08-03'
+  parameters:
+    bias_bounds_normalized: [-0.3, 0.3]
+    spread_bounds: [0.25, 3.0]
+    max_evaluations: 1000
+    parameter_tolerance: 0.000001
+    objective_tolerance: 0.00000001
+    minimum_training_intervals: 96
+    central_interval_probability: 0.8

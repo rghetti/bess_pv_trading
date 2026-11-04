@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import ExitStack
 from dataclasses import asdict, replace
 from datetime import date, datetime
 import hashlib
@@ -150,8 +151,16 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
     settings = config["continuous_optimization"]["pv_ensemble"]
     policy = config.get("policy", {})
     forecast_night = policy.get("forecast_pv_night", policy.get("night", {}))
-    source = config_path(config, settings["zarr"])
     farm_id = int(config["forecast"]["farm_id"])
+    sources = settings.get("sources")
+    source_inventory = None
+    if sources:
+        from ..data.ensemble_inventory import resolve_ensemble_sources
+        source_inventory = resolve_ensemble_sources([config_path(config, path) for path in sources],
+            list(days_data), farm_ids=[farm_id], timezone=config["market"]["timezone"],
+            availability_lag_hours=float(config["source"]["availability_lag_hours"]),
+            first_cutoffs={day: min(event.submission_at for event in daily["schedule"])
+                for day, daily in days_data.items()}, overlap_policy=settings.get("overlap_policy", "error"))
     replacement = config["pv"].get("forecast_replacement", {})
     models = replacement.get("models_by_farm", {})
     has_model = str(farm_id) in models or farm_id in models
@@ -170,11 +179,21 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
             raise ValueError("PV ensemble model availability must be timezone-aware")
     farm = load_metadata(config_path(config, config["inputs"]["metadata_parquet"]), [farm_id])[farm_id]
     provenance = {}
-    with xr.open_zarr(source, consolidated=True, chunks=None) as dataset:
-        members = tuple(str(value) for value in dataset.member.values)
-        if len(members) != int(settings["member_count"]) or len(set(members)) != len(members):
-            raise ValueError("PV ensemble archive has an unexpected member axis")
+    # Open each selected archive once, retaining lazy stores rather than materializing
+    # a full annual weather cube. Per-day conversion still reads only its own cycle.
+    with ExitStack() as stack:
+        datasets = {}
         for day, daily in days_data.items():
+            source = (Path(source_inventory[day]["source"]) if source_inventory is not None
+                else config_path(config, settings["zarr"]))
+            if source not in datasets:
+                datasets[source] = stack.enter_context(xr.open_zarr(source, consolidated=True, chunks=None))
+            dataset = datasets[source]
+            members = tuple(str(value) for value in dataset.member.values)
+            expected = settings.get("member_count", "auto")
+            if (not members or len(set(members)) != len(members)
+                    or expected not in (None, "auto") and len(members) != int(expected)):
+                raise ValueError("PV ensemble archive has an unexpected member axis")
             starts = _utc_index(daily["grid"].starts)
             cycle = (pd.Timestamp(day) - pd.Timedelta(days=1)).tz_localize("UTC")
             try:
@@ -224,7 +243,8 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
                 "available_at_utc": weather.available_at.isoformat(), "availability": "assumed cycle plus configured latency",
                 "member_ids": list(members), "values_sha256": _fingerprint(values),
                 "nighttime_missing_filled_zero_member_intervals": int(missing.sum()),
-                "conversion": conversion, "forecast_pv_night_policy": forecast_night}
+                "conversion": conversion, "forecast_pv_night_policy": forecast_night,
+                **({"source_inventory": source_inventory[day]} if source_inventory is not None else {})}
             if progress:
                 progress(f"Preflight {day}: converted {len(members)} raw PV ensemble members")
     return provenance
@@ -379,6 +399,7 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             raise ValueError(f"Continuous preflight for {day}: {error}") from error
         initial_requests[pd.Timestamp(first_cutoff).tz_convert("UTC").isoformat()] = (_utc_index(grid.starts), bundle)
         days_data[day] = {"grid": grid, "schedule": schedule, "prices": prices,
+            "research_initial_cutoff": first_cutoff.isoformat(),
             "skipped": skipped, "price_provenance": price_provenance,
             "realized_pv": np.asarray(actual, dtype=float).copy(),
             "initial_forecast": np.asarray(forecast, dtype=float).copy(),
@@ -406,6 +427,10 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             for index, cutoff in enumerate(day_starts):
                 key = cutoff.isoformat()
                 starts = day_starts[index:]
+                if config.get("realtime_mpc", {}).get("terminal_inventory_mode") == "piecewise_linear":
+                    from .energy_price_inputs import continuation_grid
+                    extra = continuation_grid(config, grid.ends[-1])
+                    starts = starts.union(_utc_index(extra.starts))
                 forecast_requests[key] = forecast_requests.get(key, starts).union(starts)
 
     # Freeze union forecasts covering both current-day projection and next-day plan.
@@ -462,10 +487,13 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
         **({"forecast_model_artifacts": replacement_evidence} if replacement_evidence is not None else {}),
         "settlement": settlement_provenance,
         "settlement_values_sha256": None if settlement_values is None else _fingerprint(settlement_values)}
-    fingerprint = _fingerprint(provenance)
-    return {"calendar": calendar, "days": days, "days_data": days_data,
+    prepared = {"calendar": calendar, "days": days, "days_data": days_data,
         "plant": plant, "initial_energy_mwh": initial_energy, "terminal_energy_mwh": terminal_energy,
         "terminal_minimum_energy_mwh": terminal_minimum,
         "full_grid": full_grid, "full_realized_pv": full_actual,
         "forecast_provider": forecasts, "imbalance_prices_eur_per_mwh": settlement_values,
-        "settlement_frame": settlement, "input_fingerprint": fingerprint, "provenance": provenance}
+        "settlement_frame": settlement, "provenance": provenance}
+    from .energy_price_inputs import prepare_energy_price_provider
+    prepare_energy_price_provider(config, prepared)
+    prepared["input_fingerprint"] = _fingerprint(provenance)
+    return prepared

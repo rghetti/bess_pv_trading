@@ -59,7 +59,8 @@ def _compatibility(config, prepared):
         "actual_pv": prepared["full_realized_pv"], "settlement": prepared["imbalance_prices_eur_per_mwh"],
         "days": prepared["days"], "days_evidence": prepared["provenance"]["days"],
         "settings": {name: config.get(name) for name in ("state", "degradation", "transaction_fees", "trading",
-            "market", "source", "pv", "policy", "forecast", "inputs", "gme_oracle_experiment")}})
+            "market", "source", "pv", "policy", "forecast", "inputs", "gme_oracle_experiment",
+            "energy_price_forecast", "research_information")}})
 
 
 def _freeze_source(config, prepared, replay):
@@ -74,7 +75,9 @@ def _freeze_source(config, prepared, replay):
     ledger = [asdict(trade) for trade in replay.market.accepted_trades]
     return {"schema_version": "frozen-mpc-commitments-v1", "compatibility": _compatibility(config, prepared),
         "input_fingerprint": prepared["input_fingerprint"], "provenance": prepared["provenance"],
-        "source_strategy": "integrated_deterministic_pv_auction_price_oracle_grid_tracking",
+        "source_strategy": ("integrated_deterministic_pv_causal_price_grid_tracking"
+            if config.get("energy_price_forecast", {}).get("auction_enabled", False)
+            else "integrated_deterministic_pv_auction_price_oracle_grid_tracking"),
         "submissions": submissions, "accepted_trades": ledger, "plan_snapshots": replay.plan_snapshots}
 
 

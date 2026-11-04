@@ -232,9 +232,16 @@ class ContinuousReplay:
         self.cursor = checkpoint["event_cursor"]
         if self.realtime is not None:
             self.realtime.state = MpcControllerState(**checkpoint["mpc_state"])
+            from ..reporting.mpc_history import verify_history_archives
+            self.realtime.history_archives = verify_history_archives(self.destination,
+                checkpoint.get("mpc_history_archives", []))
+            if self.realtime.history_archives and self.realtime.horizon_history_mode != "daily_parquet":
+                raise ValueError("Archived MPC checkpoint requires daily_parquet history mode")
 
     def save_checkpoint(self, event):
         """Commit a midnight after observation, next control and settlement events."""
+        if self.realtime is not None:
+            self.realtime.archive_completed(event.at)
         checkpoint = {"identity": self.identity, "state": asdict(self.state),
             "accepted_trades": [asdict(trade) for trade in self.market.accepted_trades],
             "transaction_fee_state": asdict(self.market.transaction_fee_state),
@@ -245,6 +252,8 @@ class ContinuousReplay:
             "initial_expectations", "initial_revenues")})
         if self.realtime is not None:
             checkpoint["mpc_state"] = asdict(self.realtime.state)
+            if self.realtime.horizon_history_mode == "daily_parquet":
+                checkpoint["mpc_history_archives"] = self.realtime.history_archives
         _atomic_json(self.destination / "json/checkpoint.json", checkpoint)
 
     def _position(self, product):
@@ -276,6 +285,9 @@ class ContinuousReplay:
             return np.asarray(self.prepared["full_realized_pv"])[indices].copy(), {
                 "pv_forecast_policy": "perfect_pv_reference",
                 "pv_forecast_vintage_utc": None, "pv_forecast_available_at_utc": None}
+        if self.config.get("research_information", {}).get("pv_updates", "latest") == "frozen_initial":
+            from .research_inputs import frozen_initial_pv
+            return frozen_initial_pv(self, cutoff, starts)
         bundle = self.prepared["forecast_provider"](cutoff, starts)
         # Enforce the input contract: Continuous forecast is unavailable at the submission cutoff.
         if bundle.available_at > cutoff or bundle.forecast_vintage > cutoff:
@@ -454,7 +466,9 @@ class ContinuousReplay:
             projection.append({"interval_id": product, "start": str(self.grid.starts[index]),
                 "end": str(self.grid.ends[index]), "plan_source_auction": row.get("auction"),
                 "plan_source_delivery_day": self.day_for_product[product],
-                **({"mpc_solve_id": row.get("mpc_solve_id"), "projection_fallback": row.get("projection_fallback")}
+                **({"mpc_solve_id": row.get("mpc_solve_id"), "projection_fallback": row.get("projection_fallback"),
+                    "future_plan_role": row.get("future_plan_role"),
+                    "representative_scenario_id": row.get("representative_scenario_id")}
                    if self.realtime else {}), **record})
             if self.realtime is not None:
                 projection[-1]["projection_pv_information_source"] = projection_pv_source
@@ -464,7 +478,9 @@ class ContinuousReplay:
                                else "forecast_projected_continuous_boundary")
         grid = DeliveryGrid(day_grid.interval_ids[first:], day_grid.starts[first:], day_grid.ends[first:])
         schedule = tuple(daily["schedule"])
-        prices = daily["prices"]
+        from .research_inputs import auction_price_predictions
+        prices, price_provenance = auction_price_predictions(self, day, cutoff)
+        provenance.update(price_provenance)
         # When `self.current_only`, set `selected` using `tuple((item for item in schedule if item.auction == event.auction))`.
         if self.current_only:
             selected = tuple(item for item in schedule if item.auction == event.auction)
@@ -982,7 +998,8 @@ class ContinuousReplay:
         if self.realtime is not None or self.prepared.get("frozen_commitments") is not None:
             from ..reporting.realtime_mpc import save_mpc_outputs
             extra = save_mpc_outputs(self.config, self.destination, dispatch,
-                None if self.realtime is None else self.realtime.state, self.projections)
+                None if self.realtime is None else self.realtime.state, self.projections,
+                history_archives=None if self.realtime is None else self.realtime.history_archives)
             summary.update(extra)
             write_json(self.destination / "json/kpis.json", summary)
         from ..reporting.continuous_decomposition import save_continuous_decomposition

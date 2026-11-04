@@ -1,0 +1,187 @@
+# Deterministic weather supports these dates without a weather-ensemble archive.
+# Actual auction prices and explicitly selected settlement-price oracles are retrospective inputs.
+# The validated calendar starts 2025-10-01; older calendar assumptions are not extended implicitly.
+include: ../standard.yaml
+farm_id: 1
+continuous_optimization:
+  start_date: '2025-10-01'
+  end_date: '2025-10-07'
+  planning_modes:
+  - integrated
+  perfect_pv_reference: false
+  resume: false
+  output_root: outputs/energy_research
+  run_id: deterministic_continuous_validation_v1
+  pv_ensemble:
+    enabled: false
+    zarr: null
+    member_count: null
+    planning_policy: deterministic
+state:
+  initial_soc_percent: 50.0
+  terminal_soc_percent: null
+  terminal_soc_min_percent: null
+solver:
+  threads: 1
+  time_limit_seconds: 120.0
+  mip_gap: 0.0001
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+pv:
+  direct_exceeds_ghi: clip_and_flag
+  forecast_replacement:
+    enabled: false
+    allow_retrospective_artifacts: true
+trading:
+  optimize_imbalances: false
+execution:
+  dispatch_policy: deterministic_mpc
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+settlement:
+  enabled: true
+experiment_outputs:
+  overwrite_existing: false
+  plots: true
+  save_model_files: false
+realtime_mpc_outputs:
+  horizon_history: daily_parquet
+realtime_mpc:
+  current_pv_information: forecast
+  planning_imbalance_penalty_eur_per_mwh: 500.0
+  economic_imbalance_penalty_eur_per_mwh: 0.0
+  terminal_inventory_mode: soft_target
+  terminal_soc_target_percent: 50.0
+  terminal_inventory_penalty_eur_per_mwh: 50.0
+  solver_time_limit_seconds: 10.0
+  ensemble_include_deterministic_member: true
+  recourse_stages:
+  - 4
+  - 8
+  - 12
+  - 16
+  - 20
+  - 24
+  - 28
+  - 32
+  - 36
+  - 40
+  - 44
+  - 48
+  - 52
+  - 56
+  - 60
+  - 64
+  - 68
+  - 72
+  - 76
+  - 80
+  - 84
+  - 88
+  - 92
+  recourse_observation_lag_intervals: 1
+  recourse_pv_bin_width_mw: 0.1
+  recourse_observation_features: pv
+  monetary_cvar_alpha: 0.9
+  monetary_cvar_weight: 0.0
+gme_oracle_experiment:
+  study_id: null
+  delivery_day: null
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA:
+      dataset: day_ahead_prices
+      native_interval_minutes: null
+    IDA1:
+      dataset: ida1_prices
+      native_interval_minutes: 15
+    IDA2:
+      dataset: ida2_prices
+      native_interval_minutes: 15
+    IDA3:
+      dataset: ida3_prices
+      native_interval_minutes: 15
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions:
+  - DA
+  - IDA1
+  - IDA2
+  - IDA3
+realtime_mpc_comparison:
+  mode: continuous
+  controllers:
+  - track_committed_grid
+  - deterministic_mpc
+  frozen_source: null
+  check_only: false
+  representative_days: 2
+energy_price_forecast:
+  auction_enabled: false
+  settlement_enabled: false
+  artifacts: {}
+  seed: 17
+research_information:
+  pv_updates: latest
+  price_updates: latest
+energy_research_study:
+  run_id: deterministic_continuous_validation_v1
+  output_root: outputs/energy_research
+  mode: continuous
+  farms:
+  - 1
+  - 345
+  - 901
+  - 910
+  workers: 42
+  native_threads: 1
+  solver_threads: 1
+  reporting:
+    plots: true
+    block_days: 7
+    samples: 2000
+    seed: 17
+    confidence: 0.95
+    cvar_alpha: 0.9
+  windows:
+  - id: october_2025
+    start_date: '2025-10-01'
+    end_date: '2025-10-07'
+    role: retrospective_deterministic_development
+    overrides: {}
+  - id: may_2026
+    start_date: '2026-05-01'
+    end_date: '2026-05-31'
+    role: retrospective_deterministic_development
+    overrides: {}
+  cases:
+  - id: deterministic_penalty
+    family: controller
+    baseline_case: null
+    overrides:
+      energy_price_forecast:
+        settlement_enabled: false
+      realtime_mpc_comparison:
+        controllers:
+        - track_committed_grid
+        - deterministic_mpc
+      execution:
+        dispatch_policy: deterministic_mpc
+  - id: deterministic_price_oracle
+    family: price_information
+    baseline_case: deterministic_penalty
+    overrides:
+      energy_price_forecast:
+        settlement_enabled: false
+      realtime_mpc_comparison:
+        controllers:
+        - track_committed_grid
+        - deterministic_mpc_price_oracle
+      execution:
+        dispatch_policy: deterministic_mpc_price_oracle

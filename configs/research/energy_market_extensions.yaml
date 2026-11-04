@@ -1,0 +1,332 @@
+# Explicit continuous-optimization contrasts. Loading or invoking the script
+# without --run only prints a plan; absent models are reported as missing inputs.
+include: ../standard.yaml
+farm_id: 1
+continuous_optimization:
+  start_date: '2026-01-15'
+  end_date: '2026-01-16'
+  planning_modes: [integrated]
+  perfect_pv_reference: false
+  resume: false
+  output_root: outputs/energy_research
+  run_id: energy_market_extensions_v1
+  pv_ensemble:
+    enabled: false
+    zarr: data/farms/nwp_ens_20260101_20260131.zarr
+    member_count: 50
+    planning_policy: deterministic
+state:
+  initial_soc_percent: 50.0
+  terminal_soc_percent: null
+  terminal_soc_min_percent: null
+solver:
+  threads: 1
+  time_limit_seconds: 120.0
+  mip_gap: 0.0001
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+pv:
+  direct_exceeds_ghi: clip_and_flag
+  forecast_replacement:
+    enabled: false
+    allow_retrospective_artifacts: true
+trading:
+  optimize_imbalances: false
+execution:
+  dispatch_policy: ensemble_mpc_adaptive
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+settlement:
+  enabled: true
+experiment_outputs:
+  overwrite_existing: false
+  plots: true
+  save_model_files: false
+realtime_mpc:
+  current_pv_information: forecast
+  planning_imbalance_penalty_eur_per_mwh: 500.0
+  economic_imbalance_penalty_eur_per_mwh: 0.0
+  terminal_inventory_mode: soft_target
+  terminal_soc_target_percent: 50.0
+  terminal_inventory_penalty_eur_per_mwh: 50.0
+  solver_time_limit_seconds: 10.0
+  ensemble_include_deterministic_member: true
+  recourse_stages: [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92]
+  recourse_observation_lag_intervals: 1
+  recourse_pv_bin_width_mw: 0.1
+  recourse_observation_features: pv
+  monetary_cvar_alpha: 0.9
+  monetary_cvar_weight: 0.0
+realtime_mpc_outputs:
+  horizon_history: daily_parquet
+gme_oracle_experiment:
+  study_id: null
+  delivery_day: null
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA: {dataset: day_ahead_prices, native_interval_minutes: null}
+    IDA1: {dataset: ida1_prices, native_interval_minutes: 15}
+    IDA2: {dataset: ida2_prices, native_interval_minutes: 15}
+    IDA3: {dataset: ida3_prices, native_interval_minutes: 15}
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions: [DA, IDA1, IDA2, IDA3]
+realtime_mpc_comparison:
+  mode: continuous
+  controllers: [track_committed_grid, ensemble_mpc_adaptive]
+  frozen_source: null
+  check_only: false
+  representative_days: 2
+research_price_inputs:
+  fold: january
+energy_price_forecast:
+  auction_enabled: false
+  settlement_enabled: true
+  seed: 17
+  # Expected outputs of configs/research/price_forecast_training.yaml. They are
+  # mandatory for enabled forecasts; plan/check-only never fits missing models.
+  artifacts:
+    DA: outputs/energy_price_forecasts/chronological_2026_v3/january/ridge_price_only/DA/model.json
+    IDA1: outputs/energy_price_forecasts/extended_2024_training_v2/january/ridge_price_only/IDA1/model.json
+    IDA2: outputs/energy_price_forecasts/extended_2024_training_v2/january/ridge_price_only/IDA2/model.json
+    IDA3: outputs/energy_price_forecasts/extended_2024_training_v2/january/ridge_price_only/IDA3/model.json
+    settlement: outputs/energy_price_forecasts/chronological_2026_v3/january/ridge_price_only/settlement/model.json
+  history_paths:
+    DA: outputs/energy_price_forecasts/chronological_2026_v3/history/DA.parquet
+    IDA1: outputs/energy_price_forecasts/extended_2024_training_v2/history/IDA1.parquet
+    IDA2: outputs/energy_price_forecasts/extended_2024_training_v2/history/IDA2.parquet
+    IDA3: outputs/energy_price_forecasts/extended_2024_training_v2/history/IDA3.parquet
+    settlement: outputs/energy_price_forecasts/chronological_2026_v3/history/settlement.parquet
+research_information:
+  pv_updates: latest
+  price_updates: latest
+realtime_scenarios:
+  dependence: raw
+  seed: 17
+  reduce_to: null
+  reduction:
+    pv_weight: 1.0
+    ramp_weight: 0.5
+    cumulative_deficit_weight: 1.0
+    cumulative_balance_weight: 1.0
+    saturation_weight: 1.0
+    poi_weight: 1.0
+    settlement_weight: 1.0
+    price_weight: 1.0
+    power_scale_mw: 1.0
+    energy_scale_mwh: 1.0
+    money_scale_eur: 100.0
+    price_scale_eur_per_mwh: 100.0
+continuation_value:
+  horizon_hours: 6
+  settings:
+    energy_grid_points: 51
+    # Wear and import fees inherit the configured physical replay economics.
+    final_inventory_value_eur_per_mwh: 0.0
+energy_research_study:
+  run_id: continuous_energy_extensions_v1
+  output_root: outputs/energy_research
+  mode: continuous
+  farms: [1, 345, 901, 910]
+  workers: 42
+  native_threads: 1
+  solver_threads: 1
+  reporting:
+    plots: true
+    block_days: 7
+    samples: 2000
+    seed: 17
+    confidence: 0.95
+    cvar_alpha: 0.9
+  windows:
+    - id: january_development
+      start_date: '2026-01-15'
+      end_date: '2026-01-16'
+      role: previously_inspected_retrospective_development
+      overrides:
+        continuous_optimization:
+          pv_ensemble:
+            zarr: data/farms/nwp_ens_20260101_20260131.zarr
+    - id: august_development
+      start_date: '2026-08-02'
+      end_date: '2026-08-03'
+      role: retrospective_development_not_claimed_untouched
+      overrides:
+        research_price_inputs: {fold: august}
+        energy_price_forecast:
+          artifacts:
+            DA: outputs/energy_price_forecasts/chronological_2026_v3/august/ridge_price_only/DA/model.json
+            IDA1: outputs/energy_price_forecasts/extended_2024_training_v2/august/ridge_price_only/IDA1/model.json
+            IDA2: outputs/energy_price_forecasts/extended_2024_training_v2/august/ridge_price_only/IDA2/model.json
+            IDA3: outputs/energy_price_forecasts/extended_2024_training_v2/august/ridge_price_only/IDA3/model.json
+            settlement: outputs/energy_price_forecasts/chronological_2026_v3/august/ridge_price_only/settlement/model.json
+        continuous_optimization:
+          pv_ensemble:
+            zarr: data/farms/nwp_ens_20260801_20260930.zarr
+  factorial_cases:
+    updates_on_all_auctions: adaptive_raw
+    updates_off_all_auctions: frozen_information
+    updates_on_da_only: da_only_latest
+    updates_off_da_only: da_only_frozen
+  cases:
+    - id: deterministic_penalty
+      family: controller
+      baseline_case: null
+      overrides:
+        energy_price_forecast: {settlement_enabled: false}
+        realtime_mpc_comparison: {controllers: [track_committed_grid, deterministic_mpc]}
+        execution: {dispatch_policy: deterministic_mpc}
+    - id: ensemble_penalty
+      family: controller
+      baseline_case: deterministic_penalty
+      overrides:
+        energy_price_forecast: {settlement_enabled: false}
+        realtime_mpc_comparison: {controllers: [track_committed_grid, ensemble_mpc]}
+        execution: {dispatch_policy: ensemble_mpc}
+    - id: deterministic_price_oracle
+      family: price_information
+      baseline_case: deterministic_penalty
+      overrides:
+        energy_price_forecast: {settlement_enabled: false}
+        realtime_mpc_comparison: {controllers: [track_committed_grid, deterministic_mpc_price_oracle]}
+        execution: {dispatch_policy: deterministic_mpc_price_oracle}
+    - id: ensemble_price_oracle
+      family: price_information
+      baseline_case: ensemble_penalty
+      overrides:
+        energy_price_forecast: {settlement_enabled: false}
+        realtime_mpc_comparison: {controllers: [track_committed_grid, ensemble_mpc_price_oracle]}
+        execution: {dispatch_policy: ensemble_mpc_price_oracle}
+    - id: deterministic_economic
+      family: price_information
+      baseline_case: deterministic_penalty
+      overrides:
+        realtime_mpc_comparison: {controllers: [track_committed_grid, deterministic_mpc_economic]}
+        execution: {dispatch_policy: deterministic_mpc_economic}
+    - id: ensemble_economic
+      family: price_information
+      baseline_case: ensemble_penalty
+      overrides:
+        realtime_mpc_comparison: {controllers: [track_committed_grid, ensemble_mpc_economic]}
+        execution: {dispatch_policy: ensemble_mpc_economic}
+    - id: adaptive_raw
+      family: adaptive_recourse
+      baseline_case: ensemble_economic
+      overrides: {}
+    - id: causal_auctions
+      family: price_information
+      baseline_case: adaptive_raw
+      overrides:
+        energy_price_forecast: {auction_enabled: true}
+        gme_oracle_experiment: {price_information: causal_forecast}
+    - id: adaptive_shuffled
+      family: temporal_dependence
+      baseline_case: adaptive_raw
+      overrides:
+        realtime_scenarios: {dependence: independent_shuffle}
+    - id: causal_fundamentals
+      family: price_information
+      baseline_case: causal_auctions
+      overrides:
+        energy_price_forecast:
+          auction_enabled: true
+          exogenous_path: outputs/energy_price_forecasts/chronological_2026_v3/exogenous.parquet
+          artifacts:
+            DA: outputs/energy_price_forecasts/chronological_2026_v3/${research_price_inputs.fold}/ridge_fundamentals/DA/model.json
+            IDA1: outputs/energy_price_forecasts/extended_2024_training_v2/${research_price_inputs.fold}/ridge_fundamentals/IDA1/model.json
+            IDA2: outputs/energy_price_forecasts/extended_2024_training_v2/${research_price_inputs.fold}/ridge_fundamentals/IDA2/model.json
+            IDA3: outputs/energy_price_forecasts/extended_2024_training_v2/${research_price_inputs.fold}/ridge_fundamentals/IDA3/model.json
+            settlement: outputs/energy_price_forecasts/chronological_2026_v3/${research_price_inputs.fold}/ridge_fundamentals/settlement/model.json
+        gme_oracle_experiment: {price_information: causal_forecast}
+    - id: adaptive_ecc
+      family: temporal_dependence
+      baseline_case: adaptive_raw
+      overrides:
+        realtime_scenarios:
+          dependence: ecc
+          calibrated_marginals_path: outputs/research_inputs/pv_calibration/farm_${farm_id}_${continuous_optimization.start_date}.npz
+    - id: adaptive_reduced
+      family: decision_aware_reduction
+      baseline_case: adaptive_raw
+      overrides:
+        realtime_scenarios: {reduce_to: 8}
+    - id: calibrated_shuffled
+      family: temporal_dependence
+      baseline_case: adaptive_ecc
+      overrides:
+        realtime_scenarios:
+          dependence: independent_shuffle
+          calibrated_marginals_path: outputs/research_inputs/pv_calibration/farm_${farm_id}_${continuous_optimization.start_date}.npz
+    - id: adaptive_continuation
+      family: continuation_value
+      baseline_case: adaptive_raw
+      overrides:
+        realtime_mpc: {terminal_inventory_mode: piecewise_linear}
+    - id: adaptive_monetary_risk
+      family: monetary_risk
+      baseline_case: adaptive_raw
+      overrides:
+        realtime_mpc: {monetary_cvar_weight: 0.5}
+    - id: frozen_information
+      family: information_auction_factorial
+      baseline_case: adaptive_raw
+      overrides:
+        research_information: {pv_updates: frozen_initial, price_updates: frozen_initial}
+    - id: da_only_latest
+      family: information_auction_factorial
+      baseline_case: adaptive_raw
+      overrides:
+        gme_oracle_experiment: {participating_auctions: [DA]}
+    - id: da_only_frozen
+      family: information_auction_factorial
+      baseline_case: da_only_latest
+      overrides:
+        gme_oracle_experiment: {participating_auctions: [DA]}
+        research_information: {pv_updates: frozen_initial, price_updates: frozen_initial}
+    - id: double_battery_energy
+      family: forecast_flexibility
+      baseline_case: adaptive_raw
+      asset_scales: {battery_capacity: 2.0}
+      overrides: {}
+    - id: half_battery_power
+      family: forecast_flexibility
+      baseline_case: adaptive_raw
+      asset_scales: {battery_power: 0.5}
+      overrides: {}
+    - id: half_poi_capacity
+      family: forecast_flexibility
+      baseline_case: adaptive_raw
+      asset_scales: {poi_import: 0.5, poi_export: 0.5}
+      overrides: {}
+    # Cross calibration with every physical constraint contrast so forecast
+    # value can be compared under matched energy, power and POI assumptions.
+    - id: calibrated_double_energy
+      family: forecast_flexibility
+      baseline_case: double_battery_energy
+      asset_scales: {battery_capacity: 2.0}
+      overrides:
+        realtime_scenarios:
+          dependence: ecc
+          calibrated_marginals_path: outputs/research_inputs/pv_calibration/farm_${farm_id}_${continuous_optimization.start_date}.npz
+    - id: calibrated_half_power
+      family: forecast_flexibility
+      baseline_case: half_battery_power
+      asset_scales: {battery_power: 0.5}
+      overrides:
+        realtime_scenarios:
+          dependence: ecc
+          calibrated_marginals_path: outputs/research_inputs/pv_calibration/farm_${farm_id}_${continuous_optimization.start_date}.npz
+    - id: calibrated_half_poi
+      family: forecast_flexibility
+      baseline_case: half_poi_capacity
+      asset_scales: {poi_import: 0.5, poi_export: 0.5}
+      overrides:
+        realtime_scenarios:
+          dependence: ecc
+          calibrated_marginals_path: outputs/research_inputs/pv_calibration/farm_${farm_id}_${continuous_optimization.start_date}.npz

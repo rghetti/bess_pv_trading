@@ -1,0 +1,64 @@
+# Retrospective chronological baseline study; all source-clock assumptions stay explicit.
+include: ../standard.yaml
+energy_price_training:
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  output_root: outputs/energy_price_forecasts
+  run_id: chronological_2026_v1
+  timezone: Europe/Rome
+  interval_minutes: 15
+  history_end_exclusive: '2026-09-01T00:00:00+02:00'
+  native_threads: 1
+  scenario_count: 50
+  plot_days: 2
+  fitting:
+    lag_hours: [24, 48, 168, 336]
+    ridge_alpha: 20.0
+    min_training_rows: 672
+    calibration_days: 14
+    interval_minutes: 15
+    timezone: Europe/Rome
+    max_lag_age_hours: 336
+    random_seed: 17
+  folds:
+    january:
+      fit_cutoff: '2025-12-31T10:00:00Z'
+      evaluation_start: '2026-01-01'
+      evaluation_end_exclusive: '2026-02-01'
+    august:
+      fit_cutoff: '2026-07-31T09:00:00Z'
+      evaluation_start: '2026-08-01'
+      evaluation_end_exclusive: '2026-09-01'
+  models:
+    - {id: seasonal_price_only, method: seasonal_persistence, feature_set: price_only}
+    - {id: ridge_price_only, method: ridge, feature_set: price_only}
+    - {id: ridge_fundamentals, method: ridge, feature_set: fundamentals}
+  feature_sets:
+    price_only: []
+    fundamentals:
+      - {name: load_forecast, provider: entsoe, dataset: load_forecast, zone: NORD, expected_unit: MW, publication_local_time: '00:00', publication_day_offset: -1}
+      - {name: generation_forecast, provider: entsoe, dataset: generation_forecast, zone: NORD, expected_unit: MW, publication_local_time: '00:00', publication_day_offset: -1}
+      - {name: solar_forecast, provider: entsoe, dataset: solar_forecast, zone: NORD, expected_unit: MW, publication_local_time: '00:00', publication_day_offset: -1}
+      - {name: wind_onshore_forecast, provider: entsoe, dataset: wind_onshore_forecast, zone: NORD, expected_unit: MW, publication_local_time: '00:00', publication_day_offset: -1}
+  targets:
+    DA:
+      history_start: '2024-01-01T00:00:00+01:00'
+      source: {provider: gme, dataset: day_ahead_prices, zone: NORD, publication_local_time: '12:57', publication_day_offset: -1}
+      settings: {decision_local_time: '11:45', decision_day_offset: -1}
+    IDA1:
+      # Exclude ambiguous hourly 2024 intraday exports from native-quarter training.
+      history_start: '2025-01-01T00:00:00+01:00'
+      source: {provider: gme, dataset: ida1_prices, zone: NORD, publication_local_time: '15:30', publication_day_offset: -1}
+      settings: {decision_local_time: '14:45', decision_day_offset: -1}
+    IDA2:
+      history_start: '2025-01-01T00:00:00+01:00'
+      source: {provider: gme, dataset: ida2_prices, zone: NORD, publication_local_time: '22:30', publication_day_offset: -1}
+      settings: {decision_local_time: '21:45', decision_day_offset: -1}
+    IDA3:
+      history_start: '2025-01-01T00:00:00+01:00'
+      source: {provider: gme, dataset: ida3_prices, zone: NORD, publication_local_time: '10:30', publication_day_offset: 0}
+      settings: {decision_local_time: '09:45', decision_day_offset: 0, delivery_start_hour: 12, delivery_end_hour: 24}
+    settlement:
+      history_start: '2025-01-01T00:00:00+01:00'
+      # Conservative assumed observation delay; does not assert a historical Terna release clock.
+      source: {provider: terna, dataset: imbalance_prices, zone: NORD, price_column: price_eur_mwh, publication_lag_hours: 24}
+      settings: {decision_local_time: '00:00', decision_day_offset: 0}

@@ -242,12 +242,19 @@ def validate_continuous_optimization(config: dict[str, Any], *, require_dates: b
     ensemble = section.get("pv_ensemble", {})
     if not isinstance(ensemble, dict) or not isinstance(ensemble.get("enabled", False), bool):
         raise ConfigurationError("continuous_optimization.pv_ensemble.enabled must be a YAML boolean")
+    sources = ensemble.get("sources")
+    if sources is not None and (not isinstance(sources, list) or not sources
+            or any(not isinstance(path, str) or not path for path in sources)
+            or len(set(sources)) != len(sources)):
+        raise ConfigurationError("PV ensemble sources must contain unique nonempty Zarr paths")
+    if ensemble.get("overlap_policy", "error") not in {"error", "first", "last"}:
+        raise ConfigurationError("Unknown PV ensemble overlap_policy")
+    count = ensemble.get("member_count")
+    if count not in (None, "auto") and (isinstance(count, bool) or not isinstance(count, int) or count < 1):
+        raise ConfigurationError("PV ensemble member_count must be auto or a positive integer")
     if ensemble.get("enabled", False):
-        if modes != ["integrated"] or not isinstance(ensemble.get("zarr"), str) or not ensemble["zarr"]:
+        if modes != ["integrated"] or not sources and (not isinstance(ensemble.get("zarr"), str) or not ensemble["zarr"]):
             raise ConfigurationError("PV ensemble replay requires integrated mode and a Zarr path")
-        count = ensemble.get("member_count")
-        if isinstance(count, bool) or not isinstance(count, int) or count < 1:
-            raise ConfigurationError("PV ensemble member_count must be a positive integer")
         policy = ensemble.get("planning_policy", "envelope")
         if policy not in ("deterministic", "envelope", "ensemble_mean", "ensemble_stochastic"):
             raise ConfigurationError("Unknown PV ensemble planning policy")
@@ -288,6 +295,13 @@ def validate_config(config: dict[str, Any]) -> None:
     """Check common settings; specialized adapters validate their own inputs."""
     from .transaction_fees import transaction_fees_from_config
     transaction_fees_from_config(config)
+    from .simulation.research_inputs import validate_information_settings
+    validate_information_settings(config)
+    from .reporting.mpc_history import validate_mpc_history_settings
+    validate_mpc_history_settings(config)
+    if any(name in config for name in ("energy_price_forecast", "realtime_scenarios", "continuation_value")):
+        from .simulation.energy_price_inputs import validate_energy_research_settings
+        validate_energy_research_settings(config)
     credential_fields = {"token", "securitytoken", "security_token", "api_key", "access_token", "refresh_token",
                          "client_secret", "password", "authorization", "login", "username"}
     def check_credentials(value: Any) -> None:

@@ -101,7 +101,8 @@ def test_ten_day_config_resolves_each_farm_and_requires_da(farm_id, policy):
     assert config["plant"]["farm_id"] == config["forecast"]["farm_id"] == farm_id
     assert config["continuous_optimization"]["start_date"] == "2026-01-01"
     assert config["continuous_optimization"]["end_date"] == "2026-01-10"
-    assert config["solver"]["threads"] == 2
+    # The stochastic study deliberately reserves one additional solver thread.
+    assert config["solver"]["threads"] == (3 if policy == "ensemble_stochastic" else 2)
     profiles = MODULE.participation_profiles(config["continuous_participation_study"])
     assert len(profiles) == 8 and all("DA" in profile for profile in profiles)
     assert config["continuous_participation_study"]["matched_pv_only"]

@@ -12,6 +12,7 @@ from ..optimization.mpc import MpcSettings
 from ..simulation.synthetic import write_json
 from .continuous_outputs import _financial_dispatch, realtime_daily_plot_limit
 from .plots import plot_boundary_series, plot_interval_series
+from .mpc_history import validate_mpc_history_settings, write_history_manifest
 
 
 def _records(frame):
@@ -88,7 +89,9 @@ def controller_metrics(config, frame, solves):
         "mpc_timeouts": sum(any("time_limit" in stage["status"] for stage in row.get("stages", [])) for row in solves),
         "mpc_infeasibilities": sum(any(stage["status"] == "infeasible" for stage in row.get("stages", [])) for row in solves),
         "price_oracle_enabled": config["execution"]["dispatch_policy"].endswith("price_oracle"),
-        "auction_price_oracle_enabled": config.get("gme_oracle_experiment", {}).get("price_information") == "perfect_foresight_actual_clearing_curves",
+        "auction_price_oracle_enabled": (not config.get("energy_price_forecast", {}).get("auction_enabled", False)
+            and config.get("gme_oracle_experiment", {}).get("price_information") == "perfect_foresight_actual_clearing_curves"),
+        "settlement_forecast_enabled": any(row.get("price_forecast_enabled", False) for row in solves),
         "solver_runtime_mean_seconds": float(np.mean(runtimes)) if runtimes else None,
         "solver_runtime_median_seconds": float(np.median(runtimes)) if runtimes else None,
         "solver_runtime_p95_seconds": float(np.percentile(runtimes, 95)) if runtimes else None,
@@ -98,7 +101,7 @@ def controller_metrics(config, frame, solves):
     return result
 
 
-def save_mpc_outputs(config, destination, dispatch, state, projections):
+def save_mpc_outputs(config, destination, dispatch, state, projections, *, history_archives=None):
     """Save additive reporting alongside unchanged continuous replay artifacts."""
     destination = Path(destination)
     frame = _financial_dispatch(config, dispatch)
@@ -124,8 +127,14 @@ def save_mpc_outputs(config, destination, dispatch, state, projections):
         current_interval_pv_access_is_retrospective=matched_current_pv,
         tracking_information_advantage=config["execution"]["dispatch_policy"] == "track_committed_grid" and not matched_current_pv,
         fallback_information_advantage=any(row.get("fallback_applied") for row in solves) and not matched_current_pv)
-    for name, rows in (("mpc_plans", plans), ("mpc_actions", actions), ("mpc_scenarios", scenarios),
-                       ("mpc_solves", solves), ("controller_daily_kpis", daily)):
+    outputs = [("mpc_actions", actions), ("mpc_solves", solves), ("controller_daily_kpis", daily)]
+    if validate_mpc_history_settings(config) == "memory":
+        outputs.extend([("mpc_plans", plans), ("mpc_scenarios", scenarios)])
+    else:
+        if plans or scenarios:
+            raise ValueError("Completed MPC horizon history must be archived before final reporting")
+        summary["horizon_history"] = write_history_manifest(destination, history_archives or [])
+    for name, rows in outputs:
         pd.DataFrame(rows).to_csv(destination / "csv" / f"{name}.csv", index=False)
         write_json(destination / "json" / f"{name}.json", rows)
     frame.to_csv(destination / "csv/controller_intervals.csv", index=False)

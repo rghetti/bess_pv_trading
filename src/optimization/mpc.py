@@ -1,7 +1,7 @@
-"""Price-blind and explicitly noncausal economic MPC with fixed commitments.
+"""Physical MPC with fixed commitments and explicit price-information contracts.
 
-This interface deliberately contains no auction prices, bids or mutable ledger.
-Battery and PV-utilization decisions are common across the entire scenario set.
+Legacy controllers share future controls. Research controllers can use eligible
+settlement forecasts and delayed-observation recourse, without market orders.
 """
 
 from __future__ import annotations
@@ -15,13 +15,17 @@ import numpy as np
 import pandas as pd
 
 from ..domain import DeliveryGrid, PhysicalState, PlantParameters, DegradationSettings, SolverSettings
-from .degradation import evaluate_xu_dispatch, initial_segment_energy
+from .degradation import evaluate_xu_dispatch, initial_segment_energy, xu_segment_parameters
 from .model import classify_status
 from .physical import add_battery_controls, energy_transition, build_battery_degradation
 
 
 MPC_POLICIES = frozenset({"deterministic_mpc", "deterministic_mpc_price_oracle",
-                          "ensemble_mpc", "ensemble_mpc_price_oracle"})
+                          "ensemble_mpc", "ensemble_mpc_price_oracle",
+                          "deterministic_mpc_economic", "ensemble_mpc_economic",
+                          "ensemble_mpc_adaptive"})
+RESEARCH_MPC_POLICIES = frozenset({"deterministic_mpc_economic",
+    "ensemble_mpc_economic", "ensemble_mpc_adaptive"})
 CAUSAL_TRACKER = "causal_track_committed_grid"
 
 
@@ -57,18 +61,27 @@ class MpcSettings:
     projection_mode: str = "deterministic_open_loop"
     fallback_controller: str = "track_committed_grid"
     current_pv_information: str = "forecast"
+    economic_imbalance_penalty_eur_per_mwh: float = 0.0
+    monetary_cvar_alpha: float = 0.95
+    monetary_cvar_weight: float = 0.0
+    recourse_stages: tuple[int, ...] | None = None
+    recourse_observation_lag_intervals: int = 1
+    recourse_pv_bin_width_mw: float = 0.0
+    recourse_observation_features: str = "pv"
 
     def __post_init__(self):
         # Reject booleans and nonfinite numeric values rather than coercing YAML.
         for name in ("planning_imbalance_penalty_eur_per_mwh", "terminal_soc_target_percent",
                      "terminal_inventory_penalty_eur_per_mwh", "oracle_relative_imbalance_budget",
-                     "oracle_absolute_imbalance_budget_mwh", "solver_time_limit_seconds"):
+                     "oracle_absolute_imbalance_budget_mwh", "solver_time_limit_seconds",
+                     "economic_imbalance_penalty_eur_per_mwh", "monetary_cvar_weight",
+                     "recourse_pv_bin_width_mw"):
             value = getattr(self, name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not np.isfinite(value) or value < 0:
                 raise ValueError(f"realtime_mpc.{name} must be finite and nonnegative")
         if self.solver_time_limit_seconds <= 0 or not 0 <= self.terminal_soc_target_percent <= 100:
             raise ValueError("MPC needs positive solve time and a terminal target in [0,100]")
-        if self.terminal_inventory_mode not in {"none", "soft_target", "linear_value"}:
+        if self.terminal_inventory_mode not in {"none", "soft_target", "linear_value", "piecewise_linear"}:
             raise ValueError("Unknown MPC terminal_inventory_mode")
         if self.current_pv_information not in {"forecast", "realized_interval_average"}:
             raise ValueError("MPC current_pv_information must be forecast or realized_interval_average")
@@ -90,6 +103,22 @@ class MpcSettings:
                     or not np.isfinite(v) or v < 0 for v in values)
                     or not np.isclose(sum(values), 1.0, rtol=0, atol=1e-10)):
                 raise ValueError("MPC scenario_weights must be a normalized nonnegative mapping")
+        # Future observations may only distinguish histories after their disclosure.
+        lag = self.recourse_observation_lag_intervals
+        if isinstance(lag, bool) or not isinstance(lag, int) or lag < 1:
+            raise ValueError("MPC recourse observation lag must be a positive integer")
+        if self.recourse_observation_features != "pv":
+            raise ValueError("MPC recourse currently observes past PV only, not settlement prices")
+        stages = self.recourse_stages
+        if stages is not None:
+            if (not isinstance(stages, (tuple, list)) or any(isinstance(t, bool)
+                    or not isinstance(t, int) or t < 1 for t in stages)
+                    or tuple(stages) != tuple(sorted(set(stages)))):
+                raise ValueError("MPC recourse_stages must contain increasing positive interval indices")
+            object.__setattr__(self, "recourse_stages", tuple(stages))
+        alpha = self.monetary_cvar_alpha
+        if isinstance(alpha, bool) or not isinstance(alpha, (float, int)) or not np.isfinite(alpha) or not 0 < alpha < 1:
+            raise ValueError("MPC monetary_cvar_alpha must lie strictly between zero and one")
 
     @classmethod
     def from_config(cls, config):
@@ -121,6 +150,61 @@ class OraclePrices:
 
 
 @dataclass(frozen=True)
+class ForecastPrices:
+    """Eligible joint settlement scenarios; rows align with the MPC PV members.
+
+    ``available_at`` is the latest source/model availability used to construct
+    the forecast, not retrieval time of a retrospectively exported file. The
+    caller retains source snapshot and feature-vintage evidence in provenance.
+    """
+    positive_eur_per_mwh: np.ndarray
+    available_at: Any
+    negative_eur_per_mwh: np.ndarray | None = None
+    provenance: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        stamp = pd.Timestamp(self.available_at)
+        if pd.isna(stamp) or stamp.tzinfo is None:
+            raise ValueError("Settlement forecast availability must be timezone aware")
+        object.__setattr__(self, "available_at", stamp.tz_convert("UTC"))
+        # An owned read-only copy cannot change between validation and optimization.
+        for name in ("positive_eur_per_mwh", "negative_eur_per_mwh"):
+            raw = getattr(self, name)
+            if raw is not None:
+                values = np.array(raw, dtype=float, copy=True)
+                if values.ndim != 2 or not values.size or not np.isfinite(values).all():
+                    raise ValueError("Settlement forecasts must be finite scenario-by-time matrices")
+                values.setflags(write=False)
+                object.__setattr__(self, name, values)
+        if self.negative_eur_per_mwh is not None and self.negative_eur_per_mwh.shape != self.positive_eur_per_mwh.shape:
+            raise ValueError("Directional settlement forecasts must share their shape")
+
+
+@dataclass(frozen=True)
+class TerminalValueCurve:
+    """A cutoff-eligible piecewise-linear continuation value in EUR versus MWh."""
+    energy_mwh: np.ndarray
+    value_eur: np.ndarray
+    available_at: Any
+    provenance: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self):
+        stamp = pd.Timestamp(self.available_at)
+        if pd.isna(stamp) or stamp.tzinfo is None:
+            raise ValueError("Continuation value availability must be timezone aware")
+        object.__setattr__(self, "available_at", stamp.tz_convert("UTC"))
+        # Explicit knots allow nonconcave learned values without changing their shape.
+        for name in ("energy_mwh", "value_eur"):
+            values = np.array(getattr(self, name), dtype=float, copy=True)
+            if values.ndim != 1 or len(values) < 2 or not np.isfinite(values).all():
+                raise ValueError("Continuation curves require at least two finite knots")
+            values.setflags(write=False)
+            object.__setattr__(self, name, values)
+        if self.value_eur.shape != self.energy_mwh.shape or np.any(np.diff(self.energy_mwh) <= 0):
+            raise ValueError("Continuation energy knots must increase and match their values")
+
+
+@dataclass(frozen=True)
 class MpcInput:
     """Physical inputs with separately disclosed current-PV and price oracles."""
     cutoff: Any
@@ -140,6 +224,8 @@ class MpcInput:
     forecast_provenance: Mapping[str, Any] = field(default_factory=dict)
     oracle: OraclePrices | None = None
     current_realized_pv_mw: float | None = None
+    price_forecast: ForecastPrices | None = None
+    terminal_value: TerminalValueCurve | None = None
 
     def __post_init__(self):
         count, length = len(self.scenario_ids), len(self.grid.interval_ids)
@@ -202,6 +288,29 @@ class MpcInput:
             for curve in (self.oracle.positive_eur_per_mwh, self.oracle.negative_eur_per_mwh):
                 if curve is not None and (np.shape(curve) != (length,) or not np.isfinite(curve).all()):
                     raise ValueError("Oracle prices must be finite and aligned")
+        # Forecast economics and oracle economics are separate, explicit pathways.
+        requires_forecast = self.policy.endswith("_economic")
+        if requires_forecast and self.price_forecast is None:
+            raise ValueError("Economic MPC requires an eligible settlement price_forecast")
+        if self.price_forecast is not None:
+            if self.policy not in RESEARCH_MPC_POLICIES or self.oracle is not None:
+                raise ValueError("Settlement price forecasts require a research economic/adaptive policy")
+            if self.price_forecast.available_at > cutoff:
+                raise ValueError("Settlement price forecast is after the cutoff")
+            if self.price_forecast.positive_eur_per_mwh.shape != (count, length):
+                raise ValueError("Settlement price forecast must align with every PV scenario and product")
+        if self.settings.monetary_cvar_weight and self.price_forecast is None:
+            raise ValueError("Monetary loss CVaR requires eligible settlement forecasts")
+        if self.settings.terminal_inventory_mode == "piecewise_linear":
+            if self.terminal_value is None:
+                raise ValueError("piecewise_linear requires an eligible terminal_value curve")
+            if self.terminal_value.available_at > cutoff:
+                raise ValueError("Continuation value is after the cutoff")
+            if (self.terminal_value.energy_mwh[0] > battery.energy_min_mwh
+                    or self.terminal_value.energy_mwh[-1] < battery.maximum_energy):
+                raise ValueError("Continuation curve must cover the entire battery operating range")
+        elif self.terminal_value is not None:
+            raise ValueError("A terminal_value curve requires piecewise_linear terminal mode")
 
 
 @dataclass(frozen=True)
@@ -216,7 +325,14 @@ class MpcAction:
 
 @dataclass
 class MpcPlan:
-    """Complete open-loop controls, common energy and scenario delivery projections."""
+    """Issued root control, shadow trajectory and scenario delivery projections.
+
+    Research policies additionally retain ``scenario_actions`` as scenario by
+    interval by (charge MW, discharge MW, PV fraction), and scenario boundary
+    energy in ``scenario_energy_mwh``. The plain ``actions`` and ``energy_mwh``
+    arrays select ``representative_path_index`` solely for shadow projections.
+    Legacy policies continue to use one common future control trajectory.
+    """
     solve_id: str
     actions: list[MpcAction]
     energy_mwh: np.ndarray
@@ -225,6 +341,10 @@ class MpcPlan:
     expected_absolute_imbalance_by_interval_mwh: np.ndarray
     expected_shortfall_by_interval_mwh: np.ndarray
     components: dict[str, float]
+    scenario_actions: np.ndarray | None = None
+    scenario_energy_mwh: np.ndarray | None = None
+    control_nodes: tuple[tuple[int, ...], ...] | None = None
+    representative_path_index: int = 0
 
 
 @dataclass
@@ -248,6 +368,10 @@ class MpcControllerState:
 
 def build_mpc_model(inputs: MpcInput):
     """Build only physical controls and deviations; there are no market orders."""
+    if inputs.policy in RESEARCH_MPC_POLICIES:
+        from .adaptive_mpc import build_research_model
+
+        return build_research_model(inputs)
     import gurobipy as gp
 
     model = gp.Model("realtime_economic_mpc")
@@ -280,7 +404,8 @@ def build_mpc_model(inputs: MpcInput):
         scenarios=SimpleNamespace(scenario_ids=("common",), pv_ac_mw=inputs.pv_ac_mw[:1]))
     variables = {"charge": charge, "discharge": discharge, "energy": energy}
     degradation = build_battery_degradation(model, context, variables, gp)[0]
-    grid, positive, negative = {}, {}, {}
+    grid, positive, negative, imported_power = {}, {}, {}, {}
+    interval_support = {}
     absolute, imports, settlement = gp.LinExpr(), gp.LinExpr(), gp.LinExpr()
     # Single-price settlement depends only on the signed difference. Splits are
     # exact under the L1 objective; in stage 2 their sum is a conservative budget.
@@ -289,27 +414,43 @@ def build_mpc_model(inputs: MpcInput):
                    and not np.array_equal(inputs.oracle.positive_eur_per_mwh, inputs.oracle.negative_eur_per_mwh))
     for s in range(count):
         for t, duration in enumerate(inputs.grid.delta_hours):
-            grid[s, t] = model.addVar(lb=-inputs.plant.poi_import_mw, ub=inputs.plant.poi_export_mw,
-                                     name=f"grid[s{s},t{t}]")
-            model.addConstr(grid[s, t] == float(inputs.pv_ac_mw[s, t]) * utilization[t]
-                + discharge[t, "mpc"] - charge[t, "mpc"], name=f"poi_balance[s{s},t{t}]")
-            upper = max(0.0, inputs.plant.poi_export_mw * duration - inputs.committed_mwh[t])
-            lower = max(0.0, inputs.plant.poi_import_mw * duration + inputs.committed_mwh[t])
-            positive[s, t] = model.addVar(ub=upper, name=f"excess[s{s},t{t}]")
-            negative[s, t] = model.addVar(ub=lower, name=f"shortfall[s{s},t{t}]")
-            if directional:
-                direction = model.addVar(vtype=gp.GRB.BINARY, name=f"imbalance_sign[s{s},t{t}]")
-                model.addConstr(positive[s, t] <= upper * direction)
-                model.addConstr(negative[s, t] <= lower * (1 - direction))
-            model.addConstr(positive[s, t] - negative[s, t] == grid[s, t] * duration
-                            - float(inputs.committed_mwh[t]), name=f"fixed_commitment[s{s},t{t}]")
+            support_key = (t, float(inputs.pv_ac_mw[s, t]))
+            representative = interval_support.get(support_key)
+            if representative is not None:
+                # Common controls and common oracle curves make equal PV values
+                # identical interval supports. Alias exactly, without rounding or
+                # dropping zero-probability members from the robust POI envelope.
+                grid[s, t] = grid[representative, t]
+                positive[s, t] = positive[representative, t]
+                negative[s, t] = negative[representative, t]
+                if inputs.import_fee_eur_per_mwh:
+                    imported_power[s, t] = imported_power[representative, t]
+            else:
+                interval_support[support_key] = s
+                grid[s, t] = model.addVar(lb=-inputs.plant.poi_import_mw, ub=inputs.plant.poi_export_mw,
+                                         name=f"grid[s{s},t{t}]")
+                model.addConstr(grid[s, t] == float(inputs.pv_ac_mw[s, t]) * utilization[t]
+                    + discharge[t, "mpc"] - charge[t, "mpc"], name=f"poi_balance[s{s},t{t}]")
+                upper = max(0.0, inputs.plant.poi_export_mw * duration - inputs.committed_mwh[t])
+                lower = max(0.0, inputs.plant.poi_import_mw * duration + inputs.committed_mwh[t])
+                positive[s, t] = model.addVar(ub=upper, name=f"excess[s{s},t{t}]")
+                negative[s, t] = model.addVar(ub=lower, name=f"shortfall[s{s},t{t}]")
+                if directional:
+                    direction = model.addVar(vtype=gp.GRB.BINARY, name=f"imbalance_sign[s{s},t{t}]")
+                    model.addConstr(positive[s, t] <= upper * direction)
+                    model.addConstr(negative[s, t] <= lower * (1 - direction))
+                model.addConstr(positive[s, t] - negative[s, t] == grid[s, t] * duration
+                                - float(inputs.committed_mwh[t]), name=f"fixed_commitment[s{s},t{t}]")
+                if inputs.import_fee_eur_per_mwh:
+                    imported_power[s, t] = model.addVar(ub=inputs.plant.poi_import_mw,
+                        name=f"import[s{s},t{t}]")
+                    # A minimization cost makes the import epigraph exact in both
+                    # economic objectives, with probability mass counted below.
+                    model.addConstr(imported_power[s, t] >= -grid[s, t])
             weight = float(inputs.weights[s])
             absolute += weight * (positive[s, t] + negative[s, t])
             if inputs.import_fee_eur_per_mwh:
-                imported = model.addVar(ub=inputs.plant.poi_import_mw, name=f"import[s{s},t{t}]")
-                # A minimization cost makes this epigraph exact in both economic objectives.
-                model.addConstr(imported >= -grid[s, t])
-                imports += weight * inputs.import_fee_eur_per_mwh * duration * imported
+                imports += weight * inputs.import_fee_eur_per_mwh * duration * imported_power[s, t]
             if inputs.oracle is not None:
                 negative_curve = (inputs.oracle.positive_eur_per_mwh if inputs.oracle.negative_eur_per_mwh is None
                                   else inputs.oracle.negative_eur_per_mwh)
@@ -324,9 +465,16 @@ def build_mpc_model(inputs: MpcInput):
         terminal += settings.terminal_inventory_penalty_eur_per_mwh * deviation
     elif settings.terminal_inventory_mode == "linear_value":
         terminal -= settings.terminal_inventory_value_eur_per_mwh * energy[0, length]
+    elif settings.terminal_inventory_mode == "piecewise_linear":
+        value = model.addVar(lb=-gp.GRB.INFINITY, name="terminal_continuation_value_eur")
+        model.addGenConstrPWL(energy[0, length], value,
+            inputs.terminal_value.energy_mwh.tolist(), inputs.terminal_value.value_eur.tolist(),
+            name="terminal_continuation_curve")
+        terminal -= value
     expressions = {"absolute_imbalance_mwh": absolute, "degradation_eur": degradation,
                    "import_cost_eur": imports, "terminal_cost_eur": terminal, "settlement_eur": settlement}
-    variables.update(grid=grid, positive=positive, negative=negative, mode=mode, utilization=utilization)
+    variables.update(grid=grid, positive=positive, negative=negative, mode=mode, utilization=utilization,
+        interval_support_count=len(interval_support), scenario_interval_count=count * length)
     model.update()
     return model, variables, expressions
 
@@ -347,6 +495,10 @@ def _plan_from_solution(inputs, variables, expressions):
 
 def validate_mpc_plan(inputs: MpcInput, plan: MpcPlan, tolerance=1e-6):
     """Independently reconstruct physics and objective components from controls."""
+    if inputs.policy in RESEARCH_MPC_POLICIES:
+        from .adaptive_mpc import validate_research_plan
+
+        return validate_research_plan(inputs, plan, tolerance)
     battery = inputs.plant.battery
     length = len(inputs.grid.interval_ids)
     if len(plan.actions) != length or plan.energy_mwh.shape != (length + 1,):
@@ -395,6 +547,9 @@ def validate_mpc_plan(inputs: MpcInput, plan: MpcPlan, tolerance=1e-6):
             - battery.capacity_mwh * settings.terminal_soc_target_percent / 100)
     elif settings.terminal_inventory_mode == "linear_value":
         terminal = -settings.terminal_inventory_value_eur_per_mwh * plan.energy_mwh[-1]
+    elif settings.terminal_inventory_mode == "piecewise_linear":
+        terminal = -np.interp(plan.energy_mwh[-1], inputs.terminal_value.energy_mwh,
+                              inputs.terminal_value.value_eur)
     settlement = 0.0
     if inputs.oracle is not None:
         negative = inputs.oracle.negative_eur_per_mwh
@@ -408,8 +563,70 @@ def validate_mpc_plan(inputs: MpcInput, plan: MpcPlan, tolerance=1e-6):
     return components, residuals
 
 
+def _component_validation_allowances(inputs, physical_residuals, feasibility_tolerance,
+                                     integrality_tolerance):
+    """Accumulate constraint tolerances in each component's own units.
+
+    A horizon cash total contains one signed-deviation equality per product.
+    Multiplying a single-row tolerance by only the largest price understates
+    its possible accumulated numerical error. Probability weights prevent the
+    number of otherwise identical scenarios from artificially inflating bounds.
+    Physical validation remains separate and must pass before these are used.
+    """
+    duration = np.asarray(inputs.grid.delta_hours, dtype=float)
+    length = len(duration)
+    # Retain the existing four-row numerical margin, but apply actual coefficients
+    # and horizon lengths rather than treating MWh and EUR as interchangeable.
+    row_tolerance = 4 * feasibility_tolerance
+    grid_error = float(physical_residuals.get("grid", 0.0))
+    deviation_error = row_tolerance + duration * grid_error
+    allowances = {"absolute_imbalance_mwh": float(np.sum(2 * row_tolerance + duration * grid_error)),
+        "import_cost_eur": float(inputs.import_fee_eur_per_mwh * np.sum(
+            duration * (row_tolerance + grid_error))),
+        "settlement_eur": 0.0, "terminal_cost_eur": 0.0}
+    # AC throughput changes by at most the clipped lower-bound errors of the two
+    # control variables per interval. Xu additionally propagates segment-state
+    # balance error through the remaining ordered segment flows.
+    wear = inputs.degradation.cost_eur_per_mwh_throughput * 2 * row_tolerance * duration.sum()
+    if inputs.degradation.mode == "xu_segmented":
+        _, marginal = xu_segment_parameters(inputs.plant.battery, inputs.degradation)
+        propagated_energy_error = (2 * row_tolerance * inputs.degradation.segment_count
+            * np.arange(1, length + 1).sum())
+        control_error = 2 * duration.sum() * (row_tolerance
+            + inputs.plant.battery.max_power_mw * integrality_tolerance)
+        wear = float(np.max(np.abs(marginal))) * (propagated_energy_error + control_error)
+    allowances["degradation_eur"] = float(wear)
+    settings = inputs.settings
+    if settings.terminal_inventory_mode == "soft_target":
+        allowances["terminal_cost_eur"] = row_tolerance * settings.terminal_inventory_penalty_eur_per_mwh
+    elif settings.terminal_inventory_mode == "linear_value":
+        allowances["terminal_cost_eur"] = row_tolerance * abs(settings.terminal_inventory_value_eur_per_mwh)
+    elif settings.terminal_inventory_mode == "piecewise_linear":
+        slopes = np.diff(inputs.terminal_value.value_eur) / np.diff(inputs.terminal_value.energy_mwh)
+        allowances["terminal_cost_eur"] = row_tolerance * (1 + float(np.max(np.abs(slopes))))
+    if inputs.oracle is not None:
+        positive = inputs.oracle.positive_eur_per_mwh
+        negative = inputs.oracle.negative_eur_per_mwh
+        negative = positive if negative is None else negative
+        coefficient = np.maximum(np.abs(positive), np.abs(negative))
+        error = coefficient * deviation_error
+        if not np.array_equal(positive, negative):
+            # Near-integral sign indicators can leave a tiny split overlap. Its
+            # effect depends on the directional spread and that interval's MWh M.
+            upper = np.maximum(0, inputs.plant.poi_export_mw * duration - inputs.committed_mwh)
+            lower = np.maximum(0, inputs.plant.poi_import_mw * duration + inputs.committed_mwh)
+            overlap = row_tolerance + np.maximum(upper, lower) * integrality_tolerance
+            error += np.abs(positive - negative) * overlap
+        allowances["settlement_eur"] = float(np.sum(inputs.weights) * np.sum(error))
+    return {name: max(1e-6, value) for name, value in allowances.items()}
+
+
 def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
     """Solve within one total budget, validating every action before exposing it."""
+    if inputs.policy in RESEARCH_MPC_POLICIES:
+        from .adaptive_mpc import solve_research_mpc
+
+        return solve_research_mpc(inputs, solver)
     solver = solver or SolverSettings()
     started = perf_counter()
     diagnostics = {"cutoff_utc": pd.Timestamp(inputs.cutoff).isoformat(), "controller": inputs.policy,
@@ -432,6 +649,10 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
 
         model, variables, expressions = build_mpc_model(inputs)
         diagnostics["build_seconds"] = perf_counter() - started
+        diagnostics["interval_support_count"] = variables["interval_support_count"]
+        diagnostics["scenario_interval_count"] = variables["scenario_interval_count"]
+        diagnostics["model_variables"] = model.NumVars
+        diagnostics["model_constraints"] = model.NumConstrs
         for key, value in {"OutputFlag": int(solver.output_flag), "Threads": solver.threads,
                            "MIPGap": solver.mip_gap, "Seed": solver.seed,
                            "FeasibilityTol": solver.feasibility_tolerance,
@@ -476,8 +697,19 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
             model.setObjective(expressions["settlement_eur"] - costs, gp.GRB.MAXIMIZE)
             if perf_counter() - started < settings.solver_time_limit_seconds and optimize_stage("signed_settlement_economics"):
                 candidate = _plan_from_solution(inputs, variables, expressions)
-                if candidate.components["absolute_imbalance_mwh"] <= minimum + budget + 2 * model.Params.FeasibilityTol:
-                    result.plan = candidate
+                candidate_components, _ = validate_mpc_plan(inputs, candidate,
+                    max(1e-7, 2 * model.Params.FeasibilityTol))
+                reconstructed = candidate_components["absolute_imbalance_mwh"]
+                diagnostics["oracle_candidate_reconstructed_imbalance_mwh"] = reconstructed
+                # Per-product split equalities can accumulate numerical residuals.
+                # The declared total-MWh budget applies to reconstructed physical
+                # deviations, so it must be checked independently of those splits.
+                if reconstructed > minimum + budget + 2 * model.Params.FeasibilityTol:
+                    raise ValueError("Oracle refinement exceeds reconstructed imbalance cap: "
+                        f"{reconstructed} > {minimum + budget}")
+                if candidate.components["absolute_imbalance_mwh"] > minimum + budget + 2 * model.Params.FeasibilityTol:
+                    raise ValueError("Oracle refinement exceeds modeled imbalance cap")
+                result.plan = candidate
         diagnostics["oracle_stage2_used"] = bool(oracle and result.plan is not first_plan)
         components, residuals = validate_mpc_plan(inputs, result.plan, max(1e-7, 2 * model.Params.FeasibilityTol))
         diagnostics.update(physical_residuals=residuals, recomputed_components=components)
@@ -487,11 +719,10 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
             errors = {key: abs(result.plan.components[key] - value) for key, value in components.items()
                       if key != "absolute_imbalance_mwh" or (not oracle and settings.planning_imbalance_penalty_eur_per_mwh > 0)}
             diagnostics["component_residuals"] = errors
-            allowance = max(1e-6, 4 * model.Params.FeasibilityTol * max(
-                1, settings.planning_imbalance_penalty_eur_per_mwh,
-                settings.terminal_inventory_penalty_eur_per_mwh,
-                float(np.max(np.abs(inputs.oracle.positive_eur_per_mwh))) if oracle else 0))
-            if max(errors.values()) > allowance:
+            allowances = _component_validation_allowances(inputs, residuals,
+                model.Params.FeasibilityTol, model.Params.IntFeasTol)
+            diagnostics["component_validation_allowances"] = allowances
+            if any(error > allowances[key] for key, error in errors.items()):
                 raise ValueError(f"MPC objective component validation failed: {errors}")
         result.plan.components = components
         diagnostics["components"] = components
