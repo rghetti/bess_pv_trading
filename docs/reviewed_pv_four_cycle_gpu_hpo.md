@@ -1,5 +1,29 @@
 # Four-cycle reviewed PV search on one GPU
 
+## GPU 0-only recovery of the interrupted three-GPU search
+
+The multi-GPU search stopped after an out-of-memory failure while another
+process used most of GPU 2. The GPU 0 recovery entry point reads the original
+run identity and requires the same dataset, trial grid, model/training code,
+dependencies and GPU 0 UUID. It retains every complete matching trial record,
+including trials originally trained on GPUs 1 and 2, and schedules only
+remaining trials on GPU 0 with the original two-worker limit. It never changes
+the original identity or prior trial records.
+
+```bash
+cd /home/rghetti/bess_pv_trading
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python scripts/resume_reviewed_pv_gpu0_hpo.py --config configs/pv_experiments/reviewed_four_cycle_neural_hpo_multi_gpu.yaml --check-only
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python scripts/resume_reviewed_pv_gpu0_hpo.py --config configs/pv_experiments/reviewed_four_cycle_neural_hpo_multi_gpu.yaml --run
+```
+
+The `--check-only` command checks data, saved trial identities and GPU 0; the
+`--run` command resumes the historical search. The user starts it in tmux.
+Selected trials originally trained on GPUs 1 or 2 are refit on GPU 0, with
+the original validation replay tolerance. Differences across GPU architectures
+can exceed that tolerance: in that case reporting stops rather than silently
+altering the validation-selected ranking. Refit records retain the original
+training GPU as well as the GPU 0 refit provenance.
+
 ## Separate three-GPU search
 
 `configs/pv_experiments/reviewed_four_cycle_neural_hpo_multi_gpu.yaml` uses
