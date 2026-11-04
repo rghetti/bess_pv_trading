@@ -30,6 +30,19 @@ def test_default_cli_is_a_no_data_read_training_plan(monkeypatch, capsys):
     assert '"fit_count": 30' in capsys.readouterr().out
 
 
+def test_previous_day_study_declares_retrospective_clock_and_24h_lag():
+    """Realized foreign-market observations use the explicitly relaxed study policy."""
+    config = load_config(ROOT / "configs/research/price_european_previous_day.yaml")
+    settings = config["energy_price_training"]
+    assert training_script().training_plan(config)["fit_count"] == 75
+    selected = [feature for group in settings["feature_sets"].values() for feature in group
+                if feature.get("provider") in {"rte", "swissgrid", "gme"}]
+    assert selected
+    assert all(feature["target_shift_hours"] == 24 for feature in selected)
+    assert all(feature["publication_local_time"] == "00:00" and feature["publication_day_offset"] == 0
+               for feature in selected)
+
+
 def write_snapshot(path, frame, provider="entsoe", dataset="load_forecast"):
     store = DuckDBCache(path, threads=1)
     identity = {"provider": provider, "dataset": dataset, "zone": "NORD",

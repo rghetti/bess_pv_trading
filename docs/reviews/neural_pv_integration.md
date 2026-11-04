@@ -28,6 +28,11 @@ The future matched comparison must rerun pvlib with the same latest-available
 cycle policy, forecast release assumptions, reviewed targets, dates, controller
 settings and price inputs as the final neural models. The earlier pvlib runs
 are useful controller checks but do not isolate the forecast-model effect.
+`configs/research/matched_neural_pvlib_research.yaml` declares all nine
+controller cases in matched neural/pvlib pairs, with the same latest-eligible
+cycle settings. Its neural artifact paths still point at the current selected
+bundles and must be updated after the larger training run finishes. The file
+is preparation only; it is not authorization to start the deferred replay.
 
 An offline input check on farm 1 and 15 January 2026 verified 50 neural-converted
 members: the 05:45 UTC request selected 14 January 00 UTC, and the 06:00 UTC

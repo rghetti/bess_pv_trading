@@ -126,6 +126,28 @@ def test_neural_study_requires_and_hashes_each_selected_model_bundle():
         assert job["config"]["continuous_optimization"]["pv_ensemble"]["cycle_updates"] == "latest_available"
 
 
+def test_matched_neural_and_pvlib_cases_differ_only_by_forecast_model_and_run_id():
+    """Every requested controller comparison uses the same cycles and inputs."""
+    from copy import deepcopy
+
+    path = ROOT / "configs/research/matched_neural_pvlib_research.yaml"
+    definition, _, jobs = study.expand_research_jobs(path, farms=[1], window_ids=["january_development"])
+    by_case = {job["case_id"]: job for job in jobs}
+    neural_cases = [case for case in definition["cases"] if not case["id"].startswith("pvlib_")]
+    assert len(neural_cases) == 9
+    for case in neural_cases:
+        neural = deepcopy(by_case[case["id"]]["config"])
+        pvlib = deepcopy(by_case[case["baseline_case"]]["config"])
+        assert neural["pv"]["forecast_replacement"]["enabled"]
+        assert not pvlib["pv"]["forecast_replacement"]["enabled"]
+        assert neural["continuous_optimization"]["pv_ensemble"]["cycle_updates"] == "latest_available"
+        neural["pv"]["forecast_replacement"]["enabled"] = False
+        neural["_pv_shared_settings"]["forecast_replacement"]["enabled"] = False
+        neural["continuous_optimization"].pop("run_id")
+        pvlib["continuous_optimization"].pop("run_id")
+        assert neural == pvlib
+
+
 def test_requirement_inventory_checks_calibrated_shuffle_and_all_ensemble_sources(tmp_path):
     """These paths are required even when ECC is followed by a dependence ablation."""
     _, _, jobs = study.expand_research_jobs(CONFIG, case_ids=["calibrated_shuffled"],

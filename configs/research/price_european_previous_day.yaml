@@ -1,0 +1,329 @@
+# Retrospective prior-day realized data; publication clock is a deliberate placeholder.
+include: ../standard.yaml
+energy_price_training:
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  output_root: outputs/energy_price_forecasts
+  run_id: european_context_previous_day_v1
+  timezone: Europe/Rome
+  interval_minutes: 15
+  history_end_exclusive: '2026-09-01T00:00:00+02:00'
+  native_threads: 1
+  scenario_count: 50
+  plot_days: 2
+  fitting:
+    lag_hours:
+    - 24
+    - 48
+    - 168
+    - 336
+    ridge_alpha: 20.0
+    min_training_rows: 672
+    calibration_days: 14
+    interval_minutes: 15
+    timezone: Europe/Rome
+    max_lag_age_hours: 336
+    random_seed: 17
+    daily_lag_fallback: target_clock
+  folds:
+    january:
+      fit_cutoff: '2025-12-31T10:00:00Z'
+      evaluation_start: '2026-01-01'
+      evaluation_end_exclusive: '2026-02-01'
+      models:
+      - ridge_price_only
+      - ridge_fundamentals
+      - ridge_gas
+      - ridge_weather
+      - ridge_france
+      - ridge_switzerland
+      - ridge_combined
+    august:
+      fit_cutoff: '2026-07-31T09:00:00Z'
+      evaluation_start: '2026-08-01'
+      evaluation_end_exclusive: '2026-09-01'
+      models:
+      - ridge_price_only
+      - ridge_fundamentals
+      - ridge_gas
+      - ridge_weather
+      - ridge_france
+      - ridge_switzerland
+      - ridge_combined
+      - ridge_border
+  models:
+  - id: ridge_price_only
+    method: ridge
+    feature_set: price_only
+  - id: ridge_fundamentals
+    method: ridge
+    feature_set: fundamentals
+  - id: ridge_gas
+    method: ridge
+    feature_set: gas
+  - id: ridge_weather
+    method: ridge
+    feature_set: weather
+  - id: ridge_france
+    method: ridge
+    feature_set: france
+  - id: ridge_switzerland
+    method: ridge
+    feature_set: switzerland
+  - id: ridge_combined
+    method: ridge
+    feature_set: combined
+  - id: ridge_border
+    method: ridge
+    feature_set: border
+  feature_sets:
+    price_only: []
+    fundamentals:
+    - &id001
+      name: load_forecast
+      provider: entsoe
+      dataset: load_forecast
+      zone: NORD
+      expected_unit: MW
+      publication_local_time: 00:00
+      publication_day_offset: -1
+    - &id002
+      name: generation_forecast
+      provider: entsoe
+      dataset: generation_forecast
+      zone: NORD
+      expected_unit: MW
+      publication_local_time: 00:00
+      publication_day_offset: -1
+    - &id003
+      name: solar_forecast
+      provider: entsoe
+      dataset: solar_forecast
+      zone: NORD
+      expected_unit: MW
+      publication_local_time: 00:00
+      publication_day_offset: -1
+    - &id004
+      name: wind_onshore_forecast
+      provider: entsoe
+      dataset: wind_onshore_forecast
+      zone: NORD
+      expected_unit: MW
+      publication_local_time: 00:00
+      publication_day_offset: -1
+    gas:
+    - *id001
+    - *id002
+    - *id003
+    - *id004
+    - &id005
+      name: psv_gas_24h
+      kind: daily_gas
+      provider: gme
+      dataset: gas_igi
+      zone: PSV
+      expected_unit: EUR/MWh
+      target_shift_hours: 24
+      publication_local_time: 00:00
+      publication_day_offset: 0
+    weather:
+    - *id001
+    - *id002
+    - *id003
+    - *id004
+    - &id006
+      name: temperature_milan
+      kind: weather
+      provider: open_meteo
+      dataset: weather_forecast
+      zone: NORD
+      expected_unit: "\xB0C"
+      availability_column: scheduled_available_at
+      availability_kind: assumed_forecast_cycle_plus_six_hours
+      allow_hindcasts: true
+      selectors:
+        location_id: milan
+        variable: temperature_2m
+    - &id007
+      name: temperature_turin
+      kind: weather
+      provider: open_meteo
+      dataset: weather_forecast
+      zone: NORD
+      expected_unit: "\xB0C"
+      availability_column: scheduled_available_at
+      availability_kind: assumed_forecast_cycle_plus_six_hours
+      allow_hindcasts: true
+      selectors:
+        location_id: turin
+        variable: temperature_2m
+    france:
+    - *id001
+    - *id002
+    - *id003
+    - *id004
+    - &id008
+      name: fr_nuclear_24h
+      provider: rte
+      dataset: electricity_balance
+      zone: FR
+      expected_unit: MW
+      target_shift_hours: 24
+      json_component:
+        column: generation_components_json
+        key: nucleaire
+      publication_local_time: 00:00
+      publication_day_offset: 0
+    - &id009
+      name: fr_hydro_24h
+      provider: rte
+      dataset: electricity_balance
+      zone: FR
+      expected_unit: MW
+      target_shift_hours: 24
+      json_component:
+        column: generation_components_json
+        key: hydraulique
+      publication_local_time: 00:00
+      publication_day_offset: 0
+    - &id010
+      name: fr_italy_schedule_24h
+      provider: rte
+      dataset: electricity_balance
+      zone: FR
+      expected_unit: MW
+      target_shift_hours: 24
+      json_component:
+        column: source_record
+        key: ech_comm_italie
+      publication_local_time: 00:00
+      publication_day_offset: 0
+    switzerland:
+    - *id001
+    - *id002
+    - *id003
+    - *id004
+    - &id011
+      name: swiss_balance_24h
+      provider: swissgrid
+      dataset: electricity_balance
+      zone: CH
+      expected_unit: MW
+      target_shift_hours: 24
+      publication_local_time: 00:00
+      publication_day_offset: 0
+    combined:
+    - *id001
+    - *id002
+    - *id003
+    - *id004
+    - *id005
+    - *id006
+    - *id007
+    - *id008
+    - *id009
+    - *id010
+    - *id011
+    border:
+    - *id001
+    - *id002
+    - *id003
+    - *id004
+    - name: swiss_border_schedule_ch_it_24h
+      provider: swissgrid
+      dataset: border_context
+      zone: CH
+      expected_unit: MW
+      target_shift_hours: 24
+      selectors:
+        variable: schedule_ch_it
+      publication_local_time: 00:00
+      publication_day_offset: 0
+    - name: swiss_border_ntc_ch_to_it_24h
+      provider: swissgrid
+      dataset: border_context
+      zone: CH
+      expected_unit: MW
+      target_shift_hours: 24
+      selectors:
+        variable: ntc_ch_to_it
+      publication_local_time: 00:00
+      publication_day_offset: 0
+    - name: swiss_border_ntc_it_to_ch_24h
+      provider: swissgrid
+      dataset: border_context
+      zone: CH
+      expected_unit: MW
+      target_shift_hours: 24
+      selectors:
+        variable: ntc_it_to_ch
+      publication_local_time: 00:00
+      publication_day_offset: 0
+    - name: swiss_border_spread_it_nord_ch_24h
+      provider: swissgrid
+      dataset: border_context
+      zone: CH
+      expected_unit: EUR/MWh
+      target_shift_hours: 24
+      selectors:
+        variable: spread_it_nord_ch
+      publication_local_time: 00:00
+      publication_day_offset: 0
+  targets:
+    DA:
+      history_start: '2024-01-01T00:00:00+01:00'
+      source:
+        provider: gme
+        dataset: day_ahead_prices
+        zone: NORD
+        publication_local_time: '12:57'
+        publication_day_offset: -1
+      settings:
+        decision_local_time: '11:45'
+        decision_day_offset: -1
+    IDA1:
+      history_start: '2025-01-01T00:00:00+01:00'
+      source:
+        provider: gme
+        dataset: ida1_prices
+        zone: NORD
+        publication_local_time: '15:30'
+        publication_day_offset: -1
+      settings:
+        decision_local_time: '14:45'
+        decision_day_offset: -1
+    IDA2:
+      history_start: '2025-01-01T00:00:00+01:00'
+      source:
+        provider: gme
+        dataset: ida2_prices
+        zone: NORD
+        publication_local_time: '22:30'
+        publication_day_offset: -1
+      settings:
+        decision_local_time: '21:45'
+        decision_day_offset: -1
+    IDA3:
+      history_start: '2025-01-01T00:00:00+01:00'
+      source:
+        provider: gme
+        dataset: ida3_prices
+        zone: NORD
+        publication_local_time: '10:30'
+        publication_day_offset: 0
+      settings:
+        decision_local_time: 09:45
+        decision_day_offset: 0
+        delivery_start_hour: 12
+        delivery_end_hour: 24
+    settlement:
+      history_start: '2025-01-01T00:00:00+01:00'
+      source:
+        provider: terna
+        dataset: imbalance_prices
+        zone: NORD
+        price_column: price_eur_mwh
+        publication_lag_hours: 24
+      settings:
+        decision_local_time: 00:00
+        decision_day_offset: 0
+  workers: 4

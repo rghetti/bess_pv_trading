@@ -66,3 +66,15 @@ the latest eligible vintage, so a subsequent release cannot erase the older
 value from a decision made before that release. Missing values are not filled.
 The source snapshot's Friday release is still only an assumed clock, and this
 reader preflight is not a fitted forecast or an ablation result.
+
+`configs/research/price_european_previous_day.yaml` is a separate retrospective
+75-fit comparison using realized French generation and exchange, Swiss balance
+and borders, and PSV gas shifted by 24 hours instead of the earlier 48-hour or
+nine-day shifts. A source-day midnight publication clock is a deliberate
+placeholder so the previous day's full series can be used at any next-day
+decision; it does not assert actual historical publication or operational
+availability. A fixed 24-hour shift differs from matching local clock hours
+across daylight-saving transitions. January and August evaluation periods do
+not contain those transitions; training history can. The same price targets,
+feature groups, 2024 DA training, residual calibration and scoring are used as
+in the earlier study. Regional weather forecast handling is unchanged.
