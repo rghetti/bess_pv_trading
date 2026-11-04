@@ -10,7 +10,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
-from sklearn.linear_model import ElasticNet, Lasso, Ridge
+from sklearn.linear_model import ElasticNet, HuberRegressor, Lasso, Ridge
 from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -51,14 +51,18 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
         return make_pipeline(StandardScaler(), Lasso(random_state=seed, **options))
     if family == "elastic_net":
         return make_pipeline(StandardScaler(), ElasticNet(random_state=seed, **options))
-    if family in {"interaction_ridge", "interaction_lasso", "interaction_elastic_net"}:
+    if family == "huber":
+        return make_pipeline(StandardScaler(), HuberRegressor(**options))
+    if family in {"interaction_ridge", "interaction_lasso", "interaction_elastic_net", "interaction_huber"}:
         lag_count = options.pop("lag_count")
         if family == "interaction_ridge":
             estimator = Ridge(**options)
         elif family == "interaction_lasso":
             estimator = Lasso(random_state=seed, **options)
-        else:
+        elif family == "interaction_elastic_net":
             estimator = ElasticNet(random_state=seed, **options)
+        else:
+            estimator = HuberRegressor(**options)
         return make_pipeline(IntradayShapeInteractions(lag_count), StandardScaler(), estimator)
     if family == "hist_gradient_boosting":
         return HistGradientBoostingRegressor(random_state=seed, **options)
