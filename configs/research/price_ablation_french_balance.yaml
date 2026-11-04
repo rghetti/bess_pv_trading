@@ -1,0 +1,14 @@
+# Paired analysis of the French balance-feature IDA comparison.
+include: ../standard.yaml
+price_feature_ablation:
+  source_search: outputs/energy_price_forecasts/nord_ida_french_balance_matched_v1
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_ida_french_balance_ablation_v1
+  timezone: Europe/Rome
+  seed: 17
+  bootstrap_samples: 1000
+  pairs:
+    - base: cleared_fundamentals
+      added: cleared_french_balance
+    - base: spread_cleared_fundamentals
+      added: spread_french_balance
