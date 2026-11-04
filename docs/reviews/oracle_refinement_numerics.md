@@ -32,3 +32,9 @@ and the ongoing matrix remains pinned to its original solver settings.
 
 The adjacent `oracle_rejection_*.json` files contain the individual diagnostic
 outputs, including solver stages, reconstructed components and failure reasons.
+The original-extraction comparison can be repeated with
+`scripts/replay_oracle_horizon.py BATCH JOB_ID INTERVAL_ID --output PATH`, and
+`--feasibility-tolerance 1e-9` selects the tighter-tolerance diagnostic. The
+script reads checksummed saved scenario history and permits only throughput
+degradation with no hard terminal target or floor; it refuses to reconstruct
+unsupported battery segment state. A working Gurobi license is required.
