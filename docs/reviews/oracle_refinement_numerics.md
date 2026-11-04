@@ -30,6 +30,16 @@ worked on this one instance, but its performance and effect on other horizons
 have not been established. No study configuration was changed on this evidence,
 and the ongoing matrix remains pinned to its original solver settings.
 
+Subsequently, all seven rejected horizons from the farm 1 `ensemble_price_oracle`
+case were reconstructed independently and solved at both tolerances. All seven
+reproduced rejection at `1e-8`; all seven used the economic refinement and passed
+the existing validation at `1e-9`. These horizons were selected because they had
+already failed, so the result is not an estimate of rejection rates or runtime
+across the complete study. The captured results are in
+`oracle_rejected_horizons_tolerance_comparison.json`. The second, gap-fallback
+case had the same seven rejection times, but was not independently replayed in
+this comparison. The running study remains unchanged.
+
 The adjacent `oracle_rejection_*.json` files contain the individual diagnostic
 outputs, including solver stages, reconstructed components and failure reasons.
 The original-extraction comparison can be repeated with

@@ -1,0 +1,268 @@
+[
+  {
+    "interval_id": "2026-01-16T02:30:00+00:00",
+    "feasibility_tolerance": 1e-08,
+    "status": "oracle_refinement_rejected",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 2.3981611728668213,
+    "cap_mwh": 7.232645497651272,
+    "candidate_mwh": 7.232645552159489,
+    "stage2_used": false,
+    "failure_reason": "Oracle refinement exceeds reconstructed imbalance cap: 7.232645552159489 > 7.232645497651272",
+    "components": {
+      "absolute_imbalance_mwh": 7.232645497651272,
+      "degradation_eur": 99.19740266242789,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -313.8347054650458
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T02:30:00+00:00",
+    "feasibility_tolerance": 1e-09,
+    "status": "optimal",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 2.7085981369018555,
+    "cap_mwh": 7.232645497651272,
+    "candidate_mwh": 7.232645497651284,
+    "stage2_used": true,
+    "failure_reason": null,
+    "components": {
+      "absolute_imbalance_mwh": 7.232645497651284,
+      "degradation_eur": 99.19740266238932,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -272.96527808303676
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T09:00:00+00:00",
+    "feasibility_tolerance": 1e-08,
+    "status": "oracle_refinement_rejected",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 0.7140829563140869,
+    "cap_mwh": 0.14267551977867038,
+    "candidate_mwh": null,
+    "stage2_used": false,
+    "failure_reason": "MPC physical validation failed: {'initial_energy': np.float64(0.0), 'energy_transition': np.float64(5.551115123125783e-17), 'energy_lower': np.float64(0.0), 'energy_upper': np.float64(-0.36412385852548945), 'charge_discharge_lower': np.float64(-0.0), 'power': np.float64(0.0), 'exclusivity': np.float64(0.0), 'utilization_lower': np.float64(-0.0), 'utilization_upper': np.float64(0.0), 'poi_import': np.float64(-0.931723822623169), 'poi_export': np.float64(-0.45326201685617695), 'grid': np.float64(8.564808886418751e-07), 'imbalance': np.float64(2.1412022216046878e-07), 'expected_absolute': np.float64(4.1984357284155505e-09), 'expected_shortfall': np.float64(3.1243908467371018e-09)}",
+    "components": {
+      "absolute_imbalance_mwh": 0.14267551977867038,
+      "degradation_eur": 10.751732462992056,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -8.824504282248537
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T09:00:00+00:00",
+    "feasibility_tolerance": 1e-09,
+    "status": "optimal",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 0.6016929149627686,
+    "cap_mwh": 0.14267551977867038,
+    "candidate_mwh": 0.14267534350217545,
+    "stage2_used": true,
+    "failure_reason": null,
+    "components": {
+      "absolute_imbalance_mwh": 0.14267534350217545,
+      "degradation_eur": 10.751732462992056,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -8.824470257195276
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T09:30:00+00:00",
+    "feasibility_tolerance": 1e-08,
+    "status": "oracle_refinement_rejected",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 0.928581953048706,
+    "cap_mwh": 0.13225119403997673,
+    "candidate_mwh": null,
+    "stage2_used": false,
+    "failure_reason": "MPC physical validation failed: {'initial_energy': np.float64(0.0), 'energy_transition': np.float64(5.551115123125783e-17), 'energy_lower': np.float64(0.0), 'energy_upper': np.float64(-0.36412385852548945), 'charge_discharge_lower': np.float64(-0.0), 'power': np.float64(0.0), 'exclusivity': np.float64(0.0), 'utilization_lower': np.float64(-0.0), 'utilization_upper': np.float64(0.0), 'poi_import': np.float64(-0.931723822623169), 'poi_export': np.float64(-0.45326201685617695), 'grid': np.float64(8.564808886418751e-07), 'imbalance': np.float64(2.1412022216046878e-07), 'expected_absolute': np.float64(4.1984357284155505e-09), 'expected_shortfall': np.float64(3.12439120018701e-09)}",
+    "components": {
+      "absolute_imbalance_mwh": 0.13225119403997673,
+      "degradation_eur": 10.456214799271947,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -8.26984183272205
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T09:30:00+00:00",
+    "feasibility_tolerance": 1e-09,
+    "status": "optimal",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 0.8823380470275879,
+    "cap_mwh": 0.13225119403997673,
+    "candidate_mwh": 0.13225119403997665,
+    "stage2_used": true,
+    "failure_reason": null,
+    "components": {
+      "absolute_imbalance_mwh": 0.13225119403997665,
+      "degradation_eur": 10.456214799271947,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -8.266267801203831
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T09:45:00+00:00",
+    "feasibility_tolerance": 1e-08,
+    "status": "oracle_refinement_rejected",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 0.5174989700317383,
+    "cap_mwh": 0.12715018427450459,
+    "candidate_mwh": null,
+    "stage2_used": false,
+    "failure_reason": "MPC physical validation failed: {'initial_energy': np.float64(0.0), 'energy_transition': np.float64(1.1102230246251565e-16), 'energy_lower': np.float64(0.0), 'energy_upper': np.float64(-0.3641238585254895), 'charge_discharge_lower': np.float64(-0.0), 'power': np.float64(0.0), 'exclusivity': np.float64(0.0), 'utilization_lower': np.float64(-0.0), 'utilization_upper': np.float64(0.0), 'poi_import': np.float64(-0.931723822623169), 'poi_export': np.float64(-0.45326201685617695), 'grid': np.float64(8.564808886418751e-07), 'imbalance': np.float64(2.1412022216046878e-07), 'expected_absolute': np.float64(4.1984357284155505e-09), 'expected_shortfall': np.float64(3.1243911824060944e-09)}",
+    "components": {
+      "absolute_imbalance_mwh": 0.12715018427450459,
+      "degradation_eur": 10.312651298446918,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -8.060976403018728
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T09:45:00+00:00",
+    "feasibility_tolerance": 1e-09,
+    "status": "optimal",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 0.37802577018737793,
+    "cap_mwh": 0.12715018427450459,
+    "candidate_mwh": 0.12715018427450456,
+    "stage2_used": true,
+    "failure_reason": null,
+    "components": {
+      "absolute_imbalance_mwh": 0.12715018427450456,
+      "degradation_eur": 10.312651298446918,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -8.057402371500519
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T10:00:00+00:00",
+    "feasibility_tolerance": 1e-08,
+    "status": "oracle_refinement_rejected",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 0.5719890594482422,
+    "cap_mwh": 0.12210447885103859,
+    "candidate_mwh": null,
+    "stage2_used": false,
+    "failure_reason": "MPC physical validation failed: {'initial_energy': np.float64(0.0), 'energy_transition': np.float64(6.245004513516506e-17), 'energy_lower': np.float64(0.0), 'energy_upper': np.float64(-0.3641238585254895), 'charge_discharge_lower': np.float64(-0.0), 'power': np.float64(0.0), 'exclusivity': np.float64(0.0), 'utilization_lower': np.float64(-0.0), 'utilization_upper': np.float64(0.0), 'poi_import': np.float64(-0.931723822623169), 'poi_export': np.float64(-0.45326201685617695), 'grid': np.float64(8.564808886418751e-07), 'imbalance': np.float64(2.1412022216046878e-07), 'expected_absolute': np.float64(4.1984357284155505e-09), 'expected_shortfall': np.float64(3.124391051434472e-09)}",
+    "components": {
+      "absolute_imbalance_mwh": 0.12210447885103859,
+      "degradation_eur": 10.171165119215347,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -7.864501513154847
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T10:00:00+00:00",
+    "feasibility_tolerance": 1e-09,
+    "status": "optimal",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 0.49439191818237305,
+    "cap_mwh": 0.12210447885103859,
+    "candidate_mwh": 0.12210447885103866,
+    "stage2_used": true,
+    "failure_reason": null,
+    "components": {
+      "absolute_imbalance_mwh": 0.12210447885103866,
+      "degradation_eur": 10.171165119215347,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -7.860927481634399
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T10:45:00+00:00",
+    "feasibility_tolerance": 1e-08,
+    "status": "oracle_refinement_rejected",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 0.6582989692687988,
+    "cap_mwh": 0.09918835616253353,
+    "candidate_mwh": null,
+    "stage2_used": false,
+    "failure_reason": "MPC physical validation failed: {'initial_energy': np.float64(0.0), 'energy_transition': np.float64(6.245004513516506e-17), 'energy_lower': np.float64(0.0), 'energy_upper': np.float64(-0.3641238585254895), 'charge_discharge_lower': np.float64(-0.0), 'power': np.float64(0.0), 'exclusivity': np.float64(0.0), 'utilization_lower': np.float64(-0.0), 'utilization_upper': np.float64(0.0), 'poi_import': np.float64(-0.931723822623169), 'poi_export': np.float64(-0.45326201685617695), 'grid': np.float64(8.564808886418751e-07), 'imbalance': np.float64(2.1412022216046878e-07), 'expected_absolute': np.float64(4.1984357284155505e-09), 'expected_shortfall': np.float64(3.124390518874365e-09)}",
+    "components": {
+      "absolute_imbalance_mwh": 0.09918835616253353,
+      "degradation_eur": 9.960357083021247,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -6.8284262673437
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T10:45:00+00:00",
+    "feasibility_tolerance": 1e-09,
+    "status": "optimal",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 0.7347931861877441,
+    "cap_mwh": 0.09918835616253353,
+    "candidate_mwh": 0.09918835616253355,
+    "stage2_used": true,
+    "failure_reason": null,
+    "components": {
+      "absolute_imbalance_mwh": 0.09918835616253355,
+      "degradation_eur": 9.96035708302125,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -6.824852235824643
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T11:00:00+00:00",
+    "feasibility_tolerance": 1e-08,
+    "status": "oracle_refinement_rejected",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 0.765394926071167,
+    "cap_mwh": 0.09161312233116686,
+    "candidate_mwh": null,
+    "stage2_used": false,
+    "failure_reason": "MPC physical validation failed: {'initial_energy': np.float64(0.0), 'energy_transition': np.float64(5.551115123125783e-17), 'energy_lower': np.float64(0.0), 'energy_upper': np.float64(-0.36412385852548945), 'charge_discharge_lower': np.float64(-0.0), 'power': np.float64(0.0), 'exclusivity': np.float64(0.0), 'utilization_lower': np.float64(-0.0), 'utilization_upper': np.float64(0.0), 'poi_import': np.float64(-0.931723822623169), 'poi_export': np.float64(-0.45326201685617695), 'grid': np.float64(8.564808886418751e-07), 'imbalance': np.float64(2.1412022216046878e-07), 'expected_absolute': np.float64(4.1984357284155505e-09), 'expected_shortfall': np.float64(3.1243907912259505e-09)}",
+    "components": {
+      "absolute_imbalance_mwh": 0.09161312233116686,
+      "degradation_eur": 9.89074700640064,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -6.501022051641711
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  },
+  {
+    "interval_id": "2026-01-16T11:00:00+00:00",
+    "feasibility_tolerance": 1e-09,
+    "status": "optimal",
+    "source_status": "oracle_refinement_rejected",
+    "runtime_seconds": 0.7312800884246826,
+    "cap_mwh": 0.09161312233116686,
+    "candidate_mwh": 0.09161312233116684,
+    "stage2_used": true,
+    "failure_reason": null,
+    "components": {
+      "absolute_imbalance_mwh": 0.09161312233116684,
+      "degradation_eur": 9.890747006400641,
+      "terminal_cost_eur": 16.125,
+      "import_cost_eur": 0.0,
+      "settlement_eur": -6.497448020123208
+    },
+    "config_sha256": "1d6ebd31a0c9c36c66b2dafe12eaa3f5732c2295cbd1cd3a3b97cded9aa98658"
+  }
+]
