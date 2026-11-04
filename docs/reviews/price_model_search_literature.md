@@ -95,6 +95,16 @@ projected-row hashes are recorded separately. Selected-model holdout runs with
 supplemental features currently fail closed until matching the source
 snapshots across periods is implemented; no holdout result should be inferred.
 
+The matched French-balance DA and IDA configurations separately add previous-
+day French consumption, wind generation, solar generation and commercial
+France--Switzerland exchange to NORD fundamentals. They retain the source
+signs and units, use a 24-hour shift with a retrospective source-day publication
+placeholder, and match both training rows and complete validation days against
+their baseline. French national records are regional-context proxies, not a
+measurement of Italian zonal fundamentals. For hourly DA tasks, the input at
+the hourly start is sampled from the source's prepared interval values rather
+than being described as an hourly energy average.
+
 `configs/research/price_model_search_swiss_border.yaml` tests the previous-day
 Swiss--Italy commercial schedule, directional intraday NTC and Italian-NORD/
 Swiss spot spread, using only the current 2026 border archive. The spread is

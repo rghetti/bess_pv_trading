@@ -372,3 +372,18 @@ def test_swiss_reservoir_ablation_uses_only_declared_state_features_and_matched_
     assert all(item["kind"] == "released_state" and item["max_age_hours"] == 240
                for item in study["supplemental_features"])
     assert set(study["add_supplemental_features_to"]) == {"cleared_reservoir", "spread_reservoir"}
+
+
+@pytest.mark.parametrize("filename", ["price_model_search_da_french_balance.yaml",
+                                      "price_model_search_ida_french_balance.yaml"])
+def test_french_balance_ablations_use_prior_day_and_matched_training(filename):
+    """French national inputs are lagged and trained on the same rows as their baseline."""
+    from pathlib import Path
+    from bess_pv_trading.config import load_config
+
+    root = Path(__file__).resolve().parents[2]
+    study = load_config(root / "configs/research" / filename)["price_model_search"]
+    assert study["common_training_rows"] is True
+    assert {item["json_component"]["key"] for item in study["supplemental_features"]} == {
+        "consommation", "eolien", "solaire", "ech_comm_suisse"}
+    assert all(item["target_shift_hours"] == 24 for item in study["supplemental_features"])
