@@ -170,7 +170,7 @@ model, producing a complete AC power path on the delivery grid. The study's
 51-path input combines these 50 paths with the updating deterministic forecast.
 This allows us to generate a set of possible coherent scenarios instead of using
 independent sampling. Future studies, when more data becomes available, will investigate ways
-to generate similar temporally correlated trajectories for stochastic optimization.
+to generate similar temporally correlated trajectories for a more statistically sound stochastic optimization.
 
 
 \begin{figure}[htbp]
@@ -187,7 +187,7 @@ path consists of auction quantities and feasible battery/solar actions along
 the represented information history. Scenarios with the same information must
 share the decisions made before they can be distinguished.
 
-\subsection{Deterministic and ensemble formulations}
+\subsubsection{Deterministic and ensemble formulations}
 The deterministic case optimizes against one eligible AC production forecast.
 It chooses auction quantities, charging/discharging and curtailment so that the
 forecast grid exchange exactly matches the cumulative contracted position in
@@ -258,8 +258,10 @@ deviation is valued at the applicable settlement price. Our baseline is a
 \emph{greedy grid-tracking policy}. In each quarter-hour it adjusts battery
 power to bring grid exchange toward the contracted target, discharging for
 a shortfall and charging for a surplus within available power and SOC limits.
-It releases scheduled curtailment when useful and curtails excess PV when
-charging cannot absorb it. This local correction uses interval-average PV
+It releases scheduled curtailment when useful and redirects otherwise-curtailed
+PV into the battery when charging power and SOC headroom permit, while
+preserving the grid-exchange target. Remaining excess PV is curtailed.
+This local correction uses interval-average PV
 feedback in the replay; it does not optimize the consequences for later
 intervals. The current \emph{model predictive control (MPC)} study instead
 reoptimizes over the remaining delivery day every 15 minutes, using the current
@@ -290,12 +292,13 @@ deterministic and strict 51-path formulations under actual-price foresight.}
 \label{fig:participation}
 \end{figure}
 
-For the all-auction profile, deterministic/ensemble profit is EUR
-10,216.33/10,197.54, with absolute imbalance 5.818/1.577 MWh and ending SOC
-33.50/43.49\%. This illustrates the trade-off between exposure and conservative
-delivery planning. Price foresight, target provenance and unequal ending
-inventory remain part of the interpretation; cash profit excludes capital cost
-and terminal inventory valuation.
+For farm 1's all-auction profile, ensemble planning reduces absolute imbalance
+from 5.818 to 1.577 MWh, while realized curtailment increases from zero to
+0.775 MWh relative to deterministic planning. This illustrates the trade-off
+between tighter delivery tracking and curtailed solar energy. These curtailment
+totals are the residual after real-time feedback, which can redirect
+otherwise-curtailed PV into the battery when charging power and SOC headroom
+are available.
 
 \section{What this framework enables next}
 The available data connect forecast revision, production uncertainty and
