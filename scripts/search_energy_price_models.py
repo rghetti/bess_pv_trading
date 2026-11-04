@@ -788,6 +788,7 @@ def main():
     """A no-data plan is the default; run or check-only require an explicit flag."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=ROOT / "configs/research/price_model_search.yaml")
+    parser.add_argument("--project-root", type=Path, help="Root containing the selected source and output directories")
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--check-only", action="store_true")
     actions.add_argument("--run", action="store_true")
@@ -796,6 +797,8 @@ def main():
     parser.add_argument("--allow-legacy-resume", action="store_true")
     args = parser.parse_args()
     config = load_config(args.config)
+    if args.project_root is not None:
+        config["_project_root"] = str(args.project_root.resolve())
     result = run_search(config, check_only=args.check_only or args.resume_check_only,
                         resume=args.resume or args.resume_check_only,
                         allow_legacy_resume=args.allow_legacy_resume) if args.run or args.check_only or args.resume or args.resume_check_only else config["price_model_search"]
