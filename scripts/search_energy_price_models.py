@@ -451,7 +451,51 @@ def _lagged_auction_feature(prior_values, market, lag_hours):
     return feature.assign(feature=name)
 
 
-def run_search(config, *, check_only=False):
+def _verify_resumed_dataset(path, expected):
+    """Require saved training and evaluation arrays to match rebuilt inputs."""
+    with np.load(path, allow_pickle=False) as saved:
+        if set(saved.files) != set(expected):
+            raise ValueError(f"Resume dataset fields differ: {path}")
+        for name, values in expected.items():
+            if not np.array_equal(saved[name], values):
+                raise ValueError(f"Resume dataset differs for {path.name}/{name}")
+
+
+def _verify_resumed_results(manifest, jobs):
+    """Validate recorded forecasts and scores before retaining completed fits."""
+    job_map = {(job["group"], job["feature_set"], job["candidate"]["id"]): job for job in jobs}
+    if len(job_map) != len(jobs):
+        raise ValueError("Resume contains duplicate planned candidate jobs")
+    completed = set()
+    for record in manifest["results"]:
+        key = (record["group"], record["feature_set"], record["candidate"])
+        if key not in job_map or key in completed:
+            raise ValueError("Resume manifest has duplicate or unexpected candidate results")
+        job = job_map[key]
+        if job.get("rolling_refit"):
+            refits = json.loads(Path(job["output"]).with_suffix(".refits.json").read_text())
+            if len(refits) != record["rolling_refit_count"]:
+                raise ValueError(f"Resume rolling refit records differ for {key}")
+        frame = pd.read_csv(job["output"])
+        with np.load(job["dataset"], allow_pickle=False) as dataset:
+            saved_times = pd.DatetimeIndex(pd.to_datetime(dataset["starts"], utc=True))
+            times = pd.DatetimeIndex(pd.to_datetime(frame.product_start, utc=True))
+            if (not times.equals(saved_times) or not np.allclose(frame.actual, dataset["validation_y"], rtol=0, atol=1e-10)
+                    or not np.allclose(frame.seasonal_naive, dataset["reference"], rtol=0, atol=1e-10)):
+                raise ValueError(f"Resume prediction sample differs for {key}")
+            scores = point_metrics(frame.actual, frame.point, frame.seasonal_naive)
+        for name, score in scores.items():
+            previous = record[name]
+            if score is None or previous is None:
+                if score is not None or previous is not None:
+                    raise ValueError(f"Resume score differs for {key}/{name}")
+            elif not np.isclose(score, previous, rtol=1e-9, atol=1e-9):
+                raise ValueError(f"Resume score differs for {key}/{name}")
+        completed.add(key)
+    return [job for key, job in job_map.items() if key not in completed]
+
+
+def run_search(config, *, check_only=False, resume=False, allow_legacy_resume=False):
     """Prepare source-native matrices, then fit candidate workers on shared days."""
     study = config["price_model_search"]
     if not isinstance(study.get("common_training_rows", False), bool):
@@ -493,9 +537,23 @@ def run_search(config, *, check_only=False):
         if validation_manifest["feature_sha256"] != source_manifest["exogenous_sha256"]:
             raise ValueError("Holdout and validation feature snapshots differ")
     destination = root / study["output_root"] / study["run_id"]
-    if destination.exists():
+    previous_manifest = None
+    implementation = {"search_script": _sha256(Path(__file__)),
+                      "candidate_factory": _sha256(ROOT / "src/forecasting/price_search_models.py")}
+    if resume:
+        previous_manifest = json.loads((destination / "manifest.json").read_text())
+        if previous_manifest.get("status") not in {"running", "partial"}:
+            raise ValueError("Resume requires an incomplete search manifest")
+        if previous_manifest["config"] != study:
+            raise ValueError("Resume configuration differs from the original search")
+        previous_implementation = previous_manifest.get("implementation_sha256")
+        if previous_implementation is None and not allow_legacy_resume:
+            raise ValueError("Legacy resume requires explicit acknowledgement of missing implementation hashes")
+        if previous_implementation is not None and previous_implementation != implementation:
+            raise ValueError("Resume implementation differs from the original search")
+    elif destination.exists():
         raise FileExistsError(f"Search output already exists: {destination}")
-    if not check_only:
+    if not check_only and not resume:
         destination.mkdir(parents=True)
     jobs, coverage, incomplete_days, lineage = [], [], {}, {}
     earlier_price_cache = {}
@@ -661,10 +719,10 @@ def run_search(config, *, check_only=False):
                              "training_rows": training_rows, "shared_days": len(days),
                              "validation_rows": int(selected.sum()), "fallback_count": data["fallback_count"],
                              "minimum_training_rows_per_evaluated_slot": slot_minimum})
-            if check_only:
+            if check_only and not resume:
                 continue
             dataset = destination / f"{group}__{feature_set}.npz"
-            np.savez(dataset, train_x=data["matrix"][data["training"]], train_y=data["target"][data["training"]],
+            arrays = dict(train_x=data["matrix"][data["training"]], train_y=data["target"][data["training"]],
                      train_starts=np.asarray(data["starts"][data["training"]].astype(str), dtype=str),
                      validation_x=data["matrix"][selected], validation_y=data["target"][selected],
                      reference=data["matrix"][selected, 0],
@@ -672,6 +730,10 @@ def run_search(config, *, check_only=False):
                      available_ns=data["label_available_at"].as_unit("ns").asi8[selected],
                      product_end_ns=data["label_product_end"].as_unit("ns").asi8[selected],
                      starts=np.asarray(data["starts"][selected].astype(str), dtype=str))
+            if resume:
+                _verify_resumed_dataset(dataset, arrays)
+            else:
+                np.savez(dataset, **arrays)
             for candidate in study["candidates"]:
                 if selected_candidates is not None and (feature_set, candidate["id"]) not in selected_candidates[group]:
                     continue
@@ -680,15 +742,30 @@ def run_search(config, *, check_only=False):
                     "seed": study["seed"], "threads": study["threads_per_worker"],
                     "residual_feature_index": residual_indices[feature_set], "timezone": study["timezone"],
                     "rolling_refit": study.get("rolling_refit")})
+    if resume:
+        rebuilt = {"coverage": coverage, "source_lineage": lineage, "feature_sha256": _sha256(feature_path),
+                   "supplemental_features": supplemental_evidence}
+        for key, value in rebuilt.items():
+            if json.dumps(value, sort_keys=True, default=str) != json.dumps(previous_manifest[key], sort_keys=True, default=str):
+                raise ValueError(f"Resume {key} differs from the original search")
+        jobs = _verify_resumed_results(previous_manifest, jobs)
     if check_only:
         return {"status": "preflight_complete", "coverage": coverage, "incomplete_days": incomplete_days,
                 "feature_checksum": _sha256(feature_path),
                 "supplemental_features": supplemental_evidence,
-                "candidate_count": len(study["candidates"]), "selection": selection_evidence}
+                "candidate_count": len(study["candidates"]), "selection": selection_evidence,
+                "resume_pending_fits": len(jobs) if resume else None,
+                "resume_legacy_implementation_unverified": bool(resume and previous_manifest.get("implementation_sha256") is None)}
     manifest = {"status": "running", "config": study, "coverage": coverage, "incomplete_days": incomplete_days,
                 "source_lineage": lineage,
                 "feature_sha256": _sha256(feature_path), "supplemental_features": supplemental_evidence,
-                "selection": selection_evidence, "results": [], "failures": []}
+                "selection": selection_evidence, "implementation_sha256": implementation, "results": [], "failures": []}
+    if resume:
+        manifest["results"] = previous_manifest["results"]
+        manifest["previous_failures"] = previous_manifest.get("previous_failures", []) + previous_manifest.get("failures", [])
+        manifest["resume_note"] = ("Earlier fits may lack per-candidate convergence-warning records; "
+            "legacy implementation hashes were unavailable." if previous_manifest.get("implementation_sha256") is None
+            else "Earlier fits may lack per-candidate convergence-warning records.")
     (destination / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n")
     with ProcessPoolExecutor(max_workers=study["workers"], mp_context=multiprocessing.get_context("spawn")) as executor:
         pending = {executor.submit(_fit_candidate, job): job for job in jobs}
@@ -714,9 +791,14 @@ def main():
     actions = parser.add_mutually_exclusive_group()
     actions.add_argument("--check-only", action="store_true")
     actions.add_argument("--run", action="store_true")
+    actions.add_argument("--resume", action="store_true")
+    actions.add_argument("--resume-check-only", action="store_true")
+    parser.add_argument("--allow-legacy-resume", action="store_true")
     args = parser.parse_args()
     config = load_config(args.config)
-    result = run_search(config, check_only=args.check_only) if args.run or args.check_only else config["price_model_search"]
+    result = run_search(config, check_only=args.check_only or args.resume_check_only,
+                        resume=args.resume or args.resume_check_only,
+                        allow_legacy_resume=args.allow_legacy_resume) if args.run or args.check_only or args.resume or args.resume_check_only else config["price_model_search"]
     print(json.dumps(result, indent=2, default=str))
 
 

@@ -540,6 +540,31 @@ def test_ida_2025_validation_retains_quarter_hour_targets_and_prior_training():
                for group in study["product_groups"].values())
 
 
+def test_resume_checks_saved_arrays_and_completed_forecast_scores(tmp_path):
+    """Retain only completed fits whose saved inputs and predictions still match."""
+    from scripts.search_energy_price_models import _verify_resumed_dataset, _verify_resumed_results
+
+    path = tmp_path / "dataset.npz"
+    arrays = {"starts": np.array(["2026-01-01T00:00:00Z"]), "validation_y": np.array([10.0]),
+              "reference": np.array([12.0]), "train_x": np.array([[1.0]])}
+    np.savez(path, **arrays)
+    _verify_resumed_dataset(path, arrays)
+    with pytest.raises(ValueError, match="Resume dataset differs"):
+        _verify_resumed_dataset(path, {**arrays, "train_x": np.array([[2.0]])})
+    output = tmp_path / "pred.csv"
+    pd.DataFrame({"product_start": arrays["starts"], "actual": [10.0], "point": [11.0],
+                  "seasonal_naive": [12.0]}).to_csv(output, index=False)
+    job = {"group": "g", "feature_set": "f", "candidate": {"id": "c"},
+           "dataset": str(path), "output": str(output)}
+    manifest = {"results": [{"group": "g", "feature_set": "f", "candidate": "c",
+        "mae_eur_per_mwh": 1.0, "rmse_eur_per_mwh": 1.0, "wape_percent": 10.0,
+        "relative_mae_to_naive": 0.5, "observations": 1}]}
+    assert _verify_resumed_results(manifest, [job]) == []
+    manifest["results"][0]["mae_eur_per_mwh"] = 2.0
+    with pytest.raises(ValueError, match="Resume score differs"):
+        _verify_resumed_results(manifest, [job])
+
+
 def test_price_holdout_rechecks_selection_period_snapshots(monkeypatch):
     """Holdout preparation rejects a revised target or lagged auction snapshot."""
     from scripts import search_energy_price_models as search
