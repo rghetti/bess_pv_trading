@@ -4,12 +4,78 @@ import pandas as pd
 import pytest
 import torch
 import json
+from concurrent.futures import Future
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.forecasting.models.pv_reviewed_gpu_hpo_models import fit_neural, predict_neural
 from bess_pv_trading.forecasting.training.pv_reviewed_gpu_hpo import (
     _bounded_parallel, _refit_worker, _runtime_details, _trial_worker, validate_configuration,
 )
+
+
+class ImmediatePool:
+    """Provide already-completed futures for deterministic scheduler tests."""
+
+    def __init__(self, **kwargs):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        return False
+
+    def submit(self, worker, job):
+        future = Future()
+        try:
+            future.set_result(worker(job))
+        except Exception as error:
+            future.set_exception(error)
+        return future
+
+
+def test_parallel_gpu_scheduler_retries_out_of_memory_alone(monkeypatch):
+    """An OOM reduces concurrency and retries the failed identity once."""
+    monkeypatch.setattr('bess_pv_trading.forecasting.training.pv_reviewed_gpu_hpo.ProcessPoolExecutor', ImmediatePool)
+    attempts = {}
+    messages = []
+    jobs = [{'trial': {'name': str(number), 'farm_id': number}} for number in (1, 2, 3)]
+
+    def worker(job):
+        name = job['trial']['name']
+        attempts[name] = attempts.get(name, 0) + 1
+        if name == '1' and attempts[name] == 1:
+            raise torch.cuda.OutOfMemoryError('synthetic GPU exhaustion')
+        return name
+
+    records = list(_bounded_parallel(jobs, worker, 2, messages.append))
+    assert sorted(records) == ['1', '2', '3']
+    assert attempts == {'1': 2, '2': 1, '3': 1}
+    assert any('retrying alone' in message for message in messages)
+
+
+def test_parallel_gpu_scheduler_stops_if_model_cannot_fit_alone(monkeypatch):
+    """A permanent memory failure does not cause an endless retry loop."""
+    monkeypatch.setattr('bess_pv_trading.forecasting.training.pv_reviewed_gpu_hpo.ProcessPoolExecutor', ImmediatePool)
+    job = {'trial': {'name': 'too_large', 'farm_id': 1}}
+    calls = []
+
+    def worker(_job):
+        calls.append(1)
+        raise torch.cuda.OutOfMemoryError('synthetic GPU exhaustion')
+
+    with pytest.raises(RuntimeError, match='ran out of memory running too_large alone'):
+        list(_bounded_parallel([job], worker, 4, None))
+    assert len(calls) == 2
+
+
+def test_parallel_gpu_configuration_uses_requested_batch_sizes():
+    """The new search has its own identity and four configurable GPU slots."""
+    config = load_config('configs/pv_experiments/reviewed_four_cycle_neural_hpo_gpu_parallel.yaml')
+    section = validate_configuration(config)
+    assert section['workers'] == 4
+    assert section['neural_space']['batch_size']['values'] == [16, 32, 48]
+    assert section['run_id'] == 'four_cycle_neural_night3000_gpu_parallel_v1'
 
 
 def test_gpu_configuration_is_isolated_and_does_not_fall_back(monkeypatch):
@@ -21,7 +87,9 @@ def test_gpu_configuration_is_isolated_and_does_not_fall_back(monkeypatch):
     assert gpu['run_id'] != cpu['run_id']
     assert gpu['report_root'] != cpu['report_root']
     assert gpu['runtime']['device'] == 'cuda:0'
-    assert gpu['neural_space'] == cpu['neural_space']
+    assert {key: value for key, value in gpu['neural_space'].items() if key != 'batch_size'} == {
+        key: value for key, value in cpu['neural_space'].items() if key != 'batch_size'}
+    assert gpu['neural_space']['batch_size']['values'] == [2, 4, 8]
     monkeypatch.setattr(torch.cuda, 'is_available', lambda: False)
     with pytest.raises(RuntimeError, match='CUDA is unavailable'):
         _runtime_details(gpu)
@@ -57,7 +125,7 @@ def test_device_aware_fit_and_prediction(device, family, monkeypatch):
 
 @pytest.mark.skipif(not torch.cuda.is_available(), reason='CUDA is unavailable')
 def test_spawned_gpu_trial_and_refit_export_cpu_checkpoint(tmp_path, monkeypatch):
-    """Run a tiny trial and its refit through the actual spawned worker scheduler."""
+    """Run four tiny trials and refits through the spawned GPU worker scheduler."""
     monkeypatch.setenv('CUBLAS_WORKSPACE_CONFIG', ':4096:8')
     config = load_config('configs/pv_experiments/reviewed_four_cycle_neural_hpo_gpu.yaml')
     config['pv_reviewed_hpo']['neural_training']['max_epochs'] = 2
@@ -84,9 +152,12 @@ def test_spawned_gpu_trial_and_refit_export_cpu_checkpoint(tmp_path, monkeypatch
     trial = {'farm_id': 1, 'feature': 'core', 'family': 'mlp', 'number': 0,
              'seed': 123, 'parameters': parameters, 'name': 'mlp_core_000'}
     job = {'root': str(tmp_path), 'trial': trial, 'identity': 'synthetic', 'config': config}
-    result = list(_bounded_parallel([job], _trial_worker, 1, None))[0]
-    refit_job = {**job, 'expected_validation_score': result['validation']['all']['day_balanced_nrmse_percent']}
-    refit = list(_bounded_parallel([refit_job], _refit_worker, 1, None))[0]
+    jobs = [{**job, 'trial': {**trial, 'number': number, 'name': f'mlp_core_{number:03d}',
+                              'seed': 123 + number}} for number in range(4)]
+    results = list(_bounded_parallel(jobs, _trial_worker, 4, None))
+    refit_jobs = [{**job, 'trial': result['trial'], 'expected_validation_score':
+                   result['validation']['all']['day_balanced_nrmse_percent']} for result in results]
+    refits = list(_bounded_parallel(refit_jobs, _refit_worker, 4, None))
     checkpoint = tmp_path / 'farm_1/models/core/mlp/mlp_core_000/model.pt'
-    assert refit['validation_replay_difference_percent'] == 0
+    assert all(refit['validation_replay_difference_percent'] == 0 for refit in refits)
     assert all(value.device.type == 'cpu' for value in torch.load(checkpoint, weights_only=True).values())

@@ -6,6 +6,7 @@ to CUDA execution do not invalidate existing CPU search identities.
 from __future__ import annotations
 
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from collections import deque
 from copy import deepcopy
 import importlib
 import importlib.metadata
@@ -114,9 +115,16 @@ def validate_configuration(config):
         raise ValueError('Minimum free GPU memory must be nonnegative')
     if device != 'cpu' and (regime != 'four_cycle_forecast_ghi' or device != 'cuda:0'):
         raise ValueError('GPU search requires the four-cycle regime and cuda:0; select the physical GPU using CUDA_VISIBLE_DEVICES')
-    expected_workers = 1 if device == 'cuda:0' else (42 if regime == 'four_cycle_forecast_ghi' else 30)
-    if int(section['workers']) != expected_workers or int(section['threads_per_worker']) != 1:
-        raise ValueError(f'This run requires {expected_workers} workers with one CPU thread each')
+    expected_workers = 42 if regime == 'four_cycle_forecast_ghi' else 30
+    workers = int(section['workers'])
+    if device == 'cuda:0':
+        maximum = int(runtime.get('maximum_gpu_workers', 1))
+        if not 1 <= workers <= maximum:
+            raise ValueError(f'GPU workers must be between 1 and configured maximum {maximum}')
+    elif workers != expected_workers:
+        raise ValueError(f'This CPU run requires {expected_workers} workers')
+    if int(section['threads_per_worker']) != 1:
+        raise ValueError('Each worker must use one CPU thread')
     if regime == 'four_cycle_forecast_ghi' and (section['statistical_families'] or
             section['cycle_hours_utc'] != [0, 6, 12, 18] or section['issue_horizon_hours'] != 48):
         raise ValueError('The four-cycle study requires neural models and all four 48-hour cycles')
@@ -128,7 +136,7 @@ def validate_configuration(config):
         raise ValueError('Four-cycle study requires historical training GHI, forecast scoring GHI and no missing flags')
     available = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else os.cpu_count()
     if available is not None and available < int(section['workers']):
-        raise ValueError(f'Only {available} CPUs are available for the requested {expected_workers} workers')
+        raise ValueError(f'Only {available} CPUs are available for the requested {workers} workers')
     if int(section['trials_per_family_per_feature']) < 1:
         raise ValueError('Every model family needs at least one hyperparameter configuration')
     if section['nighttime_exclusions'] != 'keep_curated' or section['missing_night_ghi'] != 'zero_at_night':
@@ -302,7 +310,7 @@ def _predict_candidate(model, trial, matrix, packed, frame, groups, rating):
     return prediction
 
 
-def _trial_worker(job):
+def _execute_trial(job):
     """Run one seeded candidate and record validation only; do not inspect test scores."""
     import sklearn  # Initialize the conda C++ runtime before optional PyTorch.
     from threadpoolctl import threadpool_limits
@@ -330,32 +338,63 @@ def _trial_worker(job):
     return record
 
 
+def _clear_cuda_cache():
+    """Release unused worker allocations so other GPU fits can reuse memory."""
+    import gc
+    import torch
+    gc.collect()
+    if torch.cuda.is_initialized():
+        torch.cuda.empty_cache()
+
+
+def _trial_worker(job):
+    """Run a trial and release unused device memory before taking another job."""
+    try:
+        return _execute_trial(job)
+    finally:
+        _clear_cuda_cache()
+
+
 def _bounded_parallel(jobs, worker, workers, progress):
-    """Limit in-flight jobs, fail promptly and leave completed records resumable."""
+    """Retry CUDA out-of-memory jobs alone and reduce subsequent concurrency."""
+    import torch
+
     pending = {}
-    iterator = iter(jobs)
+    waiting = deque((job, False) for job in jobs)
+    limit = workers
+    done_count = 0
     with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context('spawn')) as pool:
-        for _ in range(min(len(jobs), workers * 2)):
-            job = next(iterator, None)
-            if job is not None:
-                pending[pool.submit(worker, job)] = job
-        done_count = 0
-        while pending:
+        while pending or waiting:
+            # An OOM retry waits until every other job completes, then runs alone.
+            while waiting and len(pending) < limit:
+                job, serial = waiting[0]
+                if (serial and pending) or any(item[1] for item in pending.values()):
+                    break
+                waiting.popleft()
+                pending[pool.submit(worker, job)] = (job, serial)
+                if serial:
+                    break
             completed, _ = wait(pending, return_when=FIRST_COMPLETED)
             for future in completed:
-                job = pending.pop(future)
+                job, serial = pending.pop(future)
                 try:
-                    yield future.result()
+                    record = future.result()
+                except torch.cuda.OutOfMemoryError as error:
+                    if serial or workers == 1:
+                        raise RuntimeError(f"GPU ran out of memory running {job['trial']['name']} alone") from error
+                    limit = max(1, limit - 1)
+                    waiting.appendleft((job, True))
+                    if progress:
+                        progress(f"GPU out of memory for {job['trial']['name']}; retrying alone and reducing concurrency to {limit}")
+                    continue
                 except Exception as error:
                     for outstanding in pending:
                         outstanding.cancel()
                     raise RuntimeError(f"Failed job {job['trial']['name']} for farm {job['trial']['farm_id']}") from error
+                yield record
                 done_count += 1
                 if progress and (done_count % 20 == 0 or done_count == len(jobs)):
                     progress(f'Completed {done_count}/{len(jobs)} jobs')
-                following = next(iterator, None)
-                if following is not None:
-                    pending[pool.submit(worker, following)] = following
 
 
 def _score_splits(frame, prediction, masks, rating):
@@ -372,7 +411,7 @@ def _score_splits(frame, prediction, masks, rating):
     return result
 
 
-def _refit_worker(job):
+def _execute_refit(job):
     """Replay one validation-selected configuration and export its portable weights."""
     import sklearn
     from threadpoolctl import threadpool_limits
@@ -436,6 +475,14 @@ def _refit_worker(job):
         'limitations': 'Selected on previously inspected 2026 validation; some labels are synthetic.'}
     _write_json(result_path, record)
     return record
+
+
+def _refit_worker(job):
+    """Refit and release unused device memory before the next selected model."""
+    try:
+        return _execute_refit(job)
+    finally:
+        _clear_cuda_cache()
 
 
 def _run_baselines(root, prepared, masks, rating):

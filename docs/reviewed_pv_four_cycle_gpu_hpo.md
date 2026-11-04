@@ -1,5 +1,52 @@
 # Four-cycle reviewed PV search on one GPU
 
+## Parallel search with batches 16, 32 and 48
+
+`configs/pv_experiments/reviewed_four_cycle_neural_hpo_gpu_parallel.yaml`
+defines a separate search with four GPU workers and the requested batch-size
+choices. The user selects a physical GPU with `CUDA_VISIBLE_DEVICES`. It has
+separate run and report roots from both earlier CPU and single-worker GPU
+searches. The start guard requires 8 GiB free GPU memory and 16 GiB available
+host memory. Other users can consume memory after the check, so this is not a
+reservation or a guarantee.
+
+If a trial runs out of GPU memory, the scheduler waits for other running jobs,
+retries the failed trial alone, and reduces the subsequent concurrency limit.
+If the same trial cannot run alone, the search stops and completed records are
+available for resume under the same identity. Each worker releases its unused
+CUDA allocations after each trial and refit. The concurrency limit is set by
+`workers` and `runtime.maximum_gpu_workers` in the study YAML.
+
+```bash
+cd /home/rghetti/bess_pv_trading
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python scripts/train_reviewed_pv_gpu_hpo.py --config configs/pv_experiments/reviewed_four_cycle_neural_hpo_gpu_parallel.yaml --check-only
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python scripts/train_reviewed_pv_gpu_hpo.py --config configs/pv_experiments/reviewed_four_cycle_neural_hpo_gpu_parallel.yaml --run
+```
+
+The `--run` command starts 2,560 candidate fits. The user chooses when to run
+it in tmux; preflight never trains. Selected models are refit on the same GPU,
+with the same validation replay tolerance as the single-worker search. A new
+batch-size grid produces different trial specifications and does not resume
+the stopped CPU search or reuse the older GPU records.
+
+On 2026-11-04, synthetic stress checks on GPU 0 ran 1, 2 and 4 independent
+workers for each of the five model families. Each used width 512, depth 4,
+batch 48, 192 steps, 24 features, one warmup and two measured optimizer
+updates, with data resident on the GPU. All cases completed. Summed per-worker
+peak reserved memory at four workers was 1.30 GiB for MLP, 4.36 GiB for TCN,
+7.22 GiB for BiGRU, 7.24 GiB for BiLSTM and 5.38 GiB for Transformer. These
+are sums of individual peaks, not direct measurements of simultaneous device
+usage, and exclude some context overhead.
+
+The measured aggregate throughput at four workers was 5–10% lower than at one
+for these brief GPU-saturated cases. Four workers honor the requested
+parallelism, but may not minimize wall time. The synthetic check excludes data
+preparation, validation, longer training and other users' activity; it does not
+establish the fastest setting for the full search. The detailed check output
+is `/tmp/reviewed_pv_gpu_concurrency.json` on the current machine.
+
+## Earlier single-worker GPU search
+
 This search uses the data, models, losses, splits, selection and metrics described
 in [the four-cycle CPU plan](reviewed_pv_four_cycle_hpo_plan.md). It has a
 separate configuration, runner, model implementation, run identity and output
