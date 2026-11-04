@@ -26,3 +26,25 @@ XGBoost settings or training methods.
 The user authorized installation of the CPU-only `xgboost-cpu` 3.4.1 package in
 the existing `bess` environment. The optional adapter's price-model unit tests
 passed, including a one-thread CPU prediction test.
+
+## Absolute-error training follow-up
+
+A second 32-fit CPU grid uses XGBoost's `reg:absoluteerror` objective with
+depths 3 and 6, two child-weight and regularization settings, 600 iterations,
+and the same evaluation dates and feature families. Its selected predictions
+have identical product timestamps and actual values to the squared-error grid's
+selected predictions in each market. All fits completed without recorded
+failures; the selected fits had no recorded convergence warnings.
+
+| Market | Best absolute-error WAPE | Best absolute-error MAE EUR/MWh | Best earlier squared-error WAPE | Earlier reference WAPE |
+| --- | ---: | ---: | ---: | ---: |
+| DA | 12.261% | 15.717 | 12.123% | 9.456% |
+| IDA1 | 4.798% | 6.110 | 4.963% | 4.741% |
+| IDA2 | 5.587% | 7.168 | 5.706% | 5.477% |
+| IDA3 | 9.785% | 12.298 | 10.078% | 9.411% |
+
+Absolute-error training improved the best XGBoost result for each IDA but not
+DA in these tested grids; all remain behind the earlier matched references.
+The grids differ slightly in hyperparameters, so this is not a controlled
+objective-only comparison. The same previously inspected validation period and
+input-availability limitations apply.
