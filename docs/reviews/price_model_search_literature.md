@@ -57,7 +57,7 @@ particular candidate selection, not a globally untouched research test. Scores
 remain retrospective and apply only to complete common delivery days.
 
 `configs/research/price_model_search_cleared_auctions.yaml` expands the IDA
-search to 27 parameterized candidates and four feature groups per auction.
+search to 27 parameterized candidates and six feature groups per auction.
 Besides the same auction's 24, 48, 72, 168 and 336 hour price lags and adjacent
 hours around the daily and weekly lags, the cleared
 features include the DA price for IDA1, DA and IDA1 for IDA2, and DA, IDA1 and
@@ -70,5 +70,9 @@ missing. Hourly DA products expanded to quarter-hours are valid coarse inputs,
 not independent quarter-hour training targets. Additional feature groups add
 NORD fundamentals and the retrospective previous-day European context. All
 feature groups are scored on shared complete days, with training counts reported.
+Two groups fit the IDA-minus-cleared-DA spread and add the DA price back before
+scoring; they otherwise use the same features as their corresponding direct
+price models. This tests whether learning the cross-auction spread is easier
+than learning the absolute price without treating the DA value as an IDA target.
 The 4% WAPE target is an objective for evaluation, not a guaranteed result;
 selection and subsequent held-out scoring remain separate.

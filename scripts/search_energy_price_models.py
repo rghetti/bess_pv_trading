@@ -38,8 +38,13 @@ def _fit_candidate(job):
     data = np.load(job["dataset"], allow_pickle=False)
     spec = job["candidate"]
     estimator = make_price_candidate(spec["family"], spec["parameters"], seed=job["seed"], threads=job["threads"])
-    estimator.fit(data["train_x"], data["train_y"])
-    prediction = estimator.predict(data["validation_x"])
+    # A spread model fits the residual to an already-cleared price, then adds
+    # that price back so every score remains in actual EUR/MWh.
+    residual_index = job.get("residual_feature_index")
+    train_anchor = 0 if residual_index is None else data["train_x"][:, residual_index]
+    validation_anchor = 0 if residual_index is None else data["validation_x"][:, residual_index]
+    estimator.fit(data["train_x"], data["train_y"] - train_anchor)
+    prediction = estimator.predict(data["validation_x"]) + validation_anchor
     metrics = point_metrics(data["validation_y"], prediction, data["reference"])
     output = Path(job["output"])
     pd.DataFrame({"product_start": data["starts"], "actual": data["validation_y"],
@@ -63,7 +68,7 @@ def _validation_selection(study, root):
     for name in ("lag_hours", "feature_sets", "seed", "timezone", "source_study"):
         if study[name] != source_study[name]:
             raise ValueError(f"Holdout {name} differs from validation search")
-    for name in ("feature_set_aliases", "add_market_price_features_to"):
+    for name in ("feature_set_aliases", "add_market_price_features_to", "residual_target_features"):
         if study.get(name) != source_study.get(name):
             raise ValueError(f"Holdout {name} differs from validation search")
     expected_candidates = {item["id"]: item for item in source_study["candidates"]}
@@ -237,11 +242,18 @@ def run_search(config, *, check_only=False):
                               "market_neighbor_offsets_minutes": offsets}
             extra_names = expanded_names
         datasets = {}
+        residual_indices = {}
         for feature_set in split.get("feature_sets", study["feature_sets"]):
             base_name = study.get("feature_set_aliases", {}).get(feature_set, feature_set)
             names = tuple(item["name"] for item in feature_sets[base_name])
             if feature_set in study.get("add_market_price_features_to", []):
                 names += tuple(extra_names)
+            residual_feature = study.get("residual_target_features", {}).get(feature_set)
+            if residual_feature is not None and residual_feature not in names:
+                raise ValueError(f"Spread target anchor {residual_feature} is absent from {feature_set}")
+            residual_index = (None if residual_feature is None else
+                              len(study["lag_hours"]) + 7 + names.index(residual_feature))
+            residual_indices[feature_set] = residual_index
             settings = PriceForecastSettings(lag_hours=tuple(study["lag_hours"]), interval_minutes=resolution,
                 timezone=study["timezone"], exogenous_features=names, daily_lag_fallback="target_clock",
                 **target.get("settings", {}))
@@ -271,7 +283,8 @@ def run_search(config, *, check_only=False):
                     continue
                 jobs.append({"dataset": str(dataset), "output": str(destination / f"{group}__{feature_set}__{candidate['id']}.csv"),
                     "candidate": candidate, "group": group, "feature_set": feature_set,
-                    "seed": study["seed"], "threads": study["threads_per_worker"]})
+                    "seed": study["seed"], "threads": study["threads_per_worker"],
+                    "residual_feature_index": residual_indices[feature_set]})
     if check_only:
         return {"status": "preflight_complete", "coverage": coverage, "feature_checksum": _sha256(feature_path),
                 "candidate_count": len(study["candidates"]), "selection": selection_evidence}

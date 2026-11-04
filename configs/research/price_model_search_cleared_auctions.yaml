@@ -26,6 +26,8 @@ price_model_search:
   - cleared_only
   - cleared_fundamentals
   - cleared_combined
+  - spread_cleared_fundamentals
+  - spread_cleared_combined
   product_groups:
     ida1_quarter_hourly:
       target: IDA1
@@ -249,7 +251,14 @@ price_model_search:
     cleared_only: price_only
     cleared_fundamentals: fundamentals
     cleared_combined: combined
+    spread_cleared_fundamentals: fundamentals
+    spread_cleared_combined: combined
   add_market_price_features_to:
   - cleared_only
   - cleared_fundamentals
   - cleared_combined
+  - spread_cleared_fundamentals
+  - spread_cleared_combined
+  residual_target_features:
+    spread_cleared_fundamentals: cleared_da
+    spread_cleared_combined: cleared_da

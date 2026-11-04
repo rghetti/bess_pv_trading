@@ -63,6 +63,22 @@ def test_worker_saves_predictions_and_scores(tmp_path):
     assert len(pd.read_csv(output)) == 10
 
 
+def test_spread_worker_adds_cleared_price_back_before_scoring(tmp_path):
+    """A constant spread over a varying anchor reconstructs the actual price."""
+    from scripts.search_energy_price_models import _fit_candidate
+
+    x = np.arange(30, dtype=float).reshape(-1, 1)
+    dataset = tmp_path / "data.npz"
+    output = tmp_path / "predictions.csv"
+    np.savez(dataset, train_x=x[:20], train_y=x[:20, 0] + 3, validation_x=x[20:],
+             validation_y=x[20:, 0] + 3, reference=x[20:, 0],
+             starts=np.array([f"2025-01-01T{hour:02}:00:00Z" for hour in range(10)]))
+    result = _fit_candidate({"dataset": str(dataset), "output": str(output), "threads": 1, "seed": 4,
+        "group": "ida1", "feature_set": "spread", "residual_feature_index": 0,
+        "candidate": {"id": "ridge", "family": "ridge", "parameters": {"alpha": 1}}})
+    assert result["mae_eur_per_mwh"] < 1e-10
+
+
 def test_intraday_search_declares_separate_native_market_models():
     """Each auction and settlement is fitted as its own quarter-hour task."""
     from pathlib import Path
