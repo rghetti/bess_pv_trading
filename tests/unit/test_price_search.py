@@ -147,3 +147,16 @@ def test_auction_neighbors_keep_original_publication_and_correct_offset():
     assert result.product_start.iloc[0] == pd.Timestamp("2026-02-02T12:00Z")
     assert result.available_at.iloc[0] == source.available_at.iloc[0]
     assert source.product_start.iloc[0] == pd.Timestamp("2026-02-02T11:00Z")
+
+
+def test_cleared_search_includes_same_and_neighboring_historical_products():
+    """Retain the same-product lag as the reference and add nearby hours."""
+    from pathlib import Path
+    from bess_pv_trading.config import load_config
+
+    root = Path(__file__).resolve().parents[2]
+    study = load_config(root / "configs/research/price_model_search_cleared_auctions.yaml")["price_model_search"]
+    assert study["lag_hours"][0] == 24
+    assert {23, 24, 25, 47, 48, 49, 167, 168, 169}.issubset(study["lag_hours"])
+    assert all(group["market_neighbor_offsets_minutes"] == [-60, -15]
+               for group in study["product_groups"].values())

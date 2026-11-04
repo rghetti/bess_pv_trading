@@ -58,7 +58,8 @@ remain retrospective and apply only to complete common delivery days.
 
 `configs/research/price_model_search_cleared_auctions.yaml` expands the IDA
 search to 27 parameterized candidates and four feature groups per auction.
-Besides the same auction's 24, 48, 72, 168 and 336 hour price lags, the cleared
+Besides the same auction's 24, 48, 72, 168 and 336 hour price lags and adjacent
+hours around the daily and weekly lags, the cleared
 features include the DA price for IDA1, DA and IDA1 for IDA2, and DA, IDA1 and
 IDA2 for IDA3. They include the same product and the earlier cleared product at
 15- and 60-minute offsets. The offset describes the source delivery time
