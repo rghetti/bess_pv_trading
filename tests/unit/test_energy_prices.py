@@ -157,6 +157,25 @@ def test_catalog_adapter_preserves_snapshot_provenance_and_native_products(monke
                            availability_column="retrieved_at")
 
 
+def test_catalog_native_resolution_filter_precedes_price_expansion(monkeypatch):
+    """Hourly products never enter a quarter-hour native training set."""
+    import bess_pv_trading.data.api_catalog as catalog
+
+    records = pd.DataFrame({"product_start": pd.to_datetime(["2025-09-30T00:00Z", "2025-10-01T00:00Z"]),
+        "product_end": pd.to_datetime(["2025-09-30T01:00Z", "2025-10-01T00:15Z"]),
+        "price_eur_mwh": [30.0, 60.0]})
+    monkeypatch.setattr(catalog, "load_api_cache_records", lambda *args, **kwargs: (records, []))
+    for native, expected in ((60, 30), (15, 60)):
+        frame, evidence = load_price_history("market.duckdb", provider="gme", dataset="day_ahead_prices",
+            zone="NORD", publication_lag_hours=0, interval_minutes=native, native_resolution_minutes=native)
+        assert frame.price_eur_per_mwh.tolist() == [expected]
+        assert evidence["requested_native_resolution_minutes"] == native
+        assert evidence["native_product_counts_by_minutes"] == {str(native): 1}
+    with pytest.raises(ValueError, match="No native price products"):
+        load_price_history("market.duckdb", provider="gme", dataset="day_ahead_prices", zone="NORD",
+            publication_lag_hours=0, native_resolution_minutes=30)
+
+
 def test_catalog_missing_values_and_conflicting_products_are_never_zero_filled(monkeypatch):
     import bess_pv_trading.data.api_catalog as catalog
 

@@ -13,13 +13,17 @@ percentage errors are unstable near zero electricity prices.
 For this dataset, search ridge, Lasso, elastic net, feed-forward neural nets,
 and gradient-boosted trees with several depths, learning rates and regularization
 settings, along with persistence and forest references. Vary training windows
-where coverage permits and compare inputs in groups. Reserve an untouched 2026
-test period after chronological 2025 validation, using 2024 history for day-ahead
-training; refits and any scaling must use only earlier rows. The available
-January–August 2026 span is shorter than the year-long test recommended in the
-benchmark and cannot establish year-round generalization. Intraday 2024 prices
-have coarser source resolution; settlement begins later. Dates and data coverage
-must be checked before declaring folds, rather than manufacturing missing rows.
+where coverage permits and compare inputs in groups. In response to the product
+resolution split, train and validate hourly day-ahead models using native hourly
+prices, and quarter-hour models using only native quarter-hour prices. The
+current initial search selects on January–June 2025 for hourly products and
+February–April 2026 for quarter-hour products; later periods remain held out.
+Their different forecast eras make the two resolution models separate tasks,
+not directly comparable estimates of a treatment effect. Intraday and settlement
+models need their own native-resolution data and folds. More history may improve
+the hourly task, but cannot provide quarter-hour labels before those products.
+The available 2026 span is shorter than the year-long test recommended in the
+benchmark and cannot establish year-round generalization.
 
 Report MAE and pooled WAPE (sum absolute errors divided by sum absolute
 observations), the error ratio to a seasonal-naive forecast on identical
@@ -31,8 +35,10 @@ for multiple comparisons before claiming statistical superiority. The user's
 requested previous-day realized features are retrospective; their exact
 historical publication times are not a prerequisite at this stage.
 
-`price_search_models.py` provides candidate estimators only. No expanded search
-has yet been fitted or validated, and these estimators are not yet integrated
-as portable MPC forecast artifacts. Do not label them LEAR or claim a selected
-model or improved score until the complete chronological search is implemented
-and evaluated.
+`scripts/search_energy_price_models.py` prepares native-resolution data and
+shared complete validation days for the candidate estimators. Its current
+configuration is a first day-ahead validation search, not a complete study over
+every auction, training window, feature set, hyperparameter or held-out period.
+These estimators are not yet integrated as portable MPC forecast artifacts.
+Do not label them LEAR or claim a selected model or improved score until the
+chronological search and held-out evaluation have been completed.

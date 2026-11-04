@@ -577,7 +577,7 @@ def load_price_history(database, *, provider, dataset, zone, price_column="price
                        availability_column=None, publication_lag_hours=None,
                        publication_local_time=None, publication_day_offset=-1,
                        timezone="Europe/Rome", interval_minutes=15, start=None, end=None,
-                       source_semantics=None):
+                       source_semantics=None, native_resolution_minutes=None):
     """Read verified DuckDB snapshots and apply one explicit availability policy.
 
     A named publication column is evidence. End-plus-lag and delivery-day clocks
@@ -605,6 +605,16 @@ def load_price_history(database, *, provider, dataset, zone, price_column="price
     records = records.copy()
     records["product_start"] = _aware_series(records.product_start, "catalog product_start")
     records["product_end"] = _aware_series(records.product_end, "catalog product_end")
+    if native_resolution_minutes is not None:
+        if (isinstance(native_resolution_minutes, bool) or not isinstance(native_resolution_minutes, int)
+                or native_resolution_minutes < 1):
+            raise ValueError("Native price resolution must be a positive integer in minutes")
+        # Select source products before any expansion, so hourly prices cannot
+        # masquerade as independent quarter-hour observations during model fitting.
+        duration = (records.product_end - records.product_start).dt.total_seconds() / 60
+        records = records.loc[duration == native_resolution_minutes].copy()
+        if records.empty:
+            raise ValueError("No native price products match the requested resolution")
     if availability_column is not None:
         if availability_column not in records:
             raise ValueError("Declared publication evidence is absent from catalog records")
@@ -641,6 +651,7 @@ def load_price_history(database, *, provider, dataset, zone, price_column="price
                   "zone": zone, "snapshot_sources": sources, "availability": availability,
                   "source_semantics": source_semantics,
                   "native_source_products": len(records),
+                  "requested_native_resolution_minutes": native_resolution_minutes,
                   "native_product_counts_by_minutes": {str(int(minutes)): int(np.count_nonzero(duration == minutes))
                                                         for minutes in np.unique(duration)},
                   "expanded_intervals_are_not_independent_native_observations": True,
