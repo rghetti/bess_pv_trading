@@ -18,5 +18,19 @@ and `/tmp/interaction_sgd_mae_*_probe.csv`.
 The selected earlier interaction-ridge candidate scored 9.46% WAPE on the
 same validation products. Both the pilot grid and that candidate were
 inspected on the same period, so these are exploratory comparisons, not an
-independent test. The pilot covers one feature set and does not establish
-performance for the prepared wider configuration.
+independent test. The pilot itself covers only one feature set.
+
+## Completed wider comparison
+
+The wider configuration subsequently completed all 80 fits without reported
+failures or convergence warnings. It used the same 82 validation days and
+four matched feature sets, comparing stochastic absolute-error models with
+interaction-ridge and interaction-elastic-net references. The best observed
+stochastic candidate scored 10.27% WAPE on `curve_combined`, while the
+interaction-ridge reference on `ida_curve_fundamentals` scored 9.46%.
+These are minimum scores selected on the same validation period, not a later
+test. The stronger 9.01% recent-window interaction-elastic-net result came
+from a separate matched search on the same evaluation products.
+
+The full run, including candidate settings and warning records, is in
+`outputs/energy_price_forecasts/nord_da_2026_sgd_mae_search_v1/`.
