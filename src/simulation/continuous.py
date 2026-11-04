@@ -335,6 +335,8 @@ class ContinuousReplay:
                 # no auction identity; use a supported label for the packer.
                 model_frame["auction"] = str(auction) if auction in {"DA", "IDA1", "IDA2", "IDA3"} else "DA"
                 model_frame["forecast_cycle_utc"] = pd.Timestamp(bundle.forecast_vintage)
+                model_frame["forecast_available_at_utc"] = pd.Timestamp(bundle.available_at)
+                model_frame["decision_cutoff_utc"] = pd.Timestamp(cutoff)
                 # Update `midpoint` when this condition is met.
                 if "lead_hours" not in model_frame:
                     midpoint=starts+pd.Timedelta(minutes=float(self.config['source']['historical_interval_minutes'])/2)
@@ -349,6 +351,14 @@ class ContinuousReplay:
                     from ..forecasting.inference.pv_forecast_bundle import predict_bundle
                     options = {"night_policy": forecast_night} if forecast_night is not None else {}
                     replacement = predict_bundle(model_frame,artifact.parent,farm_id=self.plant.farm_id, **options)
+                elif model["kind"] == "reviewed_hpo":
+                    if bundle.provenance.get("reviewed_hpo_model") == model["name"]:
+                        replacement = values.copy()
+                    else:
+                        from ..forecasting.inference.pv_reviewed_hpo import predict_reviewed_hpo
+
+                        replacement = predict_reviewed_hpo(model_frame, artifact.parent,
+                            farm_id=self.plant.farm_id, night_policy=forecast_night)
                 # Operational trajectories never inspect future measured production when `model['kind'] == 'neural'`.
                 elif model["kind"] == "neural":
                     from ..forecasting.inference.pv_neural_predict import predict_neural_frame
@@ -384,6 +394,8 @@ class ContinuousReplay:
                     "pv_forecast_model_kind": model["kind"], "pv_forecast_model_artifact": str(artifact),
                     "pv_forecast_model_available_at_utc": available_at.isoformat(),
                     "pv_forecast_model_retrospective": bool(retrospective)}
+                if model["kind"] == "reviewed_hpo":
+                    model_provenance["pv_forecast_model_training_weather_cycle"] = "preceding_day_00_utc"
         if forecast_night is not None:
             values = values.copy()
             values[night_window_mask(starts, forecast_night)] = 0.0
@@ -413,18 +425,20 @@ class ContinuousReplay:
         deterministic_forecast = forecast.copy()
         deterministic_provenance = dict(provenance)
         if not self.perfect and ensemble_settings.get("enabled", False) and pv_policy == "ensemble_mean":
-            # Project locked intervals using the applicable day's available frozen ensemble.
+            # Project each interval with the newest eligible ensemble for its day.
+            from .continuous_inputs import ensemble_at_cutoff
+
             forecast = forecast.copy()
             for index, product in enumerate(self.grid.interval_ids[update_first:stop_global]):
                 source_day = self.day_for_product[product]
                 source = self.daily[source_day]
                 info = self.prepared["provenance"]["pv_ensemble"][source_day]
-                if pd.Timestamp(info["available_at_utc"]) > cutoff:
-                    raise ValueError(f"Ensemble projection for {source_day} is unavailable at cutoff")
                 local = self.index[product] - self.day_offsets[source_day]
-                forecast[index] = float(np.mean(source["ensemble_pv"][:, local]))
-            target_info = self.prepared["provenance"]["pv_ensemble"][day]
-            provenance = {**provenance, "pv_forecast_policy": "frozen_weather_ensemble_mean",
+                values, _, _ = ensemble_at_cutoff(source, info, cutoff, [source["grid"].starts[local]])
+                forecast[index] = float(np.mean(values))
+            _, _, target_info = ensemble_at_cutoff(daily, self.prepared["provenance"]["pv_ensemble"][day],
+                                                   cutoff, day_grid.starts[first:])
+            provenance = {**provenance, "pv_forecast_policy": "available_weather_ensemble_mean",
                 "pv_forecast_vintage_utc": target_info["forecast_vintage_utc"],
                 "pv_forecast_available_at_utc": target_info["available_at_utc"]}
         by_product = dict(zip(self.grid.interval_ids[update_first:stop_global], map(float, forecast)))
@@ -500,14 +514,15 @@ class ContinuousReplay:
             imbalance_price=0.0 if stochastic else float(self.trading.get("imbalance_price_eur_per_mwh", 0.0)),
             seed=int(self.config["solver"].get("seed", 0)))
         if not self.perfect and ensemble_settings.get("enabled", False):
-            ensemble = daily["ensemble_pv"][:, first:]
-            members = daily["ensemble_members"]
+            from .continuous_inputs import ensemble_at_cutoff
+
+            ensemble, members, ensemble_info = ensemble_at_cutoff(daily,
+                self.prepared["provenance"]["pv_ensemble"][day], cutoff, grid.starts)
             include_det = ensemble_settings.get("include_deterministic_member", True)
             if pv_policy not in ("ensemble_mean", "deterministic"):
                 values = np.vstack([pv, ensemble]) if include_det else ensemble
                 member_ids = (("deterministic",) if include_det else ()) + tuple(f"weather_{member}" for member in members)
                 bundle, tree = shared_dispatch_pv_tree(bundle, tree, grid, values, member_ids)
-            ensemble_info = self.prepared["provenance"]["pv_ensemble"][day]
             if not include_det and pv_policy not in ("ensemble_mean", "deterministic"):
                 # Execution snapshots use the first weather member in this sensitivity.
                 provenance = {**provenance, "pv_forecast_policy": "frozen_first_weather_member",

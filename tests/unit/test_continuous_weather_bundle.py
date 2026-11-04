@@ -120,3 +120,37 @@ def test_weather_bundle_uses_aligned_or_midpoint_lead(tmp_path, monkeypatch, pro
     assert captured['farm_id'] == 901
     assert captured['folder'] == tmp_path
     assert provenance['pv_forecast_model_kind'] == 'weather_bundle'
+
+
+def test_reviewed_forecast_passes_the_latest_available_weather_to_neural_model(tmp_path, monkeypatch):
+    """Each reoptimization receives its own eligible forecast, not historical GHI."""
+    artifact = tmp_path / 'result.json'
+    artifact.write_text('{}')
+    starts = pd.date_range('2026-01-15T12:00Z', periods=2, freq='15min')
+    calls = []
+
+    def provider(cutoff, requested):
+        vintage = pd.Timestamp('2026-01-15T06:00Z') if cutoff.hour >= 12 else pd.Timestamp('2026-01-15T00:00Z')
+        values = pd.DataFrame({'pv_ac_mw': [0.2, 0.3], 'forecast_ghi': [300., 400.],
+            'ghi_w_m2': [9999., 9999.], 'solar_zenith_deg': [40., 39.]}, index=requested)
+        return SimpleNamespace(values=values, farm_id=901, members=['one'], provenance={},
+            forecast_vintage=vintage, available_at=vintage + pd.Timedelta(hours=6))
+
+    def predict(frame, folder, *, farm_id, night_policy):
+        calls.append(frame.copy())
+        return np.array([0.4, 0.5])
+
+    replay = ContinuousReplay.__new__(ContinuousReplay)
+    replay.perfect = False
+    replay.plant = SimpleNamespace(farm_id=901)
+    replay.config = {'source': {'historical_interval_minutes': 15}, 'pv': {'forecast_replacement': {
+        'enabled': True, 'models_by_farm': {'901': {'kind': 'reviewed_hpo', 'name': 'selected',
+        'artifact_path': str(artifact), 'available_at_utc': '2026-01-01T00:00Z'}}}}}
+    replay.prepared = {'forecast_provider': provider, 'calendar': SimpleNamespace(timezone='Europe/Rome')}
+    monkeypatch.setattr('bess_pv_trading.forecasting.inference.pv_reviewed_hpo.predict_reviewed_hpo', predict)
+    _, early = replay._forecast(pd.Timestamp('2026-01-15T11:00Z'), starts, 'IDA1')
+    _, late = replay._forecast(pd.Timestamp('2026-01-15T12:00Z'), starts, 'IDA2')
+    assert early['pv_forecast_vintage_utc'] == '2026-01-15T00:00:00+00:00'
+    assert late['pv_forecast_vintage_utc'] == '2026-01-15T06:00:00+00:00'
+    assert calls[-1]['forecast_ghi'].tolist() == [300., 400.]
+    assert (calls[-1]['decision_cutoff_utc'] == pd.Timestamp('2026-01-15T12:00Z')).all()

@@ -14,6 +14,30 @@ from bess_pv_trading.simulation import continuous_inputs
 FARM_IDS = load_config(Path(__file__).resolve().parents[2] / "configs/standard.yaml")["farms"]
 
 
+def test_ensemble_selection_uses_latest_available_covering_cycle():
+    """New member paths must not enter before release or outside their coverage."""
+    from types import SimpleNamespace
+
+    starts = pd.date_range("2026-01-16T05:30Z", periods=6, freq="15min")
+    base_info = {"forecast_vintage_utc": "2026-01-15T00:00:00+00:00",
+                 "available_at_utc": "2026-01-15T06:00:00+00:00"}
+    update_info = {"forecast_vintage_utc": "2026-01-16T00:00:00+00:00",
+                   "available_at_utc": "2026-01-16T06:00:00+00:00"}
+    daily = {"grid": SimpleNamespace(starts=starts), "ensemble_pv": np.ones((2, 6)),
+             "ensemble_members": ("a", "b"), "ensemble_updates": [{"starts": starts[2:],
+             "values": np.full((2, 4), 2.0), "members": ("a", "b"), "provenance": update_info}]}
+    early, _, early_info = continuous_inputs.ensemble_at_cutoff(daily, base_info, starts[1], starts[2:])
+    latest, _, latest_info = continuous_inputs.ensemble_at_cutoff(daily, base_info, starts[2], starts[2:])
+    uncovered, _, _ = continuous_inputs.ensemble_at_cutoff(daily, base_info, starts[2], starts[1:])
+    assert np.all(early == 1.0)
+    assert early_info is base_info
+    assert np.all(latest == 2.0)
+    assert latest_info is update_info
+    assert np.all(uncovered == 1.0)
+    with pytest.raises(ValueError, match="No available ensemble"):
+        continuous_inputs.ensemble_at_cutoff(daily, base_info, pd.Timestamp("2026-01-15T05:59Z"), starts)
+
+
 @pytest.fixture
 def prepared_case(monkeypatch):
     """Use configured scientific values and substitute local in-memory sources."""

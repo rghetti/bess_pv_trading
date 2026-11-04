@@ -249,6 +249,8 @@ def validate_continuous_optimization(config: dict[str, Any], *, require_dates: b
         raise ConfigurationError("PV ensemble sources must contain unique nonempty Zarr paths")
     if ensemble.get("overlap_policy", "error") not in {"error", "first", "last"}:
         raise ConfigurationError("Unknown PV ensemble overlap_policy")
+    if ensemble.get("cycle_updates", "frozen_initial") not in {"frozen_initial", "latest_available"}:
+        raise ConfigurationError("PV ensemble cycle_updates must be frozen_initial or latest_available")
     count = ensemble.get("member_count")
     if count not in (None, "auto") and (isinstance(count, bool) or not isinstance(count, int) or count < 1):
         raise ConfigurationError("PV ensemble member_count must be auto or a positive integer")

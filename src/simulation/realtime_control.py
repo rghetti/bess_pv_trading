@@ -63,11 +63,11 @@ class RealtimeControl:
             return
         values, ids = deterministic[None, :], ("deterministic",)
         if replay.dispatch_policy.startswith("ensemble_mpc"):
-            info = replay.prepared["provenance"]["pv_ensemble"][day]
-            if pd.Timestamp(info["available_at_utc"]) > cutoff:
-                raise ValueError("MPC ensemble is unavailable at the cutoff")
-            weather_ids = tuple(f"weather_{member}" for member in daily["ensemble_members"])
-            weather = daily["ensemble_pv"][:, local:]
+            from .continuous_inputs import ensemble_at_cutoff
+
+            weather, members, info = ensemble_at_cutoff(daily,
+                replay.prepared["provenance"]["pv_ensemble"][day], cutoff, grid.starts)
+            weather_ids = tuple(f"weather_{member}" for member in members)
             values = np.vstack((values, weather)) if self.settings.ensemble_include_deterministic_member else weather
             ids = ids + weather_ids if self.settings.ensemble_include_deterministic_member else weather_ids
             provenance.update(ensemble_vintage_utc=info["forecast_vintage_utc"],

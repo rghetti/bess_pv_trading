@@ -112,6 +112,20 @@ def test_fundamental_price_models_use_each_window_and_2024_ida_history():
             assert "extended_2024_training_v2" in settings["history_paths"][market]
 
 
+def test_neural_study_requires_and_hashes_each_selected_model_bundle():
+    """A requested neural run must never silently downgrade to the PV baseline."""
+    path = ROOT / "configs/research/neural_pv_research.yaml"
+    _, _, jobs = study.expand_research_jobs(path, case_ids=["deterministic_penalty"],
+                                             farms=[1, 345, 901, 910], window_ids=["january_development"])
+    for job in jobs:
+        requirements = {entry["role"]: entry for entry in study._artifact_requirements(job["config"])}
+        for role in ("pv_model_record", "pv_model_weights", "pv_model_preprocessor"):
+            assert requirements[role]["present"]
+            assert requirements[role]["sha256"]
+        assert job["config"]["pv"]["forecast_replacement"]["enabled"]
+        assert job["config"]["continuous_optimization"]["pv_ensemble"]["cycle_updates"] == "latest_available"
+
+
 def test_requirement_inventory_checks_calibrated_shuffle_and_all_ensemble_sources(tmp_path):
     """These paths are required even when ECC is followed by a dependence ablation."""
     _, _, jobs = study.expand_research_jobs(CONFIG, case_ids=["calibrated_shuffled"],

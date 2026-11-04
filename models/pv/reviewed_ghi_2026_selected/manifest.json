@@ -1,0 +1,62 @@
+{
+  "schema": "reviewed_ghi_selected_models_v1",
+  "search_identity": "e8e1b55f600928d6c139d59cb176e59ebb3e6b2a8f04146b034fc80adff2af80",
+  "selection": "lowest day-balanced validation daylight nRMSE per farm",
+  "source_run": "outputs/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1",
+  "source_report": "docs/results/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1",
+  "night_policy": "zero predictions in the configured month-specific local night window",
+  "models": {
+    "1": {
+      "model": "bigru_extended_021",
+      "family": "bigru",
+      "feature_set": "extended",
+      "validation_nrmse_percent": 4.7080749026536655,
+      "bundle": "farm_1",
+      "sha256": {
+        "model.pt": "2412577c880fca41e57d0cab2a10f18cdb00bc936fba88f60e94089ecff694d8",
+        "preprocessor.json": "f587dfedf2cfcfc368462362de55e622390442f673b1eafcd5f1f98bf3b26b4f",
+        "result.json": "d28ec5d001fb706529a71c3d7a52a219c29608065a39ff43548bfe5ae2258878"
+      },
+      "source_directory": "outputs/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1/farm_1/models/extended/bigru/bigru_extended_021"
+    },
+    "345": {
+      "model": "transformer_extended_001",
+      "family": "transformer",
+      "feature_set": "extended",
+      "validation_nrmse_percent": 7.6452928449331825,
+      "bundle": "farm_345",
+      "sha256": {
+        "model.pt": "2af9c8ccbebf436d3f0c83c152b129e14093edcf893c5a1d338832bfe66c42f0",
+        "preprocessor.json": "0d551df4e14ac9a8f2f90199ddc32d8248bb8d52124230732063eb404bcd87a6",
+        "result.json": "f05af7688c0ef7f0434de2338f97a900beeb40ad0622ae4fd740c2feebaac648"
+      },
+      "source_directory": "outputs/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1/farm_345/models/extended/transformer/transformer_extended_001"
+    },
+    "910": {
+      "model": "tcn_extended_003",
+      "family": "tcn",
+      "feature_set": "extended",
+      "validation_nrmse_percent": 8.976680666366228,
+      "bundle": "farm_910",
+      "sha256": {
+        "model.pt": "1aa04ea930330b735c04a12b5cc38da6c74f2fe46a2589d187b0b6c3a7f9346f",
+        "preprocessor.json": "28b14ff0a2ce691c4fd81197e68c313a209653572f282dccea8fac53ea73be5a",
+        "result.json": "308b15c23b8f465d3d2880b0ebc5a73ad0c9450071d2f1d6b3a8d8effc3bbca2"
+      },
+      "source_directory": "outputs/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1/farm_910/models/extended/tcn/tcn_extended_003"
+    },
+    "901": {
+      "model": "bilstm_extended_021",
+      "family": "bilstm",
+      "feature_set": "extended",
+      "validation_nrmse_percent": 10.241122878820129,
+      "bundle": "farm_901",
+      "sha256": {
+        "model.pt": "043c744f8b5fa04b08e984b792c0db33fd109cdcde5b8a398bcbb3870b68d9f7",
+        "preprocessor.json": "db8cfa2ae07bdc2c16b1ab773c19d660c8652fef1da6068222fcfd1f89007226",
+        "result.json": "d489e69d134606ecb1cc91a518b3a3fcee870bb2ed4f311c49d668e946d5c594"
+      },
+      "source_directory": "outputs/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1/farm_901/models/extended/bilstm/bilstm_extended_021"
+    }
+  }
+}

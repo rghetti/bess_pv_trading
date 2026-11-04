@@ -156,6 +156,15 @@ def _artifact_requirements(config, checksums=None):
         paths["curated_pv_manifest"] = str(root / "manifest.json")
         paths["curated_pv_corpus"] = str(root / f"farm_{farm}" / "corpus.parquet")
         paths["curated_pv_modeling_view"] = str(root / f"farm_{farm}" / "modeling_views.parquet")
+    replacement = config.get("pv", {}).get("forecast_replacement", {})
+    selected = replacement.get("models_by_farm", {}).get(str(config["forecast"]["farm_id"]))
+    if replacement.get("enabled") and selected and selected.get("kind") == "reviewed_hpo":
+        artifact = Path(selected["artifact_path"])
+        paths["pv_model_record"] = str(artifact)
+        joblib_model = artifact.parent / "model.joblib"
+        paths["pv_model_weights"] = str(joblib_model if config_path(config, joblib_model).is_file()
+                                        else artifact.parent / "model.pt")
+        paths["pv_model_preprocessor"] = str(artifact.parent / "preprocessor.json")
     if needs_mpc_ensemble(config):
         ensemble = config["continuous_optimization"]["pv_ensemble"]
         if ensemble.get("sources"):
@@ -185,7 +194,7 @@ def _artifact_requirements(config, checksums=None):
         path = None if not value else config_path(config, value)
         present = path is not None and path.exists()
         checksum = None
-        if present and path.is_file() and role.startswith("price_model_"):
+        if present and path.is_file() and role.startswith(("price_model_", "pv_model_")):
             # Most jobs reuse the same fold/model. Hash each unchanged file once
             # per plan, while detecting replacement or modification mid-plan.
             before = path.stat()

@@ -86,15 +86,17 @@ def _replacement_evidence(config):
     artifact = config_path(config, model["artifact_path"])
     if not artifact.is_file():
         return {"status": "fallback_artifact_missing", "artifact": str(artifact)}
-    metadata = json.loads(artifact.read_text()) if model.get("kind") == "weather_bundle" else {}
+    metadata = json.loads(artifact.read_text()) if model.get("kind") in {"weather_bundle", "reviewed_hpo"} else {}
     checksums = {artifact.name: hashlib.sha256(artifact.read_bytes()).hexdigest()}
     # A model can change independently of YAML; pin and validate every bundle file.
     for name, expected in metadata.get("checksums", {}).items():
+        if model.get("kind") == "reviewed_hpo" and name == "prediction_mw.npy":
+            continue
         actual = hashlib.sha256((artifact.parent / name).read_bytes()).hexdigest()
         if actual != expected:
             raise ValueError(f"Forecast bundle checksum mismatch: {name}")
         checksums[name] = actual
-    if model.get("kind") in {"weather_bundle", "neural"}:
+    if model.get("kind") in {"weather_bundle", "neural", "reviewed_hpo"}:
         import torch
         torch.set_num_threads(int(config["solver"]["threads"]))
     return {"status": "pinned", "model": model["name"], "artifact": str(artifact),
@@ -113,9 +115,8 @@ def _replace_initial_forecast(config, day, cutoff, grid, bundle, forecast, actua
     farm = int(config["forecast"]["farm_id"])
     model = models.get(str(farm), models.get(farm))
     available = pd.Timestamp(evidence["available_at_utc"])
-    if model["kind"] != "weather_bundle" or (available > cutoff and not settings.get("allow_retrospective_artifacts", False)):
+    if model["kind"] not in {"weather_bundle", "reviewed_hpo"} or (available > cutoff and not settings.get("allow_retrospective_artifacts", False)):
         return forecast, actual, bundle, provenance
-    from ..forecasting.inference.pv_forecast_bundle import predict_bundle
 
     frame = bundle.values.copy(deep=True)
     frame["interval_start_utc"] = pd.DatetimeIndex(grid.starts)
@@ -125,10 +126,21 @@ def _replace_initial_forecast(config, day, cutoff, grid, bundle, forecast, actua
     frame["auction"] = "DA"
     frame["forecast_cycle_utc"] = pd.Timestamp(bundle.forecast_vintage)
     policy = config.get("policy", {}).get("forecast_pv_night", {})
-    forecast = predict_bundle(frame, Path(evidence["artifact"]).parent, farm_id=farm, night_policy=policy)
+    if model["kind"] == "reviewed_hpo":
+        from ..forecasting.inference.pv_reviewed_hpo import predict_reviewed_hpo
+
+        frame["forecast_available_at_utc"] = pd.Timestamp(bundle.available_at)
+        frame["decision_cutoff_utc"] = pd.Timestamp(cutoff)
+        forecast = predict_reviewed_hpo(frame, Path(evidence["artifact"]).parent,
+                                        farm_id=farm, night_policy=policy)
+    else:
+        from ..forecasting.inference.pv_forecast_bundle import predict_bundle
+
+        forecast = predict_bundle(frame, Path(evidence["artifact"]).parent, farm_id=farm, night_policy=policy)
     values = bundle.values.copy(deep=True)
     values["pv_ac_mw"] = forecast
-    bundle = replace(bundle, values=values)
+    bundle = replace(bundle, values=values, provenance={**bundle.provenance,
+        **({"reviewed_hpo_model": model["name"]} if model["kind"] == "reviewed_hpo" else {})})
     actual = np.asarray(actual).copy()
     fallback_ids = set(provenance.get("realized_power_fallback_interval_ids", []))
     for index, product in enumerate(grid.interval_ids):
@@ -140,8 +152,8 @@ def _replace_initial_forecast(config, day, cutoff, grid, bundle, forecast, actua
     return forecast, actual, bundle, provenance
 
 
-def _prepare_pv_ensembles(config, days_data, progress=None):
-    """Convert each frozen preceding-day weather ensemble to AC trajectories."""
+def _prepare_pv_ensembles(config, days_data, progress=None, *, cycle_overrides=None):
+    """Convert one specified available weather ensemble per delivery day."""
     import xarray as xr
 
     from ..data import load_metadata
@@ -169,8 +181,8 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
         raise ValueError("PV ensemble model selection is missing for the selected farm")
     use_bundle = bool(replacement.get("enabled") and model is not None)
     if use_bundle:
-        if model.get("kind") != "weather_bundle":
-            raise ValueError("PV ensemble model requires a configured weather bundle for the selected farm")
+        if model.get("kind") not in {"weather_bundle", "reviewed_hpo"}:
+            raise ValueError("PV ensemble model requires a supported weather model bundle")
         artifact = config_path(config, model["artifact_path"])
         if not artifact.is_file():
             raise ValueError(f"PV ensemble model artifact is missing: {artifact}")
@@ -195,7 +207,8 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
                     or expected not in (None, "auto") and len(members) != int(expected)):
                 raise ValueError("PV ensemble archive has an unexpected member axis")
             starts = _utc_index(daily["grid"].starts)
-            cycle = (pd.Timestamp(day) - pd.Timedelta(days=1)).tz_localize("UTC")
+            cycle = ((pd.Timestamp(day) - pd.Timedelta(days=1)).tz_localize("UTC")
+                if cycle_overrides is None else pd.Timestamp(cycle_overrides[day]))
             try:
                 weather = align_cycle(dataset, farm_id, cycle, starts, config, ensemble=True)
             except (KeyError, ValueError) as error:
@@ -206,8 +219,6 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
             if use_bundle:
                 if available_at > pd.Timestamp(first_cutoff) and not replacement.get("allow_retrospective_artifacts", False):
                     raise ValueError(f"PV ensemble model was not available at the first cutoff for {day}")
-                from ..forecasting.inference.pv_forecast_bundle import predict_bundle
-
                 # Keep member curves independent for both interpolation and neural sequence packing.
                 frame = weather.values.copy().reset_index(drop=False)
                 frame["interval_start_utc"] = np.tile(starts, len(members))
@@ -215,8 +226,21 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
                 frame["auction"] = "DA"
                 frame["forecast_cycle_utc"] = cycle
                 frame["_scenario_member"] = frame["member"].astype(str)
-                predicted = predict_bundle(frame, artifact.parent, farm_id=farm_id,
-                                           night_policy=forecast_night)
+                if model["kind"] == "reviewed_hpo":
+                    from ..forecasting.inference.pv_reviewed_hpo import predict_reviewed_hpo
+
+                    frame["forecast_available_at_utc"] = pd.Timestamp(weather.available_at)
+                    frame["decision_cutoff_utc"] = pd.Timestamp(first_cutoff)
+                    predicted = np.empty(len(frame), dtype=float)
+                    for member in members:
+                        member_mask = frame["_scenario_member"].to_numpy() == member
+                        predicted[member_mask] = predict_reviewed_hpo(frame.loc[member_mask].copy(),
+                            artifact.parent, farm_id=farm_id, night_policy=forecast_night)
+                else:
+                    from ..forecasting.inference.pv_forecast_bundle import predict_bundle
+
+                    predicted = predict_bundle(frame, artifact.parent, farm_id=farm_id,
+                                               night_policy=forecast_night)
                 values = np.stack([predicted[frame["_scenario_member"].to_numpy() == member]
                                    for member in members])
                 conversion = {"model": model.get("name"), "kind": model["kind"],
@@ -248,6 +272,82 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
             if progress:
                 progress(f"Preflight {day}: converted {len(members)} raw PV ensemble members")
     return provenance
+
+
+def _prepare_ensemble_updates(config, days_data, base_provenance, progress=None):
+    """Prepare newer available cycles for their covered remaining delivery intervals."""
+    import xarray as xr
+    from types import SimpleNamespace
+
+    settings = config["continuous_optimization"]["pv_ensemble"]
+    paths = settings.get("sources") or [settings["zarr"]]
+    paths = [config_path(config, path) for path in paths]
+    overlap = settings.get("overlap_policy", "error")
+    latency = pd.Timedelta(hours=float(config["source"]["availability_lag_hours"]))
+    earliest = min(pd.Timestamp(value["forecast_vintage_utc"]) for value in base_provenance.values())
+    latest = max(pd.Timestamp(daily["grid"].starts[-1]) for daily in days_data.values())
+    # Read archive coordinates once; model inference is deferred until a cycle
+    # can actually be used during one of the requested delivery days.
+    candidates = {}
+    for path in paths:
+        with xr.open_zarr(path, consolidated=True, chunks=None) as dataset:
+            cycles = pd.DatetimeIndex(pd.to_datetime(dataset.cycle_time.values, utc=True))
+            max_lead = pd.to_timedelta(dataset.lead_time.values).max()
+            for cycle in cycles:
+                if cycle <= earliest or cycle + latency > latest:
+                    continue
+                if cycle in candidates and overlap == "error":
+                    raise ValueError(f"Multiple ensemble sources contain cycle {cycle}")
+                if cycle not in candidates or overlap == "last":
+                    candidates[cycle] = (path, max_lead)
+    for day, daily in days_data.items():
+        starts = _utc_index(daily["grid"].starts)
+        first_cutoff = min(pd.Timestamp(event.submission_at) for event in daily["schedule"])
+        initial_cycle = pd.Timestamp(base_provenance[day]["forecast_vintage_utc"])
+        updates = []
+        for cycle, (source, max_lead) in sorted(candidates.items()):
+            available = cycle + latency
+            if cycle <= initial_cycle or available > starts[-1]:
+                continue
+            eligible_at = max(first_cutoff, available)
+            first = int(starts.searchsorted(eligible_at.ceil("15min")))
+            if first >= len(starts) or cycle + max_lead < starts[-1] + pd.Timedelta(hours=1):
+                continue
+            grid = daily["grid"]
+            remaining = DeliveryGrid(grid.interval_ids[first:], grid.starts[first:], grid.ends[first:])
+            temporary = {day: {"grid": remaining, "schedule": [SimpleNamespace(submission_at=eligible_at)]}}
+            update_config = deepcopy(config)
+            update_settings = update_config["continuous_optimization"]["pv_ensemble"]
+            update_settings["sources"] = None
+            update_settings["zarr"] = str(source)
+            info = _prepare_pv_ensembles(update_config, temporary, cycle_overrides={day: cycle})[day]
+            updates.append({"starts": starts[first:], "values": temporary[day]["ensemble_pv"],
+                            "members": temporary[day]["ensemble_members"], "provenance": info})
+        daily["ensemble_updates"] = updates
+        base_provenance[day]["available_updates"] = [entry["provenance"] for entry in updates]
+        if progress:
+            progress(f"Preflight {day}: prepared {len(updates)} newer ensemble cycles")
+
+
+def ensemble_at_cutoff(daily, info, cutoff, starts):
+    """Select the latest eligible ensemble covering every requested interval."""
+    cutoff = pd.Timestamp(cutoff)
+    starts = _utc_index(starts)
+    entries = [{"starts": _utc_index(daily["grid"].starts), "values": daily["ensemble_pv"],
+                "members": daily["ensemble_members"], "provenance": info}]
+    entries.extend(daily.get("ensemble_updates", []))
+    eligible = []
+    for entry in entries:
+        provenance = entry["provenance"]
+        if pd.Timestamp(provenance["available_at_utc"]) > cutoff:
+            continue
+        positions = entry["starts"].get_indexer(starts)
+        if np.all(positions >= 0):
+            eligible.append((pd.Timestamp(provenance["forecast_vintage_utc"]), entry, positions))
+    if not eligible:
+        raise ValueError("No available ensemble cycle covers the requested delivery intervals")
+    _, chosen, positions = max(eligible, key=lambda item: item[0])
+    return chosen["values"][:, positions], chosen["members"], chosen["provenance"]
 
 
 def _validate_bundle(bundle, cutoff: pd.Timestamp, starts: pd.DatetimeIndex) -> None:
@@ -466,6 +566,8 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     ensemble_provenance = None
     if settings.get("pv_ensemble", {}).get("enabled", False) or needs_mpc_ensemble(config):
         ensemble_provenance = _prepare_pv_ensembles(config, days_data, progress)
+        if settings.get("pv_ensemble", {}).get("cycle_updates", "frozen_initial") == "latest_available":
+            _prepare_ensemble_updates(config, days_data, ensemble_provenance, progress)
     settlement, settlement_provenance = load_realized_imbalance_prices(config, full_grid)
     settlement_values = (None if settlement is None else
                          settlement.settlement_price_eur_mwh.to_numpy(float, copy=True))

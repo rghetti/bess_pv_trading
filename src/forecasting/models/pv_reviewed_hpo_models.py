@@ -171,7 +171,8 @@ def predict_neural(model, packed, groups, batch_size, row_count, rating_mw):
             indices = packed['indices'][chosen]
             valid = indices >= 0
             values = model(torch.as_tensor(packed['x'][chosen]), torch.as_tensor(valid)).numpy()
-            prediction[indices[valid]] = values[valid] * rating_mw
+            output = valid if 'output' not in packed else valid & packed['output'][chosen]
+            prediction[indices[output]] = values[output] * rating_mw
     return prediction
 
 
