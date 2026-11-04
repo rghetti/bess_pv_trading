@@ -1,0 +1,72 @@
+# Four-cycle neural HPO; --check-only prepares no trained models or output.
+include: ../standard.yaml
+
+pv_reviewed_hpo:
+  data_regime: four_cycle_forecast_ghi
+  farm_ids: [1, 345, 901, 910]
+  dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
+  output_root: outputs/pv_reviewed_hpo
+  run_id: four_cycle_neural_night3000_v1
+  report_root: docs/results/pv_reviewed_hpo/four_cycle_neural_night3000_v1
+  resume: true
+  timezone: Europe/Rome
+  workers: 42
+  threads_per_worker: 1
+  # Conservative launch guard; workers, optimizer state and shared workloads add memory beyond a single-model probe.
+  minimum_available_memory_gib: 64
+  seed: 418721
+  trials_per_family_per_feature: 64
+  features: [core, extended]
+  cycle_hours_utc: [0, 6, 12, 18]
+  issue_horizon_hours: 48
+  night_training_samples_per_farm: 3000
+  missing_night_ghi: zero_at_night
+  nighttime_exclusions: keep_curated
+  training_ghi_source: historical
+  validation_ghi_source: forecast
+  testing_ghi_source: forecast
+  use_synthetic_labels: true
+  output_clip: [0.0, 1.0]
+  score: validation_day_balanced_normalized_rmse
+  include_missing_indicators: false
+  refit_replay_tolerance_nrmse_percent: 0.0001
+  standardization_floor: 1.0e-6
+  input_clip_standard_deviations: 12.0
+  core_weather: [ghi_w_m2, nwp_bhi_w_m2, temperature_c, wind_u_10m, wind_v_10m]
+  extended_weather:
+    - dew_point_c
+    - cloud_total_pct
+    - cloud_low_pct
+    - cloud_mid_pct
+    - cloud_high_pct
+    - precipitation_mm
+    - snow_water_equivalent_m
+    - visibility_km
+    - wind_u_100m
+    - wind_v_100m
+  calendar_features: [hour_sin, hour_cos, annual_sin, annual_cos, month_sin, month_cos]
+  statistical_families: {}
+  neural_families: [mlp, tcn, bigru, bilstm, transformer]
+  neural_space:
+    width: {kind: choice, values: [128, 256, 512]}
+    depth: {kind: choice, values: [2, 3, 4]}
+    kernel_size: {kind: choice, values: [3, 5, 7, 9]}
+    dropout: {kind: choice, values: [0.0, 0.05, 0.1, 0.2]}
+    learning_rate: {kind: log_uniform, low: 0.0001, high: 0.003}
+    weight_decay: {kind: log_uniform, low: 1.0e-7, high: 0.01}
+    batch_size: {kind: choice, values: [2, 4, 8]}
+    loss: {kind: choice, values: [mse, huber]}
+    heads: {kind: choice, values: [4, 8]}
+  neural_training:
+    max_epochs: 150
+    patience: 15
+    minimum_improvement: 1.0e-7
+    huber_delta: 0.05
+    gradient_clip_norm: 1.0
+  validation:
+    block_bootstrap_days: 7
+    bootstrap_repetitions: 1000
+    report_by_target_source: true
+    report_by_month: true
+    report_interpolated_ghi_separately: true
+    plot_days_per_split: 3

@@ -192,7 +192,7 @@ def test_trial_records_only_validation_and_refit_replays_selected_model(tmp_path
         'split': ['train'] * 4 + ['validation'] * 4 + ['test'] * 4,
         'model_target_mw': [.1, .2, .3, .4] * 3,
         'synthetic_target': [False, False, False, False, False, True, False, True] + [False] * 4,
-        'evaluation_window': [True] * 12,
+        'evaluation_window': [True] * 12, 'night': [False] * 12,
         'interval_start_utc': [*pd.date_range('2025-01-01T10:00Z', periods=4, freq='15min'),
             *pd.date_range('2026-01-01T10:00Z', periods=4, freq='15min'),
             *pd.date_range('2026-05-01T10:00Z', periods=4, freq='15min')],

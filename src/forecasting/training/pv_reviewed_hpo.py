@@ -48,6 +48,17 @@ def _dependencies():
     return versions
 
 
+def _available_memory_gib():
+    """Read Linux available memory without treating cache as unavailable."""
+    path = Path('/proc/meminfo')
+    if not path.exists():
+        return None
+    for line in path.read_text().splitlines():
+        if line.startswith('MemAvailable:'):
+            return int(line.split()[1]) / (1024 * 1024)
+    return None
+
+
 def validate_configuration(config):
     """Reject incomplete or incompatible search settings before touching output paths."""
     section = config['pv_reviewed_hpo']
@@ -55,11 +66,24 @@ def validate_configuration(config):
         raise ValueError('This search is configured for all four reviewed farms')
     if section['features'] != ['core', 'extended']:
         raise ValueError('Both core and extended feature versions are required')
-    if int(section['workers']) != 30 or int(section['threads_per_worker']) != 1:
-        raise ValueError('This run requires 30 workers with one CPU thread each')
+    regime = section.get('data_regime', 'historical_ghi')
+    if regime not in {'historical_ghi', 'four_cycle_forecast_ghi'}:
+        raise ValueError(f'Unsupported reviewed HPO data regime: {regime}')
+    expected_workers = 42 if regime == 'four_cycle_forecast_ghi' else 30
+    if int(section['workers']) != expected_workers or int(section['threads_per_worker']) != 1:
+        raise ValueError(f'This run requires {expected_workers} workers with one CPU thread each')
+    if regime == 'four_cycle_forecast_ghi' and (section['statistical_families'] or
+            section['cycle_hours_utc'] != [0, 6, 12, 18] or section['issue_horizon_hours'] != 48):
+        raise ValueError('The four-cycle study requires neural models and all four 48-hour cycles')
+    if regime == 'four_cycle_forecast_ghi' and (
+            section['training_ghi_source'] != 'historical'
+            or section['validation_ghi_source'] != 'forecast'
+            or section['testing_ghi_source'] != 'forecast'
+            or section['include_missing_indicators']):
+        raise ValueError('Four-cycle study requires historical training GHI, forecast scoring GHI and no missing flags')
     available = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else os.cpu_count()
     if available is not None and available < int(section['workers']):
-        raise ValueError(f'Only {available} CPUs are available for the requested 30 workers')
+        raise ValueError(f'Only {available} CPUs are available for the requested {expected_workers} workers')
     if int(section['trials_per_family_per_feature']) < 1:
         raise ValueError('Every model family needs at least one hyperparameter configuration')
     if section['nighttime_exclusions'] != 'keep_curated' or section['missing_night_ghi'] != 'zero_at_night':
@@ -83,10 +107,29 @@ def check_only(config, progress=print):
     prepared = {}
     for farm_id in section['farm_ids']:
         if progress:
-            progress(f'Checking farm {farm_id}: reviewed masks, D-1 forecast features and hashes')
-        prepared[farm_id] = prepare_farm(config, farm_id)
+            cycle_description = ('four forecast cycles' if section.get('data_regime') == 'four_cycle_forecast_ghi'
+                                 else 'D-1 forecast')
+            progress(f'Checking farm {farm_id}: reviewed masks, {cycle_description} features and hashes')
+        if section.get('data_regime') == 'four_cycle_forecast_ghi':
+            from ..data.pv_four_cycle_hpo_data import prepare_four_cycle_farm
+            prepared[farm_id] = prepare_four_cycle_farm(config, farm_id)
+        else:
+            prepared[farm_id] = prepare_farm(config, farm_id)
         # These are deterministic train-only feature statistics, not supervised model fits.
-        fit_transforms(prepared[farm_id], config)
+        preprocessors, matrices = fit_transforms(prepared[farm_id], config)
+        if section.get('data_regime') == 'four_cycle_forecast_ghi':
+            from ..data.pv_four_cycle_hpo_data import build_cycle_sequences
+            item = prepared[farm_id]
+            masks = {'train': item.training_mask, 'validation': item.validation_mask, 'test': item.test_mask}
+            from ..data.pv_neural_data import transform_features
+            forecast_features = item.features['extended'].copy()
+            forecast_features['ghi_w_m2'] = item.frame.ghi_forecast_w_m2.to_numpy()
+            forecast_matrix = transform_features(forecast_features, preprocessors['extended'])
+            packed = build_cycle_sequences(item.frame, matrices['extended'], masks, item.rating_mw,
+                int(section['issue_horizon_hours']) * 4, forecast_features=forecast_matrix)
+            item.provenance['sequence_counts'] = {
+                split: int((packed['split'] == split).sum()) for split in ('train', 'validation', 'test')}
+            item.provenance['sequence_length'] = int(packed['indices'].shape[1])
     families = list(section['statistical_families']) + list(section['neural_families'])
     expected = (len(section['farm_ids']) * len(section['features']) * len(families)
                 * int(section['trials_per_family_per_feature']))
@@ -96,6 +139,7 @@ def check_only(config, progress=print):
         Path(__file__).parents[1] / 'models' / 'pv_reviewed_hpo_models.py',
         Path(__file__).parents[1] / 'models' / 'pv_neural_models.py',
         Path(__file__).parents[1] / 'data' / 'pv_reviewed_hpo_data.py',
+        Path(__file__).parents[1] / 'data' / 'pv_four_cycle_hpo_data.py',
         Path(__file__).parents[1] / 'data' / 'pv_neural_data.py',
         Path(__file__).parents[1] / 'data' / 'pv_curated_review.py',
         Path(__file__).parents[1] / 'inference' / 'pv_reviewed_hpo.py']
@@ -108,14 +152,19 @@ def check_only(config, progress=print):
     report = {'status': 'checked_no_training', 'training_started': False,
         'identity': identity_digest(contract), 'workers': section['workers'],
         'threads_per_worker': section['threads_per_worker'],
+        'available_memory_gib': _available_memory_gib(),
+        'minimum_available_memory_gib': section.get('minimum_available_memory_gib'),
         'statistical_families': list(section['statistical_families']),
         'neural_families': section['neural_families'], 'features': section['features'],
         'trials_per_family_per_feature_per_farm': section['trials_per_family_per_feature'],
         'hpo_fits': len(trials), 'family_winner_refits': len(families) * len(section['features']) * len(section['farm_ids']),
         'top_three_additional_refits_max': 2 * len(section['farm_ids']),
         'selection': section['score'], 'versions': versions,
-        'ghi_source': {'train': 'historical, with missing nighttime GHI set to zero',
-            'validation_and_test': 'preceding-day 00 UTC hourly forecast means repeated per quarter'},
+        'ghi_source': ({'train': 'historical measured/interpolated GHI; four forecast cycles for other weather',
+            'validation_and_test': 'forecast GHI after assumed availability'}
+            if section.get('data_regime') == 'four_cycle_forecast_ghi' else
+            {'train': 'historical, with missing nighttime GHI set to zero',
+             'validation_and_test': 'preceding-day 00 UTC hourly forecast means repeated per quarter'}),
         'availability': 'Six-hour weather release lag is a configured assumption; historical publication is unverified.',
         'limitations': 'The 2026 period was previously inspected; some scoring targets are pvlib-derived reconstructions.',
         'farms': {str(farm): {'provenance': item.provenance,
@@ -131,14 +180,25 @@ def _prepare_cache(root, item, config):
     fitted, matrices = fit_transforms(item, config)
     masks = {'train': item.training_mask, 'validation': item.validation_mask, 'test': item.test_mask}
     np.savez(directory / 'masks.npz', **masks)
-    columns = ['interval_start_utc', 'delivery_day', 'split', 'model_target_mw',
+    columns = ['interval_start_utc', 'forecast_cycle_utc', 'delivery_day', 'split', 'model_target_mw',
         'model_target_source', 'synthetic_target', 'night', 'evaluation_window', 'ghi_interpolated']
+    if 'lead_hours' in item.frame:
+        columns.append('lead_hours')
     metadata = item.frame[columns].copy()
     metadata['ghi_input_w_m2'] = item.features['core'].ghi_w_m2.to_numpy()
     metadata.to_parquet(directory / 'frame.parquet', index=False)
     for name, matrix in matrices.items():
         # Packed sequences split at retained prior exclusions but retain nighttime labels.
-        packed = build_sequences(item.frame, matrix, masks, item.rating_mw)
+        if config['pv_reviewed_hpo'].get('data_regime') == 'four_cycle_forecast_ghi':
+            from ..data.pv_four_cycle_hpo_data import build_cycle_sequences
+            from ..data.pv_neural_data import transform_features
+            forecast_features = item.features[name].copy()
+            forecast_features['ghi_w_m2'] = item.frame.ghi_forecast_w_m2.to_numpy()
+            forecast_matrix = transform_features(forecast_features, fitted[name])
+            packed = build_cycle_sequences(item.frame, matrix, masks, item.rating_mw,
+                int(config['pv_reviewed_hpo']['issue_horizon_hours']) * 4, forecast_features=forecast_matrix)
+        else:
+            packed = build_sequences(item.frame, matrix, masks, item.rating_mw)
         np.save(directory / f'x_{name}.npy', matrix, allow_pickle=False)
         np.savez(directory / f'packed_{name}.npz', **packed)
         _write_json(directory / f'preprocessor_{name}.json', fitted[name])
@@ -185,9 +245,12 @@ def _predict_candidate(model, trial, matrix, packed, frame, groups, rating):
         prediction = np.full(len(frame), np.nan)
         selected = np.asarray(groups, dtype=bool)
         prediction[selected] = np.clip(model.predict(np.asarray(matrix[selected], dtype=float)), 0, 1) * rating
+        prediction[frame.night.to_numpy(dtype=bool) & np.isfinite(prediction)] = 0.0
         return prediction
     selected_groups = np.flatnonzero(np.isin(packed['split'], groups))
-    return predict_neural(model, packed, selected_groups, int(trial['parameters']['batch_size']), len(frame), rating)
+    prediction = predict_neural(model, packed, selected_groups, int(trial['parameters']['batch_size']), len(frame), rating)
+    prediction[frame.night.to_numpy(dtype=bool) & np.isfinite(prediction)] = 0.0
+    return prediction
 
 
 def _trial_worker(job):
@@ -304,19 +367,23 @@ def _refit_worker(job):
     preprocessor = json.loads((cache / f"preprocessor_{trial['feature']}.json").read_text())
     _write_json(directory / 'preprocessor.json', preprocessor)
     checksums = {name: _sha(directory / name) for name in [model_path.name, 'prediction_mw.npy', 'preprocessor.json']}
+    four_cycle = job['config']['pv_reviewed_hpo'].get('data_regime') == 'four_cycle_forecast_ghi'
     record = {'status': 'complete', 'identity': job['identity'], 'trial': trial,
         'schema': 'reviewed_ghi_forecast_bundle_v1', 'timezone': job['config']['pv_reviewed_hpo']['timezone'],
         'rating_mw': rating, 'training': info, 'validation_replay_difference_percent': difference,
         'metrics': _score_splits(frame, prediction, masks, rating),
         'elapsed_seconds': time.perf_counter() - started,
         'warnings': [str(warning.message) for warning in caught], 'checksums': checksums,
-        'input_contract': {'ghi_training': 'historical', 'ghi_validation_test': 'D-1 00 UTC forecast',
+        'input_contract': {'ghi_training': 'historical measured/interpolated',
+            'ghi_validation_test': 'forecast, after assumed release' if four_cycle else 'D-1 00 UTC forecast',
             'hourly_radiation': 'interval mean repeated across four quarters',
-            'context': 'single frozen forecast cycle per local delivery day',
+            'context': '48-hour weather issue sequence' if four_cycle else 'single frozen forecast cycle per local delivery day',
+            **({'issue_horizon_hours': job['config']['pv_reviewed_hpo']['issue_horizon_hours']} if four_cycle else {}),
             'target': 'model_target_mw', 'pvlib_model_input': False,
             'night_training_samples_per_farm': job['config']['pv_reviewed_hpo']['night_training_samples_per_farm'],
             'evaluation': 'outside month-specific night window'},
-        'availability': 'D-1 00 UTC cycle with assumed configured release lag',
+        'availability': ('four issue cycles with assumed configured release lag' if four_cycle
+                         else 'D-1 00 UTC cycle with assumed configured release lag'),
         'limitations': 'Selected on previously inspected 2026 validation; some labels are synthetic.'}
     _write_json(result_path, record)
     return record
@@ -332,6 +399,7 @@ def _run_baselines(root, prepared, masks, rating):
     rows = []
     for name, value in [('zero', 0.0), ('training_day_balanced_mean', mean)]:
         prediction = np.full(len(prepared), np.clip(value, 0, rating))
+        prediction[prepared.night.to_numpy(dtype=bool)] = 0.0
         rows.extend([{'family': name, **record} for record in _score_splits(prepared, prediction, masks, rating)])
     return rows
 
@@ -435,12 +503,25 @@ def _plot_day(frame, prediction, selected, trial, output, timezone):
         return
     times = pd.DatetimeIndex(part.interval_start_utc).tz_convert(timezone)
     fig, (power, ghi) = plt.subplots(2, 1, figsize=(12, 6), sharex=True, layout='constrained')
-    power.plot(times, part.model_target_mw, color='black', label='Reviewed target')
-    power.plot(times, np.asarray(prediction)[selected], color='tab:blue', label='Validation-selected model')
+    prediction_day = np.asarray(prediction)[selected]
+    # Expanded cycle views can share physical timestamps; draw each issue separately.
+    if times.has_duplicates and 'forecast_cycle_utc' in part:
+        observed = part.assign(_time=times).drop_duplicates('_time').sort_values('_time')
+        power.plot(observed['_time'], observed.model_target_mw, color='black', label='Reviewed target')
+        cycles = pd.DatetimeIndex(part.forecast_cycle_utc)
+        for cycle in cycles.unique():
+            mask = cycles == cycle
+            power.plot(times[mask], prediction_day[mask], label=f'Issue {cycle:%m-%d %H UTC}', alpha=.75)
+            ghi.plot(times[mask], part.ghi_input_w_m2.to_numpy()[mask], alpha=.65)
+    else:
+        power.plot(times, part.model_target_mw, color='black', label='Reviewed target')
+        power.plot(times, prediction_day, color='tab:blue', label='Validation-selected model')
+        ghi.plot(times, part.ghi_input_w_m2, color='tab:green', label='GHI input used by model')
     synthetic = part.synthetic_target.to_numpy(dtype=bool)
     power.scatter(times[synthetic], part.loc[synthetic, 'model_target_mw'],
                   s=14, color='tab:orange', label='Synthetic/zero target')
-    ghi.plot(times, part.ghi_input_w_m2, color='tab:green', label='GHI input used by model')
+    if times.has_duplicates:
+        ghi.set_title('Forecast GHI by issue cycle')
     split = part['split'].iloc[0]
     day = part.delivery_day.iloc[0]
     power.set(title=f"Farm {trial['farm_id']}: {trial['family']} / {trial['feature']} · {day} ({split})",
@@ -448,7 +529,9 @@ def _plot_day(frame, prediction, selected, trial, output, timezone):
     ghi.set(ylabel='GHI (W/m²)', xlabel=f'Local delivery time ({timezone})')
     for axis in (power, ghi):
         axis.grid(alpha=.2)
-        axis.legend(fontsize=8)
+        handles, labels = axis.get_legend_handles_labels()
+        if handles:
+            axis.legend(fontsize=8)
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=130)
     plt.close(fig)
@@ -472,6 +555,7 @@ def publish_results(config, root, report, records, winners, selected, refits, id
     interpolation_rows = []
     baseline_rows = []
     bootstrap_rows = []
+    cycle_lead_rows = []
     top_rows = []
     top_metric_rows = []
     top_three = _top_three(records)
@@ -523,7 +607,9 @@ def publish_results(config, root, report, records, winners, selected, refits, id
                 if split == 'train':
                     base &= frame.evaluation_window.to_numpy(dtype=bool)
                 # Validation/test use forecast GHI; the historical fill flag then describes target provenance only.
-                provenance_mask = base if split == 'train' else base & frame.synthetic_target.to_numpy(dtype=bool)
+                is_four_cycle = section.get('data_regime') == 'four_cycle_forecast_ghi'
+                provenance_mask = (base if split == 'train' and not is_four_cycle
+                                   else base & frame.synthetic_target.to_numpy(dtype=bool))
                 for filled in [False, True]:
                     mask = provenance_mask & (frame.ghi_interpolated.to_numpy(dtype=bool) == filled)
                     score = score_predictions(frame, prediction, mask, rating)
@@ -531,8 +617,22 @@ def publish_results(config, root, report, records, winners, selected, refits, id
                         interpolation_rows.append({'farm_id': farm_id, 'feature': trial['feature'],
                             'family': trial['family'], 'name': trial['name'], 'split': split,
                             'historical_ghi_interpolated': filled,
-                            'interpretation': 'training_input' if split == 'train' else 'synthetic_target_provenance',
+                            'interpretation': ('training_input' if split == 'train' and not is_four_cycle
+                                               else 'synthetic_target_provenance'),
                             **score})
+                if is_four_cycle:
+                    issue_hour = pd.DatetimeIndex(frame.forecast_cycle_utc).hour.to_numpy()
+                    lead = frame.lead_hours.to_numpy(dtype=float)
+                    for hour in section['cycle_hours_utc']:
+                        for lower in range(0, int(section['issue_horizon_hours']), 6):
+                            group = base & (issue_hour == hour) & (lead >= lower) & (lead < lower + 6)
+                            for source, source_mask in source_masks(frame, group).items():
+                                score = score_predictions(frame, prediction, source_mask, rating)
+                                if score is not None:
+                                    cycle_lead_rows.append({'farm_id': farm_id, 'feature': trial['feature'],
+                                        'family': trial['family'], 'name': trial['name'], 'split': split,
+                                        'cycle_hour_utc': hour, 'lead_start_hours': lower,
+                                        'lead_end_hours': lower + 6, 'target_source': source, **score})
                 for month in sorted(frame.loc[base, 'delivery_day'].str[:7].unique()):
                     month_mask = base & frame.delivery_day.str.startswith(month).to_numpy()
                     for source, mask in source_masks(frame, month_mask).items():
@@ -570,13 +670,19 @@ def publish_results(config, root, report, records, winners, selected, refits, id
     pd.DataFrame(interpolation_rows).to_csv(report / 'ghi_interpolation_metrics.csv', index=False)
     pd.DataFrame(baseline_rows).to_csv(report / 'baseline_metrics.csv', index=False)
     pd.DataFrame(bootstrap_rows).to_csv(report / 'paired_test_bootstrap.csv', index=False)
-    lines = ['# Reviewed historical-GHI PV HPO', '',
+    if section.get('data_regime') == 'four_cycle_forecast_ghi':
+        pd.DataFrame(cycle_lead_rows).to_csv(report / 'cycle_lead_metrics.csv', index=False)
+    four_cycle = section.get('data_regime') == 'four_cycle_forecast_ghi'
+    weather_description = (
+        'Training uses historical GHI and weather from all four forecast cycles over the 48 hours from issue; the first six hours are hindsight. '
+        'Validation and testing score targets only after the assumed weather release.' if four_cycle else
+        f"Training uses historical GHI and {section['night_training_samples_per_farm']} eligible night targets per farm, evenly spread over the year. Validation and testing use the D-1 00 UTC forecast GHI.")
+    lines = ['# Reviewed PV HPO', '',
         f'Search identity: `{identity}`. HPO trials and family winners were selected on validation only.',
         'The 2026 report period was previously inspected; these are retrospective comparisons.',
         'The 2026 scoring labels include user-requested pvlib reconstructions, not independent observations.', '',
-        f"Training uses historical GHI and {section['night_training_samples_per_farm']} eligible night targets per farm, evenly spread over the year.",
-        'Validation and testing use the D-1 00 UTC',
-        'forecast GHI and the month-specific daylight scoring window. Hourly radiation means are repeated over',
+        weather_description,
+        'The month-specific daylight scoring window is used. Hourly radiation means are repeated over',
         'their four quarter-hours. The six-hour release lag is an assumption, not proof of historical availability.', '',
         'No physical PV model or physical-model prediction is a candidate or input feature.',
         'Zero and a training-only day-balanced constant are provided as statistical baselines.',
@@ -588,8 +694,8 @@ def publish_results(config, root, report, records, winners, selected, refits, id
         '[Monthly metrics](monthly_metrics.csv) · [Baselines](baseline_metrics.csv) ·',
         '[Historical-GHI interpolation diagnostics](ghi_interpolation_metrics.csv) ·',
         '[Paired test bootstrap](paired_test_bootstrap.csv)', '',
-        'The historical-GHI interpolation flag describes a model input during training; on validation/test',
-        'it describes synthetic-target provenance because the model input is forecast GHI.', '',
+        ('The historical-GHI interpolation flag describes synthetic-target provenance.' if four_cycle else
+         'The historical-GHI interpolation flag describes a training input; on validation/test it describes synthetic-target provenance.'), '',
         '| Farm | Feature set | Family | Selected trial | Validation nRMSE (% AC) |',
         '|---|---|---|---|---:|']
     for row in selected_rows:
@@ -610,12 +716,19 @@ def publish_results(config, root, report, records, winners, selected, refits, id
                      f"{test['day_balanced_nmae_percent']:.3f} | {test['day_balanced_bias_percent']:.3f} |")
     lines += ['', 'Selected-model daily plots are grouped by farm, split and local delivery date under',
               f'`{root}/plots/`. Family models, preprocessing and hashes are under each farm’s `models/` directory.']
+    if four_cycle:
+        lines += ['', '[Metrics by issue cycle and lead time](cycle_lead_metrics.csv)']
     (report / 'README.md').write_text('\n'.join(lines) + '\n')
 
 
 def run_hpo(config, progress=print):
     """Run the configured search after explicit invocation; never triggered by preflight."""
     section = validate_configuration(config)
+    minimum = section.get('minimum_available_memory_gib')
+    available = _available_memory_gib()
+    if minimum is not None and (available is None or available < float(minimum)):
+        raise RuntimeError(f"The configured {section['workers']}-worker search requires {minimum} GiB available memory; "
+                           f"currently available: {available} GiB")
     root = config_path(config, section['output_root']) / section['run_id']
     report = config_path(config, section['report_root'])
     root.mkdir(parents=True, exist_ok=True)

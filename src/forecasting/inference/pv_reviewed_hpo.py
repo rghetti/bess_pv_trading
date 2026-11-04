@@ -57,6 +57,9 @@ def inference_features(frame, preprocessor, timezone):
     calendar = calendar_features(starts, timezone)
     for name in calendar:
         columns[name] = calendar[name]
+    columns['forecast_lead_hours'] = (starts + pd.Timedelta(minutes=7.5) - vintages) / pd.Timedelta(hours=1)
+    columns['cycle_hour_sin'] = np.sin(2 * np.pi * vintages.hour / 24)
+    columns['cycle_hour_cos'] = np.cos(2 * np.pi * vintages.hour / 24)
     names = preprocessor['columns']
     missing_features = set(names) - set(columns.columns)
     if missing_features:
@@ -105,6 +108,15 @@ def predict_reviewed_hpo(frame, bundle_directory, *, farm_id, night_policy):
         scaffold['retained_prior_exclusion'] = False
         scaffold['model_target_mw'] = np.nan
         scaffold['split'] = 'prediction'
+        horizon = record.get('input_contract', {}).get('issue_horizon_hours')
+        if horizon is not None:
+            # Four-cycle networks learned contiguous issue windows, which can cross local midnight.
+            starts = _utc_column(scaffold, 'interval_start_utc')
+            cycles = _utc_column(scaffold, 'forecast_cycle_utc')
+            elapsed = (starts - cycles) / pd.Timedelta(hours=1)
+            if np.any((elapsed < 0) | (elapsed >= float(horizon))):
+                raise ValueError('Forecast interval falls outside the trained issue horizon')
+            scaffold['delivery_day'] = cycles.astype(str)
         empty = np.zeros(len(scaffold), dtype=bool)
         packed = build_sequences(scaffold, matrix,
             {'train': empty, 'validation': empty, 'test': empty}, rating)
