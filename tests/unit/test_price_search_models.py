@@ -24,6 +24,21 @@ def test_candidate_fits_and_returns_finite_predictions(family, options):
     assert np.isfinite(model.predict(features[50:])).all()
 
 
+@pytest.mark.parametrize("family,options", [
+    ("interaction_ridge", {"lag_count": 1, "alpha": 1}),
+    ("interaction_lasso", {"lag_count": 1, "alpha": 0.01, "max_iter": 1000}),
+    ("interaction_elastic_net", {"lag_count": 1, "alpha": 0.01, "l1_ratio": 0.5, "max_iter": 1000}),
+])
+def test_interaction_candidates_fit_with_declared_calendar_layout(family, options):
+    """Calendar-modulated lag effects remain finite and CPU-compatible."""
+    rng = np.random.default_rng(7)
+    features = rng.normal(size=(80, 9))
+    target = features[:, 0] * features[:, 1] + features[:, 8]
+    model = make_price_candidate(family, options, seed=4, threads=1)
+    model.fit(features[:60], target[:60])
+    assert np.isfinite(model.predict(features[60:])).all()
+
+
 def test_unknown_candidate_is_rejected():
     with pytest.raises(ValueError, match="Unknown price candidate"):
         make_price_candidate("unknown", {}, seed=1)

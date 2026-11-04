@@ -91,3 +91,8 @@ excluded and all candidates share the resulting validation days. This is a
 pooled model with explicit daily-curve inputs inspired by LEAR, not a literal
 per-hour LEAR replication. The price archive retains its native products and
 these features never use a price after its configured publication time.
+The same search includes regularized linear candidates with lag and exogenous
+features interacted with sine and cosine of delivery hour, allowing a signal's
+effect to vary smoothly over the daily price shape. Feature scaling is fitted
+inside each training split. This is a structured interaction basis, not an
+unrestricted per-product model.

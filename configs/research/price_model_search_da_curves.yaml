@@ -223,6 +223,53 @@ price_model_search:
       max_iter: 300
       alpha: 0.1
       early_stopping: false
+  - id: interaction_ridge_1
+    family: interaction_ridge
+    parameters:
+      lag_count: 11
+      alpha: 1.0
+  - id: interaction_ridge_20
+    family: interaction_ridge
+    parameters:
+      lag_count: 11
+      alpha: 20.0
+  - id: interaction_ridge_200
+    family: interaction_ridge
+    parameters:
+      lag_count: 11
+      alpha: 200.0
+  - id: interaction_lasso_0.01
+    family: interaction_lasso
+    parameters:
+      lag_count: 11
+      alpha: 0.01
+      max_iter: 5000
+  - id: interaction_lasso_0.1
+    family: interaction_lasso
+    parameters:
+      lag_count: 11
+      alpha: 0.1
+      max_iter: 5000
+  - id: interaction_lasso_1
+    family: interaction_lasso
+    parameters:
+      lag_count: 11
+      alpha: 1.0
+      max_iter: 5000
+  - id: interaction_elastic_0.01
+    family: interaction_elastic_net
+    parameters:
+      lag_count: 11
+      alpha: 0.01
+      l1_ratio: 0.5
+      max_iter: 5000
+  - id: interaction_elastic_0.1
+    family: interaction_elastic_net
+    parameters:
+      lag_count: 11
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
   feature_set_aliases:
     curve_price: price_only
     curve_fundamentals: fundamentals
