@@ -23,11 +23,24 @@ between best scores should not be interpreted as a general weather benefit.
 The full paired results and day-block intervals are in
 `outputs/energy_price_forecasts/nord_da_2026_regional_weather_ablation_v1/`.
 
-A matched later rolling comparison is configured using the validation-selected
-candidates and their no-weather counterparts. Its source snapshot verification
-and complete-day coverage should be checked before interpreting the result.
-Some later dates were inspected in previous work, so that evaluation is not a
-globally untouched test.
+A matched later rolling comparison followed the validation-selected candidates
+and their no-weather counterparts over 3 May–31 August 2026. All eight fits
+completed without reported failures or convergence warnings, with 107 shared
+days and 10,272 quarter-hour products. The preflight verified the original
+selection-period weather rows and source snapshots.
+
+| Model and feature arm | Later MAE €/MWh | Later WAPE |
+|---|---:|---:|
+| Selected elastic net, prior IDA prices, with regional weather | 15.189 | 10.46% |
+| Same estimator and prior IDA prices, without regional weather | 15.473 | 10.65% |
+| Elastic net without prior IDA prices, with regional weather | 15.431 | 10.62% |
+| Same estimator without prior IDA or regional weather | 15.712 | 10.82% |
+
+Ridge reference pairs also improved slightly with the weather inputs. These
+are matched model comparisons, but some later dates were inspected in previous
+work and the source weather vintage is unverified; the evaluation is not a
+globally untouched or operationally certified test. Forecasts and refit
+records are in `outputs/energy_price_forecasts/nord_da_2026_regional_weather_selected_rolling_v1/`.
 
 The corresponding IDA validation completed 36 fits without reported failures
 or convergence warnings. Adding regional weather improved 5 of 6 IDA1 models,
