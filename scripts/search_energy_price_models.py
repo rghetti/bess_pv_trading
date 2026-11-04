@@ -17,7 +17,8 @@ import numpy as np
 import pandas as pd
 
 from bess_pv_trading.config import load_config
-from bess_pv_trading.forecasting.energy_prices import PriceForecastSettings, load_price_history, prepare_exogenous_features
+from bess_pv_trading.forecasting.energy_prices import (PreparedExogenous, PriceForecastSettings, load_price_history,
+                                                       prepare_exogenous_features)
 from bess_pv_trading.forecasting.price_search import (complete_shared_days, point_metrics,
                                                       prepare_search_matrix, project_search_matrix)
 from bess_pv_trading.forecasting.price_search_models import make_price_candidate
@@ -239,7 +240,12 @@ def run_search(config, *, check_only=False):
                     additions.append(_neighbor_price_feature(prior_values, neighbor_name, offset))
                     expanded_names.append(neighbor_name)
                 prior_lineage[market] = prior_evidence
-            group_exogenous = prepare_exogenous_features(pd.concat([base_exogenous, *additions], ignore_index=True))
+            earlier_features = prepare_exogenous_features(pd.concat(additions, ignore_index=True))
+            if set(exogenous.groups) & set(earlier_features.groups):
+                raise ValueError("Earlier-auction feature names collide with catalog features")
+            # Reuse the validated large catalog index and build only the small
+            # market-specific additions rather than repeatedly copying it.
+            group_exogenous = PreparedExogenous({**exogenous.groups, **earlier_features.groups})
             lineage[group] = {**evidence, "earlier_auction_features": prior_lineage,
                               "market_neighbor_offsets_minutes": offsets}
             extra_names = expanded_names

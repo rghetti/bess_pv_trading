@@ -185,6 +185,23 @@ def test_cleared_auction_feature_respects_publication_clock():
     assert values[1] == 75.0
 
 
+def test_combined_prepared_feature_indexes_preserve_asof_values():
+    """Reusing the base index and adding an auction index gives the same join."""
+    from bess_pv_trading.forecasting.energy_prices import PreparedExogenous, _exogenous_values, prepare_exogenous_features
+
+    starts = pd.to_datetime(["2026-02-02T00:00Z", "2026-02-02T00:15Z"])
+    available = pd.Timestamp("2026-02-01T12:00Z")
+    base = pd.DataFrame({"product_start": starts, "available_at": available, "feature": "load", "value": [1, 2]})
+    auction = pd.DataFrame({"product_start": starts, "available_at": available, "feature": "da", "value": [3, 4]})
+    first = prepare_exogenous_features(base)
+    second = prepare_exogenous_features(auction)
+    merged = PreparedExogenous({**first.groups, **second.groups})
+    full = prepare_exogenous_features(pd.concat([base, auction], ignore_index=True))
+    cutoff = pd.DatetimeIndex([available, available])
+    np.testing.assert_array_equal(_exogenous_values(merged, ["load", "da"], starts, cutoff),
+                                  _exogenous_values(full, ["load", "da"], starts, cutoff))
+
+
 def test_auction_neighbors_keep_original_publication_and_correct_offset():
     """A prior-hour value joins the target hour but keeps its original release."""
     from scripts.search_energy_price_models import _neighbor_price_feature
