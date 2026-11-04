@@ -205,7 +205,7 @@ def _validation_selection(study, root):
             raise ValueError("Holdout model cutoff precedes the end of candidate selection")
         if split["native_minutes"] != previous["native_minutes"] or split.get("target", "DA") != previous.get("target", "DA"):
             raise ValueError("Holdout and validation must use the same target and native resolution")
-        for name in ("market_price_features", "market_neighbor_offsets_minutes", "lag_hours"):
+        for name in ("market_price_features", "market_neighbor_offsets_minutes", "market_neighbor_boundary", "lag_hours"):
             if split.get(name) != previous.get(name):
                 raise ValueError(f"Holdout {name} differs from validation search")
         rows = [row for row in manifest["results"] if row["group"] == group]
@@ -302,10 +302,23 @@ def _eligible_auction_features(target, markets):
     return [f"cleared_{market.lower()}" for market in markets]
 
 
-def _neighbor_price_feature(prior_values, name, offset):
+def _neighbor_price_feature(prior_values, name, offset, *, boundary="unbounded", timezone="Europe/Rome"):
     """Join a nearby delivery product at the target while preserving its release time."""
+    if boundary not in {"unbounded", "same_product"}:
+        raise ValueError("Unknown neighboring-auction delivery-day boundary policy")
     neighbor = prior_values.copy()
     neighbor["product_start"] -= pd.Timedelta(minutes=offset)
+    if boundary == "same_product":
+        # Keep only shifted products from the same local delivery day. At its
+        # edges, use the already-cleared same product with its original clock.
+        source_days = pd.DatetimeIndex(prior_values.product_start).tz_convert(timezone).date
+        target_days = pd.DatetimeIndex(neighbor.product_start).tz_convert(timezone).date
+        neighbor = neighbor.loc[source_days == target_days]
+        target_times = pd.DatetimeIndex(prior_values.product_start)
+        target_days = target_times.tz_convert(timezone).date
+        requested_days = (target_times + pd.Timedelta(minutes=offset)).tz_convert(timezone).date
+        edge = prior_values.loc[target_days != requested_days]
+        neighbor = pd.concat([neighbor, edge], ignore_index=True)
     return neighbor.assign(feature=name)
 
 
@@ -371,6 +384,9 @@ def run_search(config, *, check_only=False):
             additions = []
             prior_lineage = {}
             offsets = split.get("market_neighbor_offsets_minutes", [])
+            boundary = split.get("market_neighbor_boundary", "unbounded")
+            if boundary not in {"unbounded", "same_product"}:
+                raise ValueError("Unknown neighboring-auction delivery-day boundary policy")
             if (len(offsets) != len(set(offsets)) or any(isinstance(value, bool) or not isinstance(value, int)
                     or value == 0 or value % resolution for value in offsets)):
                 raise ValueError("Auction neighbor offsets must be distinct nonzero multiples of the product resolution")
@@ -391,7 +407,8 @@ def run_search(config, *, check_only=False):
                 # Keep the source publication clock when moving its join key.
                 for offset in offsets:
                     neighbor_name = f"{name}_neighbor_{'m' if offset < 0 else 'p'}{abs(offset)}"
-                    additions.append(_neighbor_price_feature(prior_values, neighbor_name, offset))
+                    additions.append(_neighbor_price_feature(prior_values, neighbor_name, offset,
+                                                             boundary=boundary, timezone=study["timezone"]))
                     expanded_names.append(neighbor_name)
                 prior_lineage[market] = prior_evidence
             earlier_features = prepare_exogenous_features(pd.concat(additions, ignore_index=True))
@@ -401,7 +418,7 @@ def run_search(config, *, check_only=False):
             # market-specific additions rather than repeatedly copying it.
             group_exogenous = PreparedExogenous({**exogenous.groups, **earlier_features.groups})
             lineage[group] = {**evidence, "earlier_auction_features": prior_lineage,
-                              "market_neighbor_offsets_minutes": offsets}
+                              "market_neighbor_offsets_minutes": offsets, "market_neighbor_boundary": boundary}
             extra_names = expanded_names
         datasets = {}
         residual_indices = {}

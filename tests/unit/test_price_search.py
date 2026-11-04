@@ -359,6 +359,23 @@ def test_auction_neighbors_keep_original_publication_and_correct_offset():
     assert source.product_start.iloc[0] == pd.Timestamp("2026-02-02T11:00Z")
 
 
+def test_forward_auction_neighbor_stays_within_delivery_day():
+    """Use the same cleared product at midnight without borrowing tomorrow's auction."""
+    from scripts.search_energy_price_models import _neighbor_price_feature
+
+    source = pd.DataFrame({"product_start": pd.to_datetime(["2026-02-02T22:30Z", "2026-02-02T22:45Z",
+                                                               "2026-02-02T23:00Z"]),
+                           "available_at": pd.to_datetime(["2026-02-01T12:00Z", "2026-02-01T12:00Z",
+                                                             "2026-02-02T12:00Z"]),
+                           "value": [10.0, 20.0, 30.0]})
+    result = _neighbor_price_feature(source, "forward", 15, boundary="same_product", timezone="Europe/Rome")
+    result = result.set_index("product_start").sort_index()
+    assert result.loc[pd.Timestamp("2026-02-02T22:30Z"), "value"] == 20.0
+    assert result.loc[pd.Timestamp("2026-02-02T22:45Z"), "value"] == 20.0
+    assert result.loc[pd.Timestamp("2026-02-02T22:45Z"), "available_at"] == pd.Timestamp("2026-02-01T12:00Z")
+    assert not result.index.has_duplicates
+
+
 def test_cleared_search_includes_same_and_neighboring_historical_products():
     """Retain the same-product lag as the reference and add nearby hours."""
     from pathlib import Path
