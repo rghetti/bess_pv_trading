@@ -148,6 +148,38 @@ def test_matched_neural_and_pvlib_cases_differ_only_by_forecast_model_and_run_id
         assert neural == pvlib
 
 
+@pytest.mark.parametrize("filename,windows,case_count", [
+    ("annual_2026_deterministic_matched.yaml", [("2026-01-01", "2026-12-31")], 8),
+    ("jan_aug_2026_ensemble_matched.yaml", [("2026-01-01", "2026-01-31"),
+                                            ("2026-08-01", "2026-08-31")], 12),
+])
+def test_long_studies_keep_full_windows_continuous_and_matched(filename, windows, case_count):
+    """Long cases remain chronological and match forecast pairs within each window."""
+    from copy import deepcopy
+
+    path = ROOT / "configs/research" / filename
+    definition, _, jobs = study.expand_research_jobs(path, farms=[1])
+    assert [(item["start_date"], item["end_date"]) for item in definition["windows"]] == windows
+    assert len(definition["cases"]) == case_count
+    assert all(job["config"]["realtime_mpc_comparison"]["mode"] == "continuous" for job in jobs)
+    assert all(job["config"]["realtime_mpc_comparison"]["frozen_source"] is None for job in jobs)
+    by_key = {(job["window_id"], job["case_id"]): job for job in jobs}
+    for case in definition["cases"]:
+        if case["id"].startswith("pvlib_"):
+            continue
+        for window in definition["windows"]:
+            neural = deepcopy(by_key[window["id"], case["id"]]["config"])
+            pvlib = deepcopy(by_key[window["id"], case["baseline_case"]]["config"])
+            assert neural["pv"]["forecast_replacement"]["enabled"]
+            assert not pvlib["pv"]["forecast_replacement"]["enabled"]
+            assert neural["continuous_optimization"]["pv_ensemble"]["cycle_updates"] == "latest_available"
+            neural["pv"]["forecast_replacement"]["enabled"] = False
+            neural["_pv_shared_settings"]["forecast_replacement"]["enabled"] = False
+            neural["continuous_optimization"].pop("run_id")
+            pvlib["continuous_optimization"].pop("run_id")
+            assert neural == pvlib
+
+
 def test_requirement_inventory_checks_calibrated_shuffle_and_all_ensemble_sources(tmp_path):
     """These paths are required even when ECC is followed by a dependence ablation."""
     _, _, jobs = study.expand_research_jobs(CONFIG, case_ids=["calibrated_shuffled"],

@@ -32,8 +32,10 @@ The [deterministic comparison](../../outputs/energy_research/reviewed_january_ma
 [ensemble comparison](../../outputs/energy_research/reviewed_january_matrix_v1/comparisons/ensemble_penalty/research_comparison.md)
 and [adaptive comparison](../../outputs/energy_research/reviewed_january_matrix_v1/comparisons/adaptive_raw/research_comparison.md)
 contain per-farm and daily results. Two days do not support a statistical
-generalization. The final all-job audit was running when this overview was
-created; its status must be checked separately.
+generalization. The [independent all-job audit](../../outputs/energy_research/reviewed_january_matrix_audit.md)
+found no physical, accounting or artifact violations. Some oracle economic
+refinements were rejected on numerical validation; validated stage-one plans
+were retained. The audit distinguishes those from grid-tracking fallbacks.
 
 Examples of the generated plots are the [ensemble paired daily profit](../../outputs/energy_research/reviewed_january_matrix_v1/comparisons/ensemble_penalty/plots/paired_daily_realized_operating_profit_eur.png),
 [ensemble paired daily imbalance](../../outputs/energy_research/reviewed_january_matrix_v1/comparisons/ensemble_penalty/plots/paired_daily_absolute_imbalance_mwh.png),
