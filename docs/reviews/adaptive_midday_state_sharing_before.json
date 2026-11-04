@@ -1,0 +1,57 @@
+{
+  "batch": "/tmp/bess_research_reviewed_v1/outputs/energy_research/reviewed_farm910_august_v1",
+  "job_id": "august_development__farm_910__adaptive_ecc",
+  "controller": "ensemble_mpc_adaptive",
+  "decision_index": 48,
+  "cutoff": "2026-08-02 10:00:00+00:00",
+  "scenarios": 51,
+  "intervals": 48,
+  "results": [
+    {
+      "build_seconds": 1.189792487770319,
+      "solve_seconds": 0.2961618900299072,
+      "variables": 18422,
+      "binary_variables": 2132,
+      "constraints": 12577,
+      "status_code": 2,
+      "objective_eur": 181.65205832470875,
+      "bound_eur": 181.65205832470087,
+      "first_action": [
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "build_seconds": 1.154146303422749,
+      "solve_seconds": 0.31803393363952637,
+      "variables": 18422,
+      "binary_variables": 2132,
+      "constraints": 12577,
+      "status_code": 2,
+      "objective_eur": 181.65205832470875,
+      "bound_eur": 181.65205832470087,
+      "first_action": [
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "build_seconds": 1.0264523131772876,
+      "solve_seconds": 0.3328359127044678,
+      "variables": 18422,
+      "binary_variables": 2132,
+      "constraints": 12577,
+      "status_code": 2,
+      "objective_eur": 181.65205832470875,
+      "bound_eur": 181.65205832470087,
+      "first_action": [
+        0.0,
+        0.0,
+        1.0
+      ]
+    }
+  ],
+  "scope": "recorded retrospective forecast horizon; one solver thread, no replay"
+}

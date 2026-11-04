@@ -20,12 +20,15 @@ from bess_pv_trading.optimization.degradation import degradation_settings_from_c
 from bess_pv_trading.optimization.mpc import ForecastPrices, MpcInput, MpcSettings
 
 
-def recorded_horizon(batch, job_id, controller):
-    """Recover only previously saved, forecast-only inputs and submitted positions."""
+def recorded_horizon(batch, job_id, controller, decision_index=0):
+    """Recover one previously saved forecast horizon and submitted positions."""
     config = json.loads((batch / f"config__{job_id}.json").read_text())
     farm = int(config["farm_id"])
     directory = batch / "runs" / f"farm_{farm}" / job_id / "continuous/controllers" / controller
-    first = json.loads((directory / "json/mpc_solves.json").read_text())[0]
+    solves = json.loads((directory / "json/mpc_solves.json").read_text())
+    if isinstance(decision_index, bool) or not 0 <= decision_index < len(solves):
+        raise ValueError("decision_index must identify a recorded MPC solve")
+    first = solves[decision_index]
     cutoff = pd.Timestamp(first["cutoff_utc"])
     starts = pd.date_range(cutoff, periods=first["horizon_intervals"], freq="15min")
     day = cutoff.tz_convert(config["market"]["timezone"]).date().isoformat()
@@ -70,11 +73,12 @@ def main():
     parser.add_argument("controller")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--repeat", type=int, default=3)
+    parser.add_argument("--decision-index", type=int, default=0)
     parser.add_argument("--time-limit", type=float, default=10.0)
     args = parser.parse_args()
     if args.repeat < 1 or args.time_limit <= 0:
         parser.error("repeat and time-limit must be positive")
-    inputs = recorded_horizon(args.batch, args.job_id, args.controller)
+    inputs = recorded_horizon(args.batch, args.job_id, args.controller, args.decision_index)
     results = []
     for _ in range(args.repeat):
         started = perf_counter()
@@ -103,6 +107,7 @@ def main():
         finally:
             model.dispose()
     payload = {"batch": str(args.batch), "job_id": args.job_id, "controller": args.controller,
+        "decision_index": args.decision_index,
         "cutoff": str(inputs.cutoff), "scenarios": len(inputs.scenario_ids),
         "intervals": len(inputs.grid.interval_ids), "results": results,
         "scope": "recorded retrospective forecast horizon; one solver thread, no replay"}
