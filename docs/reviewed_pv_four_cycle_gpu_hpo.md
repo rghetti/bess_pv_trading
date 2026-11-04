@@ -1,5 +1,33 @@
 # Four-cycle reviewed PV search on one GPU
 
+## Separate three-GPU search
+
+`configs/pv_experiments/reviewed_four_cycle_neural_hpo_multi_gpu.yaml` uses
+two fit workers on each of physical GPUs 0, 1 and 2, for six workers total.
+Select those physical GPUs in the configured order with `CUDA_VISIBLE_DEVICES`.
+Each spawned worker sees only its assigned physical GPU. Every trial records
+the device name and UUID, and each validation-selected refit runs on the same
+physical GPU as its trial. `trial_gpu_provenance.csv` accompanies the results.
+
+The initial guards require at least 4 GiB free per GPU and 16 GiB available
+host memory. Other processes can use the shared GPUs after the checks. If a
+trial encounters CUDA out of memory, it is retried alone on its assigned GPU
+and that GPU's concurrency is reduced. If it still cannot fit alone, the run
+stops with completed trial records available for resume. Resume requires the
+same run identity, device UUIDs, code, data, configuration and dependencies.
+
+```bash
+cd /home/rghetti/bess_pv_trading
+CUDA_VISIBLE_DEVICES=0,1,2 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python scripts/train_reviewed_pv_multi_gpu_hpo.py --config configs/pv_experiments/reviewed_four_cycle_neural_hpo_multi_gpu.yaml --check-only
+CUDA_VISIBLE_DEVICES=0,1,2 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python scripts/train_reviewed_pv_multi_gpu_hpo.py --config configs/pv_experiments/reviewed_four_cycle_neural_hpo_multi_gpu.yaml --run
+```
+
+This is a new 2,560-trial search and does not import the earlier GPU 0 trial
+records. It preserves the 16/32/48 batch-size grid, curated data, training and
+validation GHI rules, 48-hour horizons, splits and selection. Before starting,
+check that any older search you no longer want to run has stopped. The shared
+GPUs 1 and 2 had other processes when inspected, so capacity may change.
+
 ## Parallel search with batches 16, 32 and 48
 
 `configs/pv_experiments/reviewed_four_cycle_neural_hpo_gpu_parallel.yaml`
