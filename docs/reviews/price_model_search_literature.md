@@ -136,6 +136,14 @@ additional historical regime without treating 2024 hourly IDA exports as
 quarter-hour training labels. It is still retrospective and uses the stated
 publication-clock assumptions.
 
+`configs/research/price_model_search_ida_2025_terna_load.yaml` adds the prior
+day's observed NORD total load from Terna's 15-minute reference-time records to
+a matched 2025 IDA comparison. The source uses a configured 24-hour shift and
+a deliberately retrospective source-day publication placeholder. The recorded
+load is a separate zonal-system feature, not local farm demand. Its current
+catalog coverage ends in October 2025, so this ablation is restricted to the
+2025 validation window and does not fabricate 2026 values.
+
 `configs/research/price_model_search_da_curves.yaml` adds the full 24-hour
 shape of the same market's previous 1, 2 and 7 local delivery days. Within a
 native quarter-hour task, each hourly input is the average of its four native

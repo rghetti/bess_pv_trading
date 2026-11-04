@@ -148,10 +148,13 @@ def load_catalog_features(database, selections, *, start, end, timezone="Europe/
             weather = spec.get("kind", "interval") == "weather"
             gas = spec.get("kind", "interval") == "daily_gas"
             state = spec.get("kind", "interval") == "released_state"
+            reference_interval = spec.get("kind", "interval") == "reference_interval"
             if weather:
                 requested.update({"cycle_time", "valid_time", "temporal_semantics", "source_kind"})
             if gas:
                 requested.add("gas_delivery_day")
+            if reference_interval:
+                requested.add("reference_time")
             if spec.get("availability_column"):
                 requested.add(spec["availability_column"])
             if not requested.issubset(columns):
@@ -164,7 +167,8 @@ def load_catalog_features(database, selections, *, start, end, timezone="Europe/
                 raise ValueError("Released state requires a positive finite source_lookback_hours")
             if state and shift != pd.Timedelta(0):
                 raise ValueError("Released state cannot also use target_shift_hours")
-            reference = "valid_time" if weather else "TRY_CAST(gas_delivery_day AS TIMESTAMPTZ)" if gas else "product_start"
+            reference = ("valid_time" if weather else "TRY_CAST(gas_delivery_day AS TIMESTAMPTZ)" if gas
+                         else "reference_time" if reference_interval else "product_start")
             conditions = ["provider=?", "dataset=?", "zone=?", f"{reference}>=?", f"{reference}<?"]
             parameters = [spec["provider"], spec["dataset"], spec["zone"],
                           start - shift - pd.Timedelta(hours=lookback if state else 1 if weather else 0),
@@ -208,6 +212,12 @@ def load_catalog_features(database, selections, *, start, end, timezone="Europe/
                 days = [pd.Timestamp(value).date() for value in frame.gas_delivery_day]
                 frame["product_start"] = pd.DatetimeIndex([pd.Timestamp(day, tz=timezone) for day in days]).tz_convert("UTC")
                 frame["product_end"] = pd.DatetimeIndex([pd.Timestamp(day + timedelta(days=1), tz=timezone) for day in days]).tz_convert("UTC")
+            if reference_interval:
+                native = spec.get("native_interval_minutes")
+                if isinstance(native, bool) or not isinstance(native, int) or native < 1:
+                    raise ValueError("Reference interval requires positive integer native_interval_minutes")
+                frame["product_start"] = pd.to_datetime(frame.reference_time, utc=True)
+                frame["product_end"] = frame.product_start + pd.Timedelta(minutes=native)
             # Unknown release clocks and optional hindcast exclusions remain documented gaps.
             hindcasts = (frame.source_kind.fillna("").str.contains("hindcast", case=False)
                          if weather else pd.Series(False, index=frame.index))

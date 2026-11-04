@@ -387,3 +387,16 @@ def test_french_balance_ablations_use_prior_day_and_matched_training(filename):
     assert {item["json_component"]["key"] for item in study["supplemental_features"]} == {
         "consommation", "eolien", "solaire", "ech_comm_suisse"}
     assert all(item["target_shift_hours"] == 24 for item in study["supplemental_features"])
+
+
+def test_terna_load_study_is_lagged_matched_and_restricted_to_covered_2025():
+    """Zonal historical load is not treated as same-day or 2026 coverage."""
+    from pathlib import Path
+    from bess_pv_trading.config import load_config
+
+    root = Path(__file__).resolve().parents[2]
+    study = load_config(root / "configs/research/price_model_search_ida_2025_terna_load.yaml")["price_model_search"]
+    item = study["supplemental_features"][0]
+    assert study["common_training_rows"] is True
+    assert (item["dataset"], item["kind"], item["target_shift_hours"]) == ("total_load", "reference_interval", 24)
+    assert all(group["validation_end"] == "2025-09-01" for group in study["product_groups"].values())

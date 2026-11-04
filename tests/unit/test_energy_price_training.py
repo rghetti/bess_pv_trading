@@ -125,6 +125,23 @@ def test_rte_component_feature_preserves_source_missingness_and_lag(tmp_path):
     assert evidence["features"][0]["missing_value_rows"] == 2
 
 
+def test_reference_time_interval_supports_previous_day_terna_load(tmp_path):
+    """Terna records with a reference time retain native intervals and the stated lag."""
+    path = tmp_path / "market.duckdb"
+    frame = pd.DataFrame({"product_start": pd.to_datetime([None], utc=True),
+        "product_end": pd.to_datetime([None], utc=True),
+        "reference_time": pd.to_datetime(["2025-08-01T00:00Z"]), "unit": "MW", "value": [12000.]})
+    write_snapshot(path, frame, "terna", "total_load")
+    selection = [{"name": "load_yesterday", "provider": "terna", "dataset": "total_load", "zone": "NORD",
+        "kind": "reference_interval", "native_interval_minutes": 15, "expected_unit": "MW",
+        "target_shift_hours": 24, "publication_lag_hours": 1}]
+    values, evidence = load_catalog_features(path, selection, start="2025-08-02T00:00Z", end="2025-08-02T00:15Z")
+    assert values.value.tolist() == [12000.]
+    assert values.product_start.iloc[0] == pd.Timestamp("2025-08-02T00:00Z")
+    assert values.available_at.iloc[0] == pd.Timestamp("2025-08-01T01:15Z")
+    assert evidence["features"][0]["source_rows"] == 1
+
+
 def test_released_state_retains_prior_vintage_until_decision_and_limits_age(tmp_path):
     """A newer weekly value must not displace the value known at an earlier cutoff."""
     from bess_pv_trading.forecasting.energy_prices import _exogenous_values, prepare_exogenous_features
