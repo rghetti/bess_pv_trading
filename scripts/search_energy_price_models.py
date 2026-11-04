@@ -197,6 +197,8 @@ def _validation_selection(study, root):
         raise ValueError("Selection requires a complete, failure-free validation search")
     if not isinstance(selection["top_n"], int) or isinstance(selection["top_n"], bool) or selection["top_n"] < 1:
         raise ValueError("Selection top_n must be a positive integer")
+    if not isinstance(selection.get("matched_window_baselines", False), bool):
+        raise ValueError("matched_window_baselines must be a boolean")
     source_study = manifest["config"]
     for name in ("lag_hours", "feature_sets", "seed", "timezone", "source_study"):
         if study[name] != source_study[name]:
@@ -262,9 +264,23 @@ def _validation_selection(study, root):
                 if feature in pair:
                     counterpart = pair[1] if feature == pair[0] else pair[0]
                     chosen[group].add((counterpart, candidate))
+        if selection.get("matched_window_baselines", False):
+            # Each selected recent-history candidate gets its exact full-history
+            # estimator counterpart on every selected feature set.
+            for feature, candidate in tuple(chosen[group]):
+                specification = expected_candidates[candidate]
+                if specification.get("train_window_days") is not None:
+                    matches = [entry["id"] for entry in expected_candidates.values()
+                               if entry.get("train_window_days") is None
+                               and entry["family"] == specification["family"]
+                               and entry["parameters"] == specification["parameters"]]
+                    if len(matches) != 1:
+                        raise ValueError("A selected training window requires one matching full-history candidate")
+                    chosen[group].add((feature, matches[0]))
     evidence = {"source_manifest": str(path), "source_manifest_sha256": _sha256(path),
                 "criterion": "pooled_validation_mae", "top_n": selection["top_n"],
                 "matched_feature_pairs": selection.get("matched_feature_pairs", []),
+                "matched_window_baselines": selection.get("matched_window_baselines", False),
                 "selected": {group: [list(pair) for pair in sorted(pairs)] for group, pairs in chosen.items()}}
     return chosen, evidence
 
