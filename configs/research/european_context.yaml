@@ -1,0 +1,68 @@
+# Public retrospective context; source release times are not inferred from retrieval.
+include: ../standard.yaml
+api:
+  database_threads: 1
+  http:
+    attempts: 3
+    connect_timeout: 10
+    read_timeout: 60
+    retry_delay_seconds: 1
+    minimum_request_interval_seconds: 0.25
+    terna_minimum_request_interval_seconds: null
+    max_retry_delay_seconds: 10
+country_balances:
+  database_path: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  start: '2024-01-01'
+  end_exclusive: '2026-11-01'
+  timezone: Europe/Rome
+  dataset: electricity_balance
+  output_root: outputs/country_balances
+  run_id: null
+  france:
+    endpoint: https://odre.opendatasoft.com/api/explore/v2.1/catalog/datasets/eco2mix-national-cons-def/exports/json
+    dataset: electricity_balance
+    timezone: Europe/Paris
+    timestamp_field: date_heure
+    date_field: date
+    hour_field: heure
+    consumption_field: consommation
+    pumping_field: pompage
+    pumping_multiplier: 1.0
+    generation_fields:
+    - fioul
+    - charbon
+    - gaz
+    - nucleaire
+    - eolien
+    - solaire
+    - hydraulique
+    - bioenergies
+    optional_generation_fields:
+    - destockage_batterie
+    optional_consumption_fields:
+    - stockage_batterie
+  switzerland:
+    path_glob: data/api/EnergieUebersichtCH-*.xlsx
+    dataset: electricity_balance
+    sheet_name: Zeitreihen0h15
+    timezone: Europe/Zurich
+    timestamp_column: A
+    generation_column: C
+    consumption_column: D
+    first_data_row: 3
+    timestamp_format: '%d.%m.%Y %H:%M'
+    native_interval_minutes: 15
+swiss_border:
+  database_path: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  page_url: https://www.swissgrid.ch/en/home/operation/grid-data/cross-border-load-flows.html
+  year: 2026
+  timezone: Europe/Zurich
+  columns:
+    ntc_ch_to_it: H:Intraday NTC Schweiz > Italien [MW]
+    ntc_it_to_ch: I:Intraday NTC Italien > Schweiz [MW]
+    schedule_ch_it: "M:Kommerzielle Lastfl\xFCsse Italien Netto (Total) [MW]"
+    spread_it_nord_ch: R:Preisdifferenz Spot Italien Nord-Schweiz [EUR/MWh]
+    ntc_ch_to_fr: F:Intraday NTC Schweiz > Frankreich [MW]
+    ntc_fr_to_ch: G:Intraday NTC Frankreich > Schweiz [MW]
+    schedule_ch_fr: "L:Kommerzielle Lastfl\xFCsse Frankreich Netto (Total) [MW]"
+    spread_fr_ch: Q:Preisdifferenz Spot Frankreich-Schweiz [EUR/MWh]

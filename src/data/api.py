@@ -43,7 +43,8 @@ class DataAPIHTTPError(DataAPIError):
 
 
 _SECRET_KEYS = {"securitytoken", "token", "access_token", "client_secret", "password", "authorization", "api_key"}
-_OFFICIAL_HOSTS = {"web-api.tp.entsoe.eu", "api.terna.it", "api.mercatoelettrico.org"}
+_OFFICIAL_HOSTS = {"web-api.tp.entsoe.eu", "api.terna.it", "api.mercatoelettrico.org",
+                   "odre.opendatasoft.com", "www.swissgrid.ch"}
 
 
 def _http_error_hint(payload: bytes) -> str:
