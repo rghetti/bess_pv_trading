@@ -102,6 +102,10 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
         from lightgbm import LGBMRegressor
 
         return LGBMRegressor(random_state=seed, n_jobs=threads, verbosity=-1, **options)
+    if family == "xgboost":
+        from xgboost import XGBRegressor
+
+        return XGBRegressor(random_state=seed, n_jobs=threads, **options)
     if family == "catboost":
         from catboost import CatBoostRegressor
 

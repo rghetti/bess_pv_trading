@@ -84,3 +84,14 @@ def test_sgd_mae_uses_absolute_error_and_returns_original_units():
                                              "average": True}, seed=1)
     model.fit(features, target)
     assert abs(model.predict([[0]])[0] - 100) < 40
+
+
+def test_xgboost_cpu_candidate_fits_and_respects_threads():
+    """The optional XGBoost adapter fits on CPU using the requested thread cap."""
+    pytest.importorskip("xgboost")
+    features = np.arange(120, dtype=float).reshape(60, 2) / 20
+    target = features[:, 0] ** 2 + features[:, 1]
+    model = make_price_candidate("xgboost", {"n_estimators": 10, "tree_method": "hist"}, seed=4, threads=1)
+    model.fit(features[:50], target[:50])
+    assert model.get_params()["n_jobs"] == 1
+    assert np.isfinite(model.predict(features[50:])).all()
