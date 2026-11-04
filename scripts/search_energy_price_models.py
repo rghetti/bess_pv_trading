@@ -222,7 +222,8 @@ def _validation_selection(study, root):
             raise ValueError(f"Holdout {name} differs from validation search")
     for name in ("feature_set_aliases", "add_market_price_features_to", "residual_target_features",
                  "daily_curve_lag_days", "add_daily_curve_features_to", "common_training_rows",
-                 "supplemental_features", "add_supplemental_features_to", "add_lagged_market_features_to"):
+                 "supplemental_features", "add_supplemental_features_to", "add_lagged_market_features_to",
+                 "derived_features", "add_derived_features_to"):
         if study.get(name) != source_study.get(name):
             raise ValueError(f"Holdout {name} differs from validation search")
     expected_candidates = {item["id"]: item for item in source_study["candidates"]}
@@ -470,6 +471,26 @@ def _lagged_auction_feature(prior_values, market, lag_hours):
     return feature.assign(feature=name)
 
 
+def _linear_derived_features(matrix, feature_names, specifications):
+    """Combine named decision-time inputs without filling missing components."""
+    index = {name: position for position, name in enumerate(feature_names)}
+    if len(index) != len(feature_names):
+        raise ValueError("Derived feature input names must be unique")
+    names, columns = [], []
+    for spec in specifications:
+        if set(spec) != {"name", "weights"} or not isinstance(spec["name"], str) or not spec["name"]:
+            raise ValueError("Derived features require a name and component weights")
+        weights = spec["weights"]
+        if (not isinstance(weights, dict) or not weights or spec["name"] in index or spec["name"] in names
+                or any(name not in index for name in weights)
+                or any(isinstance(weight, bool) or not isinstance(weight, (int, float))
+                       or not np.isfinite(weight) for weight in weights.values())):
+            raise ValueError("Derived feature names, components or weights are invalid")
+        names.append(spec["name"])
+        columns.append(sum(matrix[:, index[name]] * weight for name, weight in weights.items()))
+    return names, np.column_stack(columns) if columns else np.empty((len(matrix), 0))
+
+
 def _verify_resumed_dataset(path, expected):
     """Require saved training and evaluation arrays to match rebuilt inputs."""
     with np.load(path, allow_pickle=False) as saved:
@@ -698,9 +719,21 @@ def run_search(config, *, check_only=False, resume=False, allow_legacy_resume=Fa
             decisions = historical_decision_times(full["starts"], settings)
             curves = daily_price_curve_features(history, full["starts"], decisions, settings,
                                                  study.get("daily_curve_lag_days", []))
+        derived_names_by_set = {}
         for feature_set, names in group_features.items():
             columns = list(range(base_count)) + [feature_index[name] for name in names]
             datasets[feature_set] = project_search_matrix(full, columns)
+            derived_names_by_set[feature_set] = []
+            if feature_set in study.get("add_derived_features_to", []):
+                # Derivations use inputs already selected as of each historical
+                # decision time; missing component values remain missing.
+                derived_names, derived = _linear_derived_features(
+                    datasets[feature_set]["matrix"][:, base_count:], names, study.get("derived_features", []))
+                derived_names_by_set[feature_set] = derived_names
+                datasets[feature_set]["matrix"] = np.column_stack([datasets[feature_set]["matrix"], derived])
+                finite = np.isfinite(datasets[feature_set]["matrix"]).all(axis=1)
+                datasets[feature_set]["training"] = finite & datasets[feature_set]["training_clock"]
+                datasets[feature_set]["validation"] = finite & datasets[feature_set]["validation_clock"]
             if feature_set in curve_groups:
                 dataset = datasets[feature_set]
                 dataset["matrix"] = np.column_stack([dataset["matrix"], curves])
@@ -716,7 +749,8 @@ def run_search(config, *, check_only=False, resume=False, allow_legacy_resume=Fa
         column_names = {}
         for feature_set, data in datasets.items():
             names = ([f"price_lag_{lag}h" for lag in group_lags]
-                     + [f"calendar_{index}" for index in range(7)] + list(group_features[feature_set]))
+                     + [f"calendar_{index}" for index in range(7)] + list(group_features[feature_set])
+                     + derived_names_by_set[feature_set])
             names += [f"daily_curve_{index}" for index in range(data["matrix"].shape[1] - len(names))]
             column_names[feature_set] = names
         incomplete_days[group] = explain_incomplete_days(datasets, column_names,

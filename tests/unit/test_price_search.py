@@ -265,6 +265,21 @@ def test_intraday_search_declares_separate_native_market_models():
     assert all(group["native_minutes"] == 15 for group in study["product_groups"].values())
 
 
+def test_derived_demand_features_use_named_inputs_and_preserve_missingness():
+    """Residual-demand combinations follow named columns and do not fill gaps."""
+    from scripts.search_energy_price_models import _linear_derived_features
+
+    matrix = np.array([[100.0, 20.0, 5.0], [100.0, np.nan, 5.0]])
+    spec = [{"name": "residual_load", "weights": {"load": 1, "solar": -1, "wind": -1}}]
+    names, values = _linear_derived_features(matrix, ["load", "solar", "wind"], spec)
+    assert names == ["residual_load"]
+    assert values[0, 0] == 75.0
+    assert np.isnan(values[1, 0])
+    with pytest.raises(ValueError, match="components or weights"):
+        _linear_derived_features(matrix, ["load", "solar", "wind"],
+                                 [{"name": "bad", "weights": {"absent": 1}}])
+
+
 def test_recent_training_window_uses_only_training_timestamps():
     """A recent window is anchored to the latest available training product."""
     from scripts.search_energy_price_models import _training_window
