@@ -19,25 +19,37 @@ from sklearn.preprocessing import StandardScaler
 class IntradayShapeInteractions(BaseEstimator, TransformerMixin):
     """Allow lag and exogenous effects to vary smoothly with delivery hour."""
 
-    def __init__(self, lag_count):
+    def __init__(self, lag_count, harmonics=1):
         self.lag_count = lag_count
+        self.harmonics = harmonics
 
     def fit(self, features, target=None):
         """Validate the calendar layout without learning from validation data."""
         values = np.asarray(features)
         if isinstance(self.lag_count, bool) or not isinstance(self.lag_count, int) or self.lag_count < 1:
             raise ValueError("Interaction lag_count must be a positive integer")
+        if isinstance(self.harmonics, bool) or not isinstance(self.harmonics, int) or self.harmonics < 1:
+            raise ValueError("Interaction harmonics must be a positive integer")
         if values.ndim != 2 or values.shape[1] < self.lag_count + 7:
             raise ValueError("Interaction input lacks the declared seven calendar columns")
         return self
 
     def transform(self, features):
-        """Interact non-calendar signals with the first harmonic of delivery time."""
+        """Interact non-calendar signals with configured delivery-time harmonics."""
         values = np.asarray(features, dtype=float)
         signal = np.column_stack([values[:, :self.lag_count], values[:, self.lag_count + 7:]])
         sine = values[:, self.lag_count:self.lag_count + 1]
         cosine = values[:, self.lag_count + 1:self.lag_count + 2]
-        return np.column_stack([values, signal * sine, signal * cosine])
+        columns = [values]
+        harmonic_sine = sine
+        harmonic_cosine = cosine
+        for _ in range(self.harmonics):
+            # Recurrence preserves the existing sine/cosine encoding and
+            # generates higher harmonics without an inverse-angle operation.
+            columns.extend([signal * harmonic_sine, signal * harmonic_cosine])
+            harmonic_sine, harmonic_cosine = (harmonic_sine * cosine + harmonic_cosine * sine,
+                                               harmonic_cosine * cosine - harmonic_sine * sine)
+        return np.column_stack(columns)
 
 
 def make_price_candidate(family, parameters, *, seed, threads=1):
@@ -61,6 +73,7 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
     if family in {"interaction_ridge", "interaction_lasso", "interaction_elastic_net", "interaction_huber",
                   "interaction_sgd_mae"}:
         lag_count = options.pop("lag_count")
+        harmonics = options.pop("harmonics", 1)
         if family == "interaction_ridge":
             estimator = Ridge(**options)
         elif family == "interaction_lasso":
@@ -71,7 +84,7 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
             estimator = HuberRegressor(**options)
         else:
             estimator = SGDRegressor(loss="epsilon_insensitive", epsilon=0, random_state=seed, **options)
-        pipeline = make_pipeline(IntradayShapeInteractions(lag_count), StandardScaler(), estimator)
+        pipeline = make_pipeline(IntradayShapeInteractions(lag_count, harmonics), StandardScaler(), estimator)
         if family in {"interaction_huber", "interaction_sgd_mae"}:
             return TransformedTargetRegressor(regressor=pipeline, transformer=StandardScaler())
         return pipeline

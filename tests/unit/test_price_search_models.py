@@ -48,6 +48,20 @@ def test_unknown_candidate_is_rejected():
         make_price_candidate("unknown", {}, seed=1)
 
 
+def test_interactions_generate_configured_daily_harmonics():
+    """Higher harmonics use the input clock and retain the original signals."""
+    from bess_pv_trading.forecasting.price_search_models import IntradayShapeInteractions
+
+    # One lag, seven calendar columns and one exogenous feature at 06:00.
+    values = np.array([[2.0, 1.0, 0.0, 0, 0, 0, 0, 0, 3.0]])
+    transformed = IntradayShapeInteractions(lag_count=1, harmonics=2).fit_transform(values)
+    assert transformed.shape == (1, 17)
+    assert transformed[0, 9:13] == pytest.approx([2, 3, 0, 0])
+    assert transformed[0, 13:17] == pytest.approx([0, 0, -2, -3])
+    with pytest.raises(ValueError, match="harmonics"):
+        IntradayShapeInteractions(lag_count=1, harmonics=0).fit(values)
+
+
 def test_huber_candidate_resists_a_large_training_outlier():
     """Robust candidate stays closer to the central price than ordinary ridge."""
     features = np.zeros((40, 1))
