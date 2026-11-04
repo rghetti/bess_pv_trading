@@ -1,0 +1,14 @@
+# Compare identical DA candidates with and without historical IDA prices.
+include: ../standard.yaml
+price_feature_ablation:
+  source_search: outputs/energy_price_forecasts/nord_da_2026_previous_ida_prices_v1
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_da_2026_previous_idas_ablation_v1
+  timezone: Europe/Rome
+  seed: 17
+  bootstrap_samples: 1000
+  pairs:
+    - base: curve_fundamentals
+      added: ida_curve_fundamentals
+    - base: curve_combined
+      added: ida_curve_combined
