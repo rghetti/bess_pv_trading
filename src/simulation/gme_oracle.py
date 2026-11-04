@@ -750,11 +750,30 @@ def _load_pv(config: dict[str, Any], calendar: AuctionCalendar, grid, *, decisio
         metadata = load_metadata(config_path(config, config["inputs"]["metadata_parquet"]), [farm_id])[farm_id]
         pv = _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, grid.starts)
         forecast = pd.to_numeric(pv.values["pv_ac_mw"], errors="coerce").to_numpy(dtype=float, copy=True)
-        observed = load_observations(dataset, [farm_id], variables=(forecast_settings.get("realized_power_variable", "power"),),
-            start=grid.starts[0], end=grid.starts[-1],
-            telemetry_latency_minutes=float(config.get("source", {}).get("telemetry_latency_minutes", 0)))
+        if not forecast_settings.get("curated_realized", {}).get("enabled", False):
+            observed = load_observations(dataset, [farm_id], variables=(forecast_settings.get("realized_power_variable", "power"),),
+                start=grid.starts[0], end=grid.starts[-1],
+                telemetry_latency_minutes=float(config.get("source", {}).get("telemetry_latency_minutes", 0)))
     finally:
         dataset.close()
+    if forecast_settings.get("curated_realized", {}).get("enabled", False):
+        from .curated_pv import load_curated_realized_pv
+
+        actual, curated = load_curated_realized_pv(config, farm_id, grid)
+        _, night_provenance = _clip_realized_pv_night(actual, grid, config["policy"]["realized_pv_night"])
+        night_provenance.update(missing_zeroed_intervals=0, missing_zeroed_interval_ids=[])
+        return forecast, actual, pv, {"farm_id": farm_id, "farm_metadata": asdict(metadata),
+            "installed_ac_capacity_mw": metadata.ac_capacity_mw,
+            "forecast_cutoff_utc": cutoff.isoformat(), "forecast_vintage_utc": pv.forecast_vintage.isoformat(),
+            "forecast_available_at_utc": pv.available_at.isoformat(),
+            "forecast_member_count": len(pv.members), "forecast_member_origin": pv.member_origin,
+            "forecast_missing_filled_night_zero_intervals": pv.provenance["forecast_missing_filled_night_zero_intervals"],
+            "realized_power_variable": "model_target_mw", "realized_power_scale_to_mw": 1.0,
+            "realized_power_source_basis": "reviewed AC MW including counterfactual synthetic replacements",
+            "realized_power_missing_fallback_intervals": 0,
+            "realized_power_raw_missing_intervals": curated["raw_missing_intervals"],
+            "realized_power_fallback_interval_ids": [], "realized_pv_night_clipping": night_provenance,
+            "curated_realized_pv": curated, "pv_conversion_provenance": pv.provenance}
     variable = forecast_settings.get("realized_power_variable", "power")
     rows = observed.frame.loc[observed.frame.variable == variable]
     raw = pd.Series(pd.to_numeric(rows.raw_value, errors="coerce").to_numpy(dtype=float),

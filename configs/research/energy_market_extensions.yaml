@@ -2,6 +2,10 @@
 # without --run only prints a plan; absent models are reported as missing inputs.
 include: ../standard.yaml
 farm_id: 1
+forecast:
+  curated_realized:
+    enabled: true
+    dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
 continuous_optimization:
   start_date: '2026-01-15'
   end_date: '2026-01-16'
@@ -286,7 +290,7 @@ energy_research_study:
       overrides:
         realtime_scenarios:
           dependence: ecc
-          calibrated_marginals_path: outputs/research_inputs/pv_calibration/farm_${farm_id}_${continuous_optimization.start_date}.npz
+          calibrated_marginals_path: outputs/research_inputs/pv_calibration_reviewed/farm_${farm_id}_${continuous_optimization.start_date}.npz
     - id: adaptive_reduced
       family: decision_aware_reduction
       baseline_case: adaptive_raw
@@ -298,7 +302,7 @@ energy_research_study:
       overrides:
         realtime_scenarios:
           dependence: independent_shuffle
-          calibrated_marginals_path: outputs/research_inputs/pv_calibration/farm_${farm_id}_${continuous_optimization.start_date}.npz
+          calibrated_marginals_path: outputs/research_inputs/pv_calibration_reviewed/farm_${farm_id}_${continuous_optimization.start_date}.npz
     - id: adaptive_continuation
       family: continuation_value
       baseline_case: adaptive_raw
@@ -349,7 +353,7 @@ energy_research_study:
       overrides:
         realtime_scenarios:
           dependence: ecc
-          calibrated_marginals_path: outputs/research_inputs/pv_calibration/farm_${farm_id}_${continuous_optimization.start_date}.npz
+          calibrated_marginals_path: outputs/research_inputs/pv_calibration_reviewed/farm_${farm_id}_${continuous_optimization.start_date}.npz
     - id: calibrated_half_power
       family: forecast_flexibility
       baseline_case: half_battery_power
@@ -357,7 +361,7 @@ energy_research_study:
       overrides:
         realtime_scenarios:
           dependence: ecc
-          calibrated_marginals_path: outputs/research_inputs/pv_calibration/farm_${farm_id}_${continuous_optimization.start_date}.npz
+          calibrated_marginals_path: outputs/research_inputs/pv_calibration_reviewed/farm_${farm_id}_${continuous_optimization.start_date}.npz
     - id: calibrated_half_poi
       family: forecast_flexibility
       baseline_case: half_poi_capacity
@@ -365,4 +369,4 @@ energy_research_study:
       overrides:
         realtime_scenarios:
           dependence: ecc
-          calibrated_marginals_path: outputs/research_inputs/pv_calibration/farm_${farm_id}_${continuous_optimization.start_date}.npz
+          calibrated_marginals_path: outputs/research_inputs/pv_calibration_reviewed/farm_${farm_id}_${continuous_optimization.start_date}.npz

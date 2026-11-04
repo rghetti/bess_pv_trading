@@ -149,6 +149,13 @@ def _artifact_requirements(config, checksums=None):
         "plant_metadata": config["inputs"]["metadata_parquet"],
         "auction_catalog": config["gme_oracle_experiment"]["price_database"],
         "settlement_catalog": config["settlement"]["database_path"]}
+    curated = config.get("forecast", {}).get("curated_realized", {})
+    if curated.get("enabled"):
+        root = Path(curated["dataset_root"])
+        farm = config["forecast"]["farm_id"]
+        paths["curated_pv_manifest"] = str(root / "manifest.json")
+        paths["curated_pv_corpus"] = str(root / f"farm_{farm}" / "corpus.parquet")
+        paths["curated_pv_modeling_view"] = str(root / f"farm_{farm}" / "modeling_views.parquet")
     if needs_mpc_ensemble(config):
         ensemble = config["continuous_optimization"]["pv_ensemble"]
         if ensemble.get("sources"):

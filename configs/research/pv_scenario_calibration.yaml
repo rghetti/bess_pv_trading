@@ -1,5 +1,9 @@
 # Two fixed parameters per farm; no automatic HPO or refitting on evaluation dates.
 include: ../standard.yaml
+forecast:
+  curated_realized:
+    enabled: true
+    dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
 
 solver:
   threads: 1
@@ -22,7 +26,7 @@ pv_scenario_calibration:
   native_threads: 1
   seed: 17
   include_deterministic_member: true
-  output_directory: outputs/research_inputs/pv_calibration
+  output_directory: outputs/research_inputs/pv_calibration_reviewed
   plots: true
   training:
     start_date: '2026-01-01'

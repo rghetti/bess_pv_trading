@@ -1,8 +1,8 @@
 """Chronological, two-parameter CRPS calibration of physical PV ensembles.
 
-Only forecast distributions are transformed. Raw measured AC power is retained
-for auditing; missing, negative and explicitly reviewed targets are excluded
-from fitting rather than repaired or replaced with another forecast.
+Only forecast distributions are transformed. Raw AC remains in the audit;
+the configured target can be raw measurements or explicitly reviewed,
+retrospective counterfactual production with per-interval source labels.
 """
 
 from __future__ import annotations
@@ -211,7 +211,7 @@ def save_calibration_npz(path, *, model, farm_id, interval_starts, raw_scenarios
 
 
 def prepare_calibration_data(config, days):
-    """Reuse the existing physical converter and raw target reader, excluding reviewed episodes."""
+    """Reuse physical conversion and select the explicitly configured target dataset."""
     from ..data import config_path, load_metadata, load_observations, open_store, night_window_mask
     from ..markets import AuctionCalendar
     from ..simulation.continuous_inputs import _json_value, _prepare_pv_ensembles
@@ -233,16 +233,38 @@ def prepare_calibration_data(config, days):
                 "deterministic_available": deterministic.available_at}
     provenance = _prepare_pv_ensembles(config, daily)
     starts = pd.DatetimeIndex([stamp for day in days for stamp in daily[day]["grid"].starts])
-    # Read original AC observations only. No replay fallback becomes a training label.
-    with open_store(config) as dataset:
-        observed = load_observations(dataset, [farm], variables=(config["forecast"]["realized_power_variable"],),
-            start=starts[0], end=starts[-1], telemetry_latency_minutes=config["source"].get("telemetry_latency_minutes", 0))
-    frame = observed.frame.set_index("time").reindex(starts)
-    targets = frame.raw_value.to_numpy(float) * float(config["forecast"]["realized_power_scale_to_mw"])
-    audit = pd.DataFrame({"interval_start_utc": starts, "raw_ac_mw": targets,
-        "raw_nonfinite": ~np.isfinite(targets), "raw_negative": np.isfinite(targets) & (targets < 0),
-        "initial_forecast_fallback": ~np.isfinite(targets), "eligible": np.isfinite(targets) & (targets >= 0)})
-    audit = apply_episode_exclusions(audit, config, farm_id=farm)
+    curated = config["forecast"].get("curated_realized", {}).get("enabled", False)
+    source_days = []
+    if curated:
+        from ..simulation.curated_pv import load_curated_realized_pv
+
+        blocks, interval_sources = [], []
+        for day in days:
+            values, source = load_curated_realized_pv(config, farm, daily[day]["grid"])
+            blocks.append(values)
+            interval_sources.extend(source.pop("interval_sources"))
+            source_days.append({"delivery_day": day, **source})
+        targets = np.concatenate(blocks)
+        raw = np.array([np.nan if row["raw_metered_ac_mw"] is None else row["raw_metered_ac_mw"]
+                        for row in interval_sources], dtype=float)
+        audit = pd.DataFrame({"interval_start_utc": starts, "raw_ac_mw": raw, "target_ac_mw": targets,
+            "target_source": [row["source"] for row in interval_sources],
+            "raw_nonfinite": ~np.isfinite(raw), "raw_negative": np.isfinite(raw) & (raw < 0),
+            "initial_forecast_fallback": False, "eligible": np.isfinite(targets) & (targets >= 0),
+            "episode_excluded": False, "review_excluded": False})
+    else:
+        # Raw mode retains its explicit missing and reviewed-episode exclusions.
+        with open_store(config) as dataset:
+            observed = load_observations(dataset, [farm], variables=(config["forecast"]["realized_power_variable"],),
+                start=starts[0], end=starts[-1], telemetry_latency_minutes=config["source"].get("telemetry_latency_minutes", 0))
+        frame = observed.frame.set_index("time").reindex(starts)
+        targets = frame.raw_value.to_numpy(float) * float(config["forecast"]["realized_power_scale_to_mw"])
+        raw = targets.copy()
+        audit = pd.DataFrame({"interval_start_utc": starts, "raw_ac_mw": raw, "target_ac_mw": targets,
+            "target_source": "metered_ac", "raw_nonfinite": ~np.isfinite(raw),
+            "raw_negative": np.isfinite(raw) & (raw < 0),
+            "initial_forecast_fallback": ~np.isfinite(targets), "eligible": np.isfinite(targets) & (targets >= 0)})
+        audit = apply_episode_exclusions(audit, config, farm_id=farm)
     # Supplied availability remains interval completion plus the configured telemetry lag.
     observed_available = starts + pd.Timedelta(minutes=15 + config["source"].get("telemetry_latency_minutes", 0))
     audit["target_available_at_utc"] = observed_available
@@ -271,8 +293,12 @@ def prepare_calibration_data(config, days):
         vintages.extend([vintage] * len(item["grid"].starts))
     metadata = load_metadata(config_path(config, config["inputs"]["metadata_parquet"]), [farm])[farm]
     exclusion_path = config.get("pv_data_quality", {}).get("exclusions_csv")
-    source_evidence = {"forecast_sources": provenance, "measurement_source": config["inputs"]["zarr"],
-        "measurement_units": "AC MW from untouched stored AC power", "raw_targets_sha256": _array_hash(targets),
+    source_evidence = {"forecast_sources": provenance, "measurement_source": (
+        config["forecast"]["curated_realized"]["dataset_root"] if curated else config["inputs"]["zarr"]),
+        "measurement_units": "AC MW; reviewed synthetic counterfactuals included" if curated else "AC MW from untouched stored AC power",
+        "raw_targets_sha256": _array_hash(raw), "selected_targets_sha256": _array_hash(targets),
+        "target_source_counts": audit.target_source.value_counts().to_dict(), "curated_day_provenance": source_days,
+        "target_availability_assumption": "interval completion for retrospective fitting; reviewed reconstructions were created later" if curated else "interval completion plus telemetry latency",
         "episode_csv_sha256": None if not exclusion_path else hashlib.sha256(config_path(config, exclusion_path).read_bytes()).hexdigest(),
         "fallback_targets_used": 0, "automatic_fault_detection": False}
     return {"starts": starts, "raw_scenarios": np.concatenate(blocks, axis=1), "observed": targets,
@@ -346,7 +372,7 @@ def _plot_calibration(path, data, calibrated, central_probability):
     import matplotlib.pyplot as plt
 
     figure, axis = plt.subplots(figsize=(11, 4))
-    axis.plot(data["starts"], data["observed"], color="black", linewidth=1, label="Raw measured AC")
+    axis.plot(data["starts"], data["observed"], color="black", linewidth=1, label="Selected AC target")
     axis.plot(data["starts"], data["raw_scenarios"].mean(axis=0), label="Raw ensemble mean")
     axis.plot(data["starts"], calibrated.mean(axis=0), label="Calibrated mean")
     lower, upper = np.quantile(calibrated, [(1 - central_probability) / 2, (1 + central_probability) / 2], axis=0)

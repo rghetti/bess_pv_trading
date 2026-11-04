@@ -297,6 +297,12 @@ def validate_config(config: dict[str, Any]) -> None:
     transaction_fees_from_config(config)
     from .simulation.research_inputs import validate_information_settings
     validate_information_settings(config)
+    curated = config.get("forecast", {}).get("curated_realized", {})
+    if (not isinstance(curated, dict) or set(curated) - {"enabled", "dataset_root"}
+            or not isinstance(curated.get("enabled", False), bool)
+            or curated.get("enabled") and (not isinstance(curated.get("dataset_root"), str)
+                                           or not curated["dataset_root"])):
+        raise ConfigurationError("forecast.curated_realized requires a boolean and an enabled dataset path")
     from .reporting.mpc_history import validate_mpc_history_settings
     validate_mpc_history_settings(config)
     if any(name in config for name in ("energy_price_forecast", "realtime_scenarios", "continuation_value")):

@@ -3,6 +3,10 @@
 # The validated calendar starts 2025-10-01; older calendar assumptions are not extended implicitly.
 include: ../standard.yaml
 farm_id: 1
+forecast:
+  curated_realized:
+    enabled: true
+    dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
 continuous_optimization:
   start_date: '2025-10-01'
   end_date: '2025-10-07'

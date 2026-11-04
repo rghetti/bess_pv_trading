@@ -55,7 +55,9 @@ def calibration_plan(config):
     return {"workflow": "pv_affine_marginal_calibration", "farm_ids": farms, "training": training,
         "evaluation_windows": windows, "model": "global normalized bias and nonnegative spread scale per farm",
         "training_loss": "proper empirical CRPS divided by AC nameplate; no profit-driven parameter selection",
-        "preprocessing": "retain raw AC targets; exclude nonfinite/negative and versioned reviewed-episode rows; never impute targets",
+        "preprocessing": ("reviewed AC targets with explicitly labelled retrospective pvlib and night-zero reconstructions"
+            if config.get("forecast", {}).get("curated_realized", {}).get("enabled", False)
+            else "retain raw AC targets; exclude nonfinite/negative and versioned reviewed-episode rows"),
         "forecast_source": "preceding delivery-day 00 UTC ensemble, plus optional eligible deterministic member",
         "availability": "cycle plus configured latency; target interval completion; hypothetical immediate model fit at cutoff",
         "retrospective_computation": True, "evaluation": "CRPS, mean MAE, central interval coverage; raw versus calibrated; identical ECC/shuffle marginals",
@@ -101,7 +103,7 @@ def main(argv=None):
         payload = {"plan": plan, "status": "complete", "farms": sorted(results, key=lambda row: row["farm_id"])}
         (output / "calibration_summary.json").write_text(json.dumps(payload, indent=2, allow_nan=False) + "\n")
         lines = ["# Frozen PV ensemble calibration", "",
-            "Raw AC targets remain untouched. January calibration parameters are frozen for both evaluation windows.", "",
+            "Raw AC targets remain untouched. Selected targets and any synthetic replacements are recorded per interval. January calibration parameters are frozen for both evaluation windows.", "",
             "| Farm | Window | Forecast | Eligible quarters | CRPS MW | Mean MAE MW | Central coverage |",
             "|---|---|---|---:|---:|---:|---:|"]
         for result in payload["farms"]:

@@ -109,8 +109,14 @@ day because the available August ensemble archive starts on 1 August and the
 auction-consistent convention uses the preceding day's 00 UTC cycle. The standard
 configuration currently applies a six-hour weather availability assumption.
 
-The measurements and deterministic forecasts come from the existing farm Zarr
-and metadata Parquet inputs. January and August use their own ensemble archives.
+The physical execution trajectory comes from the reviewed
+`data/farms/curated/reviewed_ghi_2025_to_2026_08` dataset. The loader preserves
+user-reviewed targets, replaces retained daylight exclusions with the dataset's
+historical-GHI pvlib reference, applies the configured night-zero policy, and
+records each interval's source. These are retrospective counterfactuals where
+synthetic, not independent AC measurements. The deterministic forecast weather
+still comes from the farm Zarr and metadata Parquet inputs. January and August
+use their own ensemble archives.
 Actual auction and settlement prices continue to come from the DuckDB catalog.
 No study command substitutes zero for a missing price or silently downloads new
 data. Existing preprocessing, seasonal night policies, interpolation and flagged
@@ -157,13 +163,15 @@ ECC requires a real calibrated-marginal NPZ with the schema validated by
 window. It neither invents a calibration model nor treats sorted raw members as
 evidence of calibration. ECC rearranges marginal samples according to raw
 ensemble ranks, following [Schefzik et al.](https://arxiv.org/abs/1302.7149).
-The fitted affine bias and spread parameters use January 1–14 targets and are
+The fitted affine bias and spread parameters use January 1–14 reviewed targets and are
 frozen for January 15–16 and August 2–3 evaluation. At replay time they apply
 to the currently eligible raw member forecasts, so a new cycle or member count
 is supported. Calibrated ECC and calibrated shuffle retain identical empirical
-marginals, allowing a dependence comparison. Calibration was mixed across farms
-and worsened August CRPS for three of four farms; see the saved calibration
-summary rather than interpreting calibration as a universal improvement.
+marginals, allowing a dependence comparison. Reviewed target creation is
+retrospective; treating the target as available at interval completion is a
+simulation assumption, not historical availability evidence. Results from the
+prior raw-target calibration remain separately identified and should not be
+reused as the reviewed-target calibration.
 
 The continuation calculation conditions on nominal future PV, settlement prices
 and known commitments after the current MPC horizon. It uses an explicit SOC
