@@ -97,6 +97,17 @@ so shorter border coverage does not itself change their training sample. The
 January--February 2026 training window is short and the March--April validation
 is not an untouched full-year test.
 
+`configs/research/price_model_search_ida_hourly_2024.yaml` prepares a separate
+search on 60-minute 2024 IDA source exports. It starts on 14 June, the first
+delivery date following the June 2024 European IDA go-live, and evaluates
+October--December after an earlier training cutoff. Earlier records are not
+silently treated as the same market regime. The source is an hourly export;
+whether each exported value is an original traded hourly product or a
+retrospective aggregation must be verified from its source documentation.
+The configured later-market publication clocks are retrospective assumptions,
+not evidence of 2024 gate or release times. Price-only and earlier-cleared
+feature groups use identical training and evaluation support.
+
 `configs/research/price_model_search_da_curves.yaml` adds the full 24-hour
 shape of the same market's previous 1, 2 and 7 local delivery days. Within a
 native quarter-hour task, each hourly input is the average of its four native
