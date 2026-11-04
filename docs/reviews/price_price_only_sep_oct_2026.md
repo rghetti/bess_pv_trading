@@ -36,3 +36,23 @@ dates, and publication clocks and forecast availability are partly assumed.
 Evaluation coverage differs between markets and excludes missing days. WAPE
 also depends on the level of prices, so its lower percentage relative to earlier
 periods does not necessarily indicate a lower error in EUR/MWh.
+
+## Naive comparison and day-level uncertainty
+
+The saved seasonal-naive forecasts use the same product observations as the
+selected models. A paired bootstrap of complete delivery days (5,000 resamples,
+seed 173) gives the following descriptive 95% percentile intervals for WAPE.
+
+| Market | Selected WAPE | Bootstrap interval | Naive WAPE | Naive MAE EUR/MWh |
+| --- | ---: | ---: | ---: | ---: |
+| DA | 7.852% | 7.088–8.668% | 10.177% | 21.838 |
+| IDA1 | 4.116% | 3.907–4.328% | 10.545% | 22.498 |
+| IDA2 | 4.817% | 4.496–5.174% | 11.972% | 25.644 |
+| IDA3 | 6.996% | 6.176–7.936% | 15.238% | 32.590 |
+
+The selected models outperform this particular naive forecast over the observed
+products. The intervals resample days as independent units, preserve within-day
+products, and do not account for serial dependence, selection uncertainty,
+missing-day bias or historical availability assumptions. The IDA1 interval
+includes 4%, but its observed WAPE is above 4%; an interval including the target
+does not establish that the target has been achieved.
