@@ -1,0 +1,10 @@
+# Compare completed IDA searches on common products and inspect training differences.
+include: ../standard.yaml
+price_search_comparison:
+  baseline_search: outputs/energy_price_forecasts/nord_ida_cleared_context_search_v1
+  comparison_search: outputs/energy_price_forecasts/nord_ida_bidirectional_neighbors_search_v1
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_ida_bidirectional_neighbors_comparison_v1
+  timezone: Europe/Rome
+  seed: 17
+  bootstrap_samples: 1000
