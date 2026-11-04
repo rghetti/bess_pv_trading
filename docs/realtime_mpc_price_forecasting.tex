@@ -1,0 +1,377 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=23mm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,booktabs,longtable,array}
+\usepackage{xurl}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+\usepackage{enumitem}
+\setlist{itemsep=2pt,topsep=4pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\setlength{\emergencystretch}{3em}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\pos}[1]{\left[#1\right]_{+}}
+\DeclareMathOperator{\CVaR}{CVaR}
+\title{Real-Time MPC and Electricity-Price Forecasting\\Mathematical Formulations and Initial Experiments}
+\author{PV--BESS energy-market research repository}
+\date{Implementation snapshot: 4 November 2026}
+\begin{document}
+\maketitle
+\begin{abstract}
+This document describes the implemented real-time physical controllers for a
+PV plant with a shared battery and grid connection, and the design of the initial
+Italian electricity-price forecasting experiments. It distinguishes the shared
+open-loop ensemble plan, conditional adaptive recourse, the two-stage settlement
+price oracle, and ex-post realized accounting. It also states the feature and
+training constructions, empirical price scenarios, evaluation metrics, and
+native-resolution restrictions. Historical experiments are retrospective and
+are not presented as evidence that these policies or data were available at the
+time. Long-horizon controller results and final neural PV models remain pending.
+\end{abstract}
+\tableofcontents
+\newpage
+
+\section{Scope, events and information}
+The system contains one PV plant and an AC-coupled battery behind a common point
+of interconnection (POI). There is no local load. The auction model participates
+in the day-ahead auction (DA) and up to three intraday auctions (IDA1--IDA3).
+Each signed order is assumed to execute fully. Upon submission its quantity is
+an immutable commitment; at publication its realized cashflow is booked once.
+An unpublished commitment is already fixed but not yet priced. The physical
+controller cannot change these submitted positions. Later auction decisions can
+change because the controller has changed the actual battery state.
+
+A \emph{continuous replay} carries the actual state, commitments and degradation
+memory chronologically across delivery days. It refers to repeated auction
+reoptimization and physical control, not a model of continuous order-book
+trading. Forecast objectives, value-to-go terms and risk penalties are planning
+quantities and are not booked as realized cash. The core auction formulation is
+in the companion \path{docs/mathematical_model.tex}; here we focus on the newer
+real-time models and the price inputs.
+
+At each physical decision, the controller starts from measured or estimated
+battery energy and known commitments, obtains an eligible PV forecast and,
+when applicable, a settlement-price forecast, and solves over the remaining
+physical horizon. It implements only the first action and repeats at the next
+interval. Weather forecast cycles, lead times, their assumed release lag and
+source provenance are tracked; in the matched future comparison the newest
+eligible cycle covering the required interval is selected. Reviewed execution
+PV can contain synthetic replacements or configured night zeros, not solely
+independent meter observations. An oracle is explicitly noncausal when it uses
+realized future settlement or clearing prices.
+
+\section{Notation and shared physical constraints}
+Let $t=0,\ldots,T-1$ index the intervals remaining at one decision and
+$\Delta_t$ denote their duration in hours. A local day usually has 96
+quarter-hour intervals, with 92 or 100 on daylight-saving transitions. Let
+$s\in\mathcal S$ index PV/price scenarios with $w_s\ge0$ and
+$\sum_s w_s=1$. All power is in MW, energy and commitments in MWh, and prices
+in EUR/MWh. A positive grid power denotes export.
+
+\begin{longtable}{>{\raggedright\arraybackslash}p{0.20\textwidth}>{\raggedright\arraybackslash}p{0.72\textwidth}}
+\toprule Symbol & Meaning \\
+\midrule\endhead
+$p_{s,t}$ & Forecast available PV power in scenario $s$. \\
+$c_{s,t},d_{s,t}$ & Battery charge and discharge power; their information ownership depends on the controller. \\
+$u_{s,t}\in[0,1]$ & Fraction of available PV used; the remainder is curtailed. \\
+$e_{s,t}$ & Battery energy at the interval boundary. \\
+$g_{s,t}$ & Net power exported through the POI. \\
+$q_t$ & Previously submitted net auction commitment for this interval. \\
+$b^+_{s,t},b^-_{s,t}$ & Positive and negative deviations from the fixed commitment. \\
+$D_s,I_s,K_s,R_s$ & Pathwise wear, import cost, terminal inventory cost and settlement revenue. \\
+\bottomrule
+\end{longtable}
+
+For each path, the implementation enforces
+\begin{align}
+ g_{s,t} &= p_{s,t}u_{s,t}+d_{s,t}-c_{s,t},
+ &-P^{\mathrm{imp}} &\le g_{s,t}\le P^{\mathrm{exp}},\\
+ e_{s,t+1} &= (1-\sigma)^{\Delta_t}e_{s,t}
+       +\eta_c\Delta_t c_{s,t}-\frac{\Delta_t}{\eta_d}d_{s,t},
+ &E^{\min}&\le e_{s,t}\le E^{\max},\\
+ 0\le c_{s,t}&\le P^{\max}z_{s,t},
+ &0\le d_{s,t}&\le P^{\max}(1-z_{s,t}),\quad z_{s,t}\in\{0,1\},\\
+ b^+_{s,t}-b^-_{s,t}&=\Delta_t g_{s,t}-q_t,
+ &b^+_{s,t},b^-_{s,t}&\ge0.
+\end{align}
+Initial battery energy is fixed to the current state. POI bounds, energy
+bounds, optional terminal constraints and battery-mode exclusivity apply on
+every scenario. $\sigma$ is hourly self-discharge and $\eta_c,\eta_d$ are AC
+charge/discharge efficiencies. Any configurable import charge is an epigraph
+of $\max(-g_{s,t},0)$; the project does not impose an extra grid-usage fee
+merely because the battery imports.
+
+With a throughput wear coefficient $\gamma$, one supported wear model is
+$D_s=\gamma\sum_t\Delta_t(c_{s,t}+d_{s,t})$. The alternative segmented Xu
+cycle-depth implementation includes its own segment-ordering and carried cycle
+memory; $D_s$ below denotes whichever configured degradation model is used.
+See \path{src/optimization/degradation.py} and the companion mathematical
+model for its detailed constraints. A soft terminal target is, for example,
+$K_s=\rho\lvert e_{s,T}-e^{\mathrm{target}}\rvert$; linear or configured
+piecewise-linear continuation values are alternative terminal treatments.
+
+\section{Common-control deterministic and ensemble MPC}
+\subsection{Control ownership}
+The deterministic controller uses one forecast path. The ordinary ensemble MPC
+uses multiple PV paths but a \emph{single open-loop physical schedule}:
+\begin{equation}
+(c_{s,t},d_{s,t},u_{s,t},z_{s,t},e_{s,t})
+ =(c_t,d_t,u_t,z_t,e_t)\quad\text{for all }s.
+\end{equation}
+Grid injections and deviations still differ with $p_{s,t}$. All scenario POI
+constraints must hold. In a closed-loop replay the common schedule is not
+committed wholesale: only its first action is executed, and a new schedule is
+computed after the next observation.
+
+For the price-blind penalty controller, define scenario-weighted absolute
+imbalance
+\begin{equation}
+ A=\sum_s w_s\sum_t(b^+_{s,t}+b^-_{s,t}).
+\end{equation}
+The solver minimizes
+\begin{equation}\label{eq:blind}
+ \kappa_{\mathrm{blind}} A + D + I + K,
+\end{equation}
+where $D$ and $K$ are shared trajectory costs and $I$ is expected import cost.
+The penalty case in the research configuration uses $\kappa_{\mathrm{blind}}=500$
+EUR/MWh. This is a trade-off between expected imbalance and other costs; it is
+not a lexicographic requirement that $A$ attain its minimum. With a positive
+absolute-deviation penalty the split is tight at optimum, subject to solver
+numerical tolerances. Equal scenario/interval PV values may share identical
+interval-support variables; this exact deduplication does not delete members or
+relax the POI envelope.
+
+\subsection{Two-stage realized-settlement-price oracle}
+The optional oracle uses actual settlement curves, while its first stage remains
+price-blind. The stages are two optimizations within one MPC decision, not the
+DA and intraday auctions:
+\begin{enumerate}
+\item Minimize $A$ subject to the shared physical constraints. Let $U$ be the
+independently reconstructed feasible imbalance and $L$ the solver lower bound.
+\item If stage one meets the configured optimality criterion, or the explicitly
+configured time-limit fallback has a qualifying reconstructed relative gap,
+maximize settlement revenue less wear, import and terminal costs:
+\begin{align}
+ \max\quad &R-D-I-K,\\
+ \text{subject to}\quad&A\le U+\beta U+\delta,\\
+ R={}&\sum_s w_s\sum_t\bigl(\pi_t^+b^+_{s,t}-\pi_t^-b^-_{s,t}\bigr).
+\end{align}
+Here $\beta$ and $\delta$ are configured relative and absolute extra
+imbalance budgets. The second stage is restricted by the feasible stage-one
+incumbent, which need not be a proven minimum when the fallback is used.
+\end{enumerate}
+For positive $U$, the reconstructed gap is $(U-L)/U$; the implementation also
+handles near-zero objectives explicitly. When enabled in selected studies, the
+fallback accepts a time-limited incumbent only if its gap is at most 1\%.
+The standard relative solver MIP gap is $10^{-4}$ and no absolute MIP gap is
+configured. These studies allocate a separate 10-second optimization budget to
+each stage; building and validating models add wall time. A failed or invalid
+second-stage refinement retains the validated first-stage plan. A qualified
+incumbent is not described as a certified optimum. Direction-specific settlement
+prices require a binary sign restriction to prevent simultaneous artificial
+positive and negative deviations. The equal-price case uses signed settlement.
+
+\section{Forecast-economic and adaptive ensemble MPC}
+\subsection{Scenario-based forecast economics}
+The research economic controllers use forecast, rather than realized,
+settlement prices $\hat\pi^+_{s,t}$ and $\hat\pi^-_{s,t}$. Let
+\begin{equation}
+ R_s=\sum_t(\hat\pi^+_{s,t}b^+_{s,t}-\hat\pi^-_{s,t}b^-_{s,t}),
+ \qquad L_s=D_s+I_s-R_s.
+\end{equation}
+The implemented objective is
+\begin{equation}\label{eq:economic}
+ \min\sum_s w_s\left(D_s+I_s+K_s-R_s+
+ \kappa_{\mathrm{econ}}\sum_t(b^+_{s,t}+b^-_{s,t})\right)
+ +\lambda\CVaR_\alpha(L).
+\end{equation}
+The economic imbalance coefficient is separate from the price-blind penalty
+and defaults to zero in these research cases. $L_s$ excludes the artificial
+imbalance penalty and terminal salvage, and does not represent uncertain
+receipts on unpriced auction commitments. At the configured risk-neutral
+baseline $\lambda=0$. When enabled, weighted monetary CVaR has the linear form
+\begin{equation}
+ \CVaR_\alpha(L)=\min_{\eta\in\R,\,\xi_s\ge0}
+ \left\{\eta+\frac{1}{1-\alpha}\sum_s w_s\xi_s:
+ \xi_s\ge L_s-\eta\right\}.
+\end{equation}
+The common-control economic ensemble controller uses the same physical
+ownership as the ordinary ensemble MPC. A deterministic economic controller
+has one PV path. Forecast settlement paths and PV members are combined under
+the declared scenario construction; the initial workflow does not learn a
+joint multi-auction/PV/settlement distribution.
+
+\subsection{Adaptive PV-history recourse}
+The adaptive controller optimizes objective~\eqref{eq:economic} while allowing
+future controls to depend on disclosed PV histories. Let $n(s,t)$ be the node
+assigned to scenario $s$ at time $t$. If two scenarios share a node then their
+charge, discharge, PV utilization and battery mode are identical:
+\begin{equation}
+ n(s,t)=n(s',t)\Longrightarrow
+ (c_{s,t},d_{s,t},u_{s,t},z_{s,t})
+ =(c_{s',t},d_{s',t},u_{s',t},z_{s',t}).
+\end{equation}
+All scenarios share the first node and the current command. Nodes are formed
+from quantized observed PV prefixes up to a configured revelation lag; branch
+points occur only at configured future indices. They do not use future PV or a
+scenario label. Battery state follows each node's control history, and nodes do
+not recombine distinct prior battery histories. The current implementation does
+not reveal simulated settlement prices along a recourse path.
+
+The prepared long study uses branching every four quarter-hour intervals, a
+one-interval observation lag and 0.1 MW PV-history bins; these are study
+settings, not structural constants. This is a restricted information policy,
+not perfect foresight. A retained representative path is an auction shadow
+projection and is not a prediction of which scenario will occur. Only the
+common first action is executed. Adaptive and ordinary ensemble models should
+be compared with matched objective, scenarios, information, state and physical
+settings before attributing a difference to recourse itself.
+
+\section{Execution, settlement and information comparisons}
+The grid-tracking baseline follows the committed grid position using its
+configured interval PV feedback and physical protection. MPC uses its own
+configured current-PV input, often the forecast. These information sets differ.
+Physical clipping or safety overrides and solver fallbacks are recorded.
+
+For a realized interval, $\hat g_t$ is the executed grid power and
+$\hat b_t=\Delta_t\hat g_t-q_t$. Actual settlement is calculated from realized
+positive and negative deviations and realized settlement prices; actual auction
+cash is booked only on publication. Realized operating profit combines those
+cashflows and configured fees, imports and wear. It is not the optimizer's
+forecast objective. Since each policy carries its own state and can submit
+later auction orders, a profit comparison reflects the whole closed-loop policy.
+Ending SOC and terminal treatment must be reported alongside profit.
+
+\section{Initial price forecasting experiments}
+\subsection{Data and feature construction}
+The initial retrospective experiments forecast the NORD DA, IDA1--IDA3 and
+imbalance-settlement prices. DA training starts in 2024 in the specified ridge
+study; its IDA and settlement training starts in 2025. A separate historical
+intraday experiment also used 2024 hourly exports as coarse labels expanded
+onto quarter-hours. Those repeated rows are not independent quarter-hour
+products. The newer search selects native hourly and native quarter-hourly
+products \emph{before} any expansion and fits separate models for each market
+and resolution. Native price products are held constant within their duration,
+not linearly interpolated.
+
+The initial price-only feature vector contains historical price lags and local
+calendar terms: sine/cosine representations of hour, weekday and annual phase,
+plus a weekend indicator. The European-context ridge study uses 24, 48, 168 and
+336 hour lags, with configured same-clock fallback when a lag is unavailable.
+Its NORD fundamentals add zonal load, total-generation, solar and onshore-wind
+forecasts. Additional ablations add PSV gas, Milan/Turin temperature forecasts,
+French nuclear and hydro generation and France--Italy commercial exchanges, or
+Swiss aggregate balance. A combined set includes these groups. An August-only
+set includes Swiss--Italy commercial schedules, directional \emph{intraday}
+NTC and the Italian-NORD/Swiss spot spread. These are not physical border-flow
+measurements. No individual farm PV ensemble is a zonal-price feature.
+
+The initial context run applies stated hypothetical publication policies:
+French/Swiss realized observations and PSV are shifted 48 hours; Swissgrid
+border observations use a nine-day shift with an assumed weekly release lag.
+A separate retrospective experiment uses previous-day realized information and
+a deliberately permissive source-day publication placeholder. Exact release
+clocks and revisions are not established by the download timestamp. Weather
+hindcasts are allowed in the stated retrospective temperature comparison.
+Missing source observations are retained as gaps, not converted to zero.
+
+\subsection{Ridge model, temporal split and residual paths}
+For training rows $i$, let $x_i$ be the selected lag, calendar and optional
+fundamental features, $y_i$ the observed price and $\tilde x_i$ the features
+standardized by training-set mean and scale. The fitted point model is
+\begin{equation}
+ \hat y_i=\beta_0+\tilde x_i^{\mathsf T}\beta,\qquad
+ (\hat\beta_0,\hat\beta)=\arg\min_{\beta_0,\beta}
+ \sum_{i\in\mathcal T_{\mathrm{train}}}
+ (y_i-\beta_0-\tilde x_i^{\mathsf T}\beta)^2+\alpha\lVert\beta\rVert_2^2.
+\end{equation}
+The intercept is unpenalized. The initial European-context comparison sets
+$\alpha=20$ and uses a 14-day chronological calibration tail. A predictor
+trained before the calibration period generates residuals on that period; the
+deployed point predictor is then refitted on all eligible labels through the
+fold cutoff. The calibration residuals do not come from the refitted model's
+in-sample predictions. Training labels and the feature-vintage eligibility rules
+are recorded separately from evaluation periods.
+
+Whole complete local-day residual blocks $\varepsilon_{d,t}$ provide empirical
+price paths. For a selected calibration day $d_j$, a forecast sample is
+\begin{equation}
+ \hat\pi^{(j)}_t=\hat y_t+\varepsilon_{d_j,t}.
+\end{equation}
+Sampling a block preserves its within-day residual shape, rather than drawing
+independent noise at each interval. The configured DST policy controls which
+day lengths or local-clock slots can be used. Residual draws for separate days
+are independent; this does not model cross-day dependence or establish a joint
+PV--price distribution. The separate point forecast $\hat y_t$ need not equal
+the finite residual-scenario mean.
+
+\subsection{Scores and experimental design}
+For observed prices $y_i$ and point forecasts $\hat y_i$, the reported absolute
+and relative errors include
+\begin{align}
+ \mathrm{MAE}&=\frac1N\sum_{i=1}^N|y_i-\hat y_i|,\\
+ \mathrm{WAPE}(\%)&=100\frac{\sum_i|y_i-\hat y_i|}{\sum_i|y_i|},\\
+ \mathrm{rMAE}&=\frac{\sum_i|y_i-\hat y_i|}{\sum_i|y_i-\hat y_i^{\mathrm{naive}}|}.
+\end{align}
+WAPE and rMAE are undefined when their respective denominators are zero. WAPE
+is a pooled normalization, not the mean of individual percentage errors; this
+avoids dividing separately by zero or near-zero prices. In the initial ridge
+report, MAE is averaged across complete daily scores, while WAPE is pooled over
+the same common-day intervals; these need not weight 23/25-hour days identically.
+For forecast samples $x_1,\ldots,x_M$, the empirical CRPS at observation $y$
+is
+\begin{equation}
+ \mathrm{CRPS}=\frac1M\sum_{j=1}^{M}|x_j-y|
+ -\frac{1}{2M^2}\sum_{j,k=1}^{M}|x_j-x_k|.
+\end{equation}
+CRPS evaluates the predictive distribution; it is not the ridge training loss
+or the eventual trading profit. The initial context ablation evaluates January
+and August 2026 and compares declared models on common complete delivery days.
+Feature groups can have different training coverage, particularly Swiss series
+and the 2026 border file; therefore shared test dates alone do not guarantee
+identical training samples. The results are development comparisons, not a
+full-year or universally causal test.
+
+The expanded CPU search adds ridge, Lasso, elastic net, feed-forward neural
+networks, random forests, histogram gradient boosting, LightGBM and CatBoost
+candidates. These are point-model candidates on the library's interval features;
+the Lasso is not a reproduction of the full-curve LEAR benchmark. The first
+search validates separately by native resolution and reserves later dates for
+selection-fixed evaluation. Its quarter-hour later period includes August 2026,
+which was inspected in an earlier ridge study, so it is not globally untouched.
+Intraday and settlement searches are separate market tasks. The initial search
+is not an exhaustive hyperparameter search, nor are the selected candidates yet
+portable MPC forecast artifacts. The design draws on the benchmarking and
+metric discussion of Lago et al.\ \cite{lago2021}; model performance and
+forecast quality remain distinct from closed-loop trading value.
+
+\section{Prepared longer controller studies and limitations}
+The prepared annual study defines one continuous 2026 trajectory per farm and
+case; the ensemble study defines separate full January and August trajectories.
+The latter does not simulate the intervening months and therefore starts each
+month from its configured state. Both define matched pvlib and eventual neural
+forecast cases, with continuous commitments and latest-eligible forecast cycles.
+The present reviewed PV/measurement inputs end in August 2026, cached market
+series do not yet cover the whole year, and the available August ensemble lacks
+the preceding 31 July cycle needed by the first DA decision. The final neural
+models are being trained. Existing file presence is not proof of temporal
+coverage: complete replay preflight must check each required date before a run.
+No full-year or full-month controller result is claimed here.
+
+\section{Implementation references}
+\begin{itemize}
+\item Common-control penalty and oracle: \path{src/optimization/mpc.py}; shared battery constraints: \path{src/optimization/physical.py}.
+\item Forecast-economic and adaptive model: \path{src/optimization/adaptive_mpc.py}; information nodes: \path{src/scenario_research.py}.
+\item Price features and fitting: \path{src/forecasting/energy_prices.py}, \path{src/forecasting/energy_price_features.py}, and \path{scripts/fit_energy_price_forecast.py}.
+\item Native-resolution model search: \path{scripts/search_energy_price_models.py}, \path{src/forecasting/price_search.py}, and \path{src/forecasting/price_search_models.py}.
+\item Experiment configurations and current input limitations: \path{configs/research/price_european_context.yaml} and \path{docs/reviews/long_horizon_2026_study.md}.
+\end{itemize}
+\begin{thebibliography}{9}
+\bibitem{lago2021} J. Lago, G. Marcjasz, B. De Schutter and R. Weron,
+``Forecasting day-ahead electricity prices: A review of state-of-the-art algorithms,
+best practices and an open-access benchmark,'' \emph{Applied Energy}, 293,
+116983, 2021. \url{https://doi.org/10.1016/j.apenergy.2021.116983}.
+\end{thebibliography}
+\end{document}
