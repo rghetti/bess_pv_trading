@@ -318,4 +318,4 @@ energy_price_training:
       settings:
         decision_local_time: 00:00
         decision_day_offset: 0
-  workers: 2
+  workers: 6
