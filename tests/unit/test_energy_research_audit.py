@@ -84,6 +84,33 @@ def test_audit_refuses_final_report_for_unfinished_batch(tmp_path):
     assert partial["completed_jobs_audited"] == 0
 
 
+def test_batch_report_uses_each_jobs_terminal_and_forecast_settings(tmp_path, monkeypatch):
+    """The report must not substitute the historical study's assumptions."""
+    (tmp_path / "controller").mkdir()
+    config, frame = fixture_controller(tmp_path / "controller")
+    config.update({
+        "state": {"terminal_soc_percent": 35, "terminal_soc_min_percent": 10},
+        "realtime_mpc": {"terminal_inventory_mode": "none", "terminal_soc_target_percent": 42,
+                         "current_pv_information": "realized_interval_average"},
+        "energy_price_forecast": {"auction_enabled": True},
+    })
+    item = {"status": "complete", "job_id": "case", "farm_id": 1, "window_id": "window",
+            "case_id": "case", "controller": "deterministic_mpc", "result": {"output_dir": str(tmp_path)}}
+    (tmp_path / "manifest.json").write_text(json.dumps({"status": "complete", "plan": {"job_count": 1}, "results": [item]}))
+    (tmp_path / "config__case.json").write_text(json.dumps(config))
+    # Both controllers have identical valid data; this test targets reporting, not solver behavior.
+    frame["net_position_mwh"] = 0.0
+    summary = {"realized_operating_profit_eur": 0, "absolute_imbalance_mwh": 0,
+               "auction_revenue_eur": 0, "degradation_eur": 0, "final_energy_mwh": 0.5}
+    monkeypatch.setattr(audit, "audit_controller", lambda directory, config: ({"summary": summary, "violations": []}, frame))
+    settings = audit.audit_batch(tmp_path)["jobs"][0]["comparison_configuration"]
+    assert settings["terminal_soc_percent"] == 35
+    assert settings["terminal_soc_min_percent"] == 10
+    assert settings["mpc_terminal_inventory_mode"] == "none"
+    assert settings["mpc_current_pv_information"] == "realized_interval_average"
+    assert settings["auction_price_forecasts_enabled"] is True
+
+
 @pytest.mark.parametrize("storage", ["csv", "daily_parquet"])
 def test_conditional_horizons_stream_and_check_every_scenario(tmp_path, storage):
     config, frame = fixture_controller(tmp_path)
