@@ -1,0 +1,549 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage[margin=24mm]{geometry}
+\usepackage{amsmath,amssymb,mathtools,booktabs,array,graphicx,xurl}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue]{hyperref}
+\usepackage{enumitem}
+\setlist{itemsep=3pt,topsep=4pt}
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{6pt}
+\setlength{\emergencystretch}{3em}
+\newcommand{\pos}[1]{\left[#1\right]_+}
+\newcommand{\E}{\mathbb E}
+\DeclareMathOperator{\clip}{clip}
+\hypersetup{pdftitle={Forecast-aware trading and control of solar generation with battery storage},pdfauthor={PV--BESS research programme}}
+\title{Forecast-Aware Trading and Control\\of Solar Generation with Battery Storage}
+\author{Research framework, initial evidence and current directions}
+\date{4 November 2026}
+\begin{document}
+\maketitle
+\begin{abstract}
+A solar producer must sell electricity before production and prices are fully
+known, then deliver an evolving contractual position with finite battery
+flexibility. We study how forecasts, sequential auction decisions and real-time
+physical control should work together. The framework revises future decisions
+while preserving past commitments and carrying actual stored energy and battery
+wear through time. Experiments cover four northern-Italian solar plants,
+day-ahead and intraday auctions, probabilistic solar forecasts, price prediction
+and several battery controllers. Early results show a recurring trade-off:
+reducing forecast error or imbalance does not necessarily maximize operating
+profit. The current focus is on useful uncertainty, adaptive control and the
+value of information under limited physical flexibility. Results remain
+retrospective, with short control studies and explicitly identified reconstructed
+production. Detailed equations are collected in the appendices.
+\end{abstract}
+\tableofcontents
+\newpage
+
+\section{The problem: decisions made before uncertainty is resolved}
+A photovoltaic plant and a battery share a grid connection. Solar generation
+can be exported, stored or curtailed. The battery can also import energy for
+charging. There is no local demand. Its finite power, energy and conversion
+efficiency limit how much forecast error it can absorb, while cycling creates
+an economic wear cost.
+
+The producer participates in the Italian day-ahead auction and three intraday
+auctions. Each new trade changes the quantity promised for a delivery period.
+The quantity becomes binding when submitted, even if its price has not yet
+been published. Later forecasts may change the preferred position, but earlier
+orders cannot be rewritten. At delivery, any difference between physical export
+and the contracted position is settled at the applicable imbalance price.
+
+This creates two linked decisions: how much energy to contract at each auction,
+and how to operate the battery and solar plant as delivery approaches. Selling
+conservatively may reduce shortfall but leave valuable solar energy unused.
+Aggressive sales may earn more auction revenue but consume battery flexibility
+or create settlement exposure. Retaining energy today can protect tomorrow's
+operation, yet may forgo a profitable opportunity now.
+
+We measure operating profit as auction receipts plus signed imbalance
+settlement, less executed battery wear, transaction fees and any modeled import
+charge. A positive imbalance is not automatically a loss: its cash sign depends
+on the settlement price. This is an operating model, not an investment valuation;
+capital cost, financing, taxes and fixed operating costs are outside its scope.
+
+\begin{center}\small
+\begin{tabular}{llll}
+\toprule Auction & Gate, Italian local time & Delivery covered & Information update\\\midrule
+Day ahead & Previous day, 12:00 & Whole next day & Initial position\\
+Intraday 1 & Previous day, 15:00 & Whole next day & Revise remaining trades\\
+Intraday 2 & Previous day, 22:00 & Whole next day & Revise remaining trades\\
+Intraday 3 & Delivery day, 10:00 & Noon to midnight & Revise afternoon trades\\
+\bottomrule\end{tabular}\end{center}
+These are the study calendar's auction gates; decisions use a five-minute
+buffer. Quarter-hour delivery is represented with actual elapsed durations,
+including daylight-saving transitions. Earlier hourly day-ahead products
+remain single market products even when physical control uses quarter-hours.
+The market assumption is price-taking and full execution of submitted quantities.
+Continuous order-book trading and uncertain order acceptance are separate future
+problems.
+
+\section{Our core idea: connect forecasts, commitments and physical state}
+The framework repeatedly updates three connected layers.
+\begin{enumerate}
+\item \textbf{Forecast the available energy and its economic environment.}
+Use only information eligible at the decision time, with explicit assumptions
+about forecast release and observation delays. Represent solar uncertainty as
+possible paths rather than treating one point forecast as certain.
+\item \textbf{Optimize the remaining auction opportunities.}
+Choose current and provisional future trades jointly with a physically feasible
+battery schedule. Preserve all submitted quantities. Execute only the order
+for the auction that is closing.
+\item \textbf{Control delivery and carry the consequences forward.}
+Use observed battery state and updated forecasts to choose physical actions.
+Execute only the first action, settle actual deviations, and use the resulting
+state in later decisions.
+\end{enumerate}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{docs/figures/research_report/decision_loop.pdf}
+\caption{The auction layer revises future commitments; the physical layer
+operates against quantities already submitted. Actual state and observations
+connect successive decisions.}
+\end{figure}
+
+The key link is the \emph{actual} battery state. A plan for tomorrow may be
+formed while today's delivery is still in progress. We project the boundary
+state using eligible forecasts and retained controls, but never overwrite the
+actual state with that prediction. When tomorrow arrives, its true carried
+state can differ. This keeps projection error, replanning and physical
+protection visible in the outcome.
+
+Similarly, an optimization objective is an expectation over the remaining
+opportunities, not a cash account. Previously submitted trades remain binding;
+their revenue is booked once when prices are published. Repeated objectives
+over overlapping horizons are never added to estimate profit. In this work,
+continuous operation means this uninterrupted auction-and-control chronology,
+with daily planning horizons.
+
+The research contribution is the integrated decision framework and its
+controlled comparisons: we study when better information changes economically
+useful decisions, how physical flexibility changes that value, and how the
+representation of uncertainty affects the action that can be taken now.
+
+\section{The main model and its extensions}
+The main auction model maximizes expected remaining trading revenue after wear
+and trading costs, subject to battery energy conservation, exclusive charging
+and discharging, grid limits and immutable earlier commitments. Decisions
+that have the same observed history must be identical across scenarios.
+The complete mixed-integer problem is in Appendix~\ref{app:auction}.
+
+The initial strict-delivery formulation requires each represented solar path
+to support the same contracted delivery and common battery schedule. Solar
+curtailment can adapt to available production. Under equal price paths, this
+has an exact simplification: useful solar injection cannot exceed the minimum
+across represented paths at each interval. It is a conservative planning
+constraint, not a new forecast trajectory or a calibrated confidence level.
+
+A stochastic alternative allows deviations and penalizes expected absolute
+imbalance, optionally with a tail-volume term. Physical control then compares
+simple commitment tracking with receding-horizon control. Price-blind control
+balances deviation volume, wear and terminal energy. Forecast-economic control
+also values signed settlement, while a noncausal price oracle provides a
+separately labelled information benchmark.
+
+The main extensions address distinct questions:
+\begin{description}[style=nextline,leftmargin=0pt,labelindent=0pt,labelwidth=0pt]
+\item[Adaptive future control.]
+All scenarios share the action taken now; future actions can branch only after
+distinguishable solar observations. This tests the value of adapting to
+information, rather than giving each path an unrealistically informed first
+action.
+\item[Coherent uncertainty through time.]
+Calibrated marginal distributions describe uncertainty at one time. Storage
+also responds to the duration of shortfalls and surpluses. Rank-based coupling
+preserves a raw ensemble's temporal structure, while matched shuffling tests
+what changes when that structure is removed.
+\item[Risk and remaining energy.]
+Monetary tail risk accounts for unfavorable operating-loss scenarios. A
+forecast-conditioned continuation value estimates the usefulness of energy
+remaining beyond the immediate control horizon. Neither term is actual income.
+\item[Information, market access and physical flexibility.]
+Factorial comparisons separate updated information from access to more auctions,
+and vary battery energy, battery power and connection capacity independently.
+This asks where forecast improvements can actually be used.
+\item[Smaller scenario sets.]
+Representative paths can reduce computation while preserving selected ramp,
+energy-deficit and economic features. Their quality must be assessed through
+decisions and outcomes; a small forecast-space distance is not an economic
+guarantee.
+\end{description}
+
+\section{What has been tested}
+The four studied solar capacities are approximately 0.95, 1.52, 4.16 and
+6.64 MW. The hypothetical batteries range from 0.75 to 5 MWh and 0.5 to
+2.5 MW. They share a 7--93\% state-of-charge range and 90\% round-trip
+efficiency. Battery and connection ratings are study assumptions, not verified
+equipment inventories. The assumed throughput wear cost is approximately
+EUR 27.64 per AC MWh charged or discharged.
+
+Forecast experiments include physical conversion/calibration, point neural
+models, marginal ensemble calibration, delayed online weighting, price-history
+and fundamental predictors, and native-resolution intraday spread models.
+Trading experiments compare auction participation, deterministic and ensemble
+planning, and several physical controllers. Each controller has its own
+chronological state and paired tracking baseline.
+
+The evidence has three important boundaries. First, many auction studies use
+perfect future clearing prices to isolate physical and information effects;
+their profits are not implementable price-forecast expectations. Second,
+model selection reused parts of the historical evaluation period. Third,
+some production targets are reviewed reconstructions rather than independent
+measurements. We preserve these distinctions when interpreting the results.
+
+\subsection{Solar forecasts: completed single-cycle study}
+An 8,192-candidate search fitted 2025 data, selected settings on January--April
+2026 and evaluated the frozen winners on May--August. Training used historical
+irradiance; later evaluation used the preceding day's forecast irradiance.
+The selected models were bidirectional GRU, Transformer, bidirectional LSTM
+and TCN respectively. Daylight errors are normalized by AC capacity:
+\begin{center}
+\begin{tabular}{rrrr}
+\toprule Plant & Validation RMSE (\%) & Later RMSE (\%) & Later MAE (\%)\\\midrule
+1 & 4.708 & 6.069 & 4.006\\
+345 & 7.645 & 10.366 & 6.893\\
+901 & 10.241 & 11.231 & 6.776\\
+910 & 8.977 & 10.992 & 6.630\\
+\bottomrule\end{tabular}\end{center}
+These are retrospective errors against reviewed targets. For plant 910,
+2,340 scored later quarters are synthetic; measured-only RMSE is 12.045\%.
+That distinction is necessary to avoid interpreting reconstruction agreement
+as independent forecasting accuracy. The new four-cycle, 48-hour neural study
+is incomplete and has no final result yet.
+
+Probabilistic results are mixed. Fixed calibrated quantiles beat the warm online
+combination at the day-ahead origin on all four plants in a 12-day August
+comparison. Later intraday updates help some plants. A separate January-fitted
+calibration worsens raw-ensemble CRPS on all four plants during a two-day August
+transfer. Calibration and online adaptation therefore need seasonal and
+decision-specific evaluation.
+
+\subsection{Price forecasts: useful baselines and modest incremental gains}
+In a 90-day January--March 2026 comparison, day-ahead elastic net with
+fundamentals and gas achieves MAE 8.11 EUR/MWh, versus 16.57 for previous-week
+persistence. For intraday 1 after day-ahead publication, however, simply using
+the day-ahead price gives MAE 4.90, better than the compared fitted spread
+model at 5.02 and direct model at 5.93. A strong simple baseline is essential.
+
+In a separate native quarter-hour study, models chosen on June--August 2025
+were followed with weekly refits on later complete September--November days:
+\begin{center}
+\begin{tabular}{lrrr}
+\toprule Auction & Later MAE (EUR/MWh) & WAPE & Relative MAE\\\midrule
+Intraday 1 & 6.88 & 6.10\% & 0.498\\
+Intraday 2 & 7.12 & 6.26\% & 0.472\\
+Intraday 3 & 10.54 & 9.08\% & 0.534\\
+\bottomrule\end{tabular}\end{center}
+Relative MAE compares the same products with seasonal-lag persistence. The
+respective samples contain 8,160, 8,064 and 4,176 products. In a later
+107-day day-ahead comparison, adding earlier-day intraday prices improves the
+earlier-selected model from 16.314 to 16.021 EUR/MWh. These studies retain
+assumed publication clocks and previously inspected periods; they do not yet
+establish live forecasting performance or a corresponding trading gain.
+
+\subsection{Trading and control: profit and imbalance can move together}
+Full January and August auction replays show that strict ensemble delivery can
+reduce absolute imbalance while reducing profit and increasing curtailment.
+For plant 1 in January, updating deterministic planning earns EUR 10,319.57
+with 0.665 MWh absolute imbalance; strict 51-path planning earns EUR 10,054.81
+with 0.226 MWh. Ending SOC is 44.14\% versus 50.17\%, respectively. Actual
+auction prices are known in these planning experiments, and inventory is not
+valued in cash profit.
+
+A newer two-day January 15--16 control study completed 26 cases across four
+plants. The table reports \emph{mean daily portfolio differences}, summing all
+four plants and comparing each case with its own tracking baseline:
+\begin{center}\small
+\begin{tabular}{lrrr}
+\toprule Controller & Profit & Abs. imbalance & Wear\\
+ & EUR/day & MWh/day & EUR/day\\\midrule
+Deterministic penalty MPC & +61.83 & +2.85 & +8.91\\
+Ensemble penalty MPC & +37.40 & +4.56 & +93.05\\
+Adaptive raw ensemble MPC & +150.86 & +11.78 & +128.26\\
+\bottomrule\end{tabular}\end{center}
+The adaptive economic objective differs from the penalty controllers; these
+rows are illustrative policy outcomes, not a pure recourse ablation.
+The study has only two calendar days, common market prices across plants and
+reviewed production. Tracking sees actual interval PV feedback, whereas these
+MPC cases use forecast current PV. Later auction orders change with controller
+state. These differences prevent a general superiority claim.
+
+Over an additional October 1--7 deterministic comparison, cash profit increases
+for all four plants, but total absolute imbalance increases 89.91 MWh and
+ending stored energy differs. On August 2--3 for plant 910, ensemble penalty
+control gains EUR 96.81 while the settlement-price oracle loses EUR 62.94.
+That August target is entirely reconstructed daylight or policy night zeros.
+Even an oracle with future prices is not an upper bound on realized profit
+when future solar production, terminal preferences and subsequent decisions differ.
+
+The physical and cash-accounting checks passed for the completed reviewed
+January matrix, October week and August comparison. These checks establish
+internal consistency; they do not remove the empirical limitations above.
+
+\section{Current focus and unresolved questions}
+The central question is which forecast information is valuable \emph{for the
+decisions that remain possible}. Our current work concentrates on four areas.
+
+First, the new solar model study uses all four weather cycles over 48-hour
+horizons, with lead-time eligibility and a clear separation between historical
+irradiance used for learning and forecast irradiance available in operation.
+Second, price experiments examine earlier-cleared auction curves, recent
+training windows and robust losses using matched, selection-fixed follow-up.
+Some robust fits have convergence limitations, so completed fitting alone is
+not treated as a valid model ranking.
+
+Third, adaptive scenario control tests how temporal uncertainty interacts with
+battery energy, power and connection limits. Fourth, continuation value and
+monetary risk examine decisions near horizon boundaries and in unfavorable
+scenarios. Computational reduction is evaluated within these matched problems.
+
+The available evidence does not yet provide a full-year controller comparison,
+a joint calibrated law for solar production and every market price, or a
+selection-fixed economic comparison using the final new neural forecasts.
+Longer studies must preserve target provenance, comparable information sets,
+ending inventory and calendar-block uncertainty. Annual operating value,
+investment returns and deployment claims remain beyond the completed evidence.
+
+\clearpage
+\appendix
+\section{Full residual auction optimization}
+\label{app:auction}
+\subsection{Sets, parameters and signs}
+Let $t\in\mathcal T$ index the remaining physical intervals of a delivery day,
+$\Delta_t$ their duration in hours, $s\in\mathcal S$ scenarios with probabilities
+$w_s$, and $a\in\mathcal A_k$ auctions still open at decision $k$.
+$\mathcal T_a$ is auction $a$'s eligible delivery set. Native products group
+physical intervals; their identifiers retain daylight-saving offsets.
+
+Solar availability is $V_{s,t}$ MW AC, battery capacity $E$ MWh, power limit
+$\bar P$ MW, energy bounds $E^{\min},E^{\max}$, efficiencies $\eta_c,\eta_d$
+and hourly self-discharge $\sigma$. The grid limits are $P^{\rm imp},P^{\rm exp}$.
+$Q_t^{\rm fix}$ is the signed MWh position from all earlier submitted quantities,
+including still-unpriced orders. Positive trade/grid signs mean sale/export.
+Auction price coefficients are $\pi_{a,s,t}$ in EUR/MWh.
+
+Controls $c_{n,t},d_{n,t}$ are charging/discharging MW; $z_{n,t}$ is a charging
+binary. Curtailment is $u_{m,t}$ MW, injection $i_{s,t}$ MW, grid exchange
+$g_{s,t}$ MW and internal energy $e_{s,t}$ MWh. $q_{a,n,t}$ is a signed auction
+adjustment in MWh. Node maps $n_t(s),n_a(s),m_t(s)$ encode observable history.
+Leaf values below refer to their node-owned variables, so indistinguishable
+histories cannot take different actions.
+
+\subsection{Complete base problem}
+For throughput wear $D_s=c_{\rm thr}\sum_t(c_{s,t}+d_{s,t})\Delta_t$ and
+optional import cost $I_s=f\sum_t\pos{-g_{s,t}}\Delta_t$, the residual model is
+\begingroup\small
+\begin{align}
+ \max\quad &\sum_sw_s\left[
+    \sum_{a\in\mathcal A_k}\sum_{t\in\mathcal T_a}\pi_{a,s,t}q_{a,n_a(s),t}
+       -D_s-I_s-C_s^{\rm trade}\right] \label{eq:short-objective}\\
+ \text{s.t.}\quad
+ &i_{s,t}+u_{m_t(s),t}=V_{s,t},\quad i_{s,t}\ge0,\quad u_{m_t(s),t}\ge0,
+                                                         &&\forall s,t,\\
+ &g_{s,t}=i_{s,t}+d_{n_t(s),t}-c_{n_t(s),t},
+                                                         &&\forall s,t,\\
+ &-P^{\rm imp}\le g_{s,t}\le P^{\rm exp},                  &&\forall s,t,\\
+ &0\le c_{n,t}\le\bar Pz_{n,t},\quad
+   0\le d_{n,t}\le\bar P(1-z_{n,t}),\quad z_{n,t}\in\{0,1\},&&\forall n,t,\\
+ &e_{s,t+1}=(1-\sigma)^{\Delta_t}e_{s,t}
+       +\eta_cc_{n_t(s),t}\Delta_t-d_{n_t(s),t}\Delta_t/\eta_d,
+                                                         &&\forall s,t,\\
+ &E^{\min}\le e_{s,t}\le E^{\max},\quad e_{s,0}=e^k,       &&\forall s,t,\\
+ &Q_{s,t}=Q_t^{\rm fix}+\sum_{a:t\in\mathcal T_a}q_{a,n_a(s),t},
+                                                         &&\forall s,t,\\
+ &g_{s,t}\Delta_t=Q_{s,t},                                &&\forall s,t,\\
+ &-P^{\rm imp}\Delta_t\le q_{a,n,t}\le P^{\rm exp}\Delta_t,&&\forall a,n,t\in\mathcal T_a,\\
+ &-P^{\rm imp}\Delta_t\le Q_t^{\rm fix}
+           +\sum_{b\le a:t\in\mathcal T_b}q_{b,n_b(s),t}
+            \le P^{\rm exp}\Delta_t,                     &&\forall a,s,t,\\
+ &q_{a,n,t}/\Delta_t=q_{a,n,t'}/\Delta_{t'},
+                  &&t,t'\text{ in the same native product}.\label{eq:short-product}
+\end{align}
+\endgroup
+Only eligible quantities exist. The last equality ties average power within a
+native product; on equal quarter-hours it ties MWh shares directly. Fixed
+initial energy can be observed or a forecast projection to the eligible
+boundary. A configured terminal equality $e_{s,T}=e_F$ and/or floor
+$e_{s,T}\ge e_{\rm floor}$ is added where the study requires it. A planning
+terminal target does not itself force an algebraic feedback controller to end
+at that realized energy.
+
+For progressive transaction tariff $F_m$, previously submitted monthly gross
+volume $V_m$ and new gross volume $G_{m,s}=\sum_{a:m(a)=m,t}|q_{a,n_a(s),t}|$,
+\begin{equation}
+ C_s^{\rm trade}=\sum_m\{F_m(V_m+G_{m,s})-F_m(V_m)\}.
+\end{equation}
+Exact absolute-value and piecewise-linear graphs are required if reachable
+marginal tariff bands are decreasing; a convex epigraph alone is insufficient.
+The month is the submission month, not necessarily the delivery month.
+Earlier auction cash and incurred wear are sunk and absent from
+\eqref{eq:short-objective}. Only the closing auction's order is submitted;
+other quantities are revisable plans. Sequential planning replaces
+$\mathcal A_k$ by the single current auction.
+
+\subsection{Stochastic deviation and exact-envelope variants}
+The stochastic alternative replaces exact delivery by
+\begin{align}
+ \delta^+_{s,t}-\delta^-_{s,t}&=g_{s,t}\Delta_t-Q_{s,t},\\
+ 0\le\delta^+_{s,t}&\le M_ty_{s,t},\quad
+ 0\le\delta^-_{s,t}\le M_t(1-y_{s,t}),\quad y_{s,t}\in\{0,1\},
+\end{align}
+where $M_t=(P^{\rm imp}+P^{\rm exp})\Delta_t$ or a tighter configured cap.
+It adds signed forecast settlement less $\kappa\sum_t(\delta^++\delta^-)$
+to each path's profit. With $A_s=\sum_t(\delta^++\delta^-)$, optional tail-volume
+cost is $\rho[z+(1-\alpha)^{-1}\sum_sw_s\xi_s]$, with
+$\xi_s\ge A_s-z$, $\xi_s\ge0$, $z\ge0$. Zero planning settlement and positive
+volume deterrence distinguish risk planning from realized-price exploitation.
+
+Under exact delivery, common trades/battery controls, identical price paths and
+compatible instantaneous curtailment recourse, $i_t$ is shared and
+\begin{equation}
+ 0\le i_t\le\min_sV_{s,t},\qquad u_{s,t}=V_{s,t}-i_t.
+\end{equation}
+This gives an exact reduced feasible set and objective. It does not apply to
+general adaptive or imbalance-enabled problems, and discarding low-probability
+paths is not part of the equivalence.
+
+\section{Battery wear, control and realized accounting}
+\subsection{Wear models}
+For replacement value $R$, reference internal cycle depth $d_0$, life $N$ and
+capacity $E$, AC throughput wear can be calibrated as
+\begin{equation}
+ c_{\rm thr}=\frac{R}{Nd_0E(1/\eta_c+\eta_d)},\qquad
+ D=c_{\rm thr}\sum_t(c_t+d_t)\Delta_t.
+\end{equation}
+An optional segmented depth model uses stress $\Phi(d)=\alpha d^\beta$,
+$\beta\ge1$, $J$ segments and marginal discharge cost
+\begin{equation}
+ m_j=\frac{RJ}{\eta_dE}\{\Phi(j/J)-\Phi((j-1)/J)\},
+ \qquad D=\sum_{t,j}m_jd_{j,t}\Delta_t.
+\end{equation}
+Segment energy transitions sum to aggregate energy; shallow-first charging and
+discharging priorities preserve cycle-depth memory. The segment vector carries
+between decisions and cannot generally be recovered from SOC alone. This is
+an approximation to cycle wear, not dynamic capacity fade or thermal/calendar
+aging~\cite{xu}.
+
+\subsection{Physical MPC}
+For already submitted position $Q_t^{\rm sub}$, utilization $a_{n,t}\in[0,1]$
+and forecast solar $V_{s,t}$,
+\begin{equation}
+ g_{s,t}=a_{n(s,t),t}V_{s,t}+d_{n(s,t),t}-c_{n(s,t),t},\qquad
+ b_{s,t}=g_{s,t}\Delta_t-Q_t^{\rm sub}.
+\end{equation}
+All physical and information-sharing constraints in Appendix~\ref{app:auction}
+apply, but trade variables are absent. With forecast settlement
+$R_s=\sum_t(\hat\lambda^+_{s,t}\pos{b_{s,t}}-
+\hat\lambda^-_{s,t}\pos{-b_{s,t}})$, the economic problem is
+\begin{align}
+ \min\quad &\sum_sw_s\left[D_s+I_s+K_s-R_s+
+                    \kappa\sum_t|b_{s,t}|\right]
+       +\lambda\left[\eta+\frac1{1-\alpha}\sum_sw_s\xi_s\right],\\
+ &\xi_s\ge D_s+I_s-R_s-\eta,\qquad \xi_s\ge0,\quad\eta\in\mathbb R.
+\end{align}
+Price-blind control omits $R_s$ and monetary risk, using a deviation penalty.
+Ordinary ensemble control shares every horizon control; adaptive control
+shares commands only while observed histories coincide. All paths share the
+first command. Only that command executes, followed by physical protection.
+The current physical state and eligible forecasts initialize the next solve.
+
+For the settlement-price oracle, stage one minimizes expected absolute deviation.
+With feasible value $U$ and lower bound $L$, stage two maximizes settlement
+less wear/import/terminal costs under $A\le U(1+r)+b$. Certified stage-one
+solutions or explicitly gap-qualified incumbents are distinguished. Failed
+economic refinement retains the validated first-stage action. Actual future
+prices make this an information benchmark, not an operational forecast policy.
+
+\subsection{Feedback, chronology and profit}
+Commitment tracking uses target $g_t^*=Q_t^{\rm sub}/\Delta_t$ and interval PV.
+Feasible charge and discharge are bounded by
+\begin{equation}
+ C_t=\min\!\left(\bar P,\frac{\pos{E^{\max}-\rho_te_t}}{\eta_c\Delta_t}\right),
+ \quad D_t=\min\!\left(\bar P,\frac{\eta_d\pos{\rho_te_t-E^{\min}}}{\Delta_t}\right).
+\end{equation}
+It adjusts net battery power toward the grid target, recovers curtailed PV
+where headroom permits, and enforces connection limits. MPC instead issues its
+optimized first action, subject to physical protection. Interval-average PV
+feedback is an idealized information assumption; it differs from a causal
+forecast-only current-step MPC input.
+
+Realized accounting uses
+\begin{align}
+ \delta_t&=g_t^{\rm real}\Delta_t-Q_t^{\rm sub},\\
+ J^{\rm real}&=\sum_{a,t}\pi^{\rm real}_{a,t}q^{\rm sub}_{a,t}
+ +\sum_t\bigl(\lambda_t^+\pos{\delta_t}-\lambda_t^-\pos{-\delta_t}\bigr)
+ -D^{\rm real}-I^{\rm real}-C^{\rm trade,real}.
+\end{align}
+With a single settlement price this reduces to $\lambda_t\delta_t$.
+Forecast penalties, tail-risk terms and terminal continuation values are absent
+from realized cash. Final energy is reported separately. The state and binding
+positions carry across days; no daily physical reset occurs in a continuous
+comparison.
+
+\section{Forecast learning, dependence and controlled comparisons}
+\subsection{Learning and scoring}
+Normalized solar prediction fits weighted squared/Huber losses to reviewed
+targets, with preprocessing fitted only on training data and mandatory night
+zeros. Price regression fits standardized lag/fundamental predictors with
+squared or robust loss and optional $L^1/L^2$ coefficient penalties.
+Quantile regression minimizes $\rho_\tau(r)=r(\tau-\mathbf1\{r<0\})$;
+distributional networks minimize likelihood or a proper distribution score.
+For ensemble values $x_m$, weights $w_m$ and observation $y$,
+\begin{equation}
+ \operatorname{CRPS}=\sum_mw_m|x_m-y|
+       -\frac12\sum_{m,j}w_mw_j|x_m-x_j|.
+\end{equation}
+This measures marginal predictive quality, not economic value or serial
+dependence. RMSE, MAE, coverage, bias and provenance-specific scores remain
+separate diagnostics. Price WAPE divides pooled absolute error by pooled
+absolute observed price, while relative MAE compares the same products with
+a named naive forecast.
+
+\subsection{Dependence and reduced scenarios}
+For raw member rank $r_{s,t}$ and ordered calibrated samples $z_{(j),t}$,
+ensemble copula coupling sets $V_{s,t}^{\rm ECC}=z_{(r_{s,t}),t}$~\cite{ecc}.
+Independent leadwise permutations preserve marginals while removing serial
+structure; paired PV/price samples must be permuted together. Adaptive nodes
+use observed prefixes through a stated lag, never the identity of a future
+realization. A restricted observation tree is not perfect foresight.
+
+Scenario reduction chooses representative paths using
+\begin{equation}
+ \min_{|\mathcal M|=K}\sum_sw_s\min_{j\in\mathcal M}
+       \|\phi_s-\phi_j\|_2,\qquad
+ \tilde w_j=\sum_{s:\,\operatorname{assign}(s)=j}w_s.
+\end{equation}
+Features $\phi_s$ summarize forecast power, ramps, cumulative balance/deficit,
+physical saturation and monetary exposure. Greedy selection approximates this
+criterion and has no general guarantee on trading-value loss.
+
+\subsection{Continuation and interaction effects}
+A nominal forecast dynamic program on stored energy estimates
+\begin{equation}
+ W_t(e)=\max_{a\in\mathcal A(e)}\{r_t(e,a)+W_{t+1}(e')\}.
+\end{equation}
+Its interpolated terminal value enters physical control as $-W_T(e_T)$.
+This approximation omits unknown future auction opportunities and full aging
+memory; it must not be interpreted as a realized payment.
+
+For latest/frozen information $I$ and all-auction/DA-only access $A$, the
+matched interaction is $J_{11}-J_{10}-J_{01}+J_{00}$. For an altered asset
+setting $b$, calibration--flexibility interaction is
+$(J_{{\rm cal},b}-J_{{\rm raw},b})-(J_{{\rm cal},0}-J_{{\rm raw},0})$.
+These contrasts require common dates, targets, starting state and otherwise
+matched assumptions. Calendar blocks shared across plants are the appropriate
+resampling unit when prices and weather are common. The current two-day
+controller sample cannot support precise tail or significance claims.
+
+\begin{thebibliography}{9}
+\bibitem{xu} B. Xu et al., \emph{Factoring the Cycle Aging Cost of Batteries
+Participating in Electricity Markets}, 2017.
+\url{https://arxiv.org/abs/1707.04567}.
+\bibitem{ecc} R. Schefzik, T. L. Thorarinsdottir and T. Gneiting,
+\emph{Uncertainty Quantification in Complex Simulation Models Using Ensemble
+Copula Coupling}, Statistical Science 28(4), 616--640, 2013.
+\url{https://arxiv.org/abs/1302.7149}.
+\end{thebibliography}
+\end{document}

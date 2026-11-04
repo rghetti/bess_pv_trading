@@ -7,7 +7,7 @@
 \usepackage{graphicx}
 \graphicspath{{docs/}{./}}
 \usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue,citecolor=blue]{hyperref}
-\hypersetup{pdftitle={PV and Battery Trading: Current Mathematical Model},pdfauthor={bess pv trading repository}}
+\hypersetup{pdftitle={PV and Battery Trading: Formulation, Experiments and Research Extensions},pdfauthor={bess pv trading repository}}
 \usepackage{enumitem}
 \setlist{itemsep=3pt,topsep=5pt}
 \setlength{\parindent}{0pt}
@@ -17,9 +17,9 @@
 \newcommand{\R}{\mathbb{R}}
 \newcommand{\pos}[1]{\left[#1\right]_+}
 \DeclareMathOperator{\clip}{clip}
-\title{PV and Battery Trading in MGP and MI Auctions\\Current Mathematical Model and Execution Workflow}
-\author{\texttt{bess\_pv\_trading} repository}
-\date{Implementation audited on 3 November 2026}
+\title{PV and Battery Trading in MGP and MI Auctions\\Mathematical Formulation, Experiments and Research Extensions}
+\author{PV--BESS trading research programme}
+\date{Cross-repository evidence snapshot: 4 November 2026, 16:52 CET}
 \begin{document}
 \maketitle
 \begin{abstract}
@@ -32,12 +32,56 @@ controller, optional real-time economic MPC, and ex-post imbalance settlement. I
 scenario-tree interface from the deterministic actual-price oracle used in the
 historical studies. The report follows current source code and shared YAML
 defaults; it is not a market strategy validation or an investment valuation.
-PV forecasting research is summarized only as an input dependency, with the
-selected farm bundles identified for reuse by the continuous optimization
-runner.
+It consolidates the main trading implementation, the separate feature and price
+benchmark work, and the real-time MPC research implementation. Completed
+forecasting and trading experiments are reported with their sample definitions,
+information assumptions and numerical limitations. Ongoing searches and
+implemented but unevaluated extensions are identified separately. The snapshot
+was taken without launching training, optimization or data acquisition.
 \end{abstract}
 \tableofcontents
 \newpage
+
+\section{Research question and evidence snapshot}
+The research question is how a PV producer with finite storage should revise
+auction commitments and physical operation as forecasts and observations arrive.
+The central idea is to connect three levels: information-aware PV and price
+forecasts; residual auction optimization with irrevocable submitted quantities;
+and physical feedback that carries the actual battery state into the next
+decision. Profit, imbalance, curtailment and battery wear are evaluated on the
+resulting chronology, rather than inferred from forecast scores or overlapping
+optimization objectives.
+
+This report audits three distinct working trees. Their implementations have
+diverged; a feature in one tree is not automatically installed in the others.
+The main formulation below describes the main trading tree unless explicitly
+qualified. Section~\ref{sec:research-extensions} describes the additional MPC
+research tree. Section~\ref{sec:forecast-research} describes the forecast studies.
+The evidence tables refer to saved experiments, which may use earlier policies
+or models than today's defaults. In particular, old TCN and raw-target results
+are not relabelled as results of the new reviewed-GHI models.
+
+\begin{center}\small
+\begin{tabular}{p{0.27\textwidth}p{0.16\textwidth}p{0.48\textwidth}}
+\toprule Working tree & Snapshot HEAD & Contribution\\\midrule
+\path{bess_pv_trading} & \texttt{a3238e7} & Auction model, continuous replay, PV studies and reviewed-GHI search.\\
+\path{bess_pv_trading_features} & \texttt{e9d24bd} & Data provenance, DA/IDA1 point and marginal-distribution benchmarks.\\
+\path{bess_pv_trading_realtime_mpc} & \texttt{8645123} & Forecast-economic and adaptive MPC, scenario studies and expanded price searches.\\
+\bottomrule\end{tabular}\end{center}
+Source hashes, pre-existing working-tree changes and the exact UTC capture time
+are recorded in \path{docs/report_evidence/2026-11-04/snapshot.json}. The source
+LaTeX in all three trees and the probabilistic-PV reference were reconciled with
+current functions, configuration and saved outputs. Older status prose is
+superseded only where a completed manifest and numerical evidence exist.
+``Running'' in a saved manifest is a recorded state, not proof of a live process.
+No annual result is inferred from a short development comparison.
+
+The completed evidence includes an 8,192-candidate reviewed-PV search, the
+90-day DA/IDA1 benchmark, January/August auction replays, a 104-job January MPC
+matrix and a four-farm October MPC week. The newer four-cycle PV search and
+two expanded price searches remain incomplete at the snapshot. The principal
+scientific limits are retrospective model selection, assumed publication
+clocks, synthetic target intervals, unequal ending inventory and short samples.
 
 \section{Scope and implementation map}
 
@@ -259,7 +303,7 @@ the physical geometry is an assumption. The optimization does not use
 satellite GHI as an operational weather forecast; it is retained for
 retrospective diagnosis.
 
-The modeling-quality mask for model training and evaluation has one production authority:
+For the earlier raw-target modeling studies, the episode-exclusion authority is:
 \path{configs/data_quality/pv_excluded_episodes_2025_to_2026_08.csv}. Complete
 feature/target rows identified there are removed from model splits when the
 configured exclusion policy is enabled; sequence models do not bridge removed
@@ -270,45 +314,48 @@ the window is applied to each interval's local start, and missing nighttime
 measurements are also set to zero. The raw store is not modified.
 \path{policy.forecast_pv_night} applies the same
 monthly prior to deterministic and ensemble PV inference, regardless of model.
-Missing realized PV is handled separately using the configured frozen-forecast
-fallback and missing-interval cap. Provenance records clipping and fallback.
+For legacy raw-source runs, missing realized PV is handled using the configured
+frozen-forecast fallback and missing-interval cap. The reviewed execution profile
+instead uses reviewed targets, historical-GHI reconstructions for retained
+daylight exclusions, and configured night zeros; unresolved daylight gaps fail.
+Per-interval provenance distinguishes these cases. This optional profile is
+a counterfactual wherever it uses synthetic production; see
+Section~\ref{sec:forecast-research}.
 
-\subsection{Selected farm bundles for continuous optimization}
-
-The per-farm pilot registry points to self-contained bundles. These are
-loaded only when \path{pv.forecast_replacement.enabled: true}; the default
-remains the pvlib path. For the deterministic forecast, a missing or not-yet-
-available configured artifact uses the declared PVLib fallback. The ensemble
-preflight instead requires an existing supported weather-bundle artifact when
-one is selected; an explicitly null farm entry selects PVLib. All models were
-trained on 2025 data; pilot choice used a previously
-inspected 2026 report period, so it is retrospective rather than an
-as-known-at-the-time benchmark.
+\subsection{Current registry and historical forecast bundles}
+The current main-tree replacement registry selects the four reviewed-GHI
+bundles below. Replacement remains disabled in the shared configuration, so
+ordinary forecasts still use the configured pvlib path unless a study enables
+it. The registry availability timestamp is 4 November 2026, 03:09 UTC;
+historical use requires the explicit retrospective-artifact option.
 \begin{center}\small
-\begin{tabular}{>{\raggedright\arraybackslash}p{0.07\textwidth}>{\raggedright\arraybackslash}p{0.19\textwidth}>{\raggedright\arraybackslash}p{0.20\textwidth}>{\raggedright\arraybackslash}p{0.43\textwidth}}
-\toprule
-Farm & Selected model & Timing channels & Bundle path\\
-\midrule
-1 & Direct TCN 02 & none & \path{models/pv/farm_1/pilot_2025_train/direct_tcn/}\\
-345 & Direct TCN 12 & none & \path{models/pv/farm_345/pilot_2025_train/direct_tcn/}\\
-901 & Direct TCN timing 05 & lead and cycle hour & \path{models/pv/farm_901/pilot_2025_train/direct_tcn/}\\
-910 & Direct TCN paired timing & lead and cycle hour & \path{models/pv/farm_910/pilot_2025_train/direct_tcn/}\\
-\bottomrule
-\end{tabular}\end{center}
-The table describes the shared registry, not an unconditional model selection.
-The current four-farm January and August deterministic/ensemble study overrides
-select the registry bundles for farms 1, 901 and 910. For farm 345 they explicitly
-select PVLib with the shared unfitted output/temperature defaults and a Genoa
-location proxy (44.4056 N, 8.9463 E); the proxy is not a verified site location.
-Other study configurations, including the earlier farm-1 PVLib scenario studies,
-may use the baseline instead. The shared replacement map points to each bundle's \texttt{manifest.json}; the
-continuous runner verifies its farm identity and checksums and preserves the
-trained feature preprocessing. The default model availability timestamp is
-27 October 2026 UTC. The January forecast-pilot configurations explicitly
-allow retrospective use. \path{experiment-continuous} consumes these bundles;
-the historical \path{experiment-gme-oracle} path currently uses its configured
-pvlib forecast. Model details and standalone inference instructions are in
-\path{models/pv/README.md}.
+\begin{tabular}{rll}
+\toprule Farm & Family & Validation-selected configuration\\\midrule
+1 & Bidirectional GRU & \texttt{bigru\_extended\_021}\\
+345 & Transformer & \texttt{transformer\_extended\_001}\\
+901 & Bidirectional LSTM & \texttt{bilstm\_extended\_021}\\
+910 & TCN & \texttt{tcn\_extended\_003}\\
+\bottomrule\end{tabular}\end{center}
+Bundles reside under \path{models/pv/reviewed_ghi_2026_selected/}, with saved
+weights, fitted preprocessing, farm identity and checksums. Training used
+historical GHI and preceding-delivery-day 00 UTC weather; validation and testing
+used forecast GHI. Deterministic inference accepts the latest cutoff-eligible
+weather cycle, applies the mandatory seasonal night zero and bounds output by
+AC rating. This later-cycle and changing-horizon use shifts the input/context
+distribution relative to the completed single-cycle evaluation. It has no
+completed matched performance claim here. Missing daylight weather cannot be
+replaced by future observations. A missing/unavailable configured artifact uses
+the declared deterministic fallback; ensemble preflight requires supported
+selected artifacts or an explicit pvlib selection.
+
+The historical pilot registry is separate: farm 1 used direct TCN 02, farm 345
+TCN 12, farm 901 timing TCN 05 and farm 910 the paired timing TCN. The latter
+two used lead and cycle-hour channels. Their selection reused inspected 2026
+periods. Saved January/August and initial MPC runs retain these models or their
+explicit farm-345 pvlib override; they were not rerun using the new registry.
+The mixed-model four-farm comparisons use pvlib with a Genoa location proxy for
+farm 345 and the retained TCNs for the other farms. Earlier all-TCN comparisons
+are distinct runs. A city's proxy location is not an identified farm coordinate.
 
 \subsection{Optional frozen weather ensemble}
 When \path{continuous_optimization.pv_ensemble.enabled} is true, preflight reads
@@ -847,16 +894,19 @@ state. Pure battery-power commands can make projected energy independent of PV
 until protection acts. Realized noon/midnight projection errors are recorded;
 actual carryover is not reset to tomorrow's earlier assumed state.
 
-The primary comparison freezes one existing integrated deterministic auction
-ledger and replays identical timed submissions with each controller. Auction
-revenue and fees must match. The secondary full continuous comparison lets
+The original two-day diagnostic freezes one existing integrated deterministic
+auction ledger and replays identical timed submissions with each controller. Auction
+revenue and fees must match. The full continuous comparison lets
 actual SOC and MPC projections change later auction orders. Their interpretations
 remain separate. The auction-price oracle is unchanged and distinct from the
 new lower-level imbalance-price oracle. Tracking's interval-average PV feedback
 advantage is disclosed in causal mode; the current-PV-known variant supplies
 the same interval-average production to MPC. An optional causal tracking diagnostic
-is available. Detailed configuration, metrics, limitations and commands are in
-\path{docs/realtime_economic_mpc.md}.
+is available. Detailed configuration, metrics, limitations and commands for this main-tree
+implementation are in \path{docs/realtime_economic_mpc.md}. The newer sibling
+research launcher runs continuous comparisons as its primary design, with
+additional economic/adaptive controllers and revised oracle budgets described
+in Section~\ref{sec:research-extensions}.
 
 \section{Physical feedback with realized PV}
 
@@ -1241,8 +1291,9 @@ auction's actual clearing curve is supplied to that solve.
 \texttt{integrated} (default) or \texttt{current\_auction\_only}.
 \path{participation_study.sequential_all_auctions_baseline} optionally adds
 one all-auction sequential result beside the integrated participation profiles.
-The January study refresh comprises 465 integrated cases and 31 sequential
-cases. Matched daily realized profits, their paired differences, model sizes,
+The completed January 2025 noon-boundary refresh comprises 465 integrated
+profile/day cases and 31 sequential cases; its exact run identifier and results
+are retained in the evidence appendix. Matched daily realized profits, their paired differences, model sizes,
 forecast inputs and fallback decisions are saved. A later infeasible sequential
 solve retains prior physical commands and submits zero new trades; it has no
 previously planned future order to submit.
@@ -1599,19 +1650,20 @@ are reconciled from submitted trades, actual settlement, executed degradation
 and fees. The objective values of overlapping auction solves are never summed
 to represent profit.
 
-\section{Price Forecasting Status}
-
-The active GME and continuous historical experiments use realized auction
-clearing curves as an oracle input. They do not use predicted prices or model
-price uncertainty. The prepared-input optimization route accepts externally
-supplied point-price forecasts with explicit source, fit and availability
-timestamps; it rejects prices labeled as realized or oracle values. The generic
-scenario-tree code also supports synthetic conditional price scenarios, but
-neither capability establishes a validated historical price-forecasting model.
-Former retrospective regression, fundamentals and Gaussian-calibration work is
-archived outside the active pipeline in \path{/home/rghetti/price_prediction_archive}.
-Future causal price scenarios need their own evaluation and information-timing
-protocol.
+\section{Price forecasting integration status}
+The main-tree GME and continuous historical comparisons still use actual auction
+curves as oracle inputs. Its prepared-input route accepts explicitly timestamped
+point-price forecasts; its generic scenario tree accepts uncertain prices. These
+interfaces alone are not historical evidence of forecast-based trading value.
+The feature tree has completed offline DA/IDA1 forecasting benchmarks, and the
+MPC research tree has fitted chronological price models and completed explicitly
+forecast-based auction cases. Its physical economic controllers use forecast
+settlement-price paths. This is an implemented extension, not merely future work.
+The newer native-resolution candidate searches remain separate from portable
+MPC artifacts: a low validation error does not automatically install a model in
+the trading replay. No learned joint distribution of all auction spreads, PV and
+settlement prices is established. Section~\ref{sec:price-research} gives the
+formulations, results and information limitations of both price workflows.
 
 \section{Optional optimized-imbalance formulation}
 
@@ -1773,7 +1825,7 @@ vintages.
 
 \section{Current limitations and extension boundaries}
 
-The current empirical workflows use daily perfect-price planning with either
+The main-tree historical workflows use daily perfect-price planning with either
 one deterministic weather trajectory or an optional ensemble, in independent
 days or consecutive continuous operation, with approximate geometry and an
 idealized interval-average controller. Ensemble weather members are coherent
@@ -1791,13 +1843,17 @@ battery dynamics, fixed operating costs and investment cash-flow optimization.
 The generic \texttt{backtest} CLI remains synthetic-only; the separate historical
 \texttt{experiment-gme-oracle}, \texttt{experiment-participation} and
 \texttt{experiment-continuous} workflows are the implemented manual-data replays.
-Future uncertain-price evaluations need their own causal inputs and comparison
-protocol rather than relabeling the current oracle results.
+The sibling research tree additionally evaluates explicit forecast-price
+cases. Their historical clocks remain assumed; they do not retroactively turn
+main-tree oracle results into causal backtests. A joint multi-auction price/PV
+scenario model and a broader selection-fixed economic evaluation remain open.
 
 The original implementation-status report is retired. This source and its PDF
 are the maintained mathematical description; run manifests and saved solver
 results are the numerical evidence for particular configurations. Practical
 commands and configuration examples are in the root \path{README.md}.
+
+\input{docs/report_research_extensions.tex}
 
 \begin{thebibliography}{9}
 \small
@@ -1819,6 +1875,13 @@ from delivery date 1 October 2025.
 \url{https://www.mercatoelettrico.org/Portals/0/Documents/en-US/20250930DTF03rev13MPE_En.pdf}
 \url{https://gme.mercatoelettrico.org/Portals/0/Documents/en-US/20260113DTF03rev14MPE_en.pdf}
 \url{https://www.mercatoelettrico.org/en-us/Home/NoticesandAnnouncements/NoticesandAnnouncementsME?id=7101}
+\bibitem{ecc} R. Schefzik, T. L. Thorarinsdottir and T. Gneiting,
+\emph{Uncertainty Quantification in Complex Simulation Models Using Ensemble
+Copula Coupling}, Statistical Science 28(4), 616--640, 2013.
+\url{https://arxiv.org/abs/1302.7149}.
+\bibitem{scoring} \texttt{scoringRules}, normal, censored-normal and
+truncated-normal score reference.
+\url{https://search.r-project.org/CRAN/refmans/scoringRules/html/scores_norm.html}.
 \bibitem{code} Repository source files listed in Section 1 and the effective
 configuration saved with each run are authoritative for implemented behavior.
 Conceptual references do not replace inspection of those inputs and policies.

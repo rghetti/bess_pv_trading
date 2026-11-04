@@ -1,0 +1,41 @@
+run,status,result_records,periods,failures,selection_frozen_from_manifest
+chronological_2026_v3,complete,30,,0,False
+european_context_ablation_v1,complete,75,,0,False
+european_context_previous_day_v1,complete,75,,0,False
+extended_2024_training_v2,complete,27,,0,False
+nord_da_2026_huber_search_v1,complete,56,quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_da_2026_previous_ida_prices_v1,complete,140,quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_da_2026_previous_idas_ablation_v1,complete,0,,0,False
+nord_da_2026_previous_idas_selected_rolling_v1,complete,10,quarter_hourly: 2026-05-03 to 2026-09-01 (end exclusive),0,True
+nord_da_2026_recent_training_windows_v1,complete,96,quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_da_2026_recent_windows_selected_rolling_v1,running,5,quarter_hourly: 2026-05-03 to 2026-09-01 (end exclusive),0,True
+nord_da_curve_monthly_diagnostics_v1,complete,0,,0,False
+nord_da_curves_rolling_v1,complete,15,hourly: 2025-07-02 to 2025-10-01 (end exclusive); quarter_hourly: 2026-05-02 to 2026-09-01 (end exclusive),0,True
+nord_da_daily_curves_search_v1,complete,315,hourly: 2025-01-01 to 2025-07-01 (end exclusive); quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_da_expanded_context_search_v1,complete,243,hourly: 2025-01-01 to 2025-07-01 (end exclusive); quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_da_french_balance_matched_v1,complete,108,hourly: 2025-01-01 to 2025-07-01 (end exclusive); quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_da_per_slot_search_v1,complete,40,hourly: 2025-01-01 to 2025-07-01 (end exclusive); quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_da_resolution_holdout_v1,complete,10,hourly: 2025-07-02 to 2025-10-01 (end exclusive); quarter_hourly: 2026-05-02 to 2026-09-01 (end exclusive),0,True
+nord_da_resolution_search_v1,complete,60,hourly: 2025-01-01 to 2025-07-01 (end exclusive); quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_ida_2024_hourly_exports_v1,complete,243,ida1_hourly_export_2024: 2024-10-02 to 2025-01-01 (end exclusive); ida2_hourly_export_2024: 2024-10-02 to 2025-01-01 (end exclusive); ida3_hourly_export_2024: 2024-10-02 to 2025-01-01 (end exclusive),0,False
+nord_ida_2025_selected_rolling_holdout_v1,complete,27,ida1_quarter_hourly: 2025-09-03 to 2025-12-01 (end exclusive); ida2_quarter_hourly: 2025-09-03 to 2025-12-01 (end exclusive); ida3_quarter_hourly: 2025-09-03 to 2025-12-01 (end exclusive),0,True
+nord_ida_2025_terna_load_ablation_v1,complete,0,,0,False
+nord_ida_2025_terna_load_matched_v1,complete,324,ida1_quarter_hourly: 2025-06-01 to 2025-09-01 (end exclusive); ida2_quarter_hourly: 2025-06-01 to 2025-09-01 (end exclusive); ida3_quarter_hourly: 2025-06-01 to 2025-09-01 (end exclusive),0,False
+nord_ida_2025_terna_selected_rolling_holdout_v1,complete,21,ida1_quarter_hourly: 2025-09-03 to 2025-12-01 (end exclusive); ida2_quarter_hourly: 2025-09-03 to 2025-12-01 (end exclusive); ida3_quarter_hourly: 2025-09-03 to 2025-12-01 (end exclusive),0,True
+nord_ida_2026_huber_search_v1,complete,144,ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_ida_bidirectional_neighbors_search_v1,running,470,ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_ida_cleared_context_2025_v1,complete,486,ida1_quarter_hourly: 2025-06-01 to 2025-09-01 (end exclusive); ida2_quarter_hourly: 2025-06-01 to 2025-09-01 (end exclusive); ida3_quarter_hourly: 2025-06-01 to 2025-09-01 (end exclusive),0,False
+nord_ida_cleared_context_search_v1,complete,486,ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_ida_cleared_monthly_diagnostics_v1,complete,0,,0,False
+nord_ida_cleared_rolling_v1,complete,27,ida1_quarter_hourly: 2026-05-02 to 2026-09-01 (end exclusive); ida2_quarter_hourly: 2026-05-02 to 2026-09-01 (end exclusive); ida3_quarter_hourly: 2026-05-02 to 2026-09-01 (end exclusive),0,True
+nord_ida_french_balance_ablation_v1,complete,0,,0,False
+nord_ida_french_balance_matched_v1,complete,324,ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_ida_nearest_auction_spreads_v1,complete,324,ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_ida_per_slot_search_v1,complete,72,ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_ida_swiss_border_matched_v1,complete,324,ida1_quarter_hourly: 2026-03-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-03-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-03-01 to 2026-05-01 (end exclusive),0,False
+nord_ida_swiss_reservoir_ablation_v1,complete,0,,0,False
+nord_ida_swiss_reservoir_matched_v1,complete,324,ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False
+nord_ida_temporal_ensemble_v1,complete,0,,0,False
+nord_ida_temporal_hourwise_v1,complete,0,,0,False
+nord_ida_temporal_stacking_v1,complete,0,,0,False
+nord_intraday_settlement_resolution_search_v1,complete,120,ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); settlement_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive),0,False

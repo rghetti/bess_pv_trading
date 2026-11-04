@@ -1,0 +1,1010 @@
+% Included by mathematical_model.tex; evidence is frozen at the dated snapshot.
+\clearpage
+\section{PV forecasting: experiments, formulations and first results}
+\label{sec:forecast-research}
+
+\subsection{Targets, information and the meaning of a forecast error}
+Four anonymous farms have AC capacities 0.95328, 1.5246, 4.16 and 6.638 MW.
+Location, some geometry and every hypothetical battery/POI parameter remain
+modeling assumptions. A weather initialization, its assumed release, the target
+interval, the time a target becomes observable, and the time a fitted model
+becomes available are different clocks. For a decision at $k$, admissibility is
+\begin{equation}
+ A_v\le k,\qquad A_{\rm model}\le k,
+ \qquad A_{\rm label}\le k\quad\text{for any feedback used in fitting/updating}.
+\end{equation}
+Historical studies can explicitly relax model availability, but must retain the
+retrospective label. The six-hour weather-release convention is assumed.
+An initialized forecast is not automatically available at initialization.
+
+The reviewed dataset distinguishes retained measured AC, approved synthetic
+replacement, policy-defined zero, and still-excluded/missing intervals. A
+historical-GHI physical reconstruction estimates a counterfactual production
+profile; it does not establish that an observed low-output episode was faulty.
+The newer optimization profile fills retained daylight exclusions with its
+stored historical-GHI reference and fails on unresolved daylight gaps. The
+training and scoring masks are specific to each study. Scores on old raw/curated
+targets and newer reviewed targets cannot be compared as a controlled ablation.
+
+For quarter $t$, normalized target is $y_t=P_t/P_{\rm AC}$. With eligible daylight
+quarters $\mathcal I_d$ on day $d$, the reviewed search uses day-balanced scores
+\begin{align}
+ \mathrm{nRMSE}&=100\sqrt{\frac1{|\mathcal D|}\sum_d
+             \frac1{|\mathcal I_d|}\sum_{t\in\mathcal I_d}(\hat y_t-y_t)^2},\\
+ \mathrm{nMAE}&=\frac{100}{|\mathcal D|}\sum_d
+             \frac1{|\mathcal I_d|}\sum_{t\in\mathcal I_d}|\hat y_t-y_t|.
+\end{align}
+Signed bias replaces the absolute residual by $\hat y-y$. Day-balanced and
+quarter-weighted summaries need not coincide. A day's measured and synthetic
+subsets may both be present, so subgroup day counts need not sum to the all-target
+day count. Auction views overlap and cannot be summed as independent production.
+
+\subsection{Physical calibration and irradiance diagnostics}
+The original physical-calibration workflow minimizes a bounded, normalized
+day/auction loss, optionally regularized toward reference assumptions:
+\begin{equation}
+ \min_{\theta\in\mathcal B}
+ \frac1{|\mathcal G|}\sum_{(d,a)\in\mathcal G}\frac1{|\mathcal I_{da}|}
+ \sum_{t\in\mathcal I_{da}}\rho\!\left(
+ \frac{f(X_{dat};\theta)-P_{dt}}{P_{\rm AC}}\right)
+ +\lambda\sum_j\left(\frac{\theta_j-\theta_{0j}}{u_j-l_j}\right)^2.
+\end{equation}
+Candidate families fit an AC scale, Faiman coefficients and, for trackers,
+ground-coverage ratio and maximum rotation; bifacial candidates additionally
+state rear-irradiance assumptions. Monthly training precedes the issue, the
+last seven completed days select history/transposition/regularization, and
+the selected candidate is refitted on the eligible history. The original
+2025 study used January warmup and 334 February--December evaluation days.
+The earlier feature-tree LaTeX records held-out daylight RMSE reductions from
+0.189674 to 0.076846 MW (farm 1), 0.333161 to 0.144849 (345), 0.632407 to
+0.571855 (901) and 1.119012 to 1.032802 (910). These are retained historical
+report values; the full original physical-calibration run directory is not
+present in the inspected main-tree output inventory, so they are secondary
+evidence rather than a newly reconstructed result. The final all-year parameter
+fits are in-sample and were treated as prior effective metadata. Current shared
+temperature defaults differ from those historical fitted thermal coefficients.
+
+A later retrospective physical study used historical satellite GHI and the
+provider-confirmed historical diffuse fraction, forecast temperature/wind from
+four cycles, and a January 2025--July 2026 fitting period. August 2026 selected
+the configuration. It evaluated 624 initial trials and 12 refinements; bounded
+L-BFGS-B optimized thermal coefficients, temperature coefficient and scale.
+The four weather views each carried weight 0.25; they were correlated views,
+not four observed weather realizations. Daytime RMSE normalized by AC rating was:
+\begin{center}\small
+\begin{tabular}{rllrr}
+\toprule Farm & Selected proxy & Selected configuration & Original & Selected\\\midrule
+1 & Milan & Unchanged reference & 3.416\% & 3.416\%\\
+345 & Genoa & Fixed, isotropic, Huber & 13.493\% & 8.675\%\\
+901 & Trieste & Rear-enabled tracker, Huber & 8.192\% & 7.290\%\\
+910 & Aosta & Tracker, isotropic, MSE & 14.027\% & 13.151\%\\
+\bottomrule\end{tabular}\end{center}
+These are historical-irradiance conversion scores, not operational forecast
+scores. Several fitted coefficients reached bounds, structural trials were
+unbalanced, and August was used for selection. The saved report
+\path{docs/results/pv_realized_irradiance_2025_2026/README.md} preserves those
+qualifications. In a matched August 20--31 daylight forecast comparison,
+January-only quantile calibration gave new/previous-physical CRPS of
+9.970/9.970, 8.901/9.692, 7.306/7.878 and 7.938/7.850 percent AC respectively.
+The unchanged farm-1 physics had identical January-only scores. Its much better
+earlier calibrated score used additional calibration history; it does not
+identify a physical-model improvement.
+
+The older neural-pilot study trained on 2025, validated on January--April 2026
+and inspected May--August. Timing ablations added lead and cycle hour, with
+80 fits across five farm/family candidates. The retained TCN choices were partly
+informed by the later period, so they are research pilots. Satellite-GHI input
+swaps diagnose sensitivity to irradiance error; they leave other weather and
+unobserved operation uncertain. In particular, farm 910's August low-output
+episodes were not automatically diagnosed as faults by this exercise.
+
+\subsection{Completed reviewed-GHI model search}
+The completed run \path{historical_ghi_all_farms_night3000_v1} contains 8,192
+candidate fits: four farms, two feature sets, sixteen families and 64 sampled
+settings per group. It completed 132 selected-model refits. Families cover
+regularized linear/robust regression, spline/polynomial/random-feature ridge,
+random/extra trees, histogram/LightGBM/CatBoost boosting, MLP, TCN,
+bidirectional GRU/LSTM and Transformer. This is a sampled search, not a global
+architecture optimum. Training used 2025, validation January--April 2026 and
+test May--August, with the saved boundary embargo.
+
+Training substitutes historical GHI for forecast GHI, while other weather
+comes from the preceding delivery day's 00 UTC cycle. Validation/test use
+forecast GHI. Hourly mean radiation is repeated over its constituent quarters;
+instantaneous weather is interpolated to quarter-hour midpoints. Preprocessing
+is fitted on training only. Exactly 3,000 eligible physical nighttime training
+quarters per farm are selected across the year. Daylight performance controls
+selection; 2026 has already been inspected and contains synthetic labels.
+
+For a neural predictor, let $X$ be the available weather sequence and let
+$f_\theta(X)_t$ be its normalized AC prediction. The core learning problem is
+\begin{equation}\label{eq:pv-training}
+ \min_\theta \sum_{d,t}\omega_{dt}\,ho\bigl(f_\theta(X)_t-y_{dt}\bigr),
+ \qquad \sum_{t\in d}\omega_{dt}=\frac1{|\mathcal D_{\rm train}|},
+ \quad \hat P_t=P_{\rm AC}\clip(f_\theta(X)_t,0,1).
+\end{equation}
+The selected family/hyperparameters define MSE or Huber loss; the neural Huber
+transition is 0.05 of AC capacity. AdamW trains up to 150 epochs with patience
+15 on validation daylight error. The training objective and early-stopping
+criterion are separate from the final test score; there is no post-hoc
+calibration in this point-model search. Monthly night windows force zero output.
+
+An MLP applies successive affine maps and nonlinearities to weather features.
+A TCN combines finite dilated convolutions over the supplied forecast sequence.
+A bidirectional recurrent model concatenates forward and backward hidden states
+of that same issued forecast. Transformer attention has the usual form
+\begin{equation}
+ H=\operatorname{softmax}(QK^{\mathsf T}/\sqrt{d_k})V,
+ \qquad Q=XW_Q,\ K=XW_K,\ V=XW_V,
+\end{equation}
+with the configured positional, masking and feed-forward transformations.
+Using future \emph{forecast} covariates in a sequence is not future-target
+disclosure when the complete forecast was issued by the cutoff. In contrast,
+using future observed GHI in validation would be disclosure and is excluded.
+Sequence boundaries and shortened inference context remain material choices.
+
+The following validation-selected winners use extended features. Scores are
+day-balanced daylight percentages of AC capacity. Test ranking was not used
+to replace the validation winner.
+\input{docs/report_evidence/2026-11-04/reviewed_pv.tex}
+Zero and a training-only day-balanced constant are included in the saved
+baseline table. The 132 saved selected models were subsequently rescored with
+nighttime clipping; daylight metrics and all 8,192 validation rankings were
+unchanged. The retained inference bundles are the four winners, not every
+historical fitted weight file. Test errors separated by target origin are:
+\input{docs/report_evidence/2026-11-04/reviewed_pv_sources.tex}
+Farm 910 has 2,340 synthetic scored test quarters; its all-target 10.992\%
+nRMSE cannot be interpreted as independent metered accuracy. Its measured-only
+12.045\% and synthetic-only 8.702\% describe different populations, not a paired
+estimate of reconstruction bias. Seven-day block bootstrap comparisons are
+conditional on the chosen targets and previously inspected dates.
+
+\subsection{Four-cycle, 48-hour PV extension in progress}
+The new neural study uses cycles at 00, 06, 12 and 18 UTC and 192 quarter-hour
+targets per 48-hour issue window. A physical target can occur in multiple
+vintages. All copies retain the target's chronological split, and the first
+six hours precede the assumed release. These early leads can be retrospective
+training examples but are excluded from availability-eligible validation
+selection. The proposed training objective extends~\eqref{eq:pv-training} to
+issue/lead pairs $(v,\ell)$ with $t=t_v+\ell$; the effective sampling weights
+are defined by the saved data preparation, not by assuming overlapping views
+are independent observations. Uncertainty reporting must block by target day.
+
+The checked dataset has, per farm, 195,264 training pairs (including 24,000 views
+of 3,000 selected nighttime quarters), 47,656 validation pairs and 56,826 test
+pairs. Core weather must be present for a supervised row; additional gaps use
+training medians, with no missingness indicator channels in this design.
+Boundary sequence-context missingness remains reported. The five neural
+families, two feature sets and 64 draws make 2,560 candidate fits, followed by
+40 family/feature refits and up to eight extra top-three refits.
+
+The CPU, single-GPU, parallel-GPU and multi-GPU attempts have distinct identities.
+The multi-GPU search was interrupted by GPU-memory contention; the recovery
+record at this snapshot has 220/2,560 completed candidates and mode
+\texttt{gpu0\_recovery}. Other saved partial attempts must not be pooled into a
+completed search. The configured parallel recovery uses two fit workers on
+GPU 0 and retains matching earlier records. No final four-cycle ranking or
+neural-controller result is available in the captured evidence. Synthetic GPU
+throughput checks are engineering measurements, not model-accuracy experiments.
+
+\subsection{Marginal ensemble calibration and delayed online CRPS}
+The completed January/August marginal study uses 49 training and 12 validation
+delivery days. Forecasts from 50 weather members are converted to PV; model
+selection separately ranks the member mean by RMSE, median by MAE, and calibrated
+quantiles by CRPS. For quantile level $\tau$, the pinball objective is
+\begin{equation}
+ \min_\beta\sum_i \rho_\tau(y_i-x_i^{\mathsf T}\beta),
+ \qquad \rho_\tau(r)=r\bigl(\tau-\mathbf1\{r<0\}\bigr).
+\end{equation}
+Quantiles are bounded/sorted as prescribed by that study, linearly interpolated
+between saved levels, with constant tails beyond p05 and p95. This is a
+marginal distribution; it does not identify a trajectory law.
+
+For expert predictions $x_m$ and probability weights $w_m$, exact weighted
+empirical CRPS is
+\begin{equation}\label{eq:weighted-crps}
+ \operatorname{CRPS}(w,x,y)=\sum_m w_m|x_m-y|
+ -\frac12\sum_{m,j}w_mw_j|x_m-x_j|.
+\end{equation}
+Quantile-curve CRPS instead integrates twice the pinball loss over probability.
+Finite-grid quadrature is not an exact empirical-ensemble score.
+
+The delayed ML-Poly implementation uses normalized powers and
+\begin{align}
+ g_m&=|x_m-y|-\sum_jw_j|x_m-x_j|,&
+ r_m&=\sum_jw_jg_j-g_m,\\
+ R_m&\leftarrow R_m+r_m,&S_m&\leftarrow S_m+r_m^2,\\
+ \eta_m&=(1+S_m)^{-1},&
+ w_m^{\rm next}&=\frac{\eta_m\pos{R_m}}{\sum_j\eta_j\pos{R_j}}.
+\end{align}
+A zero denominator uses uniform weights. Learners are separate by farm,
+auction and three-hour local block. Expert identities are sorted ranks: 50
+ensemble-only experts, or 70 including a deterministic point and 19 error
+quantiles. Warm starts replay eligible earlier out-of-fold feedback; cold
+starts begin uniformly. Each issue freezes weights. Delayed gradients use the
+weights originally issued, and feedback is released only after target
+availability. No regret theorem is claimed for this modified delayed replay.
+
+On August 20--31, the DA CRPS comparison is:
+\begin{center}\small
+\begin{tabular}{rrrrr}
+\toprule Farm & Matched quarters & Equal ensemble & Fixed quantiles & Warm combined\\\midrule
+1 & 1152 & 2.493 & 2.048 & 2.120\\
+345 & 1152 & 2.774 & 2.418 & 2.704\\
+901 & 1152 & 4.792 & 4.307 & 4.630\\
+910 & 1101 & 2.793 & 2.288 & 2.503\\
+\bottomrule\end{tabular}\end{center}
+Units are percent AC; these full matched samples include night. Fixed quantiles
+beat warm online combination at DA on all four farms. At IDA3, warm combination
+improves fixed-quantile CRPS for farms 1 (2.318 versus 2.403) and 910 (2.204
+versus 2.352), but not 345 or 901. This is mixed exploratory evidence, not a
+general online-learning benefit. Candidates were selected on these validation
+dates; August 20 early auctions include a retrospective source-model case.
+The complete 112-row comparison is retained in the original metrics file.
+
+The matched same-day-cycle study is a separate hindsight sensitivity: the
+current day's 00 UTC cycle is unavailable at that day's DA/IDA1 cutoffs.
+Calibrated CRPS changes from preceding-day to same-day were 2.05 to 1.89, 2.42
+to 2.55, 4.31 to 3.86 and 2.29 to 2.09 percent AC for farms 1, 345, 901 and
+910. Selection was repeated on the same 12 days, so this is neither an isolated
+vintage ablation with frozen models nor evidence of a tradable DA improvement.
+
+\subsection{Censored-distribution and quantile-network extension}
+The Mayer-style extension is implemented but no completed historical run
+directory was found in the inspected outputs. Its current broader configuration
+requires ensemble and target coverage beyond the available August boundary.
+It therefore has no new numerical result in this report. The input is the
+normalized hourly PV ensemble plus a deterministic control \emph{proxy}; only
+complete valid four-quarter hours enter. The proxy is not an identified
+meteorological control member.
+
+For $Z\sim N(\mu,\sigma^2)$, doubly censored PV is
+\begin{equation}
+ Y=\min(1,\max(0,Z)),\quad
+ \Pr(Y=0)=\Phi(-\mu/\sigma),\quad
+ \Pr(Y=1)=1-\Phi((1-\mu)/\sigma).
+\end{equation}
+Basic EMOS links location to predictors and log scale to ensemble variance,
+fitting per lead by CRPS. Boosted censored regression pools leads and fits
+likelihood. Linear quantile regression uses sorted members and the proxy.
+The neural censored-distribution model predicts $\mu_\theta(x)$ and
+$\sigma_\theta(x)=\operatorname{softplus}(h_\theta(x))+\epsilon$ and minimizes
+mean censored-normal CRPS. Ten seeded models average location and scale;
+this is not a ten-component mixture distribution. The analytic PyTorch score
+retains native gradients and is checked against R \texttt{scoringRules}; R
+\texttt{crch} and scoring run in isolated subprocesses~\cite{scoring}.
+
+QRNN predicts 51 quantiles using a smooth asymmetric quantile loss. A Bernstein
+quantile network imposes monotonicity through ordered coefficients:
+\begin{equation}
+ Q_\theta(\tau)=\sum_{j=0}^K a_j(x)\binom{K}{j}\tau^j(1-\tau)^{K-j},
+ \qquad a_j=a_0+\sum_{h=1}^j\operatorname{softplus}(b_h).
+\end{equation}
+The noncrossing network uses a positive triangular cumulative construction.
+Its architecture is an explicit implementation choice, not an exact paper
+reproduction. Out-of-range quantiles are flagged/excluded from matched scores
+rather than silently clipped in this post-processing study. The quantile
+families have 100 seeded random trials per farm, inner five-day blocks for
+training/stopping/selection and separate outer evaluation. No copula or MILP
+scenario coupling is produced by these marginal models alone.
+
+\section{Price forecasting across the two sibling workflows}
+\label{sec:price-research}
+
+\subsection{Feature data and availability contract}
+The feature checkout builds snapshot-pinned market/fundamental/weather tables.
+Its 2024 coverage report contains 8,784 native hourly NORD DA labels with no
+missing quarter-hour-equivalent slots; load and total-generation forecasts also
+cover the year. Solar and wind each miss 388 quarter-hour slots. The French
+national balance misses four such slots at the autumn DST transition. Gas IGI
+has 366 daily values. Regional weather contains 438 of 732 requested cycles.
+These counts are from the saved coverage artifact, not a new database query.
+Historical publication/revisions remain unverified for several sources; weather
+includes hindcast or unverified archive records. A national electricity balance
+is not a physical cross-border flow, and an intraday NTC is not a DA capacity.
+
+At an origin $k$, a usable feature is the latest source value with stated
+$A_j\le k$, and training labels must also precede the fitting cutoff under the
+declared publication policy. The features benchmark explicitly assumes
+delivery-day IGI and ENTSO-E day-ahead fundamentals available before DA/IDA1;
+its strict alternatives reject unknown clocks. The initial MPC context study
+uses 48-hour shifts for French/Swiss realized observations and PSV, and a
+nine-day Swiss-border shift with an assumed weekly release. A separate
+previous-day experiment is intentionally more permissive. These conventions
+are scenario assumptions, not recovered historical publication evidence.
+
+The base feature vector contains local calendar harmonics and eligible price
+lags. Fundamentals add NORD load, total generation, solar and wind forecasts.
+Context ablations add gas, Milan/Turin weather, French nuclear/hydro and
+commercial exchange, Swiss balance, border schedules/NTC/spreads, or reservoir
+information. Missing observations remain gaps. Native hourly prices are held
+flat when aligned to quarter-hours; interpolation must not invent quarter-hour
+target variation. The newer searches separate hourly and quarter-hour labels
+before expansion, unlike the explicitly coarse 2024 intraday training extension.
+
+\subsection{Point, spread and distributional prediction problems}
+The feature-tree tasks are DA before DA, IDA1--DA spread before DA, that spread
+before IDA1, and direct IDA1 before IDA1. Only post-DA origins may use target-day
+published DA prices. With $s_t=p_{1,t}-p_{DA,t}$,
+\begin{equation}
+ \hat p_{1,t}=p_{DA,t}+\hat s_t
+ \quad\Longrightarrow\quad
+ p_{1,t}-\hat p_{1,t}=s_t-\hat s_t.
+\end{equation}
+Thus the zero-spread baseline is the published DA curve and is an essential
+post-DA comparator. The newer MPC searches also model IDA2, IDA3 and settlement,
+use earlier-cleared same-delivery auction curves, and predict spreads relative
+to the most recently cleared auction where configured. Adjacent delivery slots
+of an already published earlier-auction curve are allowable inputs; later
+products of the auction being predicted are not disclosed labels.
+
+For training-standardized predictors $\tilde x_i$, regularized regression solves
+\begin{equation}\label{eq:price-regression}
+ \min_{\beta_0,\beta}\sum_i\omega_i\rho(y_i-\beta_0-\tilde x_i^{\mathsf T}\beta)
+       +\lambda_1\|\beta\|_1+\lambda_2\|\beta\|_2^2.
+\end{equation}
+Loss/normalization follow each estimator: ridge uses squared loss and $L^2$;
+Lasso uses $L^1$ coefficient regularization; elastic net mixes penalties;
+Huber estimates robust location. The estimator-specific loss scale matters when
+comparing penalty parameters. Spline and polynomial/random-feature variants
+change the design matrix. Neural point models, trees and boosted trees use their
+specified squared, absolute, Huber or quantile losses. MAE-based selection does
+not imply that each model trained on MAE.
+
+The current Huber candidate uses training-only target scaling as well as feature
+scaling and inverse-transforms predictions to EUR/MWh. Earlier Huber artifacts
+precede that change. Interaction regressions augment noncalendar signals $z$
+with $z\sin(2\pi h/24)$ and $z\cos(2\pi h/24)$, allowing time-of-day effects
+while retaining a pooled model. Daily-curve inputs concatenate lagged curve
+features; delivery-slot fits are a separate representation. Window experiments
+restrict eligible training to the last 30, 60 or 90 days versus the full
+available history; they change fitting data, not the definition of the target.
+
+In the feature benchmark, Gaussian and Johnson-SU networks minimize negative
+log likelihood. With $Z\sim N(0,1)$, the latter has
+\begin{equation}
+ Y=\xi+\lambda\sinh((Z-\gamma)/\delta),\qquad\lambda,\delta>0,
+\end{equation}
+with constrained neural parameter maps. Its location $\xi$ is not generally
+its mean; actual mean, median, quantiles and PIT are returned separately.
+Quantile models minimize pinball loss; mean/median/robust-location outputs are
+not silently interchanged. NBEATSx and a bounded local-checkpoint TabPFN pilot
+are optional benchmark architectures, not a new probabilistic trajectory law.
+
+\subsection{Residual trajectories, combinations and forecast scores}
+The initial MPC ridge workflow sets $\alpha=20$ with a 14-day chronological
+calibration tail. A predictor fitted before the tail generates its residuals;
+the deployed point predictor is then refitted through the eligible fold cutoff.
+For complete local-day residual block $\varepsilon_{d_j,t}$,
+\begin{equation}
+ \hat\pi^{(j)}_t=\hat\mu_t+\varepsilon_{d_j,t}.
+\end{equation}
+This preserves empirical within-day error shape. DST matching is explicit;
+separate days are sampled independently. It does not learn cross-market,
+cross-day or PV--price dependence, and the finite scenario mean need not equal
+the point predictor. The basic studies completed 30 chronological fits for
+January/August and 27 extended fits including October and coarse 2024 IDA data.
+
+An equal combination averages selected point forecasts. A convex combination
+fits earlier out-of-sample predictions $F_{im}$ under
+\begin{equation}
+ \min_{w\ge0,\ \mathbf1^{\mathsf T}w=1}
+ \frac1N\|y-Fw\|_2^2+\lambda\|w\|_2^2,
+ \qquad \hat y=\sum_mw_m\hat y_m,
+\end{equation}
+with scaling/regularization defined by the particular study. Size and penalty
+are chosen on an earlier tuning slice; the weights are then refit there before
+later evaluation. Local-hour-block combinations select separate pools by time
+block. QRA replaces the squared objective by quantile losses. Conformal helpers
+use a prior residual quantile for intervals; no universal conditional-coverage
+claim follows under drift. Feature-tree QRA/learned combinations are executable
+helpers without completed historical evaluation there; the MPC-tree temporal
+combination studies have completed saved evaluations.
+
+For price observations and forecasts on a common sample,
+\begin{align}
+ \mathrm{MAE}&=N^{-1}\sum_i|y_i-\hat y_i|,&
+ \mathrm{WAPE}&=100\frac{\sum_i|y_i-\hat y_i|}{\sum_i|y_i|},\\
+ \mathrm{rMAE}&=\frac{\sum_i|y_i-\hat y_i|}{\sum_i|y_i-\hat y_i^{\rm naive}|}.
+\end{align}
+Zero denominators produce undefined relative scores. The feature-tree benchmark
+duration-weights within days, then weights days equally; the native-resolution
+search reports pooled products. These weightings must not be silently merged.
+CRPS evaluates the distribution independently of the point score and cash profit.
+Finite quantile-grid integration, analytic Gaussian CRPS and exact empirical
+CRPS are labelled separately.
+
+\subsection{Completed feature-tree DA/IDA1 results}
+The January--March 2026 validation run
+\path{20261023T133005867139Z} completed 90 days, four tasks and 94,996
+forecast-statistic records, with no recorded failures. These are not 94,996
+independent price observations: several statistics/models share each target.
+The study used an 84-day rolling window, saved refit schedule and assumed
+availability. Its April--August final-test flag is false in this workflow;
+related periods were later inspected elsewhere and are not globally untouched.
+\begin{center}\small
+\begin{tabular}{llrr}
+\toprule Task & Model/features & MAE & RMSE\\\midrule
+DA before DA & Previous week & 16.57 & 22.97\\
+DA before DA & Elastic net, price/calendar F0 & 11.41 & 16.50\\
+DA before DA & Elastic net, fundamentals+gas F2 & 8.11 & 12.57\\
+IDA1 spread after DA & Zero spread & 4.90 & 6.61\\
+IDA1 spread after DA & LightGBM F2 & 5.02 & 6.66\\
+IDA1 spread before DA & LightGBM F2 & 4.98 & 6.65\\
+Direct IDA1 after DA & Elastic net F2 & 5.93 & 8.07\\
+\bottomrule\end{tabular}\end{center}
+All errors are EUR/MWh, daily duration-weighted on the hourly representation.
+DA elastic net F2 improves paired MAE by 8.45 EUR/MWh versus previous week;
+the saved seven-day block interval is $[-12.06,-5.92]$ for model minus baseline.
+This is a combined feature/model contrast, not a gas-only causal effect.
+For post-DA IDA1, the zero-spread benchmark is better than these fitted models.
+
+The separate January 5--11 challenger week uses matched dates and daily refits.
+DA/post-DA-spread MAEs were ridge 7.27/3.97, LightGBM 6.70/3.62, CatBoost
+5.40/3.69, MLP 5.30/3.83, Gaussian network 6.44/3.70, Johnson-SU 5.32/3.95,
+NBEATSx 10.24/5.70, TabPFN 5.99/3.99, and equal ridge/MLP 4.91/3.82.
+Zero-spread MAE was 3.95. Seven days cannot establish a seasonal architecture
+ranking. Separate weekly-refit/full-profile tests gave pooled-versus-slot ridge
+DA MAE 12.20/12.87 and spread MAE 4.66/7.70. A matched F0--F4 feature ablation
+gave DA MAEs 10.74, 8.51, 12.20, 11.29, 11.29: more context did not uniformly
+help. These different refit/design settings prevent cross-run architecture
+attribution. The October 26 compact-design four-day pilot is also complete,
+but is a workflow check rather than a replacement for full-quarter validation.
+
+\subsection{MPC-tree price studies and selection-fixed follow-up}
+The first chronological ridge study reports the following representative
+point/distribution comparison on common days:
+\begin{center}\small
+\begin{tabular}{llrrr}
+\toprule Period/market & Model & Days & MAE & CRPS\\\midrule
+January DA & Price-only ridge & 31 & 10.260 & 9.183\\
+January DA & Fundamentals ridge & 31 & 7.545 & 6.915\\
+August DA & Price-only ridge & 31 & 17.123 & 14.542\\
+August DA & Fundamentals ridge & 31 & 19.011 & 12.192\\
+January settlement & Fundamentals ridge & 31 & 47.670 & 35.065\\
+August settlement & Fundamentals ridge & 31 & 73.339 & 45.169\\
+\bottomrule\end{tabular}\end{center}
+Fundamentals improve January point accuracy but worsen August DA point MAE
+while improving its CRPS. Distribution and point metrics therefore support
+different conclusions. In the separate European-context January DA ablation
+on 30 common days, price-only/fundamentals/combined MAEs are 10.427/7.715/7.285;
+coverage and training samples differ from the 31-day study, so those numbers
+are not a single controlled sequence of gains.
+
+Expanded searches examine native resolution, daily curves, slot models,
+earlier-cleared auctions, spread targets, French/Swiss context, Terna load,
+recent windows and robust regression. All 40 captured run manifests, their
+status and saved record counts are listed in Appendix~\ref{app:price-inventory};
+the accompanying CSV retains every saved candidate score, not just winners.
+The central later-evaluation evidence is:
+\begin{center}\small
+\begin{tabular}{llrrrr}
+\toprule Market & Earlier-selected model & Later MAE & WAPE & rMAE & Products\\\midrule
+IDA1 & Spread/combined LightGBM L1 & 6.88 & 6.10\% & 0.498 & 8160\\
+IDA2 & Cleared-only LightGBM L1 & 7.12 & 6.26\% & 0.472 & 8064\\
+IDA3 & Cleared/combined Lasso 1 & 10.54 & 9.08\% & 0.534 & 4176\\
+\bottomrule\end{tabular}\end{center}
+These are the \emph{first-ranked} candidates from June--August 2025 selection,
+followed on shared complete days from September 3--November 30 with 13 weekly
+refits and a one-day gap. Products and label publication must precede each fit.
+The full follow-up contains 27 fits, including other earlier-selected candidates
+and ridge references. Choosing its best row after inspection would be a new
+selection. Historical availability remains assumed and the broader research
+history prevents a globally untouched-test claim.
+
+For native quarter-hour DA, previous-day IDA1/IDA2 prices at 24/48-hour lags
+were tested across 35 candidates and matched feature sets. The February--April
+validation minima were 9.46\% WAPE with IDA inputs versus 9.64\% without, on
+82 common days. The earlier top candidate, fundamentals interaction ridge 200,
+was then followed on 107 complete days in May 3--August 31, with 18 weekly
+refits and 10,272 products: MAE changes from 16.314 to 16.021 EUR/MWh and
+WAPE from 11.23 to 11.03\%. All ten matched follow-up fits completed.
+The small paired benefit is distinct from selecting a different model after
+seeing later scores.
+
+Temporal combinations rank candidates on February 1--March 15, tune on
+March 16--31 and evaluate April 1--30, 2026. Equal top-ten ensembles give
+IDA1/IDA2/IDA3 MAEs 5.989/7.836/13.525 EUR/MWh and WAPEs
+4.94/6.44/12.10\%. Convex stacking gives 6.040/7.838/13.563; local-hour
+combinations give 5.995/7.809/13.525. More complex combination did not
+uniformly improve this previously inspected later slice.
+
+Matched French-balance and Terna-load ablations show heterogeneous, often tiny
+median MAE changes across 27 candidates per task/feature pair. Swiss-reservoir
+median changes range from $-0.004$ to $-0.017$ EUR/MWh in the saved comparisons.
+Those exploratory multiple comparisons do not establish an economically
+meaningful causal benefit. Pairing training rows as well as test products is
+necessary to separate added information from coverage changes.
+
+The 96-fit recent-window DA search is complete: its lowest validation WAPE is
+9.01\% for 90-day fundamentals interaction elastic net, versus 9.46\% for the
+previous best full-history/IDA configuration. These are selected minima on the
+same period. The paired later rolling-window comparison is still recorded as
+running at capture, so no later advantage is asserted. The bidirectional
+earlier-auction-neighbor search is also incomplete; its offsets are $-60$,
+$-15$, $15$ and $60$ minutes, with saved boundary handling.
+
+The first DA Huber search completed 56 fits but logged iteration-limit warnings;
+its scores are provisional. A target-scaled 1,000-iteration probe still warned.
+The 144-fit IDA Huber search has no warning in its relevant old shared-log part,
+but lacks candidate-level convergence evidence. Its minimum Huber WAPEs were
+4.89/5.48/9.18\%, versus Lasso minima 4.74/5.49/9.18\%. Current code records
+warnings per candidate and excludes warned fits from ranking. Completed output
+is not proof of numerical convergence, and current warning handling cannot be
+retroactively assumed for old results.
+
+\clearpage
+\section{Real-time research extensions: mathematical specification}
+\label{sec:research-extensions}
+
+\subsection{Forecast-economic control and pathwise monetary risk}
+The MPC sibling extends the common-control model with settlement forecasts,
+adaptive PV-history recourse, dependence transformations, scenario reduction,
+continuation values and controlled information/asset experiments. Its launcher
+uses continuous replay: each case carries its own actual SOC, commitments,
+degradation and fee ledger. Fixed-ledger replay remains an older diagnostic.
+
+Let $n(s,t)$ own controls and let $a_{n,t}\in[0,1]$ be PV utilization, avoiding
+confusion with the earlier curtailment-power variable $u$. Define
+\begin{align}
+ g_{s,t}&=a_{n(s,t),t}V_{s,t}+d_{n(s,t),t}-c_{n(s,t),t},\\
+ b^+_{s,t}-b^-_{s,t}&=\Delta_tg_{s,t}-Q_t^{\rm sub},\qquad b^\pm_{s,t}\ge0,\\
+ R_s&=\sum_t(\hat\lambda^+_{s,t}b^+_{s,t}-\hat\lambda^-_{s,t}b^-_{s,t}),
+ \qquad L_s=D_s+I_s-R_s.
+\end{align}
+The split variables are bounded by
+$b^+_{s,t}\le\max(0,P^{\rm exp}\Delta_t-Q_t^{\rm sub})$ and
+$b^-_{s,t}\le\max(0,P^{\rm imp}\Delta_t+Q_t^{\rm sub})$.
+If directional prices differ, a sign binary enforces exclusivity. With equal
+prices simultaneous split slack cancels from settlement; a positive volume
+penalty removes it. Reported imbalance is computed from physical exchange.
+Here $D_s$ is executed-path planned wear, $I_s$ import cost and $K_s$ terminal
+cost (possibly negative continuation value). All battery transitions, initial
+state, POI, power/SOC and terminal constraints apply on each path. There are
+\emph{no new auction orders} in this physical-control problem. Forecast economics
+minimizes
+\begin{align}\label{eq:research-mpc}
+ \min\quad &\sum_sw_s\left[D_s+I_s+K_s-R_s+\kappa_{\rm econ}
+                 \sum_t(b^+_{s,t}+b^-_{s,t})\right]
+ +\lambda_{\rm risk}\left[\eta+
+        \frac1{1-\alpha}\sum_sw_s\xi_s\right],\\
+ &\xi_s\ge L_s-\eta,\quad\xi_s\ge0.\notag
+\end{align}
+$\eta$ is unrestricted, because monetary loss can be negative. This differs
+from nonnegative absolute-volume CVaR in the auction model. Risk excludes the
+artificial imbalance regularizer, terminal salvage and uncertain cash on
+already submitted unpriced auctions. Research economic cases default to
+$\kappa_{\rm econ}=0$, independently of the 500 EUR/MWh price-blind penalty;
+the risk-neutral baseline has $\lambda_{\rm risk}=0$.
+
+For unequal directional prices, sign exclusivity prevents artificial positive
+and negative settlement at once. Equal prices reduce cash to
+$\hat\lambda_{s,t}(b^+_{s,t}-b^-_{s,t})$; slack in the split cannot create cash.
+Without a positive absolute-volume coefficient, report reconstructed
+$|\Delta_tg_{s,t}-Q_t^{\rm sub}|$, not an arbitrary slack split. Nonnegative
+import costs use an epigraph tight at an optimum with positive coefficient.
+Only the first control executes; physical protection and rejected-plan fallbacks
+are logged. Artificial risk, tracking and terminal terms never enter cash profit.
+
+\subsection{Observable-history recourse and the value of dependence}
+Ordinary deterministic/ensemble MPC shares all horizon controls and energy
+across paths. Adaptive MPC shares the first command but allows future controls
+to differ only after distinguishable observed PV histories. With lag $\ell\ge1$
+and quantization width $q$, a branch key is
+\begin{equation}
+ H_{s,t}=\left(n(s,t-1),
+       \left\lfloor V_{s,0:t-\ell}/q\right\rfloor\right),
+ \qquad H_{s,t}=H_{r,t}\Rightarrow n(s,t)=n(r,t).
+\end{equation}
+Zero quantization uses exact observations; configured nonbranch times retain
+the previous owner. The previous node prevents recombining different battery
+histories. Future prices and member labels do not enter the observation key.
+The prepared longer study uses hourly branching (four quarters), one-quarter
+observation lag and 0.1 MW bins. Exact small-ensemble prefixes can identify a
+member early, so finite-ensemble recourse is still an approximation to an
+operational information process.
+
+Raw member trajectories preserve their supplied serial structure. Independent
+per-lead shuffling permutes the \emph{joint} PV/price sample at each lead:
+\begin{equation}
+ (V'_{s,t},\lambda'_{s,t})=(V_{\pi_t(s),t},\lambda_{\pi_t(s),t}).
+\end{equation}
+Equal weights and within-lead joint samples are retained while serial dependence
+is disrupted. Common open-loop controls with an additive risk-neutral objective
+are invariant to this operation: their feasible POI support and each lead's
+expected objective are unchanged. Adaptive recourse and pathwise monetary risk
+provide mechanisms by which dependence can matter; this invariance is a useful
+negative control, not a claim that dependence never matters for storage.
+
+ECC uses calibrated marginal samples $z_{(1),t}\le\cdots\le z_{(M),t}$ and the
+raw member's rank $r_{s,t}$:
+\begin{equation}
+ V^{\rm ECC}_{s,t}=z_{(r_{s,t}),t}.
+\end{equation}
+Seeded tie handling is explicit. Price row identities are retained, and this
+does not estimate a new joint PV--price copula. The construction follows the
+rank-rearrangement principle of ECC~\cite{ecc}; its marginal calibration must
+be supplied separately. Calibrated ECC and its shuffled counterpart have the
+same marginal scores, allowing a dependence contrast under matched control.
+
+The reviewed-target affine bias/spread calibration fits January 1--14 and freezes
+parameters for January 15--16 and August 2--3. Its two-parameter form in MW is
+\begin{equation}
+ V'_{s,t}=\clip\{\bar V_t+aP_{\rm AC}+c(V_{s,t}-\bar V_t),0,P_{\rm AC}\},
+\end{equation}
+where normalized bias $a\in[-0.3,0.3]$ and spread multiplier
+$c\in[0.25,3]$ minimize training mean CRPS. The ensemble-mean coefficient
+is fixed to one; monthly night masks are applied after clipping.
+On the August two-day transfer, raw versus calibrated CRPS in MW was
+0.02554/0.06944 (farm 1), 0.14332/0.15116 (345), 0.19844/0.22464 (901), and
+0.17979/0.29941 (910). Calibration worsened all four marginal scores there.
+Farm 910's 192 execution targets comprise 132 historical-GHI reconstructions
+and 60 policy night zeros, so that transfer is not independent meter validation.
+
+\subsection{Decision-aware scenario reduction}
+The reduction preserves original complete paths and redistributes probability
+mass; it does not take a pointwise minimum. Let $\phi_s$ concatenate scaled
+features of PV, ramps, cumulative energy deficit/balance, capacity/POI
+exceedance proxies, price and uncontrolled settlement exposure. Each block
+is divided by its unit scale and multiplied by the square root of its weight
+over block length. The implementation greedily approximates
+\begin{equation}
+ \min_{\mathcal M:\,|\mathcal M|=K}\sum_sw_s\min_{j\in\mathcal M}
+       \|\phi_s-\phi_j\|_2,
+ \qquad \tilde w_j=\sum_{s:\,j=\operatorname{assign}(s)}w_s.
+\end{equation}
+Representatives are source members and retain positive mass, including tie
+handling for duplicate paths. Features use only current forecasts, known
+commitments and asset parameters. The distance is a heuristic relevance metric,
+not a bound on lost MILP value, tail risk or physical feasibility on discarded
+scenarios. This approximate reduction must not be confused with the exact
+PV-envelope theorem for the special auction formulation.
+
+\subsection{Conditional terminal continuation value}
+A finite daily horizon can empty or retain storage for reasons unrelated to
+future opportunities. The research continuation model uses available nominal
+PV/settlement forecasts and \emph{known} commitments after the MPC horizon.
+On an energy grid $\mathcal E$, define
+\begin{equation}
+ W_t(e)=\max_{e'\in\mathcal E\ {m feasible}}
+       \{r_t(e,e')+W_{t+1}(e')\},\qquad W_{T'}(e)=v_F e.
+\end{equation}
+For a transition $h=e'-\rho_te$,
+$c=\pos{h}/(\eta_c\Delta_t)$ and
+$d=\eta_d\pos{-h}/\Delta_t$, subject to power limits.
+Given nominal PV, feasible grid power ranges from
+$\max(d-c,-P^{\rm imp})$ to $\min(d-c+V_t,P^{\rm exp})$.
+The one-step reward maximizes signed settlement minus import cost and
+throughput wear; a piecewise-linear maximum can be checked at range endpoints,
+zero grid flow and the commitment kink. Idle with interpolated continuation
+is also considered when decay leaves the discrete grid.
+
+The resulting curve is linearly interpolated and enters MPC as
+$K_s=-W_T(e_{s,T})$ using an exact PWL graph for that supplied curve.
+The curve itself is approximate: nominal uncertainty, discretized energy,
+throughput wear without Xu memory, and no unmodeled future auction recourse.
+It is neither a learned lifetime value nor realized income. A continuation
+gain must be compared on matched terminal settings and final inventory.
+
+\subsection{Information/access and physical-flexibility experiments}
+The information/access factorial crosses latest versus frozen-initial
+information $I\in\{0,1\}$ with DA-only versus all-auction access
+$A\in\{0,1\}$. For matched realized profits $J_{IA}$, the interaction is
+\begin{equation}
+ \Gamma=J_{11}-J_{10}-J_{01}+J_{00}.
+\end{equation}
+A positive value indicates complementarity on those cases and dates; it is
+not identified if cells differ in assets, targets or forecast families.
+Paired reports require all four cells and preserve their independent state.
+Separate contrasts double energy capacity, halve power or halve POI capacity;
+crossing each with marginal calibration tests whether the calibration effect
+depends on flexibility. For asset setting $b$, the difference-in-differences is
+$(J_{{\rm cal},b}-J_{{\rm raw},b})-(J_{{\rm cal},0}-J_{{\rm raw},0})$.
+These are configured asset counterfactuals, not measured farm upgrades.
+
+\subsection{Oracle certification, time budgets and numerical recovery}
+The main-tree oracle described earlier shares a ten-second budget and requires
+its stage-one certificate. The MPC sibling additionally supports separate
+ten-second stage budgets and a declared 1\% time-limit fallback. Let $U$ be
+independently reconstructed feasible absolute imbalance and $L$ the lower bound.
+The fallback requires $(U-L)/U\le0.01$ for positive $U$, with explicit near-zero
+handling; the default target solver gap remains $10^{-4}$. Refinement is bounded by
+\begin{equation}
+ A\le U(1+r)+b.
+\end{equation}
+With an approximate incumbent this is an incumbent cap, not a certified
+$A_{\min}$ cap. Possible excess over the true minimum is at most
+$U-L+rU+b$, subject to the recorded numerical tolerances. Invalid refinement
+retains the validated stage-one action; no valid action triggers tracking
+fallback. Those are different events and are counted separately.
+
+Optional numerical retry tightens feasibility tolerance and sets numerical focus
+within the remaining economic-stage time budget. It cannot change physical
+constraints or weaken the imbalance-cap check. The completed 104-job matrix
+predates these two added retry cases: current configuration has 28 cases,
+whereas the completed matrix has 26. The current two-window/four-farm plan
+therefore describes 224 jobs, not 224 completed results. Timing reports separate
+model construction, native solver runtime, validation and end-to-end replay.
+
+\clearpage
+\section{Performed trading experiments and numerical evidence}
+\label{sec:empirical-results}
+
+\subsection{Independent-day participation and continuous monthly auction studies}
+The completed January 2025 farm-910 noon-boundary participation run contains
+15 integrated profiles on 31 independently initialized days and a sequential
+all-auction reference. Its all-auction integrated profile ranks first with
+mean EUR 3,520.06/day, total EUR 109,121.72, daily population standard deviation
+EUR 1,187.52, mean absolute imbalance 1.69984 MWh/day and mean ending SOC
+28.25\%. These are price-oracle operating results, not forecast-price earnings
+or battery-only value. The next-ranked IDA1+IDA2+IDA3 profile averages
+EUR 2,893.38/day. Independent daily initialization and fee-state reset prevent
+interpreting their sum as one continuous asset trajectory.
+
+The later continuous participation study instead carries state separately for
+each of 15 profiles plus sequential and perfect-PV references. Four farms and
+two forecast variants have saved full-January comparisons. Every strategy has
+its own SOC, degradation memory, commitments and fee state; the best profile
+is an ex-post ranking on January. Appendix~\ref{app:participation} gives all
+68 matched profile rows. For farm 1, all-auction deterministic/ensemble profit
+is EUR 10,216.33/10,197.54, versus sequential EUR 1,848.22/1,798.72 and
+perfect-PV EUR 10,582.72. The large integrated/sequential gap includes
+perfect-price cross-auction spread opportunities; it is not purely the value
+of additional PV forecast information.
+
+The separate mixed-model full-month comparisons below use January 1--31 and
+August 2--31, 2026. Each month starts independently at its configured state;
+August does not carry January SOC or simulate February--July. The absent
+July 31 ensemble cycle excludes August 1. Farm 345 uses the declared pvlib
+override and the other farms retained TCNs. These earlier target/model policies
+differ from the new reviewed-GHI registry and from the continuous-participation
+run. The table consistently uses the named \texttt{mixed\_models} comparison
+family rather than mixing its revisions with older all-TCN summaries.
+\input{docs/report_evidence/2026-11-04/monthly_auction.tex}
+In these saved cases the exact 51-path policy reduces absolute imbalance but
+also reduces cash profit relative to deterministic planning and often increases
+curtailment. This agrees with the common-control exact-delivery envelope's
+conservative feasibility mechanism; it does not establish that probabilistic
+forecasting intrinsically reduces value. The constraints, execution rule,
+calibration and objective determine how uncertainty is used. Farm 910's large
+August imbalance belongs to the older target/model setting, not to the later
+fully reconstructed two-day MPC target. Final SOC differences are shown because
+cash profit contains no terminal salvage valuation.
+
+The envelope equivalence experiment compares 37 matched auction states across
+August 2--11, farm 1, then two independent ten-day replays. Both saved replays
+have profit EUR 10,366.671392, absolute imbalance 0.0123333 MWh, wear
+EUR 283.344853 and final SOC 74.086594\%, agreeing to numerical precision.
+The recovered-curtailment diagnostic differs because it is relative to the
+retained plan representation. This does not contradict equal actual flows.
+The fixed-state equivalence follows the stated theorem; equality of independent
+replay schedules is empirical and can change under alternative optima.
+
+The 100/500 EUR/MWh stochastic-imbalance sensitivities, ensemble-mean versus
+full paths, selected 10/20-day participation contrasts and PV-only battery
+counterfactuals have separate comparison artifacts. They are distinct
+objectives/samples and are not pooled with the exact-delivery monthly table.
+Their numerical records are preserved in the sensitivity appendix; no artificial
+planning penalty is relabelled as realized settlement.
+
+\subsection{Original current-PV-known two-day MPC diagnostic}
+The farm-1 January 15--16 TCN study disclosed current-interval realized PV to
+MPC but kept future PV forecast-only. On a frozen common ledger, tracking
+profit was EUR 538.25 with 0.217316 MWh absolute imbalance. Deterministic MPC
+earned EUR 550.53 with 0.236596 MWh; ensemble MPC EUR 554.73 with 0.258667 MWh.
+Their price-oracle variants earned EUR 541.99 and EUR 541.41. All MPC cases
+ended at 50\% SOC versus tracking 50.677\%. In the continuous deterministic
+case, profit was EUR 556.16 and imbalance 0.361619 MWh; the EUR 17.91 gain
+included EUR 24.30 more auction revenue from later changed submissions.
+The 960 recorded MPC decisions had no tracking fallback or timeout. These
+figures are a software/development diagnostic with retrospective information,
+not the forecast-current-PV reviewed-target matrix below.
+
+\subsection{Reviewed-target October week}
+For October 1--7, 2025, deterministic penalty MPC versus its own continuous
+tracking baseline increased cash profit by EUR 44.53, 675.75, 1,157.14 and
+1,408.45 for farms 1, 345, 901 and 910. Portfolio absolute imbalance increased
+89.91 MWh. The saved independent audit reconstructs 2,688 MPC decisions with
+no physical/accounting violations, tracking fallback or timeout. It uses a
+$10^{-6}$ reconstruction tolerance; this is numerical consistency evidence,
+not forecast or economic validation. Ending battery energy differs, and MPC
+has a soft inventory objective absent from tracking. The result therefore
+does not isolate control intelligence from inventory preference and information.
+
+\subsection{Completed reviewed-target January matrix}
+The January 15--16, 2026 matrix completed 104/104 jobs: 26 cases by four farms,
+with a separate tracking baseline for each case. Each target has 192 MPC
+decisions, hence 19,968 target MPC decisions in total. Saved resolved settings
+use 50\% initial SOC, a 50\% soft terminal target at 50 EUR/MWh, hourly
+recourse branching, one-quarter observation lag and 0.1 MW PV bins. The
+reduced case retains eight paths with seed 17; the monetary-risk case uses
+$\alpha=0.9$, $\lambda_{\rm risk}=0.5$. Continuation replaces the soft target
+with a six-hour, 51-energy-point nominal value curve and zero final salvage.
+Auction solves have 120 seconds and MPC stages 10 seconds each. The frozen
+\path{january_case_settings.json} retains all 26 farm-1 resolved configurations
+and their source hashes; farm-specific asset parameters remain in the run plan.
+The following values
+sum both days and all four farms; they are \emph{not} mean daily gains. Positive
+imbalance/wear means more absolute deviation/more wear than that case's baseline.
+\input{docs/report_evidence/2026-11-04/january_mpc.tex}
+The deterministic penalty, ensemble penalty and adaptive-raw gains correspond
+to EUR 61.83, 37.40 and 150.86 per portfolio day. Their absolute-imbalance
+increases are 2.85, 4.56 and 11.78 MWh per day. Adaptive reduction gives a
+negative aggregate cash difference of EUR 130.31, whereas raw adaptive gives
+a positive EUR 301.73. That is evidence that this particular heuristic/sample
+can alter economic decisions substantially, not a general reduction theorem.
+Calibrated ECC and raw adaptive have nearly equal total cash differences here,
+while shuffling and continuation can change them. The whole two-day sample
+is too small to rank these policies reliably or estimate tail risk.
+
+Some rows change objectives, asset ratings, forecast information or auction
+access, so subtraction between arbitrary rows does not isolate a single
+mechanism. For a pure recourse contrast use matched common/adaptive economic
+objectives and scenarios; for dependence use matched marginals; for flexibility
+use its declared factorial contrasts. Each baseline belongs to its own case.
+Per-farm differences, rather than only portfolio totals, appear in
+Appendix~\ref{app:mpc-farms} and the evidence CSV retains absolute target and
+baseline metrics, auction cash, settlement, charge/discharge and curtailment.
+
+Using absolute target profits (not differences from changing tracking baselines),
+the four-cell information-by-auction-access interaction is EUR 206.84 summed
+over the portfolio and two days. The calibration-by-flexibility interactions
+are EUR 18.54 for doubled battery energy, EUR $-4.89$ for halved power and
+EUR 11.77 for halved POI capacity. These are descriptive contrasts with common
+targets and dates; two calendar days cannot support a reliable confidence
+interval or a claim about seasonal interactions.
+
+The saved all-job audit reports zero physical/accounting/artifact violations.
+No target used a tracking fallback or solver timeout. Eighteen economic oracle
+refinements across the ordinary and fallback cases were rejected by validation;
+validated stage-one actions were retained. These are not 18 invalid accepted
+actions. Accepted cap residuals stayed within the documented allowance. The
+older raw-target 32-job batch had 18 excessive cap residuals in two oracle jobs
+and remains superseded evidence; corrected eight-job oracle results have their
+own audit. Numerical correctness is stated for each audited batch, not inferred
+for every historical output from current software tests.
+
+\subsection{Reviewed-target August farm-910 comparison}
+On August 2--3, ensemble penalty MPC has cash gain EUR 96.812, extra absolute
+imbalance 7.542783 MWh and wear reduction EUR 163.559 versus tracking.
+Adaptive calibrated ECC gains EUR 271.803, with extra imbalance 26.960265 MWh,
+extra wear EUR 165.250 and four physical safety overrides. Ensemble price oracle
+loses EUR 62.935, with extra imbalance 7.501351 MWh, wear reduction EUR 119.006
+and 40 time-limited decisions. The 1\% fallback variant has essentially the
+same realized outcome. Each has 192 MPC decisions and no tracking fallback;
+the saved audit reports no physical/accounting violations. All 192 target
+intervals are reconstructed daylight or policy night zeros. This is a
+counterfactual control comparison, not measured plant-performance evidence.
+
+\subsection{What remains unfinished}
+The main-tree May all-farm study is explicitly interrupted with no completed
+comparison mode. Its successful preflight is not a controller result. The
+prepared annual deterministic study and full January/August ensemble studies
+still require complete data and final model integration. Reviewed PV inputs
+end in August; the missing July 31 ensemble cycle remains material for August 1.
+The current 28-case research plan adds numerical-retry cases beyond the
+completed 26-case matrix. Four-cycle neural PV training, recent-window rolling
+price evaluation and bidirectional-neighbor price search are partial at capture.
+Mayer-style marginal post-processing has implemented formulations but no
+completed numerical output in the inspected trees. A future run must not use
+this document's snapshot label as evidence of present process status.
+
+\section{Interpretation and current scientific focus}
+The completed studies support a working chronological decision framework and
+several useful empirical observations: price-history/fundamental models can
+beat persistence on specific samples; calibrated marginals and online weights
+do not improve every season or gate; strict ensemble delivery can lower
+imbalance while sacrificing cash profit; and physical MPC can change both
+settlement and subsequent auction decisions. They do not yet establish a
+deployable annual strategy, an investment return, or a universal architecture
+ranking.
+
+The current work focuses on forecast-vintage-aligned neural PV models,
+selection-fixed native-resolution price comparisons, coherent scenario
+dependence under adaptive control, and the interaction of information with
+auction access and storage/POI flexibility. Terminal continuation, monetary
+risk and reduction remain controlled extensions. A calibrated marginal CDF,
+an exact finite-scenario solve and a numerically reconciled replay answer
+different questions; none alone establishes real-world reliability.
+
+Statistical units are calendar blocks, shared across farms where prices/weather
+are common. The four farms are not independent replications of the market.
+Two-day confidence intervals or extreme-tail estimates are not informative;
+block bootstrap intervals on larger samples remain conditional on selection,
+coverage and target construction. Observed/synthetic target performance, native
+product regimes, forecast issue availability, optimization gaps, fallback rates
+and final inventory must accompany any future claim of improvement.
+
+\appendix
+\section{Complete continuous participation results}
+\label{app:participation}
+These are four independent January 2026 comparisons. D/E denote updating
+deterministic/frozen ensemble plus updating deterministic forecasts. Profit is
+EUR, absolute imbalance is MWh and ending SOC is percent. All rows cover
+January 1--31; each profile carries its own state. Different studies elsewhere
+in this report must not be merged by farm/date alone.
+\subsection{Farm 1}
+\input{docs/report_evidence/2026-11-04/participation_1.tex}
+\subsection{Farm 345}
+\input{docs/report_evidence/2026-11-04/participation_345.tex}
+\subsection{Farm 901}
+\input{docs/report_evidence/2026-11-04/participation_901.tex}
+\subsection{Farm 910}
+\input{docs/report_evidence/2026-11-04/participation_910.tex}
+
+\section{Earlier auction sensitivities and battery counterfactuals}
+These are separate historical comparisons, not revisions to the matched
+monthly table. Farm 1, January 2026, used the earlier physical/scenario setting.
+The scalar penalty is a planning deterrent; the table reports actual cash
+after signed settlement and wear, without deducting that illustrative penalty.
+\begin{center}\small
+\begin{tabular}{llrrr}
+\toprule Formulation & PV information & Profit EUR & Abs. MWh & Wear EUR\\\midrule
+Exact delivery & Forecast ensemble & 9,856.79 & 1.370 & 369.46\\
+Exact delivery & Perfect PV & 10,582.72 & 0.000 & 224.23\\
+Penalty 500 EUR/MWh & Forecast ensemble & 10,167.58 & 4.729 & 457.24\\
+Penalty 500 EUR/MWh & Perfect PV & 10,582.72 & 0.000 & 224.23\\
+Penalty 100 EUR/MWh & Forecast ensemble & 7,043.63 & 643.228 & 114.21\\
+Penalty 100 EUR/MWh & Perfect PV & 7,112.42 & 642.110 & 90.22\\
+\bottomrule\end{tabular}\end{center}
+At the lower penalty the model takes very large short positions: forecast-case
+auction receipts EUR 97,335.24 are offset by settlement EUR $-90,177.39$.
+This is a strong objective-sensitivity diagnostic, not evidence that a
+100 EUR/MWh coefficient represents actual imbalance economics. Even perfect
+PV does not prevent deliberate planned deviations in that formulation.
+
+In the separately saved January battery-minus-PV-only comparison, incremental
+cash profit was EUR 57.77 (deterministic), 162.22 (51 paths), and 83.67 (perfect
+PV). Added wear was EUR 520.36, 369.46 and 224.23; absolute imbalance changed
+by $-5.041$, $-1.884$ and effectively zero MWh. These are operational cash
+differences under the saved initial/terminal conditions, not annual battery
+returns or capital-cost benefits.
+
+The accompanying \path{auction_sensitivities.csv} retains 220 rows from these
+comparisons and the farm-specific 10/20-day four-policy participation studies,
+including ensemble-mean control, PV-only references, ending energy and saved
+validation-warning counts where provided. Periods and objectives must be
+matched before comparing rows. Sources added during the final audit carry
+their own addition timestamp in the evidence ledger; the ongoing-search status
+snapshot remains frozen at the original capture time.
+
+\section{January MPC results by farm and case}
+\label{app:mpc-farms}
+Every number is target controller minus its own tracking baseline over the two
+days January 15--16, 2026. End MWh is final stored-energy difference. These
+are cash comparisons without inventory valuation. The CSV also preserves
+absolute target/baseline totals and solver diagnostics.
+\input{docs/report_evidence/2026-11-04/january_mpc_farms.tex}
+
+\section{Price experiment inventory}
+\label{app:price-inventory}
+Identifiers below are relative to the MPC tree's
+\path{outputs/energy_price_forecasts/}. ``Records'' counts manifest result/model
+entries, not independent observations or total weekly refits. Derived comparison
+reports can have zero such entries while retaining completed group metrics.
+Status is frozen at capture. Complete does not certify numerical convergence,
+causal availability or untouched evaluation. Per-run periods and all candidate
+metrics are in \path{price_run_inventory.csv} and
+\path{price_candidate_results.csv} beside the snapshot.
+\input{docs/report_evidence/2026-11-04/price_inventory.tex}
+
+\section{Evidence ledger and review method}
+The report uses the full main LaTeX as its base, reconciles the sibling
+feature LaTeX and MPC/price LaTeX, and checks the optimizer, physical helpers,
+information ownership, replay accounting, forecast adapters and effective
+configuration. Numerical evidence is read from completed run records, compact
+CSV exports and saved independent audits; no optimization or training was
+rerun for this report. Where only an older report survives, that weaker evidence
+is stated. The source ledger below maps every pinned input to its checkout;
+full SHA-256 values and captured working-tree state are in
+\path{docs/report_evidence/2026-11-04/snapshot.json}.
+
+The frozen CSV tables are a compact report snapshot, not replacement live run
+manifests. They preserve comparison labels and target provenance. The main
+working tree had unrelated ongoing PV-training modifications and an existing
+price-data inventory; those are outside this documentation change. The two
+sibling working trees were read as evidence rather than modified or merged.
+The independently written presentation document is
+\path{docs/research_overview.tex}; it retains the scientific assumptions without
+implementation identifiers and places its detailed formulation in appendices.
+\input{docs/report_evidence/2026-11-04/sources.tex}

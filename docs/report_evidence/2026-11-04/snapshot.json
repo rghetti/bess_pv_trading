@@ -1,0 +1,1288 @@
+{
+  "captured_at_utc": "2026-11-04T15:52:57.024301+00:00",
+  "repositories": {
+    "bess_pv_trading": {
+      "head": "a3238e705afb11e229f5fb44bd4d2291d9a0fa0b",
+      "status": "M configs/pv_experiments/reviewed_four_cycle_neural_hpo.yaml\n M src/forecasting/training/pv_reviewed_hpo.py\n?? docs/price_forecasting_data_inventory.md\n?? docs/results/pv_reviewed_hpo/\n?? scripts/rescore_reviewed_pv_night_clipping.py"
+    },
+    "bess_pv_trading_features": {
+      "head": "e9d24bd18bf18c3bb832cf2830d99039f8fdd980",
+      "status": "?? codex_prompt.md"
+    },
+    "bess_pv_trading_realtime_mpc": {
+      "head": "4fa50dcf9aa79add5028ed9d1ecf8fdbc8ed3130",
+      "status": ""
+    }
+  },
+  "datasets": {
+    "pv_hpo_status": [
+      {
+        "run": "four_cycle_neural_night3000_gpu_parallel_v1",
+        "status": "searching",
+        "identity": "7ba16c4f2339d32ddb082845680a1f0300430fdb8a36bfdb311ad9ed7065cc86",
+        "hpo_fits": 2560,
+        "completed": 0,
+        "training_started": true
+      },
+      {
+        "run": "four_cycle_neural_night3000_gpu_v1",
+        "status": "searching",
+        "identity": "7b9ea9dca32cae2d1b6c5bd3de5481ef5500056f595ba9fc849de5c8bd050e62",
+        "hpo_fits": 2560,
+        "completed": 0,
+        "training_started": true
+      },
+      {
+        "run": "four_cycle_neural_night3000_multi_gpu_v1",
+        "status": "searching",
+        "identity": "9724bb2fc15ae4bc9f730c9fd8336be080d9b6c98deeb6ae0985a645baf81305",
+        "hpo_fits": 2560,
+        "completed": 220,
+        "training_started": true,
+        "mode": "gpu0_recovery"
+      },
+      {
+        "run": "four_cycle_neural_night3000_v1",
+        "status": "searching",
+        "identity": "2cf930fc50d466287bcb39df463b8991b3ff5ca15d260fe0228eb2a76bbefe49",
+        "hpo_fits": 2560,
+        "completed": 0,
+        "training_started": true
+      },
+      {
+        "run": "four_cycle_neural_night3000_v2",
+        "status": "searching",
+        "identity": "8dbf0f51f7bff70d475ee65f87fc94a3ddec6c7d34944d3a2ce6b88404e066e0",
+        "hpo_fits": 2560,
+        "completed": 20,
+        "training_started": true
+      },
+      {
+        "run": "historical_ghi_all_farms_night3000_v1",
+        "status": "complete",
+        "identity": "e8e1b55f600928d6c139d59cb176e59ebb3e6b2a8f04146b034fc80adff2af80",
+        "hpo_fits": 8192,
+        "completed": 8192,
+        "refits_completed": 132,
+        "report": "docs/results/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1",
+        "training_started": true
+      },
+      {
+        "run": "historical_ghi_all_farms_v1",
+        "status": "searching",
+        "identity": "3d932591699e93c76847409b49136a7c48ee1cc86f8b91a26b38380d6b752558",
+        "hpo_fits": 8192,
+        "completed": 200,
+        "training_started": true
+      }
+    ],
+    "price_inventory": [
+      {
+        "run": "chronological_2026_v3",
+        "status": "complete",
+        "result_records": 30,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "european_context_ablation_v1",
+        "status": "complete",
+        "result_records": 75,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "european_context_previous_day_v1",
+        "status": "complete",
+        "result_records": 75,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "extended_2024_training_v2",
+        "status": "complete",
+        "result_records": 27,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_da_2026_huber_search_v1",
+        "status": "complete",
+        "result_records": 56,
+        "periods": "quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_da_2026_previous_ida_prices_v1",
+        "status": "complete",
+        "result_records": 140,
+        "periods": "quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_da_2026_previous_idas_ablation_v1",
+        "status": "complete",
+        "result_records": 0,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_da_2026_previous_idas_selected_rolling_v1",
+        "status": "complete",
+        "result_records": 10,
+        "periods": "quarter_hourly: 2026-05-03 to 2026-09-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": true
+      },
+      {
+        "run": "nord_da_2026_recent_training_windows_v1",
+        "status": "complete",
+        "result_records": 96,
+        "periods": "quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_da_2026_recent_windows_selected_rolling_v1",
+        "status": "running",
+        "result_records": 5,
+        "periods": "quarter_hourly: 2026-05-03 to 2026-09-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": true
+      },
+      {
+        "run": "nord_da_curve_monthly_diagnostics_v1",
+        "status": "complete",
+        "result_records": 0,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_da_curves_rolling_v1",
+        "status": "complete",
+        "result_records": 15,
+        "periods": "hourly: 2025-07-02 to 2025-10-01 (end exclusive); quarter_hourly: 2026-05-02 to 2026-09-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": true
+      },
+      {
+        "run": "nord_da_daily_curves_search_v1",
+        "status": "complete",
+        "result_records": 315,
+        "periods": "hourly: 2025-01-01 to 2025-07-01 (end exclusive); quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_da_expanded_context_search_v1",
+        "status": "complete",
+        "result_records": 243,
+        "periods": "hourly: 2025-01-01 to 2025-07-01 (end exclusive); quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_da_french_balance_matched_v1",
+        "status": "complete",
+        "result_records": 108,
+        "periods": "hourly: 2025-01-01 to 2025-07-01 (end exclusive); quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_da_per_slot_search_v1",
+        "status": "complete",
+        "result_records": 40,
+        "periods": "hourly: 2025-01-01 to 2025-07-01 (end exclusive); quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_da_resolution_holdout_v1",
+        "status": "complete",
+        "result_records": 10,
+        "periods": "hourly: 2025-07-02 to 2025-10-01 (end exclusive); quarter_hourly: 2026-05-02 to 2026-09-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": true
+      },
+      {
+        "run": "nord_da_resolution_search_v1",
+        "status": "complete",
+        "result_records": 60,
+        "periods": "hourly: 2025-01-01 to 2025-07-01 (end exclusive); quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_2024_hourly_exports_v1",
+        "status": "complete",
+        "result_records": 243,
+        "periods": "ida1_hourly_export_2024: 2024-10-02 to 2025-01-01 (end exclusive); ida2_hourly_export_2024: 2024-10-02 to 2025-01-01 (end exclusive); ida3_hourly_export_2024: 2024-10-02 to 2025-01-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_2025_selected_rolling_holdout_v1",
+        "status": "complete",
+        "result_records": 27,
+        "periods": "ida1_quarter_hourly: 2025-09-03 to 2025-12-01 (end exclusive); ida2_quarter_hourly: 2025-09-03 to 2025-12-01 (end exclusive); ida3_quarter_hourly: 2025-09-03 to 2025-12-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": true
+      },
+      {
+        "run": "nord_ida_2025_terna_load_ablation_v1",
+        "status": "complete",
+        "result_records": 0,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_2025_terna_load_matched_v1",
+        "status": "complete",
+        "result_records": 324,
+        "periods": "ida1_quarter_hourly: 2025-06-01 to 2025-09-01 (end exclusive); ida2_quarter_hourly: 2025-06-01 to 2025-09-01 (end exclusive); ida3_quarter_hourly: 2025-06-01 to 2025-09-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_2025_terna_selected_rolling_holdout_v1",
+        "status": "complete",
+        "result_records": 21,
+        "periods": "ida1_quarter_hourly: 2025-09-03 to 2025-12-01 (end exclusive); ida2_quarter_hourly: 2025-09-03 to 2025-12-01 (end exclusive); ida3_quarter_hourly: 2025-09-03 to 2025-12-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": true
+      },
+      {
+        "run": "nord_ida_2026_huber_search_v1",
+        "status": "complete",
+        "result_records": 144,
+        "periods": "ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_bidirectional_neighbors_search_v1",
+        "status": "running",
+        "result_records": 470,
+        "periods": "ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_cleared_context_2025_v1",
+        "status": "complete",
+        "result_records": 486,
+        "periods": "ida1_quarter_hourly: 2025-06-01 to 2025-09-01 (end exclusive); ida2_quarter_hourly: 2025-06-01 to 2025-09-01 (end exclusive); ida3_quarter_hourly: 2025-06-01 to 2025-09-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_cleared_context_search_v1",
+        "status": "complete",
+        "result_records": 486,
+        "periods": "ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_cleared_monthly_diagnostics_v1",
+        "status": "complete",
+        "result_records": 0,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_cleared_rolling_v1",
+        "status": "complete",
+        "result_records": 27,
+        "periods": "ida1_quarter_hourly: 2026-05-02 to 2026-09-01 (end exclusive); ida2_quarter_hourly: 2026-05-02 to 2026-09-01 (end exclusive); ida3_quarter_hourly: 2026-05-02 to 2026-09-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": true
+      },
+      {
+        "run": "nord_ida_french_balance_ablation_v1",
+        "status": "complete",
+        "result_records": 0,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_french_balance_matched_v1",
+        "status": "complete",
+        "result_records": 324,
+        "periods": "ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_nearest_auction_spreads_v1",
+        "status": "complete",
+        "result_records": 324,
+        "periods": "ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_per_slot_search_v1",
+        "status": "complete",
+        "result_records": 72,
+        "periods": "ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_swiss_border_matched_v1",
+        "status": "complete",
+        "result_records": 324,
+        "periods": "ida1_quarter_hourly: 2026-03-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-03-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-03-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_swiss_reservoir_ablation_v1",
+        "status": "complete",
+        "result_records": 0,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_swiss_reservoir_matched_v1",
+        "status": "complete",
+        "result_records": 324,
+        "periods": "ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_temporal_ensemble_v1",
+        "status": "complete",
+        "result_records": 0,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_temporal_hourwise_v1",
+        "status": "complete",
+        "result_records": 0,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_ida_temporal_stacking_v1",
+        "status": "complete",
+        "result_records": 0,
+        "periods": "",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      },
+      {
+        "run": "nord_intraday_settlement_resolution_search_v1",
+        "status": "complete",
+        "result_records": 120,
+        "periods": "ida1_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida2_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); ida3_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive); settlement_quarter_hourly: 2026-02-01 to 2026-05-01 (end exclusive)",
+        "failures": 0,
+        "selection_frozen_from_manifest": false
+      }
+    ],
+    "january_matrix": {
+      "status": "complete",
+      "jobs": 104,
+      "finished_at_utc": "2026-11-04T13:31:35.922659+00:00"
+    }
+  },
+  "sources": [
+    {
+      "id": "S001",
+      "repository": "bess_pv_trading",
+      "path": "docs/results/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1/top_three_metrics.csv",
+      "sha256": "aa95ce1e2f71cb50464d89a754feac0556a779bfe8c12c42dc0362ef14301ef7",
+      "bytes": 32980
+    },
+    {
+      "id": "S002",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_1/2026_01_mixed_models_pv_comparison/monthly_comparison.csv",
+      "sha256": "6627c76874297fd6d161ec93dd901f6c025b64878ed2f2cac5c962ca86183813",
+      "bytes": 970
+    },
+    {
+      "id": "S003",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_1/2026_08_mixed_models_pv_comparison/monthly_comparison.csv",
+      "sha256": "db050fbba280e39fdefd22fcea14e3cb0fe1ec75aa1357c05ea131a6cc5c47e5",
+      "bytes": 966
+    },
+    {
+      "id": "S004",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_345/2026_01_mixed_models_pv_comparison/monthly_comparison.csv",
+      "sha256": "fff0d73155de34ce8e3edf7619d0ecbf93646a9d5de662f146d2255c2d39f166",
+      "bytes": 960
+    },
+    {
+      "id": "S005",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_345/2026_08_mixed_models_pv_comparison/monthly_comparison.csv",
+      "sha256": "de8e70f54804bde0d0156294c5c07a0c8aab09f4ab6d48e813e32a2b8053c6b0",
+      "bytes": 966
+    },
+    {
+      "id": "S006",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_901/2026_01_mixed_models_pv_comparison/monthly_comparison.csv",
+      "sha256": "9f6483c9761c8a35f1426901ad2d932cf271fd245230caad467e6e4c28956a94",
+      "bytes": 939
+    },
+    {
+      "id": "S007",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_901/2026_08_mixed_models_pv_comparison/monthly_comparison.csv",
+      "sha256": "c8d72b21b053a6c0825259b4469290d0de95c387adc7455c44ac4df887eed2a0",
+      "bytes": 964
+    },
+    {
+      "id": "S008",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_910/2026_01_mixed_models_pv_comparison/monthly_comparison.csv",
+      "sha256": "a1378f89bff160806b63277725da197c60b7a9a82aabdcbd138b35be64946a30",
+      "bytes": 936
+    },
+    {
+      "id": "S009",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_910/2026_08_mixed_models_pv_comparison/monthly_comparison.csv",
+      "sha256": "c438f3db505e35b8c55b1daf60146ad0aa3496b944835d8adaa8eeb6eb01adc8",
+      "bytes": 966
+    },
+    {
+      "id": "S010",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_1/2026_01_continuous_participation_forecast_comparison/monthly_comparison.csv",
+      "sha256": "d6d11688f7676cc3ef9c53f1cc5471f5e1ede1fd5ebfaa33db34b098000045bf",
+      "bytes": 9007
+    },
+    {
+      "id": "S011",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_345/2026_01_continuous_participation_forecast_comparison/monthly_comparison.csv",
+      "sha256": "1037b47a5d91f6e8e5c7cdd69e41e26ed3dca006b16b2c0747a3212bba8d43ba",
+      "bytes": 9209
+    },
+    {
+      "id": "S012",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_901/2026_01_continuous_participation_forecast_comparison/monthly_comparison.csv",
+      "sha256": "ea453980692cf091f4ee12ed115397bbde187c2ceb32dd0c111471eb54bd82b0",
+      "bytes": 9112
+    },
+    {
+      "id": "S013",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_910/2026_01_continuous_participation_forecast_comparison/monthly_comparison.csv",
+      "sha256": "35d34fc4248397b4aee7a30c29f9eb4238eebe9573ac719ffa638d4cbfad54ed",
+      "bytes": 9042
+    },
+    {
+      "id": "S014",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_research/reviewed_january_matrix_v1/manifest.json",
+      "sha256": "7b2a56d6583b59a81f76d3a2953b2c1a23514b1030cdefc618a6ce2d140b2645",
+      "bytes": 1655260
+    },
+    {
+      "id": "S015",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/chronological_2026_v3/manifest.json",
+      "sha256": "033d355f5ac9e5c8e63858920c7b49c7583fc600d6cb623b2a9855493d7ab823",
+      "bytes": 2601586
+    },
+    {
+      "id": "S016",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/european_context_ablation_v1/manifest.json",
+      "sha256": "4fdb9d1468c7d029d2a2878c4d97c14f11016741525a0fa052965db5369e468b",
+      "bytes": 4844469
+    },
+    {
+      "id": "S017",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/european_context_previous_day_v1/manifest.json",
+      "sha256": "0861caa6c3a7d20c81f41fe7f49c7736a11e28b464c2b0237da6876fce01d120",
+      "bytes": 4847414
+    },
+    {
+      "id": "S018",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/extended_2024_training_v2/manifest.json",
+      "sha256": "53ef3cda6d5ce5ba802fbd183e0cbe1f0d422e93edaa60dca40e579f025155aa",
+      "bytes": 2615128
+    },
+    {
+      "id": "S019",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_2026_huber_search_v1/manifest.json",
+      "sha256": "86d70b13dd34fd123c09972b145380dba9c4876785d19fc2b2e9a3e4c5243757",
+      "bytes": 69235
+    },
+    {
+      "id": "S020",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_2026_previous_ida_prices_v1/manifest.json",
+      "sha256": "5b8eb3fbff297de467d2a49151f667974bb655f5bbd500ba10b18c04ca415dbd",
+      "bytes": 107477
+    },
+    {
+      "id": "S021",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_2026_previous_idas_ablation_v1/manifest.json",
+      "sha256": "d1958d262b21d666ea3dcd2c154eb9c3119834b77f13853a04c57f4b0f830a34",
+      "bytes": 643
+    },
+    {
+      "id": "S022",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_2026_previous_idas_selected_rolling_v1/manifest.json",
+      "sha256": "52a3bc74b82c8ef2e5d14825058b4661e163c2f1d6345bc7315e9b2c55a16fce",
+      "bytes": 64531
+    },
+    {
+      "id": "S023",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_2026_recent_training_windows_v1/manifest.json",
+      "sha256": "59db2635767ae4eaa5a4b16ecc05cc09954a415f3831a21c1c8518cc208ecfb9",
+      "bytes": 91603
+    },
+    {
+      "id": "S024",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_2026_recent_windows_selected_rolling_v1/manifest.json",
+      "sha256": "21551bef15758abdd6f298cc5dfb06326d170a1d3ba9679f81acc5d3f2c1e2c5",
+      "bytes": 62226
+    },
+    {
+      "id": "S025",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_curve_monthly_diagnostics_v1/manifest.json",
+      "sha256": "9a76aa3ac0a5b612ce6775e9c0673a4c736ed06892a8331783d413a4783508bd",
+      "bytes": 576
+    },
+    {
+      "id": "S026",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_curves_rolling_v1/manifest.json",
+      "sha256": "f4bf7ead6857daa6ebf331ba0939cedd0f267b0d8ae258c21dccbe39f1a8d034",
+      "bytes": 35262
+    },
+    {
+      "id": "S027",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_daily_curves_search_v1/manifest.json",
+      "sha256": "e144f7af28c4bad65099d6a01ed437204e6c9825210f032c48bf000c00a26229",
+      "bytes": 147599
+    },
+    {
+      "id": "S028",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_expanded_context_search_v1/manifest.json",
+      "sha256": "f174cae88caa2452735f4ca1278802c82dc3145ce078ee017eeab99d6e91c5cb",
+      "bytes": 116164
+    },
+    {
+      "id": "S029",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_french_balance_matched_v1/manifest.json",
+      "sha256": "6e6f5dbaae6a340ea0e0f6fa01e4001ea68fdf27a259f3c0a231657a4a783e20",
+      "bytes": 108100
+    },
+    {
+      "id": "S030",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_per_slot_search_v1/manifest.json",
+      "sha256": "88904acfd28f2c4a40ec4dd26aec2b7e9ddd32f1dcbdf09e5e68a2f218bfbbe8",
+      "bytes": 36113
+    },
+    {
+      "id": "S031",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_resolution_holdout_v1/manifest.json",
+      "sha256": "f8dcbc76ca31894a32bb4104824146adbb4022662f226178696f5d4eebe90fd4",
+      "bytes": 26078
+    },
+    {
+      "id": "S032",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_da_resolution_search_v1/manifest.json",
+      "sha256": "8bae1bb3d3d116be19aa8deec9e4dcabf3e46df84d79aeb77eeda9d9b21a7d06",
+      "bytes": 42244
+    },
+    {
+      "id": "S033",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_2024_hourly_exports_v1/manifest.json",
+      "sha256": "34922682d0c5b88520edd411d1bf0272cd45b1f2f3b20eefcf2be83421566620",
+      "bytes": 175490
+    },
+    {
+      "id": "S034",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_2025_selected_rolling_holdout_v1/manifest.json",
+      "sha256": "c2d87862e889a379b3043d55a7652d0eb94b56d10b9a652969484b410bce420e",
+      "bytes": 123185
+    },
+    {
+      "id": "S035",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_2025_terna_load_ablation_v1/manifest.json",
+      "sha256": "5417298c2fdc321e8f4e5fc9fd2df3a99f7a089e71ac448443ff94b741ba0bbf",
+      "bytes": 652
+    },
+    {
+      "id": "S036",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_2025_terna_load_matched_v1/manifest.json",
+      "sha256": "c50a738f2929b0318cab17a039efb590c92be64e9da96095629fef909fdadf43",
+      "bytes": 295955
+    },
+    {
+      "id": "S037",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_2025_terna_selected_rolling_holdout_v1/manifest.json",
+      "sha256": "ba8374720ab27b9ee0e627bebcb94d990069a49282cb4471267f71ef8f982719",
+      "bytes": 258038
+    },
+    {
+      "id": "S038",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_2026_huber_search_v1/manifest.json",
+      "sha256": "4b58bcf990c80150d7c77d367cfec137dc69f5ce9738765a1cd2367a22a20892",
+      "bytes": 194805
+    },
+    {
+      "id": "S039",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_bidirectional_neighbors_search_v1/manifest.json",
+      "sha256": "70399f4f58af6787aa88d06c3487d11b53b3ab8376c8841330018f6a9e96f00f",
+      "bytes": 342888
+    },
+    {
+      "id": "S040",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_cleared_context_2025_v1/manifest.json",
+      "sha256": "7500451253821d129424b32b3898057ecb50a9d3f997f31e10aa42f6c842990b",
+      "bytes": 288216
+    },
+    {
+      "id": "S041",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_cleared_context_search_v1/manifest.json",
+      "sha256": "e2c4d56cc83c3e5d91a96fc3195fe27773954efb7b5e9872b3a48f755be63928",
+      "bytes": 314676
+    },
+    {
+      "id": "S042",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_cleared_monthly_diagnostics_v1/manifest.json",
+      "sha256": "48c4f9996782186e2334ccd794d153997508d21b2f6eed216cafa40306b972e3",
+      "bytes": 587
+    },
+    {
+      "id": "S043",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_cleared_rolling_v1/manifest.json",
+      "sha256": "569b486b2203a8b24f1ad9156fa1bb549a67f070ef180af9193099ae610384f6",
+      "bytes": 150874
+    },
+    {
+      "id": "S044",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_french_balance_ablation_v1/manifest.json",
+      "sha256": "8e7ef575210bc6738dbc9c671876abd715771b3f2a09ee8ccceb8dc983f667b5",
+      "bytes": 658
+    },
+    {
+      "id": "S045",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_french_balance_matched_v1/manifest.json",
+      "sha256": "fa5dcf523a3b85ead3169564a353291583a567ecbf5a05c26b731c06e10c4277",
+      "bytes": 288099
+    },
+    {
+      "id": "S046",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_nearest_auction_spreads_v1/manifest.json",
+      "sha256": "2b238587daf6aaa172a12bdbbd9b403512250417666bf1689c0cfd4b109b9bd5",
+      "bytes": 226668
+    },
+    {
+      "id": "S047",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_per_slot_search_v1/manifest.json",
+      "sha256": "09a1f809e07ce49cd8ecec867964bb9ff2b8093f4fc6abd14f7b2bc646b58aa8",
+      "bytes": 147637
+    },
+    {
+      "id": "S048",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_swiss_border_matched_v1/manifest.json",
+      "sha256": "fc4caa6cab094c640a73861338f9f61bf952ce23cf6e5c90834f9e10e426e414",
+      "bytes": 187024
+    },
+    {
+      "id": "S049",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_swiss_reservoir_ablation_v1/manifest.json",
+      "sha256": "67fb2e8ab45e4817158beabe31b3d1bb9c3913bc123294172f04d4dbe5930bc0",
+      "bytes": 650
+    },
+    {
+      "id": "S050",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_swiss_reservoir_matched_v1/manifest.json",
+      "sha256": "7649fa5035b09f221851e7685e35dc2a63bc86a13ab26eb1e17bc7e89697c8ef",
+      "bytes": 264046
+    },
+    {
+      "id": "S051",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_temporal_ensemble_v1/manifest.json",
+      "sha256": "6430fbf1851b3f044969aefc8c7ae4797983f1e1329c070af3e4193184b0ddc0",
+      "bytes": 62725
+    },
+    {
+      "id": "S052",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_temporal_hourwise_v1/manifest.json",
+      "sha256": "ddde9a654aa9c4e80973be531f39779846473db6fd5e884f52d9f9c0c76e8902",
+      "bytes": 96914
+    },
+    {
+      "id": "S053",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_ida_temporal_stacking_v1/manifest.json",
+      "sha256": "6d7b62e3dc1b3f393c5180abb408175ace96ac791a1ec3ce6b7cb1a888a093f3",
+      "bytes": 78794
+    },
+    {
+      "id": "S054",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_price_forecasts/nord_intraday_settlement_resolution_search_v1/manifest.json",
+      "sha256": "91bd9592c8c6ad5e22ea9d1d138b83a61fbcfa77aff7281f312320df66be9f93",
+      "bytes": 122370
+    },
+    {
+      "id": "S055",
+      "repository": "bess_pv_trading_features",
+      "path": "outputs/price_benchmark/20261023T133005867139Z/results.csv",
+      "sha256": "0c046da56a5359a2df266c936cea9538a49db2215e27bbc1787f1975b8d162d1",
+      "bytes": 4955
+    },
+    {
+      "id": "S056",
+      "repository": "bess_pv_trading",
+      "path": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_gpu_parallel_v1/status.json",
+      "sha256": "b8bf801a359c5bf255cc2b1ed42de2ae938b5bd9ac2134812d8d7927a8d057b0",
+      "bytes": 176
+    },
+    {
+      "id": "S057",
+      "repository": "bess_pv_trading",
+      "path": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_gpu_v1/status.json",
+      "sha256": "ef89cb8578d2775667d899d3907f21104a08923374db5a83d87c246659a82155",
+      "bytes": 176
+    },
+    {
+      "id": "S058",
+      "repository": "bess_pv_trading",
+      "path": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/status.json",
+      "sha256": "4ede078d25f1fe4a00f55f908f8692c7f6830822a08121ac4444b579576e0f01",
+      "bytes": 205
+    },
+    {
+      "id": "S059",
+      "repository": "bess_pv_trading",
+      "path": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_v1/status.json",
+      "sha256": "552acf153a87348315e9fc1cad11e597822fdadd89529cf80b96d83fb9699ac3",
+      "bytes": 176
+    },
+    {
+      "id": "S060",
+      "repository": "bess_pv_trading",
+      "path": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_v2/status.json",
+      "sha256": "f8363ce8f6a76c40dd99f218ba4dab2a983c189b5251da52d7a24de4e5cfea59",
+      "bytes": 177
+    },
+    {
+      "id": "S061",
+      "repository": "bess_pv_trading",
+      "path": "outputs/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1/status.json",
+      "sha256": "40575b087ff70d6045e48d538b5b805b8f5db6c8247e971f93758020e84419f8",
+      "bytes": 287
+    },
+    {
+      "id": "S062",
+      "repository": "bess_pv_trading",
+      "path": "outputs/pv_reviewed_hpo/historical_ghi_all_farms_v1/status.json",
+      "sha256": "2134f05aa53d4f7fa79e792c17fe89a645b42c9346854915790819a7a3f439f1",
+      "bytes": 178
+    },
+    {
+      "id": "S063",
+      "repository": "bess_pv_trading",
+      "path": "AGENTS.md",
+      "sha256": "f6a5aff77a210153d76235912bd0514f48f974c347ed08f4e9a2cdcc4bf77941",
+      "bytes": 11595
+    },
+    {
+      "id": "S064",
+      "repository": "bess_pv_trading",
+      "path": "configs/standard.yaml",
+      "sha256": "b21fb58e730e4c180453f2ea30181fba09041f0561d3c60080d1ed24b676c870",
+      "bytes": 19107
+    },
+    {
+      "id": "S065",
+      "repository": "bess_pv_trading",
+      "path": "docs/pv_probabilistic_online_crps_reference.tex",
+      "sha256": "c469b67f56086c83897fdab0eadbf0aa3916fa9cdf306bdf1d4200fc619cd4d2",
+      "bytes": 65417
+    },
+    {
+      "id": "S066",
+      "repository": "bess_pv_trading",
+      "path": "docs/results/pv_online_crps_january_august_2026/metrics.csv",
+      "sha256": "3b313b5aa6186e90e2db65666fcbcac469fcadc1721be88c1abf683e1dd8b996",
+      "bytes": 433576
+    },
+    {
+      "id": "S067",
+      "repository": "bess_pv_trading",
+      "path": "docs/results/probabilistic_pv_january_august_2026/comparison/paired_comparison.csv",
+      "sha256": "44ac95245b5f48aad0c151108220d4d651993931acd8043425898cb20b24d568",
+      "bytes": 3473
+    },
+    {
+      "id": "S068",
+      "repository": "bess_pv_trading",
+      "path": "docs/results/pv_realized_irradiance_2025_2026/README.md",
+      "sha256": "cff44c8b1707bfa1f5462a4562be6964ccee1c32982777c29d83b32bbd7991e3",
+      "bytes": 6385
+    },
+    {
+      "id": "S069",
+      "repository": "bess_pv_trading",
+      "path": "docs/results/cleaned_pv_hpo/all_farms_cleaned_16_trials/selected_model_summary.csv",
+      "sha256": "38667fe03502381af3ea700d2d7a3555e6f95b3145e0ef4bf8aa697226ee6111",
+      "bytes": 3882
+    },
+    {
+      "id": "S070",
+      "repository": "bess_pv_trading",
+      "path": "docs/results/realtime_mpc_2026_01_15_16/continuous_controller_comparison.csv",
+      "sha256": "575196a0afe48f7843242e5efcfe1aafc3a051f3ed612e56c44f31aa17928faa",
+      "bytes": 3021
+    },
+    {
+      "id": "S071",
+      "repository": "bess_pv_trading",
+      "path": "docs/results/realtime_mpc_2026_01_15_16/frozen_commitments_controller_comparison.csv",
+      "sha256": "d7e65aad202a05d2c18e1a27395b9f8ee75ab3d7f968008d9ebe50dae7649772",
+      "bytes": 5706
+    },
+    {
+      "id": "S072",
+      "repository": "bess_pv_trading",
+      "path": "outputs/realtime_mpc/may_2026_all_farms/MAY_2026_ALL_FARMS_SUMMARY.md",
+      "sha256": "26bf0af5d6609bd79bca1fd9167aff34f25048003be0ff3b25e7efb1885305de",
+      "bytes": 1115
+    },
+    {
+      "id": "S073",
+      "repository": "bess_pv_trading",
+      "path": "models/pv/reviewed_ghi_2026_selected/manifest.json",
+      "sha256": "5d0e86db25fb4abf0ef55dec120e17774ca105bd79ba0a7df6cc74c60098922e",
+      "bytes": 3059
+    },
+    {
+      "id": "S074",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_1/envelope_replay_2026_08_02_to_11/period_comparison.csv",
+      "sha256": "cd852673272249610cf7c6dccef6ffba5b33e41a9fc0326c9965489da5cd9097",
+      "bytes": 707
+    },
+    {
+      "id": "S075",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_1/envelope_replay_2026_08_02_to_11/matched_state_solves.csv",
+      "sha256": "94670ebc14ad7631532f0ad51195cfff6cb462903b80989249e67fbe20f0d62c",
+      "bytes": 9413
+    },
+    {
+      "id": "S076",
+      "repository": "bess_pv_trading",
+      "path": "outputs/participation_studies/gme_nord_farm910_2025-01_current_settings_sequential_ida3_noon/json/manifest.json",
+      "sha256": "e41fe7020b0038bb1e807f41313f1598618fba7a0c7e8b7566fba9740e5c8b9a",
+      "bytes": 1065030
+    },
+    {
+      "id": "S077",
+      "repository": "bess_pv_trading",
+      "path": "outputs/participation_studies/gme_nord_farm910_2025-01_current_settings_sequential_ida3_noon/csv/profile_ranking.csv",
+      "sha256": "d1071f9e9a58fb7460abd1a9cb680ffd16ab8396093a66275d25bf1bcb23da91",
+      "bytes": 6177
+    },
+    {
+      "id": "S078",
+      "repository": "bess_pv_trading_features",
+      "path": "docs/mathematical_model.tex",
+      "sha256": "3d6e63ca15862cf103916fb136039ce86a8250eca346e18609ea1da2ba43fe1a",
+      "bytes": 95424
+    },
+    {
+      "id": "S079",
+      "repository": "bess_pv_trading_features",
+      "path": "docs/price_benchmark.md",
+      "sha256": "3bb1db4cfd4aa833720da91952386ebe2fcb5a944e297e1aa79828dbd1b43169",
+      "bytes": 27189
+    },
+    {
+      "id": "S080",
+      "repository": "bess_pv_trading_features",
+      "path": "outputs/price_features/history_2024_coverage.json",
+      "sha256": "ae2bf976045f125c478a2e87989f619192f7944322c88bfd3a56c594cfe0d9d2",
+      "bytes": 1224851
+    },
+    {
+      "id": "S081",
+      "repository": "bess_pv_trading_features",
+      "path": "outputs/price_benchmark/20261023T133005867139Z/manifest.json",
+      "sha256": "d75ea211edc9d939b8b2a3c74ab867a5ca11b4c7e82318c1df7e82478bc6cfb5",
+      "bytes": 1127
+    },
+    {
+      "id": "S082",
+      "repository": "bess_pv_trading_features",
+      "path": "outputs/price_benchmark/20261023T133151054322Z/results.csv",
+      "sha256": "71982776aff8d1e4d478d8b46e453adb3b9ab2d9f899cc25f4a1dac45dcbd554",
+      "bytes": 2930
+    },
+    {
+      "id": "S083",
+      "repository": "bess_pv_trading_features",
+      "path": "outputs/price_benchmark/20261023T134106810433Z/results.csv",
+      "sha256": "f91fd372b6e7f563cb783f89807b4f60e15a868ad5b14df6b4ff962109b09be5",
+      "bytes": 744
+    },
+    {
+      "id": "S084",
+      "repository": "bess_pv_trading_features",
+      "path": "outputs/price_benchmark/20261023T134324360680Z/results.csv",
+      "sha256": "b613caa071b51727fe1c45a4bdcde3c07fb6869e9c3c5978a20e3bd5065c1072",
+      "bytes": 2187
+    },
+    {
+      "id": "S085",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "docs/realtime_mpc_price_forecasting.tex",
+      "sha256": "1bf64a9ab6b0046340cccad6cf7a65f180779508ef640d591433c2f34f5c8bb4",
+      "bytes": 21879
+    },
+    {
+      "id": "S086",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "docs/energy_market_research_extensions.md",
+      "sha256": "0b398795a9d433a8c72e4ebb72505903865f691b5df6db8173b4e07de33b6948",
+      "bytes": 20292
+    },
+    {
+      "id": "S087",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "docs/reviews/mpc_results_overview.md",
+      "sha256": "7a46800c8900db8eb3ac9888728e9e5fd93505f688b9489e0e2b133b421935b9",
+      "bytes": 4135
+    },
+    {
+      "id": "S088",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "docs/reviews/price_huber_convergence.md",
+      "sha256": "202764ec784ba75dead50bc0ba0db9888cfa75a94cb87b4780f9f31f3c676e96",
+      "bytes": 1556
+    },
+    {
+      "id": "S089",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "docs/reviews/price_da_2026_previous_idas.md",
+      "sha256": "ff79ca22132288942e14e751d941e0f9069eaa0f3e8827e94bc2df350b950d79",
+      "bytes": 2516
+    },
+    {
+      "id": "S090",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "docs/reviews/price_ida_2025_selected_rolling.md",
+      "sha256": "091f78350588c75ed5861c3f19afe124fb100ab209261f3f5032aba826e5259f",
+      "bytes": 2096
+    },
+    {
+      "id": "S091",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "docs/reviews/continuous_mpc_reviewed_october_v1.json",
+      "sha256": "72ab883086aca625c8a95c8ec808c58071b43481cc557649e3f47b4d8c8769e2",
+      "bytes": 71763
+    },
+    {
+      "id": "S092",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "docs/reviews/continuous_mpc_reviewed_farm910_august_v1.json",
+      "sha256": "15184403a1f7112d72f09c3f381c76d95ac840c52d1f71ab1bafc292dd678bcc",
+      "bytes": 55181
+    },
+    {
+      "id": "S093",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/energy_research/reviewed_january_matrix_audit.json",
+      "sha256": "d433bbb139081cafb77d88eb21cf45fd8bad786541a193377c2cf7ec15b3edf8",
+      "bytes": 1527742
+    },
+    {
+      "id": "S094",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "outputs/research_inputs/pv_calibration_reviewed/calibration_summary.json",
+      "sha256": "14c93bd1d81fcf3cbd78b12d70c86f5069fe3d3b2861f8b939356dfa57985406",
+      "bytes": 1741578
+    },
+    {
+      "id": "S095",
+      "repository": "bess_pv_trading",
+      "path": "src/optimization/model.py",
+      "sha256": "2d7393f28c8fde22512af820d6fd4c0093a4e67c438535a2cd6407def9bb9d57",
+      "bytes": 32311
+    },
+    {
+      "id": "S096",
+      "repository": "bess_pv_trading",
+      "path": "src/optimization/mpc.py",
+      "sha256": "8359fcb95e1c79bef3eb86a21a48fa9172c73b760d16eb168f1ce8caa36d4dc5",
+      "bytes": 33090
+    },
+    {
+      "id": "S097",
+      "repository": "bess_pv_trading",
+      "path": "src/optimization/physical.py",
+      "sha256": "72eea21b4a1a427e3d4c25882e135672fc12d518837cceefcb2a717ab4b05d22",
+      "bytes": 2023
+    },
+    {
+      "id": "S098",
+      "repository": "bess_pv_trading",
+      "path": "src/optimization/degradation.py",
+      "sha256": "ffd580cef3650bc73125c335bb56aeea1e51661a70d78c520450a54271853a54",
+      "bytes": 20396
+    },
+    {
+      "id": "S099",
+      "repository": "bess_pv_trading",
+      "path": "src/optimization/pv_envelope.py",
+      "sha256": "b06346060c42b7401ef6b148b1197d9d8f0af47cb5ba38fdc8a140371768ca70",
+      "bytes": 3436
+    },
+    {
+      "id": "S100",
+      "repository": "bess_pv_trading",
+      "path": "src/simulation/replay.py",
+      "sha256": "86bf3997f62393bd877ae616e53af9adb019b0f4064dc45ffbf46ab9da412f08",
+      "bytes": 14302
+    },
+    {
+      "id": "S101",
+      "repository": "bess_pv_trading",
+      "path": "src/simulation/continuous.py",
+      "sha256": "8b285d67231bdadd1d3ed57ba0bdc0dc95e5562790c9ce4dd751ddaacc82751e",
+      "bytes": 80616
+    },
+    {
+      "id": "S102",
+      "repository": "bess_pv_trading",
+      "path": "src/simulation/continuous_inputs.py",
+      "sha256": "eda4ef476c4837cba15df85649d452d17236795fb90cebfde7a295ff4dc0796a",
+      "bytes": 31874
+    },
+    {
+      "id": "S103",
+      "repository": "bess_pv_trading",
+      "path": "src/forecasting/inference/pv_reviewed_hpo.py",
+      "sha256": "6b61a9f41968a762f6b2002953ded9598e84c60dbd52639ea2917fcf90d49a94",
+      "bytes": 6978
+    },
+    {
+      "id": "S104",
+      "repository": "bess_pv_trading_features",
+      "path": "src/forecasting/price_benchmark/models.py",
+      "sha256": "c77bdef2d0c9da02325dc7f86f996a0065dc4dbd5262d33fe30c630ac9f4d322",
+      "bytes": 18866
+    },
+    {
+      "id": "S105",
+      "repository": "bess_pv_trading_features",
+      "path": "src/forecasting/price_benchmark/data.py",
+      "sha256": "84bdb430aedcd716b4d5c834f98c14e579742c54606e9fd6cb33dc5a1afe6cb1",
+      "bytes": 28726
+    },
+    {
+      "id": "S106",
+      "repository": "bess_pv_trading_features",
+      "path": "src/forecasting/price_benchmark/evaluation.py",
+      "sha256": "516c4c038d088d26b91ca6b78f935f4e54b90e8be6d367c8105fbad050e638dc",
+      "bytes": 8700
+    },
+    {
+      "id": "S107",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "src/optimization/mpc.py",
+      "sha256": "b9618e133938361bc949c7f8353ce1eae49ec0e9c7627ff099653aef8a429015",
+      "bytes": 55475
+    },
+    {
+      "id": "S108",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "src/optimization/adaptive_mpc.py",
+      "sha256": "c7b707055e7793d9cc00bc7df09859ab6ceb05a6e3167d903fb761ed7eeb6607",
+      "bytes": 24076
+    },
+    {
+      "id": "S109",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "src/scenario_research.py",
+      "sha256": "4bc590d2b8f57d34d58405b4636becbe91d7e73203351a6a4e1532bdeb4e30d3",
+      "bytes": 24947
+    },
+    {
+      "id": "S110",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "src/forecasting/continuation.py",
+      "sha256": "76cfd61d39d7b61cc8e24b47b6ee6d0cc8c0dae4b9225f60cb4035c81361d526",
+      "bytes": 7829
+    },
+    {
+      "id": "S111",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "src/forecasting/energy_prices.py",
+      "sha256": "eaf22a4de66748cce7c20968b74c15ca52291d6f6d7fa5968c45ef123a98054d",
+      "bytes": 40441
+    },
+    {
+      "id": "S112",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "src/forecasting/price_search.py",
+      "sha256": "aa3165a0d277f8933197e4bf158e662b5c0df2d455e73dc014e6d8240d0eebea",
+      "bytes": 9829
+    },
+    {
+      "id": "S113",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "src/forecasting/price_search_models.py",
+      "sha256": "0b53c6c5b49ed1e70a75174eb2175b377cf69b7cedb87ea21fb9ea9283125af2",
+      "bytes": 4559
+    },
+    {
+      "id": "S114",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_1/2026_01_participation_days_20_four_policies/period_comparison.csv",
+      "sha256": "2243ef3664e4957f71d1f0da11fa33dc89e304f26200505afdcbf6b4db905f70",
+      "bytes": 6258,
+      "added_at_utc": "2026-11-04T16:12:03.822298+00:00"
+    },
+    {
+      "id": "S115",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_1/2026_01_participation_ten_days_four_policies/period_comparison.csv",
+      "sha256": "b09cc3ea34b917c214ab4df0f7c0d789ed3ebe37239b44b75a446dce7edf43e6",
+      "bytes": 6482,
+      "added_at_utc": "2026-11-04T16:12:03.822959+00:00"
+    },
+    {
+      "id": "S116",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_1/2026_01_pv_battery_comparison/monthly_comparison.csv",
+      "sha256": "5777cb9f59e08a7515b50ec2bb8227fcb3f0d6945d8a58068c711dcd8d3f1e40",
+      "bytes": 1246,
+      "added_at_utc": "2026-11-04T16:12:03.823519+00:00"
+    },
+    {
+      "id": "S117",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_1/2026_01_pv_deterministic_vs_scenarios/monthly_comparison.csv",
+      "sha256": "7f650b2c8e3c9c196334b758ba11710ba015870d14316e2fdd2232e99773f1c1",
+      "bytes": 675,
+      "added_at_utc": "2026-11-04T16:12:03.823744+00:00"
+    },
+    {
+      "id": "S118",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_1/2026_01_pv_scenarios_comparison/monthly_comparison.csv",
+      "sha256": "9527176efb0da512e30c3bef3862268f624a9025127c87fe3d2511f211ef8c28",
+      "bytes": 860,
+      "added_at_utc": "2026-11-04T16:12:03.823932+00:00"
+    },
+    {
+      "id": "S119",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_1/2026_01_pv_scenarios_penalty100_comparison/monthly_comparison.csv",
+      "sha256": "99c77cd7a0356cf06b5868f1fc86d2cdf09f007c46162bf8a8e82d293706aacf",
+      "bytes": 834,
+      "added_at_utc": "2026-11-04T16:12:03.824126+00:00"
+    },
+    {
+      "id": "S120",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_345/2026_01_participation_ten_days_four_policies/period_comparison.csv",
+      "sha256": "c8dc7566755a0aba0f34b2dd8d95e1a427d8dbdec5196f5b5f28bbd70c3cc1af",
+      "bytes": 6804,
+      "added_at_utc": "2026-11-04T16:12:03.824339+00:00"
+    },
+    {
+      "id": "S121",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_901/2026_01_participation_ten_days_four_policies/period_comparison.csv",
+      "sha256": "e13da448ff6acbfe8c933bc9aaea4ce10e453987deb6c60f9af69f976965c2dc",
+      "bytes": 6828,
+      "added_at_utc": "2026-11-04T16:12:03.824906+00:00"
+    },
+    {
+      "id": "S122",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_910/2026_01_participation_ten_days_four_policies/period_comparison.csv",
+      "sha256": "fa99f11b2955249a7ec0694d58fb9adef70fe0729bd83ba06adab88ef8d8d08d",
+      "bytes": 6790,
+      "added_at_utc": "2026-11-04T16:12:03.825476+00:00"
+    },
+    {
+      "id": "S123",
+      "repository": "bess_pv_trading",
+      "path": "outputs/continuous_optimization/comparisons/farm_1/2026_01_pv_battery_comparison/battery_effect_by_policy.csv",
+      "sha256": "0bba5036208ea340ac14d5ef42fb2fe9ded57c797ac08e6e2e3c0ce99a31a3a6",
+      "bytes": 923,
+      "added_at_utc": "2026-11-04T16:12:03.826015+00:00"
+    },
+    {
+      "id": "S124",
+      "repository": "bess_pv_trading_realtime_mpc",
+      "path": "src/forecasting/pv_scenario_calibration.py",
+      "sha256": "3dea96e751c4939f2e1ebd7a8e7f44022a7cf280e157de843e4a4dd41f6c6ec9",
+      "bytes": 25924,
+      "added_at_utc": "2026-11-04T16:15:51.712949+00:00"
+    }
+  ]
+}
