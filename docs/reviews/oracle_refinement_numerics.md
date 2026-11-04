@@ -53,8 +53,8 @@ Gurobi `Presolve=0`, `NumericFocus=3`, and both settings together each passed th
 unchanged reconstructed cap check. The baseline at the same tolerance again
 failed it. Each option was tried once on this small 29-interval deterministic
 horizon; these observations neither identify a unique cause nor establish the
-runtime or reliability of these settings on other instances. No automatic
-retry or solver-default change has been introduced. The full results are in
+runtime or reliability of these settings on other instances. No solver-default
+change was made. The full results are in
 `oracle_farm345_solver_options.json`.
 
 At the original `1e-8` feasibility tolerance, a separate `NumericFocus=3`
@@ -62,6 +62,17 @@ replay of the seven selected farm 1 horizons and the farm 345 horizon accepted
 four refinements and still rejected four. This does not support treating
 numerical focus alone as a guaranteed recovery. The selected-input results and
 diagnostics are in `oracle_rejections_numeric_focus.json`.
+
+An opt-in budgeted retry was then added: after a physical or cap rejection it
+can reset the invalid solution and re-solve with configured numerical focus and
+a tighter feasibility tolerance, using only remaining economic-stage time.
+The first-stage action remains available if retry fails or time has expired.
+With focus 3 and tolerance `1e-9`, it recovered all eight selected recorded
+horizons while preserving the cap checks. Those cases were selected because
+the initial refinement failed; the result is not a general success rate. The
+two diagnostic files `oracle_rejections_budgeted_retry.json` and
+`oracle_rejections_numeric_focus_tight.json` retain the individual outcomes.
+The existing January matrix did not enable the retry.
 
 The adjacent `oracle_rejection_*.json` files contain the individual diagnostic
 outputs, including solver stages, reconstructed components and failure reasons.

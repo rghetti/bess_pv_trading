@@ -56,6 +56,8 @@ class MpcSettings:
     oracle_fallback_max_relative_gap: float | None = None
     oracle_fallback_time_reserve_fraction: float = 0.5
     oracle_stage2_time_limit_seconds: float | None = None
+    oracle_retry_numeric_focus: int | None = None
+    oracle_retry_feasibility_tolerance: float | None = None
     ensemble_include_deterministic_member: bool = True
     scenario_weights: Mapping[str, float] | None = None
     solver_time_limit_seconds: float = 10.0
@@ -96,6 +98,14 @@ class MpcSettings:
         if stage2_time is not None and (isinstance(stage2_time, bool) or not isinstance(stage2_time, (int, float))
                                         or not np.isfinite(stage2_time) or stage2_time <= 0):
             raise ValueError("Oracle stage-two time limit must be null or a positive number of seconds")
+        focus = self.oracle_retry_numeric_focus
+        if focus is not None and (isinstance(focus, bool) or not isinstance(focus, int) or focus not in (1, 2, 3)):
+            raise ValueError("Oracle retry numerical focus must be null or an integer from 1 to 3")
+        tolerance = self.oracle_retry_feasibility_tolerance
+        if tolerance is not None and (focus is None or isinstance(tolerance, bool)
+                or not isinstance(tolerance, (int, float)) or not np.isfinite(tolerance)
+                or not 1e-9 <= tolerance <= 1e-2):
+            raise ValueError("Oracle retry feasibility tolerance requires a focus and must be in [1e-9, 1e-2]")
         if self.terminal_inventory_mode not in {"none", "soft_target", "linear_value", "piecewise_linear"}:
             raise ValueError("Unknown MPC terminal_inventory_mode")
         if self.current_pv_information not in {"forecast", "realized_interval_average"}:
@@ -756,22 +766,51 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
             model.setObjective(expressions["settlement_eur"] - costs, gp.GRB.MAXIMIZE)
             separate_budget = settings.oracle_stage2_time_limit_seconds is not None
             can_refine = separate_budget or perf_counter() - started < settings.solver_time_limit_seconds
+            refinement_started = perf_counter()
             if can_refine and optimize_stage("signed_settlement_economics",
                     settings.oracle_stage2_time_limit_seconds, independent_budget=separate_budget):
-                candidate = _plan_from_solution(inputs, variables, expressions)
-                candidate_components, _ = validate_mpc_plan(inputs, candidate,
-                    max(1e-7, 2 * model.Params.FeasibilityTol))
-                reconstructed = candidate_components["absolute_imbalance_mwh"]
-                diagnostics["oracle_candidate_reconstructed_imbalance_mwh"] = reconstructed
-                # Per-product split equalities can accumulate numerical residuals.
-                # The declared total-MWh budget applies to reconstructed physical
-                # deviations, so it must be checked independently of those splits.
-                if reconstructed > minimum + budget + 2 * model.Params.FeasibilityTol:
-                    raise ValueError("Oracle refinement exceeds reconstructed imbalance cap: "
-                        f"{reconstructed} > {minimum + budget}")
-                if candidate.components["absolute_imbalance_mwh"] > minimum + budget + 2 * model.Params.FeasibilityTol:
-                    raise ValueError("Oracle refinement exceeds modeled imbalance cap")
-                result.plan = candidate
+                # Retry only a candidate rejected by physical or cap validation.
+                # The optional second solve consumes the remaining stage budget.
+                for attempt in range(2):
+                    try:
+                        candidate = _plan_from_solution(inputs, variables, expressions)
+                        candidate_components, _ = validate_mpc_plan(inputs, candidate,
+                            max(1e-7, 2 * model.Params.FeasibilityTol))
+                        reconstructed = candidate_components["absolute_imbalance_mwh"]
+                        diagnostics["oracle_candidate_reconstructed_imbalance_mwh"] = reconstructed
+                        # Check the physical total independently of model splits.
+                        if reconstructed > minimum + budget + 2 * model.Params.FeasibilityTol:
+                            raise ValueError("Oracle refinement exceeds reconstructed imbalance cap: "
+                                f"{reconstructed} > {minimum + budget}")
+                        if candidate.components["absolute_imbalance_mwh"] > minimum + budget + 2 * model.Params.FeasibilityTol:
+                            raise ValueError("Oracle refinement exceeds modeled imbalance cap")
+                    except ValueError as error:
+                        if attempt or settings.oracle_retry_numeric_focus is None:
+                            raise
+                        remaining = (settings.oracle_stage2_time_limit_seconds - (perf_counter() - refinement_started)
+                            if separate_budget else settings.solver_time_limit_seconds - (perf_counter() - started))
+                        if remaining <= 0:
+                            raise
+                        diagnostics["oracle_retry_initial_rejection"] = str(error)
+                        diagnostics["oracle_retry_attempted"] = True
+                        model.setParam("NumericFocus", settings.oracle_retry_numeric_focus)
+                        if settings.oracle_retry_feasibility_tolerance is not None:
+                            model.setParam("FeasibilityTol", min(model.Params.FeasibilityTol,
+                                settings.oracle_retry_feasibility_tolerance))
+                        diagnostics["oracle_retry_numeric_focus"] = model.Params.NumericFocus
+                        diagnostics["oracle_retry_feasibility_tolerance"] = model.Params.FeasibilityTol
+                        # Discard the numerically invalid incumbent before re-solving.
+                        model.reset()
+                        remaining = (settings.oracle_stage2_time_limit_seconds - (perf_counter() - refinement_started)
+                            if separate_budget else settings.solver_time_limit_seconds - (perf_counter() - started))
+                        if remaining <= 0:
+                            raise ValueError("Oracle numerical retry exhausted the economic-stage budget") from error
+                        if not optimize_stage("signed_settlement_economics_numeric_retry", remaining,
+                                              independent_budget=separate_budget):
+                            raise ValueError("Oracle numerical retry returned no feasible incumbent") from error
+                    else:
+                        result.plan = candidate
+                        break
         diagnostics["oracle_stage2_used"] = bool(oracle and result.plan is not first_plan)
         components, residuals = validate_mpc_plan(inputs, result.plan, max(1e-7, 2 * model.Params.FeasibilityTol))
         diagnostics.update(physical_residuals=residuals, recomputed_components=components)

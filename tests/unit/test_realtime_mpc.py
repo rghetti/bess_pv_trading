@@ -184,6 +184,96 @@ def test_invalid_oracle_refinement_keeps_validated_stage1_action(monkeypatch):
     assert result.diagnostics["accepted_action_source"] == "price_blind_stage1"
 
 
+@pytest.mark.parametrize("invalid_retry", [False, True])
+@pytest.mark.parametrize("separate_budget", [False, True])
+def test_oracle_numeric_retry_uses_remaining_stage_budget_and_preserves_stage1(monkeypatch, invalid_retry, separate_budget):
+    """A retry must validate its result and never discard the safe first stage."""
+    import bess_pv_trading.optimization.mpc as module
+
+    original = module._plan_from_solution
+    calls = []
+
+    def invalidate_refinements(*args):
+        plan = original(*args)
+        calls.append(plan)
+        if len(calls) == 2 or (len(calls) == 3 and invalid_retry):
+            plan.actions[0] = replace(plan.actions[0], charge_mw=999)
+        return plan
+
+    monkeypatch.setattr(module, "_plan_from_solution", invalidate_refinements)
+    settings = MpcSettings(terminal_inventory_mode="none", solver_time_limit_seconds=10,
+        oracle_stage2_time_limit_seconds=10 if separate_budget else None, oracle_retry_numeric_focus=3,
+        oracle_retry_feasibility_tolerance=1e-9)
+    inputs = inputs_for([[0, 0]], [0.25, 0.25], prices=[10, 100],
+        policy="deterministic_mpc_price_oracle", settings=settings)
+    result = checked(inputs)
+    assert len(calls) == 3
+    assert result.diagnostics["oracle_retry_attempted"]
+    assert result.diagnostics["oracle_retry_numeric_focus"] == 3
+    assert result.diagnostics["oracle_retry_feasibility_tolerance"] == 1e-9
+    stages = result.diagnostics["stages"]
+    assert stages[-1]["stage"] == "signed_settlement_economics_numeric_retry"
+    assert 0 < stages[-1]["time_limit_seconds"] < 10
+    if invalid_retry:
+        assert result.plan is calls[0]
+        assert result.status == "oracle_refinement_rejected"
+    else:
+        assert result.plan is calls[2]
+        assert result.diagnostics["oracle_stage2_used"]
+
+
+def test_oracle_retry_cannot_loosen_feasibility_tolerance(monkeypatch):
+    """A permissive retry request cannot weaken the original solver tolerance."""
+    import bess_pv_trading.optimization.mpc as module
+
+    original = module._plan_from_solution
+    calls = []
+
+    def reject_first_refinement(*args):
+        plan = original(*args)
+        calls.append(plan)
+        if len(calls) == 2:
+            plan.actions[0] = replace(plan.actions[0], charge_mw=999)
+        return plan
+
+    monkeypatch.setattr(module, "_plan_from_solution", reject_first_refinement)
+    settings = MpcSettings(terminal_inventory_mode="none", solver_time_limit_seconds=10,
+        oracle_stage2_time_limit_seconds=10, oracle_retry_numeric_focus=3,
+        oracle_retry_feasibility_tolerance=1e-7)
+    inputs = inputs_for([[0, 0]], [0.25, 0.25], prices=[10, 100],
+        policy="deterministic_mpc_price_oracle", settings=settings)
+    result = checked(inputs)
+    assert result.diagnostics["oracle_retry_feasibility_tolerance"] == 1e-8
+
+
+def test_oracle_numeric_retry_does_not_extend_exhausted_stage(monkeypatch):
+    """Slow candidate validation cannot grant another economic-stage budget."""
+    import time
+    import bess_pv_trading.optimization.mpc as module
+
+    original = module._plan_from_solution
+    calls = []
+
+    def reject_after_deadline(*args):
+        plan = original(*args)
+        calls.append(plan)
+        if len(calls) == 2:
+            time.sleep(0.2)
+            plan.actions[0] = replace(plan.actions[0], charge_mw=999)
+        return plan
+
+    monkeypatch.setattr(module, "_plan_from_solution", reject_after_deadline)
+    settings = MpcSettings(terminal_inventory_mode="none", solver_time_limit_seconds=10,
+        oracle_stage2_time_limit_seconds=0.1, oracle_retry_numeric_focus=3)
+    inputs = inputs_for([[0, 0]], [0.25, 0.25], prices=[10, 100],
+        policy="deterministic_mpc_price_oracle", settings=settings)
+    result = checked(inputs)
+    assert len(calls) == 2
+    assert result.plan is calls[0]
+    assert result.status == "oracle_refinement_rejected"
+    assert not result.diagnostics.get("oracle_retry_attempted", False)
+
+
 def test_exhausted_oracle_budget_never_authorizes_uncertified_economics():
     inputs = inputs_for([[0, 0]], [0.25, 0.25], prices=[10, 100],
         policy="deterministic_mpc_price_oracle",
@@ -196,7 +286,10 @@ def test_exhausted_oracle_budget_never_authorizes_uncertified_economics():
 @pytest.mark.parametrize("values", [
     {"solver_time_limit_seconds": 0}, {"oracle_relative_imbalance_budget": -0.1},
     {"terminal_inventory_mode": "hard_midnight"}, {"ensemble_include_deterministic_member": 1},
-    {"scenario_weights": {"a": 0.8}}, {"reoptimization_minutes": True}])
+    {"scenario_weights": {"a": 0.8}}, {"reoptimization_minutes": True},
+    {"oracle_retry_numeric_focus": True}, {"oracle_retry_numeric_focus": 4},
+    {"oracle_retry_feasibility_tolerance": 1e-9},
+    {"oracle_retry_numeric_focus": 3, "oracle_retry_feasibility_tolerance": 1e-10}])
 def test_invalid_settings_fail(values):
     with pytest.raises(ValueError):
         MpcSettings(**values)

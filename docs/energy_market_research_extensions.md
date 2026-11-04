@@ -100,6 +100,19 @@ minimum. For incumbent U and lower bound L, the possible excess over the true
 minimum is bounded by U - L plus any declared extra imbalance budget (subject
 to solver numerical tolerances). The gap convention is `(U - L) / U`.
 
+An optional numerical recovery is configured with
+`oracle_retry_numeric_focus` (1, 2 or 3) and optionally
+`oracle_retry_feasibility_tolerance`. It is disabled when the focus is null.
+If an economic-stage candidate fails the physical or imbalance-cap checks,
+the controller discards that candidate and attempts one re-solve using the
+remaining economic-stage budget. A retry tolerance can only tighten the active
+solver tolerance. The retry records its trigger and stage timing, and it must
+pass the same independent checks; if it fails or no time remains, the validated
+stage-one plan is retained. This does not retry a missing incumbent or an
+objective-component validation failure. The existing studies did not enable
+this option, and selected numerical replays are not evidence of its broad effect
+on closed-loop performance.
+
 ## Data, forecast training and retrospective scope
 
 The default matrix uses the four configured farms and two short development
