@@ -355,7 +355,7 @@ def markdown_audit(audit):
         for failure in job["controllers"][1]["oracle_refinement_rejections"]]
     lines += ["", "## Numerical and provenance findings", ""]
     if failures:
-        lines += ["Some oracle economic refinements were rejected by independent objective accounting checks. Their already validated minimum-imbalance stage-one plans were retained. These are distinct from grid-tracking fallbacks.", ""]
+        lines += ["Some oracle economic refinements were rejected by physical validation or reconstructed-imbalance checks. The validated feasible stage-one plans were retained; when a gap-qualified fallback was enabled, those plans need not be proven optimal. These are distinct from grid-tracking fallbacks.", ""]
         for job_id, failure in failures:
             lines.append(f"- `{job_id}`, `{failure['interval_id']}`: `{failure['reason']}`. Tracking fallback: `{failure['tracking_fallback']}`.")
     conflicts = sum(controller["oracle_nested_provenance_conflicts"] for controller in controllers)
