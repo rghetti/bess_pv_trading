@@ -89,9 +89,13 @@ def run(config):
              "Negative MAE differences favor the comparison search. Each row uses matching model "
              "specifications and common actual delivery prices. The searches may use different "
              "training rows and multiple feature-policy changes; see the CSV before attributing differences. "
-             "Scores and bootstrap intervals are exploratory on previously inspected dates.", "",
+             "Scores and bootstrap intervals are exploratory on previously inspected dates.", ""]
+    if any(manifest.get("resume_note") for manifest in manifests):
+        lines.extend(["A source search was resumed from legacy fits; per-candidate convergence warnings "
+                      "and historical implementation hashes may be unavailable for those earlier fits.", ""])
+    lines.extend([
              "| Market | Feature set | Candidates | Improved | Median MAE change €/MWh | Same training targets |",
-             "|---|---|---:|---:|---:|---|"]
+             "|---|---|---:|---:|---:|---|"])
     for (group, feature), values in table.groupby(["group", "feature_set"], sort=True):
         lines.append(f"| {group} | {feature} | {len(values)} | {int((values.mae_difference < 0).sum())} | "
                      f"{values.mae_difference.median():.3f} | {bool(values.same_training_targets.all())} |")
