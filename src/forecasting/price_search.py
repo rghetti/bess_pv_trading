@@ -130,6 +130,33 @@ def complete_shared_days(datasets, *, start, end, settings):
     return days
 
 
+def explain_incomplete_days(datasets, column_names, *, start, end, settings):
+    """Describe missing target products and nonfinite input columns for excluded days."""
+    details = []
+    for day in pd.date_range(start, end, freq="D", inclusive="left"):
+        label = day.date().isoformat()
+        expected = _day_grid(label, settings.interval_minutes, settings.timezone,
+                             settings.delivery_start_hour, settings.delivery_end_hour)
+        by_feature_set = {}
+        for name, dataset in datasets.items():
+            starts = pd.DatetimeIndex(dataset["starts"])
+            indices = starts.get_indexer(expected)
+            present = indices >= 0
+            matrix = dataset["matrix"][indices[present]]
+            names = column_names[name]
+            if matrix.shape[1] != len(names) or len(names) != len(set(names)):
+                raise ValueError("Coverage column names must uniquely match the input matrix")
+            missing = (~np.isfinite(matrix)).sum(axis=0)
+            missing_columns = {column: int(count) for column, count in zip(names, missing) if count}
+            if not present.all() or missing_columns:
+                by_feature_set[name] = {"missing_target_products": int((~present).sum()),
+                                        "missing_input_products": int((~np.isfinite(matrix).all(axis=1)).sum()),
+                                        "missing_by_input": missing_columns}
+        if by_feature_set:
+            details.append({"day": label, "expected_products": len(expected), "feature_sets": by_feature_set})
+    return details
+
+
 def point_metrics(actual, prediction, reference):
     """Return pooled scale-aware errors and the shared seasonal-naive error ratio."""
     actual = np.asarray(actual, dtype=float)

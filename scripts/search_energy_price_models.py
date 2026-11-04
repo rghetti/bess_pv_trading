@@ -21,7 +21,8 @@ from bess_pv_trading.config import load_config
 from bess_pv_trading.forecasting.energy_prices import (PreparedExogenous, PriceForecastSettings, historical_decision_times,
                                                        load_price_history, prepare_exogenous_features)
 from bess_pv_trading.forecasting.energy_price_features import load_catalog_features
-from bess_pv_trading.forecasting.price_search import (complete_shared_days, daily_price_curve_features, point_metrics,
+from bess_pv_trading.forecasting.price_search import (complete_shared_days, daily_price_curve_features,
+                                                      explain_incomplete_days, point_metrics,
                                                       prepare_search_matrix, project_search_matrix,
                                                       restrict_to_common_training_rows)
 from bess_pv_trading.forecasting.price_search_models import make_price_candidate
@@ -350,7 +351,7 @@ def run_search(config, *, check_only=False):
         raise FileExistsError(f"Search output already exists: {destination}")
     if not check_only:
         destination.mkdir(parents=True)
-    jobs, coverage, lineage = [], [], {}
+    jobs, coverage, incomplete_days, lineage = [], [], {}, {}
     earlier_price_cache = {}
     for group, split in study["product_groups"].items():
         resolution = split["native_minutes"]
@@ -454,6 +455,16 @@ def run_search(config, *, check_only=False):
             datasets = restrict_to_common_training_rows(datasets)
         days = complete_shared_days(list(datasets.values()), start=split["validation_start"],
                                     end=split["validation_end"], settings=settings)
+        # Retain reasons for omitted delivery days so scores are not mistaken
+        # for the full requested period and missing sources can be repaired.
+        column_names = {}
+        for feature_set, data in datasets.items():
+            names = ([f"price_lag_{lag}h" for lag in group_lags]
+                     + [f"calendar_{index}" for index in range(7)] + list(group_features[feature_set]))
+            names += [f"daily_curve_{index}" for index in range(data["matrix"].shape[1] - len(names))]
+            column_names[feature_set] = names
+        incomplete_days[group] = explain_incomplete_days(datasets, column_names,
+            start=split["validation_start"], end=split["validation_end"], settings=settings)
         if not days:
             raise ValueError(f"No shared complete validation days for {group}")
         for feature_set, data in datasets.items():
@@ -491,10 +502,12 @@ def run_search(config, *, check_only=False):
                     "residual_feature_index": residual_indices[feature_set], "timezone": study["timezone"],
                     "rolling_refit": study.get("rolling_refit")})
     if check_only:
-        return {"status": "preflight_complete", "coverage": coverage, "feature_checksum": _sha256(feature_path),
+        return {"status": "preflight_complete", "coverage": coverage, "incomplete_days": incomplete_days,
+                "feature_checksum": _sha256(feature_path),
                 "supplemental_features": supplemental_evidence,
                 "candidate_count": len(study["candidates"]), "selection": selection_evidence}
-    manifest = {"status": "running", "config": study, "coverage": coverage, "source_lineage": lineage,
+    manifest = {"status": "running", "config": study, "coverage": coverage, "incomplete_days": incomplete_days,
+                "source_lineage": lineage,
                 "feature_sha256": _sha256(feature_path), "supplemental_features": supplemental_evidence,
                 "selection": selection_evidence, "results": [], "failures": []}
     (destination / "manifest.json").write_text(json.dumps(manifest, indent=2, default=str) + "\n")

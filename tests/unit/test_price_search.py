@@ -29,6 +29,22 @@ def test_search_uses_only_labels_released_before_cutoff_and_shared_complete_days
         "2025-01-01", "2025-01-03"]
 
 
+def test_incomplete_days_distinguishes_missing_products_from_missing_features():
+    """Audit missing observed labels and inputs without imputing either one."""
+    from bess_pv_trading.forecasting.price_search import explain_incomplete_days
+
+    starts = pd.date_range("2025-01-01", "2025-01-03", freq="h", tz="UTC", inclusive="left").delete(2)
+    matrix = np.ones((len(starts), 2))
+    matrix[starts.get_loc(pd.Timestamp("2025-01-02T03:00:00Z")), 1] = np.nan
+    settings = PriceForecastSettings(interval_minutes=60, timezone="UTC")
+    details = explain_incomplete_days({"combined": {"starts": starts, "matrix": matrix}},
+        {"combined": ["lag", "load"]}, start="2025-01-01", end="2025-01-03", settings=settings)
+    assert details[0]["feature_sets"]["combined"]["missing_target_products"] == 1
+    assert details[0]["feature_sets"]["combined"]["missing_by_input"] == {}
+    assert details[1]["feature_sets"]["combined"]["missing_target_products"] == 0
+    assert details[1]["feature_sets"]["combined"]["missing_by_input"] == {"load": 1}
+
+
 def test_point_metrics_preserve_zero_negative_prices_and_naive_scale():
     metrics = point_metrics([0, -10], [1, -7], [0, -5])
     assert metrics["wape_percent"] == 40
