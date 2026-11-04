@@ -91,20 +91,31 @@ def build_research_model(inputs):
             utilization[key] = model.addVar(ub=1, name=f"pv_utilization[t{t},n{owner}]")
             if np.all(inputs.pv_ac_mw[nodes[:, t] == owner, t] == 0):
                 model.addConstr(utilization[key] == 1)
-    # SOC and Xu segment memory follow each complete path from the same actual state.
+    # Battery state depends only on the actual initial state and the history of
+    # shared controls. Scenarios in one node therefore have exactly the same
+    # next SOC. Alias that state rather than creating duplicate path equations.
+    initial = model.addVar(lb=battery.energy_min_mwh, ub=battery.maximum_energy, name="energy[initial]")
+    model.addConstr(initial == inputs.state.energy_mwh)
     for s in range(count):
-        for t in range(length + 1):
-            energy[s, t] = model.addVar(lb=battery.energy_min_mwh, ub=battery.maximum_energy,
-                name=f"energy[s{s},t{t}]")
-        model.addConstr(energy[s, 0] == inputs.state.energy_mwh)
-        for t, duration in enumerate(inputs.grid.delta_hours):
-            owner = int(nodes[s, t])
-            model.addConstr(energy[s, t + 1] == energy_transition(energy[s, t],
-                charge[t, owner], discharge[t, owner], battery, duration))
-        if inputs.hard_terminal_target_mwh is not None:
-            model.addConstr(energy[s, length] == inputs.hard_terminal_target_mwh)
-        if inputs.hard_terminal_minimum_mwh is not None:
-            model.addConstr(energy[s, length] >= inputs.hard_terminal_minimum_mwh)
+        energy[s, 0] = initial
+    for t, duration in enumerate(inputs.grid.delta_hours):
+        for owner in np.unique(nodes[:, t]):
+            members = np.flatnonzero(nodes[:, t] == owner)
+            representative = int(members[0])
+            # A node must never recombine different prior control histories.
+            if any(energy[int(s), t] is not energy[representative, t] for s in members):
+                raise ValueError("Adaptive control nodes merge distinct battery histories")
+            next_energy = model.addVar(lb=battery.energy_min_mwh, ub=battery.maximum_energy,
+                name=f"energy[t{t + 1},n{owner}]")
+            model.addConstr(next_energy == energy_transition(energy[representative, t],
+                charge[t, int(owner)], discharge[t, int(owner)], battery, duration))
+            for s in members:
+                energy[int(s), t + 1] = next_energy
+            if t == length - 1:
+                if inputs.hard_terminal_target_mwh is not None:
+                    model.addConstr(next_energy == inputs.hard_terminal_target_mwh)
+                if inputs.hard_terminal_minimum_mwh is not None:
+                    model.addConstr(next_energy >= inputs.hard_terminal_minimum_mwh)
     variables = {"charge": charge, "discharge": discharge, "energy": energy,
         "utilization": utilization, "mode": mode, "nodes": nodes}
     context = SimpleNamespace(plant=inputs.plant, state=inputs.state, grid=inputs.grid,

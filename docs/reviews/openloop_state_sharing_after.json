@@ -1,0 +1,86 @@
+{
+  "batch": "/tmp/bess_research_reviewed_v2/outputs/energy_research/reviewed_january_matrix_v1",
+  "job_id": "january_development__farm_1__ensemble_economic",
+  "controller": "ensemble_mpc_economic",
+  "cutoff": "2026-01-14 23:00:00+00:00",
+  "scenarios": 51,
+  "intervals": 96,
+  "results": [
+    {
+      "build_seconds": 1.815425731241703,
+      "solve_seconds": 0.18390917778015137,
+      "variables": 15220,
+      "binary_variables": 96,
+      "constraints": 10239,
+      "status_code": 2,
+      "objective_eur": 854.9431984842164,
+      "bound_eur": 854.943198484216,
+      "first_action": [
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "build_seconds": 1.9484581928700209,
+      "solve_seconds": 0.1480729579925537,
+      "variables": 15220,
+      "binary_variables": 96,
+      "constraints": 10239,
+      "status_code": 2,
+      "objective_eur": 854.9431984842164,
+      "bound_eur": 854.943198484216,
+      "first_action": [
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "build_seconds": 1.831065347418189,
+      "solve_seconds": 0.15622615814208984,
+      "variables": 15220,
+      "binary_variables": 96,
+      "constraints": 10239,
+      "status_code": 2,
+      "objective_eur": 854.9431984842164,
+      "bound_eur": 854.943198484216,
+      "first_action": [
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "build_seconds": 1.6840964145958424,
+      "solve_seconds": 0.15108108520507812,
+      "variables": 15220,
+      "binary_variables": 96,
+      "constraints": 10239,
+      "status_code": 2,
+      "objective_eur": 854.9431984842164,
+      "bound_eur": 854.943198484216,
+      "first_action": [
+        0.0,
+        0.0,
+        1.0
+      ]
+    },
+    {
+      "build_seconds": 1.73118382319808,
+      "solve_seconds": 0.10995984077453613,
+      "variables": 15220,
+      "binary_variables": 96,
+      "constraints": 10239,
+      "status_code": 2,
+      "objective_eur": 854.9431984842164,
+      "bound_eur": 854.943198484216,
+      "first_action": [
+        0.0,
+        0.0,
+        1.0
+      ]
+    }
+  ],
+  "scope": "recorded retrospective forecast horizon; one solver thread, no replay"
+}

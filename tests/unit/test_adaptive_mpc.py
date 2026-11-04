@@ -73,6 +73,33 @@ def test_adaptive_validator_rejects_hidden_anticipative_commands():
         validate_mpc_plan(inputs, plan)
 
 
+@pytest.mark.parametrize("policy", ["ensemble_mpc_economic", "ensemble_mpc_adaptive"])
+def test_battery_state_is_shared_exactly_by_common_control_history(policy):
+    """Shared state preserves the optimized physical plan across scenario paths."""
+    from bess_pv_trading.optimization.adaptive_mpc import build_research_model
+
+    inputs = case([[0, 0, 1, 1], [0, 0, 1, 0], [0, 1, 0, 1]], [0, 0, 0, 0],
+        prices=np.full((3, 4), 20.0), policy=policy)
+    model, variables, _ = build_research_model(inputs)
+    try:
+        nodes = variables["nodes"]
+        state = variables["energy"]
+        assert state[0, 0] is state[1, 0] is state[2, 0]
+        for t in range(nodes.shape[1]):
+            for first in range(len(nodes)):
+                for second in range(len(nodes)):
+                    if nodes[first, t] == nodes[second, t]:
+                        assert state[first, t + 1] is state[second, t + 1]
+        node_count = sum(len(np.unique(nodes[:, t])) for t in range(nodes.shape[1]))
+        # No soft terminal value, directional prices or import fees add variables.
+        expected = 5 * node_count + 1 + 3 * np.prod(inputs.pv_ac_mw.shape)
+        assert model.NumVars == expected
+    finally:
+        model.dispose()
+    result = checked(inputs)
+    assert np.isfinite(result.plan.components["absolute_imbalance_mwh"])
+
+
 def test_economic_forecast_uses_signed_cash_without_legacy_tracking_penalty():
     inputs = case([[0, 0]], [0, 0], energy=0, prices=[[10, 100]], policy="deterministic_mpc_economic")
     result = checked(inputs)
