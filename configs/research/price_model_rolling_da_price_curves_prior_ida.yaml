@@ -1,0 +1,102 @@
+# Later matched evaluation of prior IDA features.
+include: ../standard.yaml
+price_model_search:
+  add_daily_curve_features_to:
+  - curve_price
+  - ida_curve_price
+  add_lagged_market_features_to:
+  - ida_curve_price
+  candidates:
+  - family: ridge
+    id: ridge_20
+    parameters:
+      alpha: 20.0
+  - family: lasso
+    id: lasso_1
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+  - family: elastic_net
+    id: elastic_01
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - family: extra_trees
+    id: extra_leaf15_features06
+    parameters:
+      max_features: 0.6
+      min_samples_leaf: 15
+      n_estimators: 150
+  - family: extra_trees
+    id: extra_leaf15_features10
+    parameters:
+      max_features: 1.0
+      min_samples_leaf: 15
+      n_estimators: 150
+  - family: interaction_ridge
+    id: interaction_ridge_200
+    parameters:
+      alpha: 200.0
+      lag_count: 11
+  common_training_rows: true
+  daily_curve_lag_days:
+  - 1
+  - 2
+  - 7
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  feature_set_aliases:
+    curve_price: price_only
+    ida_curve_price: price_only
+  feature_sets:
+  - curve_price
+  - ida_curve_price
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  output_root: outputs/energy_price_forecasts
+  product_groups:
+    quarter_hourly:
+      cutoff: '2026-08-31T09:00:00Z'
+      feature_sets:
+      - curve_price
+      - ida_curve_price
+      history_end: '2026-11-01T00:00:00+01:00'
+      history_start: '2025-10-01T00:00:00+02:00'
+      lagged_market_price_features:
+      - lag_hours: 24
+        market: IDA1
+      - lag_hours: 48
+        market: IDA1
+      - lag_hours: 24
+        market: IDA2
+      - lag_hours: 48
+        market: IDA2
+      native_minutes: 15
+      validation_end: '2026-11-01'
+      validation_start: '2026-09-01'
+  run_id: nord_da_2026_price_curves_prior_ida_sep_oct_v1
+  seed: 17
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  threads_per_worker: 1
+  timezone: Europe/Rome
+  workers: 2
+  selection:
+    source_manifest: outputs/energy_price_forecasts/nord_da_2026_price_curves_prior_ida_early_v1/manifest.json
+    top_n: 1
+    baseline_candidates: []
+    matched_feature_pairs:
+    - - curve_price
+      - ida_curve_price
+  rolling_refit:
+    frequency_days: 7
+    gap_days: 1
