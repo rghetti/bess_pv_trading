@@ -71,6 +71,20 @@ def test_weather_interpolation_never_crosses_missing_bracket(tmp_path):
     assert values.product_start.max() == pd.Timestamp("2026-01-02T00:45:00Z")
 
 
+def test_weather_interpolation_preserves_partial_brackets_and_later_availability():
+    """A non-hour bracket and endpoint release times retain exact semantics."""
+    from bess_pv_trading.forecasting.energy_price_features import _instantaneous_weather
+
+    starts = pd.to_datetime(["2026-01-01T00:00Z", "2026-01-01T00:40Z", "2026-01-01T02:00Z"])
+    frame = pd.DataFrame({"cycle_time": pd.Timestamp("2025-12-31T00:00Z"), "valid_time": starts,
+        "available_at": pd.to_datetime(["2025-12-31T06:00Z", "2025-12-31T07:00Z", "2025-12-31T07:00Z"]),
+        "value": [0.0, 8.0, 10.0]})
+    result = _instantaneous_weather(frame, {"name": "temperature"}, 15)
+    assert result.product_start.tolist() == list(pd.date_range(starts[0], periods=3, freq="15min"))
+    np.testing.assert_allclose(result.value, [0, 3, 6])
+    assert (result.available_at == pd.Timestamp("2025-12-31T07:00Z")).all()
+
+
 def test_incompatible_feature_units_fail(tmp_path):
     path = tmp_path / "market.duckdb"
     frame = pd.DataFrame({"product_start": pd.to_datetime(["2026-01-02T00:00:00Z"]),
@@ -80,6 +94,22 @@ def test_incompatible_feature_units_fail(tmp_path):
         "expected_unit": "MWh", "publication_lag_hours": 1}]
     with pytest.raises(ValueError, match="declared unit"):
         load_catalog_features(path, selection, start="2026-01-02T00:00:00Z", end="2026-01-02T01:00:00Z")
+
+
+def test_rte_component_feature_preserves_source_missingness_and_lag(tmp_path):
+    """Extract one native generation component, without treating missing values as zero."""
+    path = tmp_path / "market.duckdb"
+    starts = pd.date_range("2025-12-31T00:00:00Z", periods=2, freq="30min")
+    frame = pd.DataFrame({"product_start": starts, "product_end": starts + pd.Timedelta(minutes=30),
+        "unit": "MW", "generation_components_json": ['{"nucleaire": 42000}', '{"nucleaire": null}']})
+    write_snapshot(path, frame, "rte", "electricity_balance")
+    selection = [{"name": "nuclear", "provider": "rte", "dataset": "electricity_balance", "zone": "NORD",
+        "expected_unit": "MW", "publication_lag_hours": 2, "target_shift_hours": 48,
+        "json_component": {"column": "generation_components_json", "key": "nucleaire"}}]
+    values, evidence = load_catalog_features(path, selection, start="2026-01-02T00:00:00Z", end="2026-01-02T01:00:00Z")
+    assert values.value.tolist() == [42000.0, 42000.0]
+    assert (values.available_at == pd.Timestamp("2025-12-31T02:30:00Z")).all()
+    assert evidence["features"][0]["missing_value_rows"] == 2
 
 
 def test_summary_compares_only_common_dates(tmp_path):

@@ -73,18 +73,31 @@ def _instantaneous_weather(frame, spec, interval_minutes):
         group = group.sort_values("valid_time").drop_duplicates(["valid_time", column, "available_at"])
         if group.valid_time.duplicated().any():
             raise ValueError("Conflicting weather values within one cycle require explicit source selection")
-        times = pd.DatetimeIndex(group.valid_time)
+        source_times = pd.DatetimeIndex(group.valid_time)
+        times = source_times.as_unit("ns")
         values = group[column].to_numpy(float)
-        # A missing value breaks interpolation; it is never replaced by zero.
-        for left in range(len(group) - 1):
-            hours = (times[left + 1] - times[left]).total_seconds() / 3600
-            if not 0 < hours <= max_gap or not np.isfinite(values[left:left + 2]).all():
-                continue
-            starts = pd.date_range(times[left], times[left + 1], freq=f"{interval_minutes}min", inclusive="left")
-            fractions = (starts - times[left]) / (times[left + 1] - times[left])
-            available = max(group.available_at.iloc[left], group.available_at.iloc[left + 1])
-            output.append(pd.DataFrame({"product_start": starts, "available_at": available,
-                "value": values[left] + fractions * (values[left + 1] - values[left])}))
+        if len(times) < 2:
+            continue
+        # Missing or nonadjacent observations break interpolation; expand only
+        # valid brackets and construct all their quarter-hours in one batch.
+        lengths = np.diff(times.asi8)
+        valid = ((lengths > 0) & (lengths <= pd.Timedelta(hours=max_gap).value)
+                 & np.isfinite(values[:-1]) & np.isfinite(values[1:]))
+        left = np.flatnonzero(valid)
+        if not len(left):
+            continue
+        step = pd.Timedelta(minutes=interval_minutes).value
+        counts = (lengths[left] + step - 1) // step
+        parents = np.repeat(left, counts)
+        offsets = np.arange(counts.sum()) - np.repeat(np.cumsum(counts) - counts, counts)
+        start_ns = times.asi8[parents] + offsets * step
+        fractions = (start_ns - times.asi8[parents]) / lengths[parents]
+        source_availability = pd.DatetimeIndex(group.available_at)
+        availability = source_availability.as_unit("ns").asi8
+        available_ns = np.maximum(availability[parents], availability[parents + 1])
+        output.append(pd.DataFrame({"product_start": pd.to_datetime(start_ns, utc=True).as_unit(source_times.unit),
+            "available_at": pd.to_datetime(available_ns, utc=True).as_unit(source_availability.unit),
+            "value": values[parents] + fractions * (values[parents + 1] - values[parents])}))
     return pd.concat(output, ignore_index=True) if output else pd.DataFrame(columns=["product_start", "available_at", "value"])
 
 
@@ -112,7 +125,13 @@ def load_catalog_features(database, selections, *, start, end, timezone="Europe/
         columns = {row[0] for row in connection.execute("DESCRIBE current_api_records").fetchall()}
         for spec in selections:
             value_column = spec.get("value_column", "value")
-            requested = {"_snapshot_id", "_row_id", "product_start", "product_end", "unit", value_column}
+            component = spec.get("json_component")
+            if component is not None and (not isinstance(component, dict)
+                    or set(component) != {"column", "key"}
+                    or not all(isinstance(component[name], str) and component[name] for name in ("column", "key"))):
+                raise ValueError("json_component requires nonempty column and key strings")
+            requested = {"_snapshot_id", "_row_id", "product_start", "product_end", "unit"}
+            requested.add(value_column if component is None else component["column"])
             weather = spec.get("kind", "interval") == "weather"
             gas = spec.get("kind", "interval") == "daily_gas"
             if weather:
@@ -151,6 +170,20 @@ def load_catalog_features(database, selections, *, start, end, timezone="Europe/
                 continue
             if "expected_unit" in spec and not frame.unit.eq(spec["expected_unit"]).all():
                 raise ValueError(f"Feature {spec['name']} does not use the declared unit")
+            if component is not None:
+                # Extract the declared generation component while retaining the
+                # raw JSON column in the source-row fingerprint above.
+                def extract_component(value):
+                    if value is None or pd.isna(value):
+                        return np.nan
+                    parsed = json.loads(value)
+                    if not isinstance(parsed, dict):
+                        raise ValueError("Generation component source must be a JSON object")
+                    return parsed.get(component["key"], np.nan)
+
+                frame["_selected_component"] = pd.to_numeric(
+                    frame[component["column"]].map(extract_component), errors="coerce")
+                spec = {**spec, "value_column": "_selected_component"}
             if gas:
                 days = [pd.Timestamp(value).date() for value in frame.gas_delivery_day]
                 frame["product_start"] = pd.DatetimeIndex([pd.Timestamp(day, tz=timezone) for day in days]).tz_convert("UTC")

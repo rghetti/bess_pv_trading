@@ -201,10 +201,10 @@ does not reproduce that paper's Markov-price algorithm or claim its performance.
 
 ## Concrete study matrix and compute
 
-The default YAML declares **26 cases**, **4 farms** and **2 windows**: **208 jobs**.
+The current default YAML declares **28 cases**, **4 farms** and **2 windows**: **224 jobs**.
 Each job runs grid tracking plus one target controller for two delivery days.
-This gives **416 controller trajectories**, **39,936 MPC decisions** and
-**3,136 nominal auction-submission solves**. The DA-only cases have fewer auction
+This gives **448 controller trajectories**, **43,008 MPC decisions** and
+**3,392 nominal auction-submission solves**. The DA-only cases have fewer auction
 solves. Counts are computed from the configured market calendar, including
 92/100-product DST days, rather than assuming 96 products per date.
 
@@ -214,6 +214,9 @@ scenarios, price-only and fundamental causal auction prices, shuffled/ECC/reduce
 monetary risk, the information/access factorial, and independent energy/power/POI
 contrasts. Calibrated forecasts are also crossed with each asset contrast, and
 calibrated ECC is compared with a shuffled version with identical marginals.
+The two additional cases compare budgeted numerical retry with its matched
+deterministic or ensemble oracle baseline. Previously launched batches retain
+their pinned 26-case configuration and their own manifest counts.
 This inventory is not a hyperparameter search. Broader January/August
 evaluation requires editing the explicit windows and reviewing the resulting
 counts and data coverage.
