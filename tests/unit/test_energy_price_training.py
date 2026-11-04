@@ -112,6 +112,28 @@ def test_rte_component_feature_preserves_source_missingness_and_lag(tmp_path):
     assert evidence["features"][0]["missing_value_rows"] == 2
 
 
+def test_released_state_retains_prior_vintage_until_decision_and_limits_age(tmp_path):
+    """A newer weekly value must not displace the value known at an earlier cutoff."""
+    from bess_pv_trading.forecasting.energy_prices import _exogenous_values, prepare_exogenous_features
+
+    path = tmp_path / "market.duckdb"
+    starts = pd.to_datetime(["2025-12-29T00:00Z", "2026-01-05T00:00Z"])
+    frame = pd.DataFrame({"product_start": starts, "product_end": starts + pd.Timedelta(days=7),
+        "scheduled_available_at": starts + pd.Timedelta(days=4), "value": [50.0, 60.0],
+        "unit": "%", "variable": "total_ch_percent"})
+    write_snapshot(path, frame, "bfe", "reservoir_levels")
+    selection = [{"name": "reservoir", "provider": "bfe", "dataset": "reservoir_levels", "zone": "NORD",
+        "kind": "released_state", "expected_unit": "%", "selectors": {"variable": "total_ch_percent"},
+        "availability_column": "scheduled_available_at", "availability_kind": "assumed",
+        "max_age_hours": 240, "source_lookback_hours": 480}]
+    values, _ = load_catalog_features(path, selection, start="2026-01-09T00:00Z", end="2026-01-19T12:00Z")
+    indexed = prepare_exogenous_features(values)
+    deliveries = pd.DatetimeIndex([pd.Timestamp("2026-01-09T12:00Z")] * 2)
+    decisions = pd.DatetimeIndex(pd.to_datetime(["2026-01-08T12:00Z", "2026-01-09T01:00Z"]))
+    np.testing.assert_array_equal(_exogenous_values(indexed, ["reservoir"], deliveries, decisions).ravel(), [50, 60])
+    assert values.product_start.max() == pd.Timestamp("2026-01-18T23:45Z")
+
+
 def test_summary_compares_only_common_dates(tmp_path):
     module = training_script()
     manifest = {"plan": {"models": [{"id": "a"}, {"id": "b"}], "folds": {"fold": {}}, "targets": {"DA": {}}}}

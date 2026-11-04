@@ -64,6 +64,19 @@ def _interval_features(frame, spec, interval_minutes):
                          "value": frame[spec.get("value_column", "value")].iloc[parents].to_numpy()})
 
 
+def _released_state_features(frame, spec, interval_minutes):
+    """Expand each released state independently so earlier vintages remain selectable."""
+    max_age = spec.get("max_age_hours")
+    if isinstance(max_age, bool) or not isinstance(max_age, (int, float)) or not np.isfinite(max_age) or max_age <= 0:
+        raise ValueError("Released state requires a positive finite max_age_hours")
+    # Overlapping expansions are intentional: the later observation may not yet
+    # have been released at a forecast cutoff even when it covers delivery.
+    states = frame.copy()
+    states["product_start"] = states.available_at
+    states["product_end"] = states.available_at + pd.Timedelta(hours=max_age)
+    return _interval_features(states, spec, interval_minutes)
+
+
 def _instantaneous_weather(frame, spec, interval_minutes):
     """Interpolate within one forecast cycle and only across complete hourly brackets."""
     output = []
@@ -134,6 +147,7 @@ def load_catalog_features(database, selections, *, start, end, timezone="Europe/
             requested.add(value_column if component is None else component["column"])
             weather = spec.get("kind", "interval") == "weather"
             gas = spec.get("kind", "interval") == "daily_gas"
+            state = spec.get("kind", "interval") == "released_state"
             if weather:
                 requested.update({"cycle_time", "valid_time", "temporal_semantics", "source_kind"})
             if gas:
@@ -144,10 +158,16 @@ def load_catalog_features(database, selections, *, start, end, timezone="Europe/
                 raise ValueError(f"Feature {spec['name']} lacks catalog columns {sorted(requested - columns)}")
             projection = ",".join('"' + name.replace('"', '""') + '"' for name in sorted(requested))
             shift = pd.Timedelta(hours=spec.get("target_shift_hours", 0))
+            lookback = spec.get("source_lookback_hours", 0)
+            if state and (isinstance(lookback, bool) or not isinstance(lookback, (int, float))
+                          or not np.isfinite(lookback) or lookback <= 0):
+                raise ValueError("Released state requires a positive finite source_lookback_hours")
+            if state and shift != pd.Timedelta(0):
+                raise ValueError("Released state cannot also use target_shift_hours")
             reference = "valid_time" if weather else "TRY_CAST(gas_delivery_day AS TIMESTAMPTZ)" if gas else "product_start"
             conditions = ["provider=?", "dataset=?", "zone=?", f"{reference}>=?", f"{reference}<?"]
             parameters = [spec["provider"], spec["dataset"], spec["zone"],
-                          start - shift - pd.Timedelta(hours=1 if weather else 0),
+                          start - shift - pd.Timedelta(hours=lookback if state else 1 if weather else 0),
                           end - shift + pd.Timedelta(hours=1 if weather else 0)]
             # Restrict weather variables/locations before rows leave DuckDB.
             for name, value in spec.get("selectors", {}).items():
@@ -201,8 +221,12 @@ def load_catalog_features(database, selections, *, start, end, timezone="Europe/
             for name in ("product_start", "product_end", "cycle_time", "valid_time"):
                 if name in frame:
                     frame[name] = pd.to_datetime(frame[name], utc=True)
+            if state and (frame.available_at < frame.product_start).any():
+                raise ValueError("Released state cannot be published before its reference time")
             if weather and set(frame.temporal_semantics.dropna()) == {"instantaneous"}:
                 prepared = _instantaneous_weather(frame, spec, interval_minutes)
+            elif state:
+                prepared = _released_state_features(frame, spec, interval_minutes)
             else:
                 prepared = _interval_features(frame, spec, interval_minutes)
             prepared.product_start += shift
@@ -220,4 +244,4 @@ def load_catalog_features(database, selections, *, start, end, timezone="Europe/
     frame = pd.concat(outputs, ignore_index=True) if outputs else pd.DataFrame(columns=["product_start", "available_at", "value", "feature"])
     return frame, {"database": str(Path(database).resolve()), "features": evidence,
                    "snapshot_verification": "recorded_immutable_snapshot_hashes_and_hash_of_projected_rows",
-                   "feature_semantics": "source_intervals_constant_instantaneous_weather_interpolated_within_cycle"}
+                   "feature_semantics": "source_intervals_constant_weather_interpolated_released_states_age_limited"}

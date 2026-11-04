@@ -55,3 +55,14 @@ released observation, a finite maximum age and the same training rows for both
 models. The current run does not include this dataset. Do not interpret a
 ridge coefficient as causal or select a model from one month alone; use the
 held-out folds and inspect degradation across markets.
+
+The catalog reader now supports `kind: released_state` for this follow-up.
+Configure `availability_column: scheduled_available_at`,
+`selectors: {variable: total_ch_percent}`, `max_age_hours: 240` and
+`source_lookback_hours: 480`. The age limit is measured at delivery and the
+lookback must cover both the publication delay and the allowed age. Expansions
+for consecutive releases overlap deliberately: the forecast cutoff chooses
+the latest eligible vintage, so a subsequent release cannot erase the older
+value from a decision made before that release. Missing values are not filled.
+The source snapshot's Friday release is still only an assumed clock, and this
+reader preflight is not a fitted forecast or an ablation result.
