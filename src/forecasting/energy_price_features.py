@@ -64,6 +64,21 @@ def _interval_features(frame, spec, interval_minutes):
                          "value": frame[spec.get("value_column", "value")].iloc[parents].to_numpy()})
 
 
+def _weather_ending_mean_intervals(frame, spec):
+    """Map explicitly declared ending-mean weather timestamps to source intervals."""
+    minutes = spec.get("weather_mean_interval_minutes")
+    if isinstance(minutes, bool) or not isinstance(minutes, int) or minutes < 1:
+        raise ValueError("Ending-mean weather requires an explicit positive interval length")
+    if minutes != 60:
+        raise ValueError("Hourly ending-mean weather must use 60-minute intervals")
+    if frame.temporal_semantics.isna().any() or set(frame.temporal_semantics) != {"hourly_mean_ending"}:
+        raise ValueError("Weather ending-mean interval semantics are mixed or missing")
+    result = frame.copy()
+    result["product_end"] = pd.to_datetime(result.valid_time, utc=True)
+    result["product_start"] = result.product_end - pd.Timedelta(minutes=minutes)
+    return result
+
+
 def _released_state_features(frame, spec, interval_minutes):
     """Expand each released state independently so earlier vintages remain selectable."""
     max_age = spec.get("max_age_hours")
@@ -218,6 +233,10 @@ def load_catalog_features(database, selections, *, start, end, timezone="Europe/
                     raise ValueError("Reference interval requires positive integer native_interval_minutes")
                 frame["product_start"] = pd.to_datetime(frame.reference_time, utc=True)
                 frame["product_end"] = frame.product_start + pd.Timedelta(minutes=native)
+            if weather and spec.get("weather_mean_interval_minutes") is not None:
+                # Hourly-mean forecast timestamps denote the interval end,
+                # not an instantaneous reading at that clock time.
+                frame = _weather_ending_mean_intervals(frame, spec)
             # Unknown release clocks and optional hindcast exclusions remain documented gaps.
             hindcasts = (frame.source_kind.fillna("").str.contains("hindcast", case=False)
                          if weather else pd.Series(False, index=frame.index))

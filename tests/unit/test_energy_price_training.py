@@ -13,6 +13,22 @@ from bess_pv_trading.data.duckdb_store import DuckDBCache
 from bess_pv_trading.forecasting.energy_price_features import load_catalog_features
 
 
+def test_weather_ending_means_keep_the_hour_before_the_valid_timestamp():
+    """Hourly averages are expanded over their source interval, not shifted forward."""
+    from bess_pv_trading.forecasting.energy_price_features import _interval_features, _weather_ending_mean_intervals
+
+    source = pd.DataFrame({"valid_time": pd.to_datetime(["2026-01-02T12:00Z"]),
+                           "available_at": pd.to_datetime(["2026-01-01T06:00Z"]),
+                           "temporal_semantics": ["hourly_mean_ending"], "value": [200.0]})
+    spec = {"name": "shortwave", "weather_mean_interval_minutes": 60}
+    prepared = _interval_features(_weather_ending_mean_intervals(source, spec), spec, 15)
+    assert prepared.product_start.tolist() == list(pd.date_range("2026-01-02T11:00Z", periods=4, freq="15min"))
+    assert prepared.value.tolist() == [200.0] * 4
+    assert (prepared.available_at == pd.Timestamp("2026-01-01T06:00Z")).all()
+    with pytest.raises(ValueError, match="60-minute"):
+        _weather_ending_mean_intervals(source, {**spec, "weather_mean_interval_minutes": 30})
+
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
