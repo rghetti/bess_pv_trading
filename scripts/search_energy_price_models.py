@@ -230,6 +230,30 @@ def _validation_selection(study, root):
     return chosen, evidence
 
 
+def _verify_supplemental_selection_sources(study, validation_manifest):
+    """Verify selection-period supplemental rows before extending a holdout."""
+    source_study = validation_manifest["config"]
+    source_evidence = validation_manifest.get("supplemental_features")
+    if not source_evidence or not source_evidence.get("features"):
+        raise ValueError("Validation search lacks supplemental feature provenance")
+    first = min(pd.Timestamp(split["history_start"]) for split in source_study["product_groups"].values())
+    last = max(pd.Timestamp(split["history_end"]) for split in source_study["product_groups"].values())
+    holdout_first = min(pd.Timestamp(split["history_start"]) for split in study["product_groups"].values())
+    holdout_last = max(pd.Timestamp(split["history_end"]) for split in study["product_groups"].values())
+    if holdout_first > first or holdout_last < last:
+        raise ValueError("Holdout supplemental range must contain the selection range")
+
+    # The extended range can add snapshots, but all old projected rows and
+    # their immutable source hashes must still match the selection run.
+    _, current = load_catalog_features(study["database"], study["supplemental_features"],
+        start=first, end=last, timezone=study["timezone"], interval_minutes=15,
+        database_threads=study["threads_per_worker"])
+    if current != source_evidence:
+        raise ValueError("Supplemental feature source snapshots or selected rows changed since validation")
+    return {"selection_start": first.isoformat(), "selection_end": last.isoformat(),
+            "verification": "exact_selection_period_feature_lineage_and_projected_row_hash"}
+
+
 def _write_report(destination, manifest):
     """Publish readable scores and compact paired-sample comparison plots."""
     import matplotlib
@@ -302,7 +326,9 @@ def run_search(config, *, check_only=False):
     selected_candidates, selection_evidence = _validation_selection(study, root)
     supplemental_specs = study.get("supplemental_features", [])
     if supplemental_specs and selection_evidence:
-        raise ValueError("Selected supplemental-feature holdouts require explicit matching of pinned source snapshots")
+        validation_manifest = json.loads(Path(selection_evidence["source_manifest"]).read_text())
+        selection_evidence["supplemental_source_verification"] = _verify_supplemental_selection_sources(
+            study, validation_manifest)
     supplemental_evidence = None
     supplemental_names = tuple(item["name"] for item in supplemental_specs)
     if supplemental_specs:

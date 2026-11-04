@@ -394,6 +394,34 @@ def test_ida_2025_validation_retains_quarter_hour_targets_and_prior_training():
                for group in study["product_groups"].values())
 
 
+def test_supplemental_holdout_rechecks_selection_period_and_rejects_changed_rows(monkeypatch):
+    """An extended holdout cannot silently reuse revised selection features."""
+    from scripts import search_energy_price_models as search
+
+    original = {"database": "/catalog.duckdb", "features": [{"name": "french", "selected_row_sha256": "old"}]}
+    validation = {"config": {"product_groups": {"ida": {
+        "history_start": "2025-01-01T00:00:00Z", "history_end": "2026-05-01T00:00:00Z"}}},
+        "supplemental_features": original}
+    study = {"database": "/catalog.duckdb", "timezone": "Europe/Rome", "threads_per_worker": 1,
+             "supplemental_features": [{"name": "french"}], "product_groups": {"ida": {
+                 "history_start": "2025-01-01T00:00:00Z", "history_end": "2026-09-01T00:00:00Z"}}}
+    calls = []
+
+    def reload_features(database, selections, **kwargs):
+        calls.append(kwargs)
+        return None, original
+
+    monkeypatch.setattr(search, "load_catalog_features", reload_features)
+    verification = search._verify_supplemental_selection_sources(study, validation)
+    assert verification["selection_end"] == "2026-05-01T00:00:00+00:00"
+    assert calls[0]["end"].isoformat() == verification["selection_end"]
+
+    monkeypatch.setattr(search, "load_catalog_features", lambda *args, **kwargs: (None, {
+        "database": "/catalog.duckdb", "features": [{"name": "french", "selected_row_sha256": "revised"}]}))
+    with pytest.raises(ValueError, match="changed since validation"):
+        search._verify_supplemental_selection_sources(study, validation)
+
+
 def test_rolling_ida_uses_later_dates_and_earlier_market_selection():
     """IDA refits are scheduled after model selection, with market-specific lags retained."""
     from pathlib import Path
