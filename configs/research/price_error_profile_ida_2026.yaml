@@ -1,0 +1,7 @@
+# Later-period error profiles for earlier-selected IDA1–IDA3 models.
+include: ../standard.yaml
+selected_price_error_report:
+  selected_evaluation: outputs/energy_price_forecasts/nord_ida_cleared_rolling_v1
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_ida_2026_selected_error_profile_v1
+  timezone: Europe/Rome

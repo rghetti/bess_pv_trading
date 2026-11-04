@@ -1,0 +1,7 @@
+# Later-period error profile for the earlier-selected quarter-hour DA model.
+include: ../standard.yaml
+selected_price_error_report:
+  selected_evaluation: outputs/energy_price_forecasts/nord_da_2026_previous_idas_selected_rolling_v1
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_da_2026_selected_error_profile_v1
+  timezone: Europe/Rome
