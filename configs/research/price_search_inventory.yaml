@@ -1,0 +1,6 @@
+# Snapshot of price-model search coverage and warning evidence.
+include: ../standard.yaml
+price_search_inventory:
+  search_root: outputs/energy_price_forecasts
+  output_root: outputs/energy_price_forecasts
+  run_id: price_search_inventory_20261104_v1
