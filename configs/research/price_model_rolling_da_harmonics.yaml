@@ -1,0 +1,116 @@
+# Later matched rolling evaluation of selected harmonic models.
+include: ../standard.yaml
+price_model_search:
+  run_id: nord_da_2026_harmonics_selected_rolling_v1
+  output_root: outputs/energy_price_forecasts
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  timezone: Europe/Rome
+  workers: 4
+  threads_per_worker: 1
+  seed: 17
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  feature_sets:
+  - curve_fundamentals
+  - ida_curve_fundamentals
+  product_groups:
+    quarter_hourly:
+      native_minutes: 15
+      history_start: '2025-10-01T00:00:00+02:00'
+      history_end: '2026-09-01T00:00:00+02:00'
+      cutoff: '2026-05-02T09:00:00Z'
+      validation_start: '2026-05-03'
+      validation_end: '2026-09-01'
+      feature_sets:
+      - curve_fundamentals
+      - ida_curve_fundamentals
+      lagged_market_price_features:
+      - market: IDA1
+        lag_hours: 24
+      - market: IDA1
+        lag_hours: 48
+      - market: IDA2
+        lag_hours: 24
+      - market: IDA2
+        lag_hours: 48
+  candidates:
+  - id: interaction_ridge_200
+    family: interaction_ridge
+    parameters:
+      lag_count: 11
+      alpha: 200.0
+  - id: interaction_elastic_0.1
+    family: interaction_elastic_net
+    parameters:
+      lag_count: 11
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - id: interaction_ridge_200_harmonics_2
+    family: interaction_ridge
+    parameters:
+      lag_count: 11
+      alpha: 200.0
+      harmonics: 2
+  - id: interaction_ridge_200_harmonics_3
+    family: interaction_ridge
+    parameters:
+      lag_count: 11
+      alpha: 200.0
+      harmonics: 3
+  - id: interaction_elastic_0.1_harmonics_2
+    family: interaction_elastic_net
+    parameters:
+      lag_count: 11
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+      harmonics: 2
+  - id: interaction_elastic_0.1_harmonics_3
+    family: interaction_elastic_net
+    parameters:
+      lag_count: 11
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+      harmonics: 3
+  feature_set_aliases:
+    curve_price: price_only
+    curve_fundamentals: fundamentals
+    curve_combined: combined
+    ida_curve_fundamentals: fundamentals
+    ida_curve_combined: combined
+  daily_curve_lag_days:
+  - 1
+  - 2
+  - 7
+  add_daily_curve_features_to:
+  - curve_fundamentals
+  - ida_curve_fundamentals
+  add_lagged_market_features_to:
+  - ida_curve_fundamentals
+  common_training_rows: true
+  selection:
+    source_manifest: outputs/energy_price_forecasts/nord_da_2026_harmonic_interactions_v1/manifest.json
+    top_n: 3
+    baseline_candidates:
+    - interaction_ridge_200
+    - interaction_elastic_0.1
+    matched_feature_pairs:
+    - - curve_fundamentals
+      - ida_curve_fundamentals
+    matched_harmonic_baselines: true
+  rolling_refit:
+    frequency_days: 7
+    gap_days: 1

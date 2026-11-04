@@ -387,6 +387,29 @@ def test_holdout_selection_pairs_recent_with_matching_full_history(tmp_path):
     assert selected["quarter"] == {("base", "full"), ("base", "recent")}
 
 
+def test_holdout_selection_pairs_higher_and_first_harmonics(tmp_path):
+    """A selected harmonic expansion carries its exact simpler estimator."""
+    import json
+    from scripts.search_energy_price_models import _validation_selection
+
+    candidates = [{"id": "one", "family": "interaction_ridge", "parameters": {"lag_count": 1, "alpha": 1}},
+                  {"id": "two", "family": "interaction_ridge", "parameters": {"lag_count": 1, "alpha": 1,
+                                                                                  "harmonics": 2}}]
+    source = {"lag_hours": [24], "feature_sets": ["base"], "seed": 1, "timezone": "UTC",
+              "source_study": "source", "candidates": candidates,
+              "product_groups": {"quarter": {"native_minutes": 15, "validation_end": "2025-07-01"}}}
+    records = [{"group": "quarter", "feature_set": "base", "candidate": name, "mae_eur_per_mwh": error}
+               for name, error in [("one", 2), ("two", 1)]]
+    manifest = {"status": "complete", "failures": [], "config": source, "results": records,
+                "source_lineage": {"quarter": {"availability": {
+                    "kind": "assumed_delivery_day_publication_clock", "timezone": "UTC", "day_offset": -1}}}}
+    (tmp_path / "validation.json").write_text(json.dumps(manifest))
+    study = {**source, "product_groups": {"quarter": {"native_minutes": 15, "cutoff": "2025-07-01T01:00Z"}},
+             "selection": {"source_manifest": "validation.json", "top_n": 1, "matched_harmonic_baselines": True}}
+    selected, _ = _validation_selection(study, tmp_path)
+    assert selected["quarter"] == {("base", "one"), ("base", "two")}
+
+
 def test_search_report_renders_metrics_and_plot(tmp_path):
     """Report files contain relative metrics and a comparison plot."""
     from scripts.search_energy_price_models import _write_report

@@ -214,6 +214,8 @@ def _validation_selection(study, root):
         raise ValueError("Selection top_n must be a positive integer")
     if not isinstance(selection.get("matched_window_baselines", False), bool):
         raise ValueError("matched_window_baselines must be a boolean")
+    if not isinstance(selection.get("matched_harmonic_baselines", False), bool):
+        raise ValueError("matched_harmonic_baselines must be a boolean")
     source_study = manifest["config"]
     for name in ("lag_hours", "feature_sets", "seed", "timezone", "source_study"):
         if study[name] != source_study[name]:
@@ -295,10 +297,27 @@ def _validation_selection(study, root):
                     if len(matches) != 1:
                         raise ValueError("A selected training window requires one matching full-history candidate")
                     chosen[group].add((feature, matches[0]))
+        if selection.get("matched_harmonic_baselines", False):
+            # Match each selected higher-order basis to its one-harmonic model
+            # without changing estimator parameters or the training window.
+            for feature, candidate in tuple(chosen[group]):
+                specification = expected_candidates[candidate]
+                parameters = specification["parameters"]
+                if parameters.get("harmonics", 1) > 1:
+                    base_parameters = {key: value for key, value in parameters.items() if key != "harmonics"}
+                    matches = [entry["id"] for entry in expected_candidates.values()
+                               if entry["family"] == specification["family"]
+                               and entry.get("train_window_days") == specification.get("train_window_days")
+                               and {key: value for key, value in entry["parameters"].items() if key != "harmonics"} == base_parameters
+                               and entry["parameters"].get("harmonics", 1) == 1]
+                    if len(matches) != 1:
+                        raise ValueError("A selected harmonic model requires one matching first-harmonic candidate")
+                    chosen[group].add((feature, matches[0]))
     evidence = {"source_manifest": str(path), "source_manifest_sha256": _sha256(path),
                 "criterion": "pooled_validation_mae", "top_n": selection["top_n"],
                 "matched_feature_pairs": selection.get("matched_feature_pairs", []),
                 "matched_window_baselines": selection.get("matched_window_baselines", False),
+                "matched_harmonic_baselines": selection.get("matched_harmonic_baselines", False),
                 "selected": {group: [list(pair) for pair in sorted(pairs)] for group, pairs in chosen.items()}}
     return chosen, evidence
 
