@@ -197,6 +197,8 @@ def test_only_earlier_auction_markets_can_be_used_as_cleared_features():
         _eligible_auction_features("IDA2", ["DA", "IDA2"])
     with pytest.raises(ValueError, match="earlier-auction"):
         _eligible_auction_features("IDA1", ["IDA3"])
+    with pytest.raises(ValueError, match="earlier-auction"):
+        _eligible_auction_features("IDA2", ["IDA1", "DA"])
 
 
 def test_cleared_auction_feature_respects_publication_clock():

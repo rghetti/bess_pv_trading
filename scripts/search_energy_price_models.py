@@ -163,7 +163,9 @@ def _write_report(destination, manifest):
 def _eligible_auction_features(target, markets):
     """Reject current or later auction targets before loading cleared prices."""
     allowed = {"IDA1": {"DA"}, "IDA2": {"DA", "IDA1"}, "IDA3": {"DA", "IDA1", "IDA2"}}
-    if target not in allowed or len(markets) != len(set(markets)) or set(markets) - allowed[target]:
+    order = {"DA": 0, "IDA1": 1, "IDA2": 2}
+    if (target not in allowed or len(markets) != len(set(markets)) or set(markets) - allowed[target]
+            or markets != sorted(markets, key=order.get)):
         raise ValueError(f"Invalid earlier-auction features for {target}")
     return [f"cleared_{market.lower()}" for market in markets]
 
@@ -259,6 +261,10 @@ def run_search(config, *, check_only=False):
             if feature_set in study.get("add_market_price_features_to", []):
                 names += tuple(extra_names)
             residual_feature = study.get("residual_target_features", {}).get(feature_set)
+            if residual_feature == "latest_cleared_auction":
+                if not previous_markets:
+                    raise ValueError("Latest-cleared spread requires an earlier auction")
+                residual_feature = f"cleared_{previous_markets[-1].lower()}"
             if residual_feature is not None and residual_feature not in names:
                 raise ValueError(f"Spread target anchor {residual_feature} is absent from {feature_set}")
             residual_index = (None if residual_feature is None else

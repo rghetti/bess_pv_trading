@@ -80,6 +80,11 @@ IDA3 uses only same-product daily and weekly historical lags: an adjacent-hour
 IDA3 lag can cross its half-day delivery window and point to a nonexistent
 product, as a full validation-coverage check demonstrated. Its neighboring
 features from the earlier full-day auctions remain available when published.
+`configs/research/price_model_search_nearest_spread.yaml` additionally compares
+IDA2-minus-IDA1 and IDA3-minus-IDA2 targets against direct-price and
+IDA-minus-DA targets on the same native delivery products. The latest earlier
+market is selected from a validated chronological ordering, and its configured
+publication clock still governs whether the anchor is usable.
 
 `configs/research/price_model_search_da_curves.yaml` adds the full 24-hour
 shape of the same market's previous 1, 2 and 7 local delivery days. Within a
