@@ -101,3 +101,15 @@ features interacted with sine and cosine of delivery hour, allowing a signal's
 effect to vary smoothly over the daily price shape. Feature scaling is fitted
 inside each training split. This is a structured interaction basis, not an
 unrestricted per-product model.
+
+`scripts/evaluate_price_ensembles.py` evaluates simple equally weighted
+forecast combinations after the IDA search completes. For each market, it
+ranks candidates by point MAE on 1 February--15 March 2026, chooses the number
+of top-ranked models on 16--31 March from 1, 3, 5 and 10, and scores the fixed
+choice on 1--30 April. All candidates must have exactly aligned products,
+actual prices and seasonal references. The source search used fixed models
+trained before February; no model is retrained during this combination test.
+The source validation period has already been inspected in development, so
+April is a chronological later slice for this combination selection, not a
+globally untouched research test. The reported model selection, later-period
+predictions, daily error plots and source-manifest hash enable independent audit.
