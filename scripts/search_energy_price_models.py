@@ -179,7 +179,7 @@ def _validation_selection(study, root):
             raise ValueError(f"Holdout {name} differs from validation search")
     for name in ("feature_set_aliases", "add_market_price_features_to", "residual_target_features",
                  "daily_curve_lag_days", "add_daily_curve_features_to", "common_training_rows",
-                 "supplemental_features", "add_supplemental_features_to"):
+                 "supplemental_features", "add_supplemental_features_to", "add_lagged_market_features_to"):
         if study.get(name) != source_study.get(name):
             raise ValueError(f"Holdout {name} differs from validation search")
     expected_candidates = {item["id"]: item for item in source_study["candidates"]}
@@ -205,7 +205,8 @@ def _validation_selection(study, root):
             raise ValueError("Holdout model cutoff precedes the end of candidate selection")
         if split["native_minutes"] != previous["native_minutes"] or split.get("target", "DA") != previous.get("target", "DA"):
             raise ValueError("Holdout and validation must use the same target and native resolution")
-        for name in ("market_price_features", "market_neighbor_offsets_minutes", "market_neighbor_boundary", "lag_hours"):
+        for name in ("market_price_features", "market_neighbor_offsets_minutes", "market_neighbor_boundary",
+                     "lagged_market_price_features", "lag_hours"):
             if split.get(name) != previous.get(name):
                 raise ValueError(f"Holdout {name} differs from validation search")
         rows = [row for row in manifest["results"] if row["group"] == group]
@@ -322,6 +323,23 @@ def _neighbor_price_feature(prior_values, name, offset, *, boundary="unbounded",
     return neighbor.assign(feature=name)
 
 
+def _lagged_auction_name(market, lag_hours):
+    """Validate and name a strictly historical auction-price feature."""
+    if market not in {"DA", "IDA1", "IDA2", "IDA3"}:
+        raise ValueError("Unknown lagged auction market")
+    if isinstance(lag_hours, bool) or not isinstance(lag_hours, int) or lag_hours < 24:
+        raise ValueError("Lagged auction features require an integer lag of at least 24 hours")
+    return f"past_{market.lower()}_{lag_hours}h"
+
+
+def _lagged_auction_feature(prior_values, market, lag_hours):
+    """Move past auction deliveries to later products, retaining publication time."""
+    name = _lagged_auction_name(market, lag_hours)
+    feature = prior_values.copy()
+    feature["product_start"] += pd.Timedelta(hours=lag_hours)
+    return feature.assign(feature=name)
+
+
 def run_search(config, *, check_only=False):
     """Prepare source-native matrices, then fit candidate workers on shared days."""
     study = config["price_model_search"]
@@ -420,6 +438,33 @@ def run_search(config, *, check_only=False):
             lineage[group] = {**evidence, "earlier_auction_features": prior_lineage,
                               "market_neighbor_offsets_minutes": offsets, "market_neighbor_boundary": boundary}
             extra_names = expanded_names
+        lagged_specs = split.get("lagged_market_price_features", [])
+        lagged_names = []
+        if lagged_specs:
+            additions, lagged_lineage = [], {}
+            for spec in lagged_specs:
+                if set(spec) != {"market", "lag_hours"}:
+                    raise ValueError("Lagged auction feature requires market and lag_hours")
+                market, lag = spec["market"], spec["lag_hours"]
+                # Validate before querying, and ensure every feature name is unique.
+                name = _lagged_auction_name(market, lag)
+                if name in lagged_names:
+                    raise ValueError("Duplicate lagged auction feature")
+                source_spec = source_manifest["plan"]["targets"][market]["source"]
+                past, provenance = load_price_history(study["database"], **source_spec,
+                    interval_minutes=resolution, timezone=study["timezone"],
+                    start=pd.Timestamp(split["history_start"]) - pd.Timedelta(hours=lag),
+                    end=pd.Timestamp(split["history_end"]) - pd.Timedelta(hours=lag))
+                past_values = past.rename(columns={"price_eur_per_mwh": "value"})[
+                    ["product_start", "available_at", "value"]]
+                additions.append(_lagged_auction_feature(past_values, market, lag))
+                lagged_lineage[name] = provenance
+                lagged_names.append(name)
+            lagged_features = prepare_exogenous_features(pd.concat(additions, ignore_index=True))
+            if set(group_exogenous.groups) & set(lagged_features.groups):
+                raise ValueError("Lagged auction feature names collide with existing features")
+            group_exogenous = PreparedExogenous({**group_exogenous.groups, **lagged_features.groups})
+            lineage[group] = {**lineage[group], "lagged_auction_features": lagged_lineage}
         datasets = {}
         residual_indices = {}
         group_features = {}
@@ -428,6 +473,8 @@ def run_search(config, *, check_only=False):
             names = tuple(item["name"] for item in feature_sets[base_name])
             if feature_set in study.get("add_market_price_features_to", []):
                 names += tuple(extra_names)
+            if feature_set in study.get("add_lagged_market_features_to", []):
+                names += tuple(lagged_names)
             if feature_set in study.get("add_supplemental_features_to", []):
                 names += supplemental_names
             residual_feature = study.get("residual_target_features", {}).get(feature_set)

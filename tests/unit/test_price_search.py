@@ -376,6 +376,23 @@ def test_forward_auction_neighbor_stays_within_delivery_day():
     assert not result.index.has_duplicates
 
 
+def test_lagged_auction_price_keeps_original_release_clock():
+    """Yesterday's IDA feature must still pass the target decision's as-of check."""
+    from scripts.search_energy_price_models import _lagged_auction_feature
+    from bess_pv_trading.forecasting.energy_prices import _exogenous_values
+
+    source = pd.DataFrame({"product_start": pd.to_datetime(["2026-02-01T10:00Z"]),
+                           "available_at": pd.to_datetime(["2026-02-01T09:00Z"]), "value": [75.0]})
+    feature = _lagged_auction_feature(source, "IDA1", 24)
+    starts = pd.DatetimeIndex(["2026-02-02T10:00Z"])
+    early = pd.DatetimeIndex(["2026-02-01T08:59Z"])
+    late = pd.DatetimeIndex(["2026-02-01T09:00Z"])
+    assert np.isnan(_exogenous_values(feature, ["past_ida1_24h"], starts, early)[0, 0])
+    assert _exogenous_values(feature, ["past_ida1_24h"], starts, late)[0, 0] == 75.0
+    with pytest.raises(ValueError, match="at least 24 hours"):
+        _lagged_auction_feature(source, "IDA1", 0)
+
+
 def test_cleared_search_includes_same_and_neighboring_historical_products():
     """Retain the same-product lag as the reference and add nearby hours."""
     from pathlib import Path
