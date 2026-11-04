@@ -1,0 +1,277 @@
+# Matched refit-cadence comparison of the early-selected candidate.
+include: ../standard.yaml
+price_model_search:
+  add_market_price_features_to:
+  - cleared_only
+  - cleared_fundamentals
+  - cleared_combined
+  - spread_cleared_fundamentals
+  - spread_cleared_combined
+  candidates:
+  - family: ridge
+    id: ridge_1
+    parameters:
+      alpha: 1.0
+  - family: ridge
+    id: ridge_20
+    parameters:
+      alpha: 20.0
+  - family: ridge
+    id: ridge_200
+    parameters:
+      alpha: 200.0
+  - family: lasso
+    id: lasso_001
+    parameters:
+      alpha: 0.01
+      max_iter: 5000
+  - family: lasso
+    id: lasso_01
+    parameters:
+      alpha: 0.1
+      max_iter: 5000
+  - family: elastic_net
+    id: elastic_01
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - family: hist_gradient_boosting
+    id: hist_shallow
+    parameters:
+      l2_regularization: 5.0
+      learning_rate: 0.05
+      max_iter: 200
+      max_leaf_nodes: 15
+  - family: hist_gradient_boosting
+    id: hist_deep
+    parameters:
+      l2_regularization: 5.0
+      learning_rate: 0.05
+      max_iter: 300
+      max_leaf_nodes: 31
+  - family: random_forest
+    id: forest
+    parameters:
+      max_features: 0.8
+      min_samples_leaf: 10
+      n_estimators: 150
+  - family: lightgbm
+    id: lightgbm_small
+    parameters:
+      learning_rate: 0.05
+      min_child_samples: 30
+      n_estimators: 250
+      num_leaves: 15
+  - family: lightgbm
+    id: lightgbm_large
+    parameters:
+      learning_rate: 0.05
+      min_child_samples: 50
+      n_estimators: 400
+      num_leaves: 31
+  - family: catboost
+    id: catboost_shallow
+    parameters:
+      depth: 4
+      iterations: 300
+      learning_rate: 0.05
+      loss_function: MAE
+  - family: catboost
+    id: catboost_deep
+    parameters:
+      depth: 6
+      iterations: 400
+      learning_rate: 0.05
+      loss_function: MAE
+  - family: mlp
+    id: mlp_small
+    parameters:
+      alpha: 0.001
+      early_stopping: false
+      hidden_layer_sizes:
+      - 64
+      - 32
+      max_iter: 250
+  - family: mlp
+    id: mlp_large
+    parameters:
+      alpha: 0.01
+      early_stopping: false
+      hidden_layer_sizes:
+      - 128
+      - 64
+      max_iter: 250
+  - family: ridge
+    id: ridge_002
+    parameters:
+      alpha: 0.02
+  - family: lasso
+    id: lasso_1
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+  - family: elastic_net
+    id: elastic_001
+    parameters:
+      alpha: 0.01
+      l1_ratio: 0.5
+      max_iter: 5000
+  - family: elastic_net
+    id: elastic_05
+    parameters:
+      alpha: 0.5
+      l1_ratio: 0.8
+      max_iter: 5000
+  - family: hist_gradient_boosting
+    id: hist_slow
+    parameters:
+      l2_regularization: 10.0
+      learning_rate: 0.025
+      max_iter: 500
+      max_leaf_nodes: 15
+  - family: hist_gradient_boosting
+    id: hist_l1
+    parameters:
+      learning_rate: 0.05
+      loss: absolute_error
+      max_iter: 250
+      max_leaf_nodes: 15
+  - family: lightgbm
+    id: lightgbm_reg
+    parameters:
+      learning_rate: 0.03
+      min_child_samples: 100
+      n_estimators: 500
+      num_leaves: 15
+      reg_lambda: 5.0
+  - family: lightgbm
+    id: lightgbm_l1
+    parameters:
+      learning_rate: 0.05
+      min_child_samples: 50
+      n_estimators: 400
+      num_leaves: 15
+      objective: regression_l1
+  - family: catboost
+    id: catboost_l2
+    parameters:
+      depth: 5
+      iterations: 500
+      learning_rate: 0.04
+      loss_function: RMSE
+  - family: catboost
+    id: catboost_robust
+    parameters:
+      depth: 6
+      iterations: 600
+      l2_leaf_reg: 10
+      learning_rate: 0.03
+      loss_function: MAE
+  - family: random_forest
+    id: forest_small_leaf
+    parameters:
+      max_features: 0.8
+      min_samples_leaf: 3
+      n_estimators: 200
+  - family: mlp
+    id: mlp_reg
+    parameters:
+      alpha: 0.1
+      early_stopping: false
+      hidden_layer_sizes:
+      - 64
+      - 32
+      max_iter: 300
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  feature_set_aliases:
+    cleared_combined: combined
+    cleared_fundamentals: fundamentals
+    cleared_only: price_only
+    spread_cleared_combined: combined
+    spread_cleared_fundamentals: fundamentals
+  feature_sets:
+  - price_only
+  - cleared_only
+  - cleared_fundamentals
+  - cleared_combined
+  - spread_cleared_fundamentals
+  - spread_cleared_combined
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  output_root: outputs/energy_price_forecasts
+  product_groups:
+    ida1_quarter_hourly:
+      cutoff: '2026-05-01T09:00:00Z'
+      history_end: '2026-09-01T00:00:00+02:00'
+      history_start: '2025-01-01T00:00:00+01:00'
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      market_price_features:
+      - DA
+      native_minutes: 15
+      target: IDA1
+      validation_end: '2026-09-01'
+      validation_start: '2026-05-02'
+    ida2_quarter_hourly:
+      cutoff: '2026-05-01T09:00:00Z'
+      history_end: '2026-09-01T00:00:00+02:00'
+      history_start: '2025-01-01T00:00:00+01:00'
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      market_price_features:
+      - DA
+      - IDA1
+      native_minutes: 15
+      target: IDA2
+      validation_end: '2026-09-01'
+      validation_start: '2026-05-02'
+    ida3_quarter_hourly:
+      cutoff: '2026-05-01T09:00:00Z'
+      history_end: '2026-09-01T00:00:00+02:00'
+      history_start: '2025-01-01T00:00:00+01:00'
+      lag_hours:
+      - 24
+      - 48
+      - 72
+      - 168
+      - 336
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      market_price_features:
+      - DA
+      - IDA1
+      - IDA2
+      native_minutes: 15
+      target: IDA3
+      validation_end: '2026-09-01'
+      validation_start: '2026-05-02'
+  residual_target_features:
+    spread_cleared_combined: cleared_da
+    spread_cleared_fundamentals: cleared_da
+  rolling_refit:
+    frequency_days: 1
+    gap_days: 1
+  run_id: nord_ida_2026_refit_1d_v1
+  seed: 17
+  selection:
+    baseline_candidates: []
+    source_manifest: outputs/energy_price_forecasts/nord_ida_cleared_context_search_v1/manifest.json
+    top_n: 1
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  threads_per_worker: 1
+  timezone: Europe/Rome
+  workers: 3
