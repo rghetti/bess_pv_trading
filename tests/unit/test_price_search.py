@@ -110,3 +110,40 @@ def test_search_report_renders_metrics_and_plot(tmp_path):
     _write_report(tmp_path, manifest)
     assert "Relative MAE" in (tmp_path / "summary.md").read_text()
     assert (tmp_path / "hourly__mae.png").is_file()
+
+
+def test_only_earlier_auction_markets_can_be_used_as_cleared_features():
+    """The same or a future auction cannot leak into its target price."""
+    from scripts.search_energy_price_models import _eligible_auction_features
+
+    assert _eligible_auction_features("IDA2", ["DA", "IDA1"]) == ["cleared_da", "cleared_ida1"]
+    with pytest.raises(ValueError, match="earlier-auction"):
+        _eligible_auction_features("IDA2", ["DA", "IDA2"])
+    with pytest.raises(ValueError, match="earlier-auction"):
+        _eligible_auction_features("IDA1", ["IDA3"])
+
+
+def test_cleared_auction_feature_respects_publication_clock():
+    """An earlier auction becomes usable only after its assumed publication."""
+    from bess_pv_trading.forecasting.energy_prices import _exogenous_values, prepare_exogenous_features
+
+    start = pd.Timestamp("2026-02-02T00:00Z")
+    exogenous = prepare_exogenous_features(pd.DataFrame({"product_start": [start],
+        "available_at": [pd.Timestamp("2026-02-01T12:00Z")], "feature": ["cleared_da"], "value": [75.0]}))
+    starts = pd.DatetimeIndex([start, start])
+    cutoffs = pd.to_datetime(["2026-02-01T11:59Z", "2026-02-01T12:00Z"])
+    values = _exogenous_values(exogenous, ["cleared_da"], starts, cutoffs).ravel()
+    assert np.isnan(values[0])
+    assert values[1] == 75.0
+
+
+def test_auction_neighbors_keep_original_publication_and_correct_offset():
+    """A prior-hour value joins the target hour but keeps its original release."""
+    from scripts.search_energy_price_models import _neighbor_price_feature
+
+    source = pd.DataFrame({"product_start": pd.to_datetime(["2026-02-02T11:00Z"]),
+                           "available_at": pd.to_datetime(["2026-02-01T12:00Z"]), "value": [75.0]})
+    result = _neighbor_price_feature(source, "prior_hour", -60)
+    assert result.product_start.iloc[0] == pd.Timestamp("2026-02-02T12:00Z")
+    assert result.available_at.iloc[0] == source.available_at.iloc[0]
+    assert source.product_start.iloc[0] == pd.Timestamp("2026-02-02T11:00Z")

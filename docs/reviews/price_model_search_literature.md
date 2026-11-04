@@ -55,3 +55,19 @@ lags, seed, candidate settings and native resolution are required. August 2026
 was inspected in an earlier ridge feature study, so this is held out from this
 particular candidate selection, not a globally untouched research test. Scores
 remain retrospective and apply only to complete common delivery days.
+
+`configs/research/price_model_search_cleared_auctions.yaml` expands the IDA
+search to 27 parameterized candidates and four feature groups per auction.
+Besides the same auction's 24, 48, 72, 168 and 336 hour price lags, the cleared
+features include the DA price for IDA1, DA and IDA1 for IDA2, and DA, IDA1 and
+IDA2 for IDA3. They include the same product and the earlier cleared product at
+15- and 60-minute offsets. The offset describes the source delivery time
+relative to the target; its original publication clock is retained. A target
+cannot use itself or a later auction as an earlier-auction feature. Exact
+publication clocks are configured assumptions and missing prices remain
+missing. Hourly DA products expanded to quarter-hours are valid coarse inputs,
+not independent quarter-hour training targets. Additional feature groups add
+NORD fundamentals and the retrospective previous-day European context. All
+feature groups are scored on shared complete days, with training counts reported.
+The 4% WAPE target is an objective for evaluation, not a guaranteed result;
+selection and subsequent held-out scoring remain separate.

@@ -63,6 +63,9 @@ def _validation_selection(study, root):
     for name in ("lag_hours", "feature_sets", "seed", "timezone", "source_study"):
         if study[name] != source_study[name]:
             raise ValueError(f"Holdout {name} differs from validation search")
+    for name in ("feature_set_aliases", "add_market_price_features_to"):
+        if study.get(name) != source_study.get(name):
+            raise ValueError(f"Holdout {name} differs from validation search")
     expected_candidates = {item["id"]: item for item in source_study["candidates"]}
     requested_candidates = {item["id"]: item for item in study["candidates"]}
     if expected_candidates != requested_candidates:
@@ -86,6 +89,9 @@ def _validation_selection(study, root):
             raise ValueError("Holdout model cutoff precedes the end of candidate selection")
         if split["native_minutes"] != previous["native_minutes"] or split.get("target", "DA") != previous.get("target", "DA"):
             raise ValueError("Holdout and validation must use the same target and native resolution")
+        for name in ("market_price_features", "market_neighbor_offsets_minutes"):
+            if split.get(name) != previous.get(name):
+                raise ValueError(f"Holdout {name} differs from validation search")
         rows = [row for row in manifest["results"] if row["group"] == group]
         expected = {(feature, name) for feature in source_study["feature_sets"] for name in expected_candidates}
         observed = {(row["feature_set"], row["candidate"]) for row in rows}
@@ -143,6 +149,21 @@ def _write_report(destination, manifest):
     (destination / "summary.md").write_text("\n".join(lines))
 
 
+def _eligible_auction_features(target, markets):
+    """Reject current or later auction targets before loading cleared prices."""
+    allowed = {"IDA1": {"DA"}, "IDA2": {"DA", "IDA1"}, "IDA3": {"DA", "IDA1", "IDA2"}}
+    if target not in allowed or len(markets) != len(set(markets)) or set(markets) - allowed[target]:
+        raise ValueError(f"Invalid earlier-auction features for {target}")
+    return [f"cleared_{market.lower()}" for market in markets]
+
+
+def _neighbor_price_feature(prior_values, name, offset):
+    """Join a nearby delivery product at the target while preserving its release time."""
+    neighbor = prior_values.copy()
+    neighbor["product_start"] -= pd.Timedelta(minutes=offset)
+    return neighbor.assign(feature=name)
+
+
 def run_search(config, *, check_only=False):
     """Prepare source-native matrices, then fit candidate workers on shared days."""
     study = config["price_model_search"]
@@ -153,7 +174,8 @@ def run_search(config, *, check_only=False):
     if _sha256(feature_path) != source_manifest["exogenous_sha256"]:
         raise ValueError("Pinned feature table checksum mismatch")
     configure_worker_threads(study["threads_per_worker"], configure_torch=False)
-    exogenous = prepare_exogenous_features(pd.read_parquet(feature_path))
+    base_exogenous = pd.read_parquet(feature_path)
+    exogenous = prepare_exogenous_features(base_exogenous)
     feature_sets = source_manifest["plan"]["feature_sets"]
     selected_candidates, selection_evidence = _validation_selection(study, root)
     if selection_evidence:
@@ -166,6 +188,7 @@ def run_search(config, *, check_only=False):
     if not check_only:
         destination.mkdir(parents=True)
     jobs, coverage, lineage = [], [], {}
+    earlier_price_cache = {}
     for group, split in study["product_groups"].items():
         resolution = split["native_minutes"]
         target_name = split.get("target", "DA")
@@ -176,13 +199,50 @@ def run_search(config, *, check_only=False):
             interval_minutes=resolution, native_resolution_minutes=resolution, timezone=study["timezone"],
             start=split["history_start"], end=split["history_end"])
         lineage[group] = evidence
+        previous_markets = split.get("market_price_features", [])
+        extra_names = _eligible_auction_features(target_name, previous_markets) if previous_markets else []
+        group_exogenous = exogenous
+        if extra_names:
+            additions = []
+            prior_lineage = {}
+            offsets = split.get("market_neighbor_offsets_minutes", [])
+            if (len(offsets) != len(set(offsets)) or any(isinstance(value, bool) or not isinstance(value, int)
+                    or value == 0 or value % resolution for value in offsets)):
+                raise ValueError("Auction neighbor offsets must be distinct nonzero multiples of the product resolution")
+            expanded_names = list(extra_names)
+            for market, name in zip(previous_markets, extra_names):
+                key = (market, resolution, split["history_start"], split["history_end"])
+                if key not in earlier_price_cache:
+                    previous_source = source_manifest["plan"]["targets"][market]["source"]
+                    prior, provenance = load_price_history(study["database"], **previous_source,
+                        interval_minutes=resolution, timezone=study["timezone"],
+                        start=split["history_start"], end=split["history_end"])
+                    earlier_price_cache[key] = (prior, provenance)
+                prior, prior_evidence = earlier_price_cache[key]
+                prior_values = prior.rename(columns={"price_eur_per_mwh": "value"})[
+                    ["product_start", "available_at", "value"]]
+                additions.append(prior_values.assign(feature=name))
+                # Offset describes the source product relative to the target.
+                # Keep the source publication clock when moving its join key.
+                for offset in offsets:
+                    neighbor_name = f"{name}_neighbor_{'m' if offset < 0 else 'p'}{abs(offset)}"
+                    additions.append(_neighbor_price_feature(prior_values, neighbor_name, offset))
+                    expanded_names.append(neighbor_name)
+                prior_lineage[market] = prior_evidence
+            group_exogenous = prepare_exogenous_features(pd.concat([base_exogenous, *additions], ignore_index=True))
+            lineage[group] = {**evidence, "earlier_auction_features": prior_lineage,
+                              "market_neighbor_offsets_minutes": offsets}
+            extra_names = expanded_names
         datasets = {}
         for feature_set in study["feature_sets"]:
-            names = tuple(item["name"] for item in feature_sets[feature_set])
+            base_name = study.get("feature_set_aliases", {}).get(feature_set, feature_set)
+            names = tuple(item["name"] for item in feature_sets[base_name])
+            if feature_set in study.get("add_market_price_features_to", []):
+                names += tuple(extra_names)
             settings = PriceForecastSettings(lag_hours=tuple(study["lag_hours"]), interval_minutes=resolution,
                 timezone=study["timezone"], exogenous_features=names, daily_lag_fallback="target_clock",
                 **target.get("settings", {}))
-            datasets[feature_set] = prepare_search_matrix(history, settings, exogenous,
+            datasets[feature_set] = prepare_search_matrix(history, settings, group_exogenous,
                 cutoff=split["cutoff"], validation_start=split["validation_start"], validation_end=split["validation_end"])
         days = complete_shared_days(list(datasets.values()), start=split["validation_start"],
                                     end=split["validation_end"], settings=settings)
