@@ -11,6 +11,7 @@ from bess_pv_trading.forecasting.price_search_models import make_price_candidate
     ("lasso", {"alpha": 0.01, "max_iter": 1000}),
     ("elastic_net", {"alpha": 0.01, "l1_ratio": 0.5, "max_iter": 1000}),
     ("huber", {"epsilon": 1.35, "alpha": 0.01, "max_iter": 500}),
+    ("sgd_mae", {"alpha": 0.001, "max_iter": 500, "tol": 1e-3}),
     ("hist_gradient_boosting", {"max_iter": 20, "min_samples_leaf": 4}),
     ("random_forest", {"n_estimators": 10, "min_samples_leaf": 2}),
     ("mlp", {"hidden_layer_sizes": (8,), "max_iter": 50}),
@@ -30,6 +31,7 @@ def test_candidate_fits_and_returns_finite_predictions(family, options):
     ("interaction_lasso", {"lag_count": 1, "alpha": 0.01, "max_iter": 1000}),
     ("interaction_elastic_net", {"lag_count": 1, "alpha": 0.01, "l1_ratio": 0.5, "max_iter": 1000}),
     ("interaction_huber", {"lag_count": 1, "epsilon": 1.35, "alpha": 0.01, "max_iter": 500}),
+    ("interaction_sgd_mae", {"lag_count": 1, "alpha": 0.001, "max_iter": 500, "tol": 1e-3}),
 ])
 def test_interaction_candidates_fit_with_declared_calendar_layout(family, options):
     """Calendar-modulated lag effects remain finite and CPU-compatible."""
@@ -56,3 +58,14 @@ def test_huber_candidate_resists_a_large_training_outlier():
     robust.fit(features, target)
     ridge.fit(features, target)
     assert abs(robust.predict([[0]])[0] - 100) < abs(ridge.predict([[0]])[0] - 100)
+
+
+def test_sgd_mae_uses_absolute_error_and_returns_original_units():
+    """The stochastic robust model fits the median while retaining price units."""
+    features = np.zeros((200, 1))
+    target = np.full(200, 100.0)
+    target[-20:] = 1000.0
+    model = make_price_candidate("sgd_mae", {"alpha": 0.001, "max_iter": 2000, "tol": 1e-4,
+                                             "average": True}, seed=1)
+    model.fit(features, target)
+    assert abs(model.predict([[0]])[0] - 100) < 40

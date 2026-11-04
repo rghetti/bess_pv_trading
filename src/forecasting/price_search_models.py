@@ -10,7 +10,7 @@ import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
-from sklearn.linear_model import ElasticNet, HuberRegressor, Lasso, Ridge
+from sklearn.linear_model import ElasticNet, HuberRegressor, Lasso, Ridge, SGDRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -54,7 +54,12 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
     if family == "huber":
         estimator = make_pipeline(StandardScaler(), HuberRegressor(**options))
         return TransformedTargetRegressor(regressor=estimator, transformer=StandardScaler())
-    if family in {"interaction_ridge", "interaction_lasso", "interaction_elastic_net", "interaction_huber"}:
+    if family == "sgd_mae":
+        estimator = make_pipeline(StandardScaler(), SGDRegressor(loss="epsilon_insensitive", epsilon=0,
+                                                                   random_state=seed, **options))
+        return TransformedTargetRegressor(regressor=estimator, transformer=StandardScaler())
+    if family in {"interaction_ridge", "interaction_lasso", "interaction_elastic_net", "interaction_huber",
+                  "interaction_sgd_mae"}:
         lag_count = options.pop("lag_count")
         if family == "interaction_ridge":
             estimator = Ridge(**options)
@@ -62,10 +67,12 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
             estimator = Lasso(random_state=seed, **options)
         elif family == "interaction_elastic_net":
             estimator = ElasticNet(random_state=seed, **options)
-        else:
+        elif family == "interaction_huber":
             estimator = HuberRegressor(**options)
+        else:
+            estimator = SGDRegressor(loss="epsilon_insensitive", epsilon=0, random_state=seed, **options)
         pipeline = make_pipeline(IntradayShapeInteractions(lag_count), StandardScaler(), estimator)
-        if family == "interaction_huber":
+        if family in {"interaction_huber", "interaction_sgd_mae"}:
             return TransformedTargetRegressor(regressor=pipeline, transformer=StandardScaler())
         return pipeline
     if family == "hist_gradient_boosting":
