@@ -60,6 +60,9 @@ def test_adaptive_future_controls_improve_correlated_paths_with_a_shared_root():
     assert adaptive.plan.scenario_actions[0, 1, 1] == pytest.approx(1)
     assert adaptive.plan.scenario_actions[1, 2, 1] == pytest.approx(1)
     assert adaptive.diagnostics["representative_path_role"] == "shadow_projection_only"
+    assert adaptive.diagnostics["model_variables"] > 0
+    assert adaptive.diagnostics["model_binary_variables"] == adaptive.diagnostics["control_node_count"]
+    assert adaptive.diagnostics["model_constraints"] > 0
 
 
 def test_adaptive_validator_rejects_hidden_anticipative_commands():

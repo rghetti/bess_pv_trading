@@ -308,6 +308,9 @@ def solve_research_mpc(inputs, solver=None):
 
         model, variables, expressions = build_research_model(inputs)
         diagnostics["build_seconds"] = perf_counter() - started
+        diagnostics["model_variables"] = model.NumVars
+        diagnostics["model_binary_variables"] = model.NumBinVars
+        diagnostics["model_constraints"] = model.NumConstrs
         nodes = variables["nodes"]
         diagnostics["control_node_count"] = sum(len(np.unique(nodes[:, t])) for t in range(nodes.shape[1]))
         diagnostics["adaptive_recourse_enabled"] = inputs.policy == "ensemble_mpc_adaptive"

@@ -677,6 +677,7 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
         diagnostics["interval_support_count"] = variables["interval_support_count"]
         diagnostics["scenario_interval_count"] = variables["scenario_interval_count"]
         diagnostics["model_variables"] = model.NumVars
+        diagnostics["model_binary_variables"] = model.NumBinVars
         diagnostics["model_constraints"] = model.NumConstrs
         for key, value in {"OutputFlag": int(solver.output_flag), "Threads": solver.threads,
                            "MIPGap": solver.mip_gap, "Seed": solver.seed,
