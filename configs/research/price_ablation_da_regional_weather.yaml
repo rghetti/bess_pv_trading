@@ -1,0 +1,14 @@
+# Paired DA weather feature comparisons on shared training and delivery rows.
+include: ../standard.yaml
+price_feature_ablation:
+  source_search: outputs/energy_price_forecasts/nord_da_2026_regional_weather_matched_v1
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_da_2026_regional_weather_ablation_v1
+  timezone: Europe/Rome
+  seed: 17
+  bootstrap_samples: 1000
+  pairs:
+    - base: curve_fundamentals
+      added: regional_weather
+    - base: ida_curve_fundamentals
+      added: ida_regional_weather
