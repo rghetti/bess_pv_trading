@@ -77,6 +77,27 @@ def test_fresh_raw_config_resolves_each_farm_before_asset_scaling():
     assert all(config["experiment_outputs"]["overwrite_existing"] is False for config in configs.values())
 
 
+def test_expansion_reads_one_snapshot_and_reloads_it_on_next_call(tmp_path, monkeypatch):
+    """Jobs share no resolved state and later calls observe configuration edits."""
+    path = local_config(tmp_path)
+    original = study._read_mapping
+    reads = []
+
+    def counted(path):
+        reads.append(path)
+        return original(path)
+
+    monkeypatch.setattr(study, "_read_mapping", counted)
+    _, _, first_jobs = study.expand_research_jobs(path)
+    value = yaml.safe_load(path.read_text())
+    value["state"]["initial_soc_percent"] = 37.0
+    path.write_text(yaml.safe_dump(value, sort_keys=False))
+    _, _, second_jobs = study.expand_research_jobs(path)
+    assert len(reads) == 2
+    assert first_jobs[0]["config"]["state"]["initial_soc_percent"] != 37.0
+    assert second_jobs[0]["config"]["state"]["initial_soc_percent"] == 37.0
+
+
 def test_fundamental_price_models_use_each_window_and_2024_ida_history():
     """The August feature contrast must never accidentally load the January fit."""
     _, _, jobs = study.expand_research_jobs(CONFIG, case_ids=["causal_fundamentals"], farms=[1])

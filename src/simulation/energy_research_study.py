@@ -1,8 +1,8 @@
 """Plan and run explicit continuous energy-market research contrasts.
 
 Cases are declarations, not a parameter-search Cartesian product. Every job
-reloads the raw YAML before applying its farm, date window and case overrides,
-so automatic asset sizes and typed references cannot leak between farms.
+resolves an independent copy of one raw configuration snapshot with its farm,
+date window and case overrides, so asset sizes and references cannot leak.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import traceback
 
 import pandas as pd
 
-from ..config import _read_mapping, load_config, merge_mapping
+from ..config import _read_mapping, merge_mapping, resolve_config
 from ..data import config_path
 from ..markets import AuctionCalendar
 from ..optimization.mpc import MPC_POLICIES, needs_mpc_ensemble
@@ -64,9 +64,9 @@ def _write_json(path, value):
     temporary.replace(destination)
 
 
-def _study_definition(path):
+def _study_definition(path, raw=None):
     """Validate the finite case/window inventory before resolving any case config."""
-    raw = _read_mapping(path)
+    raw = _read_mapping(path) if raw is None else raw
     study = raw.get("energy_research_study", {})
     if not isinstance(study, dict):
         raise ValueError("energy_research_study must be a mapping")
@@ -204,9 +204,10 @@ def _artifact_requirements(config, checksums=None):
 
 def expand_research_jobs(path, *, case_ids=None, farms=None, window_ids=None, project_root=None,
                          run_id=None, workers=None, solver_threads=None):
-    """Resolve each selected farm/window/case independently from raw YAML."""
+    """Resolve independent jobs from one raw YAML snapshot per expansion."""
     path = Path(path).resolve()
-    study = _study_definition(path)
+    raw = _read_mapping(path)
+    study = deepcopy(_study_definition(path, raw))
     if run_id is not None:
         study["run_id"] = _identifier(run_id, "Study run_id")
     if workers is not None:
@@ -235,14 +236,14 @@ def expand_research_jobs(path, *, case_ids=None, farms=None, window_ids=None, pr
                     "solver": {"threads": study.get("solver_threads", 1)},
                     "experiment_outputs": {"overwrite_existing": False}}
                 overrides = merge_mapping(overrides, forced)
-                config = load_config(path, overrides=overrides)
+                config = resolve_config(merge_mapping(raw, overrides))
                 # Derive each scaling from this farm's fresh defaults, then reload
                 # so every dependent typed reference sees the scaled numeric value.
                 for name, multiplier in case.get("asset_scales", {}).items():
                     section, field = _SCALES[name]
                     overrides.setdefault(section, {})[field] = config[section][field] * multiplier
                 if case.get("asset_scales"):
-                    config = load_config(path, overrides=overrides)
+                    config = resolve_config(merge_mapping(raw, overrides))
                 config.pop("energy_research_study", None)
                 validate_mpc_study(config)
                 controllers = config["realtime_mpc_comparison"]["controllers"]
