@@ -17,9 +17,9 @@ import numpy as np
 import pandas as pd
 
 from bess_pv_trading.config import load_config
-from bess_pv_trading.forecasting.energy_prices import (PreparedExogenous, PriceForecastSettings, load_price_history,
-                                                       prepare_exogenous_features)
-from bess_pv_trading.forecasting.price_search import (complete_shared_days, point_metrics,
+from bess_pv_trading.forecasting.energy_prices import (PreparedExogenous, PriceForecastSettings, historical_decision_times,
+                                                       load_price_history, prepare_exogenous_features)
+from bess_pv_trading.forecasting.price_search import (complete_shared_days, daily_price_curve_features, point_metrics,
                                                       prepare_search_matrix, project_search_matrix)
 from bess_pv_trading.forecasting.price_search_models import make_price_candidate
 from bess_pv_trading.parallel import configure_worker_threads
@@ -70,7 +70,8 @@ def _validation_selection(study, root):
     for name in ("lag_hours", "feature_sets", "seed", "timezone", "source_study"):
         if study[name] != source_study[name]:
             raise ValueError(f"Holdout {name} differs from validation search")
-    for name in ("feature_set_aliases", "add_market_price_features_to", "residual_target_features"):
+    for name in ("feature_set_aliases", "add_market_price_features_to", "residual_target_features",
+                 "daily_curve_lag_days", "add_daily_curve_features_to"):
         if study.get(name) != source_study.get(name):
             raise ValueError(f"Holdout {name} differs from validation search")
     expected_candidates = {item["id"]: item for item in source_study["candidates"]}
@@ -276,9 +277,21 @@ def run_search(config, *, check_only=False):
                                      validation_start=split["validation_start"], validation_end=split["validation_end"])
         base_count = len(group_lags) + 7
         feature_index = {name: base_count + index for index, name in enumerate(all_names)}
+        curve_groups = set(study.get("add_daily_curve_features_to", [])) & set(group_features)
+        curves = None
+        if curve_groups:
+            decisions = historical_decision_times(full["starts"], settings)
+            curves = daily_price_curve_features(history, full["starts"], decisions, settings,
+                                                 study.get("daily_curve_lag_days", []))
         for feature_set, names in group_features.items():
             columns = list(range(base_count)) + [feature_index[name] for name in names]
             datasets[feature_set] = project_search_matrix(full, columns)
+            if feature_set in curve_groups:
+                dataset = datasets[feature_set]
+                dataset["matrix"] = np.column_stack([dataset["matrix"], curves])
+                finite = np.isfinite(dataset["matrix"]).all(axis=1)
+                dataset["training"] = finite & dataset["training_clock"]
+                dataset["validation"] = finite & dataset["validation_clock"]
         days = complete_shared_days(list(datasets.values()), start=split["validation_start"],
                                     end=split["validation_end"], settings=settings)
         if not days:

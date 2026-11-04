@@ -6,7 +6,7 @@ import pytest
 
 from bess_pv_trading.forecasting.energy_prices import PriceForecastSettings
 from bess_pv_trading.forecasting.price_search import (complete_shared_days, point_metrics, prepare_search_matrix,
-                                                      project_search_matrix)
+                                                      project_search_matrix, daily_price_curve_features)
 
 
 def test_search_uses_only_labels_released_before_cutoff_and_shared_complete_days():
@@ -33,6 +33,34 @@ def test_point_metrics_preserve_zero_negative_prices_and_naive_scale():
     assert metrics["wape_percent"] == 40
     assert metrics["relative_mae_to_naive"] == pytest.approx(0.8)
     assert point_metrics([0], [1], [0])["wape_percent"] is None
+
+
+def test_daily_price_curves_average_native_quarters_and_respect_release():
+    """Previous-day curve features never expose a product published after the decision."""
+    starts = pd.date_range("2026-01-01T00:00Z", periods=96, freq="15min")
+    availability = starts + pd.Timedelta(hours=1)
+    history = pd.DataFrame({"product_start": starts, "product_end": starts + pd.Timedelta(minutes=15),
+                            "available_at": availability, "price_eur_per_mwh": np.arange(96, dtype=float)})
+    targets = pd.DatetimeIndex([pd.Timestamp("2026-01-02T12:00Z")] * 2)
+    cutoffs = pd.to_datetime(["2026-01-01T01:45Z", "2026-01-02T00:45Z"])
+    settings = PriceForecastSettings(interval_minutes=15, timezone="UTC")
+    result = daily_price_curve_features(history, targets, cutoffs, settings, [1])
+    assert result.shape == (2, 24)
+    assert result[0, 0] == 1.5
+    assert np.isnan(result[0, 1])
+    np.testing.assert_allclose(result[1], np.arange(24) * 4 + 1.5)
+
+
+def test_daily_price_curves_leave_dst_missing_hour_explicit():
+    """A skipped local hour is not manufactured in a previous-day price curve."""
+    starts = pd.date_range("2026-03-29", "2026-03-30", freq="h", inclusive="left", tz="Europe/Rome").tz_convert("UTC")
+    history = pd.DataFrame({"product_start": starts, "product_end": starts + pd.Timedelta(hours=1),
+                            "available_at": starts + pd.Timedelta(hours=1), "price_eur_per_mwh": 20.0})
+    settings = PriceForecastSettings(interval_minutes=60, timezone="Europe/Rome")
+    result = daily_price_curve_features(history, pd.DatetimeIndex([pd.Timestamp("2026-03-30T12:00Z")]),
+                                        pd.DatetimeIndex([pd.Timestamp("2026-03-30T00:00Z")]), settings, [1])
+    assert np.isnan(result[0, 2])
+    assert np.isfinite(result[0]).sum() == 23
 
 
 def test_feature_projection_does_not_transfer_other_groups_missingness():

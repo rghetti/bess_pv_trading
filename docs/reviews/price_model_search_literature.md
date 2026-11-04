@@ -80,3 +80,14 @@ IDA3 uses only same-product daily and weekly historical lags: an adjacent-hour
 IDA3 lag can cross its half-day delivery window and point to a nonexistent
 product, as a full validation-coverage check demonstrated. Its neighboring
 features from the earlier full-day auctions remain available when published.
+
+`configs/research/price_model_search_da_curves.yaml` adds the full 24-hour
+shape of the same market's previous 1, 2 and 7 local delivery days. Within a
+native quarter-hour task, each hourly input is the average of its four native
+prices, only when all four products are present and released; the prediction
+target remains native quarter-hourly. Hours missing or repeated at daylight
+saving transitions are not synthesized, so the affected candidate dates are
+excluded and all candidates share the resulting validation days. This is a
+pooled model with explicit daily-curve inputs inspired by LEAR, not a literal
+per-hour LEAR replication. The price archive retains its native products and
+these features never use a price after its configured publication time.
