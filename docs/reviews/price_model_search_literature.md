@@ -86,6 +86,17 @@ IDA-minus-DA targets on the same native delivery products. The latest earlier
 market is selected from a validated chronological ordering, and its configured
 publication clock still governs whether the anchor is usable.
 
+`configs/research/price_model_search_swiss_border.yaml` tests the previous-day
+Swiss--Italy commercial schedule, directional intraday NTC and Italian-NORD/
+Swiss spot spread, using only the current 2026 border archive. The spread is
+shifted by 24 hours and is not the contemporaneous target spread. It is a
+retrospective feature with an assumed publication clock; exact historical
+release and revisions remain unverified. Baseline and border feature groups
+are restricted to the same training rows and common complete validation days,
+so shorter border coverage does not itself change their training sample. The
+January--February 2026 training window is short and the March--April validation
+is not an untouched full-year test.
+
 `configs/research/price_model_search_da_curves.yaml` adds the full 24-hour
 shape of the same market's previous 1, 2 and 7 local delivery days. Within a
 native quarter-hour task, each hourly input is the average of its four native

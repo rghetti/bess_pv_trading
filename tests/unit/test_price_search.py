@@ -6,7 +6,8 @@ import pytest
 
 from bess_pv_trading.forecasting.energy_prices import PriceForecastSettings
 from bess_pv_trading.forecasting.price_search import (complete_shared_days, point_metrics, prepare_search_matrix,
-                                                      project_search_matrix, daily_price_curve_features)
+                                                      project_search_matrix, daily_price_curve_features,
+                                                      restrict_to_common_training_rows)
 
 
 def test_search_uses_only_labels_released_before_cutoff_and_shared_complete_days():
@@ -74,6 +75,16 @@ def test_feature_projection_does_not_transfer_other_groups_missingness():
     assert first["training"].tolist() == [True, False]
     assert second["training"].tolist() == [False, True]
     assert baseline["validation"].tolist() == [False, True]
+
+
+def test_common_training_rows_match_feature_groups_without_altering_validation():
+    """A feature ablation can use identical training support and retain test masks."""
+    datasets = {"base": {"training": np.array([True, True, False]), "validation": np.array([False, True, True])},
+                "border": {"training": np.array([False, True, False]), "validation": np.array([True, True, True])}}
+    result = restrict_to_common_training_rows(datasets)
+    assert result["base"]["training"].tolist() == result["border"]["training"].tolist() == [False, True, False]
+    assert result["base"]["validation"].tolist() == [False, True, True]
+    assert datasets["base"]["training"].tolist() == [True, True, False]
 
 
 def test_projected_union_matches_independently_prepared_features():

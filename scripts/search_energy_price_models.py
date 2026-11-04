@@ -21,7 +21,8 @@ from bess_pv_trading.config import load_config
 from bess_pv_trading.forecasting.energy_prices import (PreparedExogenous, PriceForecastSettings, historical_decision_times,
                                                        load_price_history, prepare_exogenous_features)
 from bess_pv_trading.forecasting.price_search import (complete_shared_days, daily_price_curve_features, point_metrics,
-                                                      prepare_search_matrix, project_search_matrix)
+                                                      prepare_search_matrix, project_search_matrix,
+                                                      restrict_to_common_training_rows)
 from bess_pv_trading.forecasting.price_search_models import make_price_candidate
 from bess_pv_trading.parallel import configure_worker_threads
 
@@ -127,7 +128,7 @@ def _validation_selection(study, root):
         if study[name] != source_study[name]:
             raise ValueError(f"Holdout {name} differs from validation search")
     for name in ("feature_set_aliases", "add_market_price_features_to", "residual_target_features",
-                 "daily_curve_lag_days", "add_daily_curve_features_to"):
+                 "daily_curve_lag_days", "add_daily_curve_features_to", "common_training_rows"):
         if study.get(name) != source_study.get(name):
             raise ValueError(f"Holdout {name} differs from validation search")
     expected_candidates = {item["id"]: item for item in source_study["candidates"]}
@@ -236,6 +237,8 @@ def _neighbor_price_feature(prior_values, name, offset):
 def run_search(config, *, check_only=False):
     """Prepare source-native matrices, then fit candidate workers on shared days."""
     study = config["price_model_search"]
+    if not isinstance(study.get("common_training_rows", False), bool):
+        raise ValueError("common_training_rows must be a boolean")
     root = Path(config.get("_project_root", ROOT))
     source = root / study["source_study"]
     source_manifest = json.loads((source / "manifest.json").read_text())
@@ -354,6 +357,8 @@ def run_search(config, *, check_only=False):
                 finite = np.isfinite(dataset["matrix"]).all(axis=1)
                 dataset["training"] = finite & dataset["training_clock"]
                 dataset["validation"] = finite & dataset["validation_clock"]
+        if study.get("common_training_rows", False):
+            datasets = restrict_to_common_training_rows(datasets)
         days = complete_shared_days(list(datasets.values()), start=split["validation_start"],
                                     end=split["validation_end"], settings=settings)
         if not days:

@@ -106,6 +106,17 @@ def project_search_matrix(dataset, columns):
             "validation": finite & dataset["validation_clock"]}
 
 
+def restrict_to_common_training_rows(datasets):
+    """Match training support across groups without changing validation masks."""
+    if not datasets:
+        raise ValueError("Common training support requires at least one feature group")
+    masks = [np.asarray(dataset["training"], dtype=bool) for dataset in datasets.values()]
+    if any(mask.shape != masks[0].shape for mask in masks):
+        raise ValueError("Feature groups have incompatible training indices")
+    common = np.logical_and.reduce(masks)
+    return {name: {**dataset, "training": common.copy()} for name, dataset in datasets.items()}
+
+
 def complete_shared_days(datasets, *, start, end, settings):
     """Require every selected feature set to cover each complete delivery day."""
     days = []
