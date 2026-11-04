@@ -24,6 +24,10 @@ availability, member IDs, conversion and output hash. Newer ensemble cycles
 are converted once for their available remaining interval range and reused;
 later forecasts must never replace historical executed decisions. The existing
 pvlib benchmark remains pinned to its original configuration.
+The future matched comparison must rerun pvlib with the same latest-available
+cycle policy, forecast release assumptions, reviewed targets, dates, controller
+settings and price inputs as the final neural models. The earlier pvlib runs
+are useful controller checks but do not isolate the forecast-model effect.
 
 An offline input check on farm 1 and 15 January 2026 verified 50 neural-converted
 members: the 05:45 UTC request selected 14 January 00 UTC, and the 06:00 UTC

@@ -44,3 +44,14 @@ explicit. The Swiss-border group uses a currently available annual 2026 source,
 not an assumed 2024–2025 history. Monthly results, source snapshot hashes,
 per-model exclusions and the shared-day evaluation must be inspected after a
 run. The historical publication assumptions make results retrospective.
+
+Once these fits finish, compare each added feature group to the fundamentals
+baseline on identical target days and separately report training coverage,
+per-market errors and distributional scores. A weekly Swiss reservoir level
+is a slow seasonal state and is more naturally tested alongside seasonal
+calendar terms than interpreted as an hourly cross-border signal. Its value
+can be tested in a subsequent matched ablation using the latest assumed
+released observation, a finite maximum age and the same training rows for both
+models. The current run does not include this dataset. Do not interpret a
+ridge coefficient as causal or select a model from one month alone; use the
+held-out folds and inspect degradation across markets.

@@ -37,7 +37,18 @@ currently links only its 2026 annual CSV; earlier years must not be silently
 assumed present. Missing-value counts and the exact provider URL are retained
 in the snapshot metadata.
 
-French nuclear and hydro data and a Swiss aggregate balance are already available
-for the declared price ablations. A Swiss regional reservoir series is published
-separately by the Swiss Federal Office of Energy; it is not represented by the
-Swissgrid balance or the border CSV and has not yet been acquired here.
+The Swiss Federal Office of Energy separately publishes [weekly reservoir
+levels](https://www.bfe.admin.ch/de/fuellungsgrad-speicherseen). The public CSV
+was acquired on 4 November 2026 as snapshot
+`4fbf941d15d7256605f9e92e0f184982adf4b9ca57cd91a3dbcbb224b47ff111`
+(raw SHA-256 `520038460d8c73f821486ced6b2c292af3e4d43fd4d1dc89c775a0cc8122544c`).
+It contains 1,401 weekly observations from January 2000 through November 2026,
+with regional and national stored energy and national capacity percentage.
+The reference is Sunday midnight in Zurich time. The energy dashboard reports
+Thursday publication; the configured Friday 00:00 local availability is an
+assumption and does not establish historical release times or revisions.
+This is stored hydro energy, not hydro generation or cross-border flow. The
+currently running price comparison was configured before this acquisition and
+does not include reservoir levels. A future feature must carry forward only the
+latest assumed released value and cap its age; otherwise an interval join would
+incorrectly discard it or introduce unavailable values.

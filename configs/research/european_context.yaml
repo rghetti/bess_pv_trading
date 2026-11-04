@@ -66,3 +66,9 @@ swiss_border:
     ntc_fr_to_ch: G:Intraday NTC Frankreich > Schweiz [MW]
     schedule_ch_fr: "L:Kommerzielle Lastfl\xFCsse Frankreich Netto (Total) [MW]"
     spread_fr_ch: Q:Preisdifferenz Spot Frankreich-Schweiz [EUR/MWh]
+swiss_reservoir:
+  database_path: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  url: https://www.bfe-ogd.ch/ogd17/ogd17_fuellungsgrad_speicherseen.csv
+  timezone: Europe/Zurich
+  # The official series reports Sunday midnight; assume Friday 00:00 availability.
+  publication_delay_days: 4
