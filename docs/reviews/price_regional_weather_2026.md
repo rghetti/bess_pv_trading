@@ -28,3 +28,11 @@ candidates and their no-weather counterparts. Its source snapshot verification
 and complete-day coverage should be checked before interpreting the result.
 Some later dates were inspected in previous work, so that evaluation is not a
 globally untouched test.
+
+The corresponding IDA validation completed 36 fits without reported failures
+or convergence warnings. Adding regional weather improved 5 of 6 IDA1 models,
+3 of 6 IDA2 models and all 6 IDA3 models, but the median MAE changes were only
+-€0.011, +€0.001 and -€0.030/MWh respectively. These paired differences are
+small on the shared validation products and do not establish a durable effect.
+The detailed paired report is in
+`outputs/energy_price_forecasts/nord_ida_2026_regional_weather_ablation_v1/`.
