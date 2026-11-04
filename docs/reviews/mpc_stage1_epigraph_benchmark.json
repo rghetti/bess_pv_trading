@@ -1,0 +1,31 @@
+{
+  "batch": "/tmp/bess_research_legacy_validation_snapshot/outputs/energy_research/legacy_continuous_validation_v1",
+  "job_id": "august_development__farm_1__ensemble_price_oracle",
+  "cutoff_utc": "2026-08-01 22:00:00+00:00",
+  "members": 51,
+  "intervals": 96,
+  "original_stage": {
+    "stage": "minimum_absolute_imbalance",
+    "status": "feasible_time_limit",
+    "runtime_seconds": 8.912035942077637,
+    "objective": 4.098331871455992,
+    "bound": 4.0931002542327715,
+    "gap": 0.001276523567956367
+  },
+  "variants": [
+    {
+      "variant": "epigraph",
+      "variables": 3659,
+      "binary_variables": 96,
+      "constraints": 13031,
+      "status_code": 9,
+      "runtime_seconds": 10.010869979858398,
+      "wall_seconds": 10.80644180253148,
+      "nodes": 1965.0,
+      "objective_mwh": 4.098331871455993,
+      "bound_mwh": 4.093100254232729,
+      "relative_gap": 0.0012765235679669858
+    }
+  ],
+  "scope": "one recorded retrospective first-stage problem, one solver thread per variant"
+}

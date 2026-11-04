@@ -1,0 +1,83 @@
+{
+  "batch": "/tmp/bess_research_legacy_validation_snapshot/outputs/energy_research/legacy_continuous_validation_v1",
+  "job_id": "august_development__farm_1__ensemble_price_oracle",
+  "cutoff_utc": "2026-08-01 22:00:00+00:00",
+  "members": 51,
+  "intervals": 96,
+  "original_stage": {
+    "stage": "minimum_absolute_imbalance",
+    "status": "feasible_time_limit",
+    "runtime_seconds": 8.912035942077637,
+    "objective": 4.098331871455992,
+    "bound": 4.0931002542327715,
+    "gap": 0.001276523567956367
+  },
+  "variants": [
+    {
+      "variant": "baseline",
+      "variables": 10015,
+      "binary_variables": 96,
+      "constraints": 6675,
+      "status_code": 9,
+      "runtime_seconds": 10.005665063858032,
+      "wall_seconds": 10.938576491549611,
+      "nodes": 1313.0,
+      "objective_mwh": 4.098331871455991,
+      "bound_mwh": 4.093100254232759,
+      "relative_gap": 0.0012765235679591846
+    },
+    {
+      "variant": "tight_soc",
+      "variables": 10015,
+      "binary_variables": 96,
+      "constraints": 6867,
+      "status_code": 9,
+      "runtime_seconds": 10.004122018814087,
+      "wall_seconds": 10.81337540782988,
+      "nodes": 1469.0,
+      "objective_mwh": 4.098331871455994,
+      "bound_mwh": 4.093100254232752,
+      "relative_gap": 0.001276523567961784
+    },
+    {
+      "variant": "focus_1",
+      "variables": 10015,
+      "binary_variables": 96,
+      "constraints": 6675,
+      "status_code": 9,
+      "runtime_seconds": 10.010781049728394,
+      "wall_seconds": 10.64468988403678,
+      "nodes": 1086.0,
+      "objective_mwh": 4.098331871455992,
+      "bound_mwh": 4.093100254232754,
+      "relative_gap": 0.0012765235679607014
+    },
+    {
+      "variant": "focus_2",
+      "variables": 10015,
+      "binary_variables": 96,
+      "constraints": 6675,
+      "status_code": 9,
+      "runtime_seconds": 10.005689859390259,
+      "wall_seconds": 10.851875689812005,
+      "nodes": 1178.0,
+      "objective_mwh": 4.098331871455989,
+      "bound_mwh": 4.093100254232759,
+      "relative_gap": 0.0012765235679587518
+    },
+    {
+      "variant": "focus_3",
+      "variables": 10015,
+      "binary_variables": 96,
+      "constraints": 6675,
+      "status_code": 9,
+      "runtime_seconds": 10.004063129425049,
+      "wall_seconds": 10.789965416304767,
+      "nodes": 434.0,
+      "objective_mwh": 4.098331871455987,
+      "bound_mwh": 4.093100254232743,
+      "relative_gap": 0.0012765235679622197
+    }
+  ],
+  "scope": "one recorded retrospective first-stage problem, one solver thread per variant"
+}

@@ -97,6 +97,72 @@ def test_oracle_cap_checks_reconstructed_delivery_not_only_model_split_variables
     assert not result.diagnostics["fallback_applied"]
 
 
+@pytest.mark.parametrize("incumbent,bound,expected", [
+    (100, 99, 0.01), (100, 99.9, 0.001), (0, 0, 0), (0, -1, None),
+    (100, float("-inf"), None), (1, 2, 0),
+])
+def test_oracle_incumbent_gap_uses_reconstructed_feasible_objective(incumbent, bound, expected):
+    actual = mpc._oracle_incumbent_gap(incumbent, bound)
+    assert actual is None if expected is None else actual == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("reported_gap,expected_qualified,expected_stages", [(0.005, True, 2), (0.02, False, 1)])
+def test_oracle_gap_fallback_runs_economics_only_within_declared_bound(
+        monkeypatch, reported_gap, expected_qualified, expected_stages):
+    """Simulate a time-limited incumbent with a known bound around a real solve."""
+    import gurobipy as gp
+
+    inputs = oracle_inputs(length=2)
+    settings = replace(inputs.settings, oracle_fallback_max_relative_gap=0.01,
+        oracle_stage2_time_limit_seconds=10.0)
+    inputs = replace(inputs, settings=settings, committed_mwh=np.ones(2))
+    original = mpc.build_mpc_model
+
+    class TimedModel:
+        """Present chosen first-stage time-limit evidence while solving a real MILP."""
+        def __init__(self, model):
+            self.model = model
+            self.optimizations = 0
+
+        def optimize(self):
+            self.model.optimize()
+            self.optimizations += 1
+
+        @property
+        def Status(self):
+            return gp.GRB.TIME_LIMIT if self.optimizations <= 1 else self.model.Status
+
+        @property
+        def ObjBound(self):
+            if self.optimizations <= 1:
+                return self.model.ObjVal * (1 - reported_gap)
+            return self.model.ObjBound
+
+        def __getattr__(self, name):
+            return getattr(self.model, name)
+
+    def build(value):
+        model, variables, expressions = original(value)
+        return TimedModel(model), variables, expressions
+
+    monkeypatch.setattr(mpc, "build_mpc_model", build)
+    result = mpc.solve_mpc(inputs, SolverSettings(threads=1))
+    assert result.plan is not None, result.diagnostics
+    assert result.diagnostics["oracle_fallback_qualified"] is expected_qualified
+    assert len(result.diagnostics["stages"]) == expected_stages
+    assert not result.diagnostics["fallback_applied"]
+    if expected_qualified:
+        assert result.diagnostics["oracle_cap_reference"] == "gap_qualified_incumbent"
+        assert result.diagnostics["oracle_stage2_used"]
+        assert result.diagnostics["stages"][0]["time_limit_seconds"] == 10.0
+        assert result.diagnostics["stages"][1]["time_limit_seconds"] == 10.0
+        assert result.diagnostics["stage1_relative_gap_reconstructed"] == pytest.approx(reported_gap)
+        assert "stage1_l_min_mwh" not in result.diagnostics
+    else:
+        assert not result.diagnostics["oracle_stage2_used"]
+        assert result.diagnostics["stages"][-1]["stage"] == "minimum_absolute_imbalance"
+
+
 def test_equal_interval_supports_share_variables_without_losing_full_scenario_outputs():
     inputs = oracle_inputs(length=4, scenarios=51)
     model, variables, _ = mpc.build_mpc_model(inputs)

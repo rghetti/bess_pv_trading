@@ -7,7 +7,8 @@ import pandas as pd
 import pytest
 
 from bess_pv_trading.reporting.research_study import (
-    _calendar_blocks, empirical_loss_cvar, factorial_effects, paired_case_comparison, save_research_report,
+    _calendar_blocks, empirical_loss_cvar, factorial_effects, forecast_flexibility_factorial,
+    paired_case_comparison, save_research_report,
 )
 
 
@@ -203,6 +204,30 @@ def test_factorial_missing_cell_excludes_date_across_all_four_cases_and_farms():
     assert result["status"] == "partial_coverage"
     assert result["coverage"]["excluded_days"] == ["2026-01-02"]
     assert result["effects"][0]["aggregate"]["paired_days"] == 3
+
+
+def test_forecast_flexibility_interaction_requires_matched_physical_controls():
+    """The calibration-by-capacity interaction uses matched farm/date cells."""
+    frame, cases, _ = factorial_fixture()
+    base = {"1:january": {"battery": {"capacity_mwh": 1, "max_power_mw": 1},
+        "plant": {"poi_export_mw": 1}, "state": {"initial_soc_percent": 50}}}
+    modified = {"1:january": {"battery": {"capacity_mwh": 2, "max_power_mw": 1},
+        "plant": {"poi_export_mw": 1}, "state": {"initial_soc_percent": 50}}}
+    controls = {cases[False, False]: base, cases[True, False]: base,
+        cases[False, True]: modified, cases[True, True]: modified}
+    result = forecast_flexibility_factorial(frame, cases, controller="track_committed_grid",
+        physical_controls=controls, changed_fields=[["battery", "capacity_mwh"]], samples=0)
+    effects = {row["effect"]: row["aggregate"]["mean_daily_difference"] for row in result["effects"]}
+    assert effects["calibration_at_base_flexibility"] == 4
+    assert effects["calibration_at_modified_flexibility"] == 18
+    assert effects["interaction_difference_in_differences"] == 14
+    wrong = {**controls, cases[True, True]: base}
+    with pytest.raises(ValueError, match="matching physical"):
+        forecast_flexibility_factorial(frame, cases, controller="track_committed_grid",
+            physical_controls=wrong, changed_fields=[["battery", "capacity_mwh"]], samples=0)
+    with pytest.raises(ValueError, match="Only the declared"):
+        forecast_flexibility_factorial(frame, cases, controller="track_committed_grid",
+            physical_controls=controls, changed_fields=[["plant", "poi_export_mw"]], samples=0)
 
 
 def test_report_artifacts_expose_per_farm_comparisons_and_continuous_interpretation(tmp_path):

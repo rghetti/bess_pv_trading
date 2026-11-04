@@ -71,7 +71,7 @@ def _study_definition(path):
     if not isinstance(study, dict):
         raise ValueError("energy_research_study must be a mapping")
     allowed = {"run_id", "output_root", "farms", "windows", "cases", "workers", "native_threads",
-        "solver_threads", "reporting", "factorial_cases", "mode"}
+        "solver_threads", "reporting", "factorial_cases", "forecast_flexibility_factorials", "mode"}
     if set(study) - allowed:
         raise ValueError(f"Unknown energy_research_study fields: {sorted(set(study) - allowed)}")
     if study.get("mode", "continuous") != "continuous":
@@ -104,6 +104,22 @@ def _study_definition(path):
         if len(set(names)) != len(names):
             raise ValueError(f"Study {collection} IDs must be unique")
     case_ids = {case["id"] for case in study["cases"]}
+    flex = study.get("forecast_flexibility_factorials", {})
+    if not isinstance(flex, dict):
+        raise ValueError("forecast_flexibility_factorials must be a mapping")
+    for name, declaration in flex.items():
+        _identifier(name, "Forecast/flexibility factorial ID")
+        required = {"raw_base", "calibrated_base", "raw_modified", "calibrated_modified", "changed_fields"}
+        if not isinstance(declaration, dict) or set(declaration) != required:
+            raise ValueError("Forecast/flexibility factorial must declare four cases and changed_fields")
+        selected = [declaration[key] for key in ("raw_base", "calibrated_base", "raw_modified", "calibrated_modified")]
+        if len(set(selected)) != 4 or set(selected) - case_ids:
+            raise ValueError("Forecast/flexibility cells must identify four distinct declared cases")
+        fields = declaration["changed_fields"]
+        if not isinstance(fields, list) or not fields or any(not isinstance(path, list) or len(path) != 2
+                or path[0] not in {"battery", "plant"} or not isinstance(path[1], str) or not path[1]
+                for path in fields):
+            raise ValueError("Forecast/flexibility changed_fields must contain battery or plant field paths")
     for case in study["cases"]:
         if case.get("baseline_case") is not None and (case["baseline_case"] not in case_ids
                 or case["baseline_case"] == case["id"]):
@@ -127,7 +143,7 @@ def _select(items, selected, label):
     return [item for item in items if selected is None or str(item["id"]) in selected]
 
 
-def _artifact_requirements(config):
+def _artifact_requirements(config, checksums=None):
     """List mandatory files without pretending that absent research artifacts exist."""
     paths = {"pv_measurements_and_weather": config["inputs"]["zarr"],
         "plant_metadata": config["inputs"]["metadata_parquet"],
@@ -157,11 +173,25 @@ def _artifact_requirements(config):
     if scenarios.get("dependence") == "ecc" or scenarios.get("calibrated_marginals_path"):
         paths["calibrated_pv_marginals"] = scenarios.get("calibrated_marginals_path")
     result = []
+    checksums = {} if checksums is None else checksums
     for role, value in sorted(paths.items()):
         path = None if not value else config_path(config, value)
         present = path is not None and path.exists()
+        checksum = None
+        if present and path.is_file() and role.startswith("price_model_"):
+            # Most jobs reuse the same fold/model. Hash each unchanged file once
+            # per plan, while detecting replacement or modification mid-plan.
+            before = path.stat()
+            key = (str(path.resolve()), before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns)
+            if key not in checksums:
+                checksums[key] = _sha256(path)
+                after = path.stat()
+                if (before.st_dev, before.st_ino, before.st_size, before.st_mtime_ns) != (
+                        after.st_dev, after.st_ino, after.st_size, after.st_mtime_ns):
+                    raise ValueError(f"Price model changed while hashing: {path}")
+            checksum = checksums[key]
         result.append({"role": role, "path": None if path is None else str(path), "present": present,
-            "sha256": _sha256(path) if present and path.is_file() and role.startswith("price_model_") else None})
+            "sha256": checksum})
     return result
 
 
@@ -227,6 +257,7 @@ def research_plan(path, **selection):
     """Count actual DST-aware work and expose missing inputs without fitting or solving."""
     study, destination, jobs = expand_research_jobs(path, **selection)
     rows = []
+    checksums = {}
     for job in jobs:
         config = job["config"]
         settings = config["continuous_optimization"]
@@ -237,7 +268,7 @@ def research_plan(path, **selection):
         intervals = sum(len(calendar.delivery_grid(day).to_domain().interval_ids) for day in days)
         active = set(config["gme_oracle_experiment"].get("participating_auctions") or ["DA", "IDA1", "IDA2", "IDA3"])
         auctions = sum(event.available and event.auction in active for day in days for event in calendar.schedule(day))
-        requirements = _artifact_requirements(config)
+        requirements = _artifact_requirements(config, checksums)
         rows.append({key: value for key, value in job.items() if key != "config"} | {
             "days": days, "mode": "continuous", "controllers": config["realtime_mpc_comparison"]["controllers"],
             "physical_intervals_per_controller": intervals,
@@ -315,7 +346,8 @@ def _run_jobs(jobs, workers, native_threads, check_only, record):
 
 def _reports(destination, results, jobs, study):
     """Compare each controller to its own continuous tracking baseline on common dates."""
-    from ..reporting.research_study import DEFAULT_METRICS, factorial_effects, save_research_report
+    from ..reporting.research_study import (DEFAULT_METRICS, factorial_effects,
+        forecast_flexibility_factorial, save_research_report)
 
     frames = []
     for result in results:
@@ -382,8 +414,30 @@ def _reports(destination, results, jobs, study):
             physical_controls=controls, **factorial_settings)
         _write_json(destination / "information_auction_factorial.json", value)
         factorial_status = value.get("status", "complete")
+    flexibility_statuses = {}
+    for name, declaration in study.get("forecast_flexibility_factorials", {}).items():
+        _identifier(name, "Forecast/flexibility factorial ID")
+        fields = {"raw_base", "calibrated_base", "raw_modified", "calibrated_modified", "changed_fields"}
+        if not isinstance(declaration, dict) or set(declaration) != fields:
+            raise ValueError("Forecast/flexibility factorial must declare four cases and changed_fields")
+        mapping = {(False, False): declaration["raw_base"], (True, False): declaration["calibrated_base"],
+            (False, True): declaration["raw_modified"], (True, True): declaration["calibrated_modified"]}
+        if not set(mapping.values()).issubset(set(target_rows.case_id)):
+            flexibility_statuses[name] = "not_all_cells_selected"
+            continue
+        controllers = {target_controllers[case] for case in mapping.values()}
+        if len(controllers) != 1:
+            raise ValueError("Forecast/flexibility cells require the same controller")
+        controls = {case: {job["farm_id"] + ":" + job["window_id"]: {
+            key: job["config"][key] for key in ("battery", "plant", "state", "degradation", "realtime_mpc")}
+            for job in jobs if job["case_id"] == case} for case in mapping.values()}
+        factorial_settings = {key: value for key, value in settings.items() if key != "cvar_alpha"}
+        value = forecast_flexibility_factorial(target_rows, mapping, controller=controllers.pop(),
+            physical_controls=controls, changed_fields=declaration["changed_fields"], **factorial_settings)
+        _write_json(destination / f"forecast_flexibility_{name}.json", value)
+        flexibility_statuses[name] = value["status"]
     return {"status": "complete", "comparison_dirs": reports, "case_contrast_dirs": contrast_reports,
-        "factorial_status": factorial_status}
+        "factorial_status": factorial_status, "forecast_flexibility_statuses": flexibility_statuses}
 
 
 def run_research_study(path, *, check_only=False, case_ids=None, farms=None, window_ids=None,

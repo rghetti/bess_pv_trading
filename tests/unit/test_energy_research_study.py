@@ -25,6 +25,7 @@ def local_config(tmp_path, change=None):
     value["energy_research_study"]["windows"] = value["energy_research_study"]["windows"][:1]
     value["energy_research_study"]["cases"] = value["energy_research_study"]["cases"][:1]
     value["energy_research_study"].pop("factorial_cases", None)
+    value["energy_research_study"].pop("forecast_flexibility_factorials", None)
     if change:
         change(value)
     path = tmp_path / "study.yaml"
@@ -34,13 +35,13 @@ def local_config(tmp_path, change=None):
 
 def test_default_matrix_counts_and_continuous_mode_are_exact():
     plan = study.research_plan(CONFIG)
-    assert plan["job_count"] == 192
-    assert plan["case_count"] == 24
+    assert plan["job_count"] == 208
+    assert plan["case_count"] == 26
     assert plan["farm_count"] == 4
     assert plan["window_count"] == 2
-    assert plan["mpc_decisions"] == 36864
-    assert plan["auction_submission_solves"] == 2880
-    assert plan["physical_controller_trajectories"] == 384
+    assert plan["mpc_decisions"] == 39936
+    assert plan["auction_submission_solves"] == 3136
+    assert plan["physical_controller_trajectories"] == 416
     assert plan["solves_started"] == plan["models_fitted"] == 0
     assert all(job["mode"] == "continuous" for job in plan["jobs"])
     assert plan["requested_workers"] == plan["workers"] == plan["configured_cpu_threads"] == 42
@@ -109,7 +110,7 @@ def test_missing_models_and_data_block_check_only_without_starting_workers(tmp_p
 
 def test_check_only_does_not_create_study_outputs(tmp_path, monkeypatch):
     path = local_config(tmp_path)
-    monkeypatch.setattr(study, "_artifact_requirements", lambda config: [])
+    monkeypatch.setattr(study, "_artifact_requirements", lambda config, checksums=None: [])
     def fake_jobs(jobs, workers, native_threads, check_only, record):
         assert check_only
         assert workers == 1 and native_threads == 1
@@ -123,7 +124,7 @@ def test_check_only_does_not_create_study_outputs(tmp_path, monkeypatch):
 
 def test_run_manifest_preserves_failure_and_refuses_same_destination(tmp_path, monkeypatch):
     path = local_config(tmp_path)
-    monkeypatch.setattr(study, "_artifact_requirements", lambda config: [])
+    monkeypatch.setattr(study, "_artifact_requirements", lambda config, checksums=None: [])
     def fake_jobs(jobs, workers, native_threads, check_only, record):
         result = {"job_id": jobs[0]["job_id"], "status": "failed", "error": "fixture failure"}
         record(result)

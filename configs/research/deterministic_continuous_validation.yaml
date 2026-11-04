@@ -54,6 +54,7 @@ realtime_mpc:
   terminal_soc_target_percent: 50.0
   terminal_inventory_penalty_eur_per_mwh: 50.0
   solver_time_limit_seconds: 10.0
+  oracle_stage2_time_limit_seconds: 10.0
   ensemble_include_deterministic_member: true
   recourse_stages:
   - 4

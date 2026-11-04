@@ -83,6 +83,23 @@ per-lead permutations that preserve each time's joint PV/price samples. A unit
 test checks this useful negative control. Adaptive recourse and pathwise risk
 provide mechanisms through which temporal dependence can affect decisions.
 
+For the legacy settlement-oracle controller, the default remains to proceed
+to economic refinement only when stage one meets the configured `1e-4` MIP gap.
+The optional `oracle_fallback_max_relative_gap` enables a gap-qualified
+incumbent. The study includes explicit 1% fallback cases, and gives the oracle
+imbalance stage and economic stage independent limits of 10 seconds each.
+Outside those studies, `oracle_stage2_time_limit_seconds` opts into a separate
+second-stage limit; otherwise the stages share `solver_time_limit_seconds`,
+and `oracle_fallback_time_reserve_fraction` reserves part of that shared budget.
+Stage one continues if the incumbent does not meet
+the threshold. Refinement must respect the feasible incumbent's reconstructed
+absolute-imbalance cap plus the configured budget; a failed or invalid
+refinement retains that incumbent. Its lower bound and reconstructed relative
+gap are recorded, and an approximate incumbent is never labeled a proven
+minimum. For incumbent U and lower bound L, the possible excess over the true
+minimum is bounded by U - L plus any declared extra imbalance budget (subject
+to solver numerical tolerances). The gap convention is `(U - L) / U`.
+
 ## Data, forecast training and retrospective scope
 
 The default matrix uses the four configured farms and two short development
@@ -108,7 +125,8 @@ settlement forecasts. Existing grid tracking can react to actual interval PV,
 while the default MPC current-PV input is the forecast; the outputs disclose this
 information difference and any tracking fallback.
 
-`configs/research/price_forecast_training.yaml` and
+`configs/research/price_forecast_training_v3.yaml`,
+`configs/research/price_forecast_extended_2024_training_v2.yaml`, and
 `scripts/fit_energy_price_forecast.py` define the chronological forecasting
 workflow. It compares seasonal persistence, standardized ridge regression on
 calendar/price lags, and ridge with configured fundamentals. Ridge minimizes
@@ -119,8 +137,15 @@ reports all declared models rather than selecting the highest trading profit.
 Its snapshot IDs, checksums, publication-clock assumptions and exclusions remain
 part of the resulting artifacts.
 
-The controller matrix names the `ridge_price_only` artifacts by fold as an
-explicit baseline choice. These files must actually exist. The launcher lists
+The controller matrix names `ridge_price_only` artifacts by fold as an
+explicit baseline choice and includes a `ridge_fundamentals` comparison.
+Day-ahead training starts in 2024. The extended intraday models also use the
+2024 hourly exports as coarse training targets, repeated on the quarter-hour
+grid; these are not independent native quarter-hour products. Settlement
+history starts in 2025. The October 2025, January 2026 and August 2026 folds
+remain chronological, with a held-out calibration tail. Historical publication
+clocks are assumptions, not proven vintage availability. These files must
+actually exist. The launcher lists
 missing artifacts and refuses to start the selected batch if any are absent.
 Observed-price sidecars support later eligible lag updates; eligibility filtering
 still occurs at prediction time. Exact historical publication evidence is not
@@ -132,6 +157,13 @@ ECC requires a real calibrated-marginal NPZ with the schema validated by
 window. It neither invents a calibration model nor treats sorted raw members as
 evidence of calibration. ECC rearranges marginal samples according to raw
 ensemble ranks, following [Schefzik et al.](https://arxiv.org/abs/1302.7149).
+The fitted affine bias and spread parameters use January 1–14 targets and are
+frozen for January 15–16 and August 2–3 evaluation. At replay time they apply
+to the currently eligible raw member forecasts, so a new cycle or member count
+is supported. Calibrated ECC and calibrated shuffle retain identical empirical
+marginals, allowing a dependence comparison. Calibration was mixed across farms
+and worsened August CRPS for three of four farms; see the saved calibration
+summary rather than interpreting calibration as a universal improvement.
 
 The continuation calculation conditions on nominal future PV, settlement prices
 and known commitments after the current MPC horizon. It uses an explicit SOC
@@ -143,18 +175,20 @@ does not reproduce that paper's Markov-price algorithm or claim its performance.
 
 ## Concrete study matrix and compute
 
-The default YAML declares **19 cases**, **4 farms** and **2 windows**: **152 jobs**.
+The default YAML declares **26 cases**, **4 farms** and **2 windows**: **208 jobs**.
 Each job runs grid tracking plus one target controller for two delivery days.
-This gives **304 controller trajectories**, **29,184 MPC decisions** and
-**2,240 nominal auction-submission solves**. The DA-only cases have fewer auction
+This gives **416 controller trajectories**, **39,936 MPC decisions** and
+**3,136 nominal auction-submission solves**. The DA-only cases have fewer auction
 solves. Counts are computed from the configured market calendar, including
 92/100-product DST days, rather than assuming 96 products per date.
 
 The cases cover deterministic/ensemble penalties, deterministic/ensemble
 settlement-price oracles, deterministic/ensemble forecast economics, adaptive raw
-scenarios, causal auction prices, shuffled/ECC/reduced scenarios, continuation,
+scenarios, price-only and fundamental causal auction prices, shuffled/ECC/reduced scenarios, continuation,
 monetary risk, the information/access factorial, and independent energy/power/POI
-contrasts. This inventory is not a hyperparameter search. Broader January/August
+contrasts. Calibrated forecasts are also crossed with each asset contrast, and
+calibrated ECC is compared with a shuffled version with identical marginals.
+This inventory is not a hyperparameter search. Broader January/August
 evaluation requires editing the explicit windows and reviewing the resulting
 counts and data coverage.
 
@@ -210,12 +244,24 @@ the launcher never falls back to an oracle to make a forecast case run.
 The batch manifest records exact case counts, source hashes, configuration hash,
 artifact requirements and each job's status. Every replay retains its input
 fingerprint/provenance, actual auction ledger, interval dispatch, conditional MPC
-plans, realized cash, solver status, runtime and fallback evidence.
+plans, realized cash, solver status, runtime and fallback evidence. The research
+configs write completed days of horizon diagnostics to checksummed Parquet
+partitions, keeping current controller state in memory. Use
+`bess_pv_trading.reporting.mpc_history.iter_mpc_history` to stream those records;
+the default outside these studies remains the existing in-memory output mode.
+
+Auction forecast cases currently supply point price curves to the auction
+optimizer. Settlement-price uncertainty uses residual trajectories. The library
+does not yet learn a joint multi-auction spread distribution, and this study
+therefore cannot establish the value of that unimplemented extension.
 
 `daily_metrics.csv` joins completed jobs. Each case receives a Markdown/CSV/JSON
 comparison and plots against **its own** continuous grid-tracking baseline.
 Declared cross-case baselines receive separate contrasts, and complete matched
-information/access cells receive a factorial report. These comparisons include
+information/access cells receive a factorial report. When all four relevant
+cases are present, separate energy, power and POI reports quantify how the
+calibration effect changes with physical flexibility, after verifying that the
+only physical differences are the declared ratings. These comparisons include
 changes to later auction quantities caused by a different controller's state;
 they are full continuous-policy effects, not fixed-commitment effects.
 

@@ -50,6 +50,7 @@ realtime_mpc:
   terminal_soc_target_percent: 50.0
   terminal_inventory_penalty_eur_per_mwh: 50.0
   solver_time_limit_seconds: 10.0
+  oracle_stage2_time_limit_seconds: 10.0
   ensemble_include_deterministic_member: true
   recourse_stages: [4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80, 84, 88, 92]
   recourse_observation_lag_intervals: 1
@@ -89,7 +90,7 @@ energy_price_forecast:
   auction_enabled: false
   settlement_enabled: true
   seed: 17
-  # Expected outputs of configs/research/price_forecast_training.yaml. They are
+  # Outputs of the v3 chronological and v2 extended-2024 training workflows.
   # mandatory for enabled forecasts; plan/check-only never fits missing models.
   artifacts:
     DA: outputs/energy_price_forecasts/chronological_2026_v3/january/ridge_price_only/DA/model.json
@@ -174,6 +175,25 @@ energy_research_study:
     updates_off_all_auctions: frozen_information
     updates_on_da_only: da_only_latest
     updates_off_da_only: da_only_frozen
+  forecast_flexibility_factorials:
+    energy:
+      raw_base: adaptive_raw
+      calibrated_base: adaptive_ecc
+      raw_modified: double_battery_energy
+      calibrated_modified: calibrated_double_energy
+      changed_fields: [[battery, capacity_mwh]]
+    power:
+      raw_base: adaptive_raw
+      calibrated_base: adaptive_ecc
+      raw_modified: half_battery_power
+      calibrated_modified: calibrated_half_power
+      changed_fields: [[battery, max_power_mw]]
+    poi:
+      raw_base: adaptive_raw
+      calibrated_base: adaptive_ecc
+      raw_modified: half_poi_capacity
+      calibrated_modified: calibrated_half_poi
+      changed_fields: [[plant, poi_import_mw], [plant, poi_export_mw]]
   cases:
     - id: deterministic_penalty
       family: controller
@@ -203,6 +223,22 @@ energy_research_study:
         energy_price_forecast: {settlement_enabled: false}
         realtime_mpc_comparison: {controllers: [track_committed_grid, ensemble_mpc_price_oracle]}
         execution: {dispatch_policy: ensemble_mpc_price_oracle}
+    - id: deterministic_oracle_gap_fallback
+      family: oracle_gap_fallback
+      baseline_case: deterministic_price_oracle
+      overrides:
+        energy_price_forecast: {settlement_enabled: false}
+        realtime_mpc_comparison: {controllers: [track_committed_grid, deterministic_mpc_price_oracle]}
+        execution: {dispatch_policy: deterministic_mpc_price_oracle}
+        realtime_mpc: {oracle_fallback_max_relative_gap: 0.01, oracle_stage2_time_limit_seconds: 10.0}
+    - id: ensemble_oracle_gap_fallback
+      family: oracle_gap_fallback
+      baseline_case: ensemble_price_oracle
+      overrides:
+        energy_price_forecast: {settlement_enabled: false}
+        realtime_mpc_comparison: {controllers: [track_committed_grid, ensemble_mpc_price_oracle]}
+        execution: {dispatch_policy: ensemble_mpc_price_oracle}
+        realtime_mpc: {oracle_fallback_max_relative_gap: 0.01, oracle_stage2_time_limit_seconds: 10.0}
     - id: deterministic_economic
       family: price_information
       baseline_case: deterministic_penalty

@@ -7,6 +7,7 @@ joined into a fictitious consecutive block or treated as independent farm rows.
 
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from pathlib import Path
 
@@ -268,6 +269,64 @@ def factorial_effects(frame, cases, *, controller, physical_controls, metric="re
             "aggregate": _statistics(values.sum(axis=1), draws, confidence, segments)[0],
             "farms": [{"farm_id": farm, **row} for farm, row in zip(farms, statistics)]})
     result.update(status="complete" if not coverage["excluded_days"] else "partial_coverage", calendar_segments=segments)
+    return result
+
+
+def forecast_flexibility_factorial(frame, cases, *, controller, physical_controls,
+                                   changed_fields, **settings):
+    """Compare calibration effects at two physical settings on matched dates.
+
+    Controls are keyed by case and then by farm/window. Within each physical
+    setting the calibrated and raw cases must match exactly. Across settings,
+    only the explicitly named battery or POI fields may differ.
+    """
+    required = {(False, False), (True, False), (False, True), (True, True)}
+    if set(cases) != required or len(set(cases.values())) != 4:
+        raise ValueError("Forecast/flexibility analysis requires four distinct cells")
+    if not changed_fields or any(not isinstance(path, (list, tuple)) or len(path) != 2
+                                 or path[0] not in {"battery", "plant"} for path in changed_fields):
+        raise ValueError("Declare physical fields that the flexibility contrast changes")
+    if not isinstance(physical_controls, dict) or set(physical_controls) != set(cases.values()):
+        raise ValueError("Forecast/flexibility analysis requires controls for each cell")
+    raw_base = physical_controls[cases[False, False]]
+    calibrated_base = physical_controls[cases[True, False]]
+    raw_changed = physical_controls[cases[False, True]]
+    calibrated_changed = physical_controls[cases[True, True]]
+    if not raw_base or raw_base != calibrated_base or raw_changed != calibrated_changed:
+        raise ValueError("Raw and calibrated cases must have matching physical controls")
+    if set(raw_base) != set(raw_changed):
+        raise ValueError("Flexibility cells must cover the same farms and windows")
+    normalized_base = deepcopy(raw_base)
+    normalized_changed = deepcopy(raw_changed)
+    any_change = False
+    for identity in normalized_base:
+        for section, field in changed_fields:
+            try:
+                before = normalized_base[identity][section].pop(field)
+                after = normalized_changed[identity][section].pop(field)
+            except (KeyError, AttributeError) as error:
+                raise ValueError("Declared flexibility field is missing from physical controls") from error
+            any_change |= before != after
+    if not any_change or normalized_base != normalized_changed:
+        raise ValueError("Only the declared flexibility fields may differ across physical settings")
+    # Reuse the same complete-case matching and calendar-block resampling engine.
+    # Explicit matching was checked above; the generic helper sees identical
+    # normalized controls while computing the same four-cell arithmetic.
+    controls = {case: normalized_base for case in cases.values()}
+    result = factorial_effects(frame, cases, controller=controller, physical_controls=controls, **settings)
+    names = {"updates_without_auction_access": "calibration_at_base_flexibility",
+        "updates_with_auction_access": "calibration_at_modified_flexibility",
+        "auction_access_without_updates": "flexibility_with_raw_forecasts",
+        "auction_access_with_updates": "flexibility_with_calibrated_forecasts",
+        "mean_update_effect": "mean_calibration_effect",
+        "mean_auction_access_effect": "mean_flexibility_effect"}
+    for effect in result["effects"]:
+        effect["effect"] = names.get(effect["effect"], effect["effect"])
+    for cell in result["cases"]:
+        cell["calibrated"] = cell.pop("updates")
+        cell["flexibility_modified"] = cell.pop("auction_access")
+    result["changed_fields"] = [list(path) for path in changed_fields]
+    result["physical_controls"] = {"base": raw_base, "modified": raw_changed}
     return result
 
 

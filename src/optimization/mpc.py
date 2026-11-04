@@ -53,6 +53,9 @@ class MpcSettings:
     terminal_inventory_value_eur_per_mwh: float | None = None
     oracle_relative_imbalance_budget: float = 0.0
     oracle_absolute_imbalance_budget_mwh: float = 0.0
+    oracle_fallback_max_relative_gap: float | None = None
+    oracle_fallback_time_reserve_fraction: float = 0.5
+    oracle_stage2_time_limit_seconds: float | None = None
     ensemble_include_deterministic_member: bool = True
     scenario_weights: Mapping[str, float] | None = None
     solver_time_limit_seconds: float = 10.0
@@ -81,6 +84,18 @@ class MpcSettings:
                 raise ValueError(f"realtime_mpc.{name} must be finite and nonnegative")
         if self.solver_time_limit_seconds <= 0 or not 0 <= self.terminal_soc_target_percent <= 100:
             raise ValueError("MPC needs positive solve time and a terminal target in [0,100]")
+        gap = self.oracle_fallback_max_relative_gap
+        if gap is not None and (isinstance(gap, bool) or not isinstance(gap, (int, float))
+                                or not np.isfinite(gap) or not 0 <= gap < 1):
+            raise ValueError("Oracle fallback maximum relative gap must be null or in [0,1)")
+        reserve = self.oracle_fallback_time_reserve_fraction
+        if (isinstance(reserve, bool) or not isinstance(reserve, (int, float))
+                or not np.isfinite(reserve) or not 0 < reserve < 1):
+            raise ValueError("Oracle fallback time reserve fraction must be strictly between zero and one")
+        stage2_time = self.oracle_stage2_time_limit_seconds
+        if stage2_time is not None and (isinstance(stage2_time, bool) or not isinstance(stage2_time, (int, float))
+                                        or not np.isfinite(stage2_time) or stage2_time <= 0):
+            raise ValueError("Oracle stage-two time limit must be null or a positive number of seconds")
         if self.terminal_inventory_mode not in {"none", "soft_target", "linear_value", "piecewise_linear"}:
             raise ValueError("Unknown MPC terminal_inventory_mode")
         if self.current_pv_information not in {"forecast", "realized_interval_average"}:
@@ -621,6 +636,16 @@ def _component_validation_allowances(inputs, physical_residuals, feasibility_tol
     return {name: max(1e-6, value) for name, value in allowances.items()}
 
 
+def _oracle_incumbent_gap(incumbent_mwh, lower_bound_mwh):
+    """Compute a conservative relative gap from independently reconstructed MWh."""
+    if not np.isfinite(incumbent_mwh) or not np.isfinite(lower_bound_mwh) or incumbent_mwh < 0:
+        return None
+    difference = max(0.0, incumbent_mwh - lower_bound_mwh)
+    if incumbent_mwh == 0:
+        return 0.0 if difference == 0 else None
+    return difference / incumbent_mwh
+
+
 def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
     """Solve within one total budget, validating every action before exposing it."""
     if inputs.policy in RESEARCH_MPC_POLICIES:
@@ -666,19 +691,42 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
             settings.planning_imbalance_penalty_eur_per_mwh * expressions["absolute_imbalance_mwh"] + costs)
         model.setObjective(objective, gp.GRB.MINIMIZE)
 
-        def optimize_stage(name):
+        def optimize_stage(name, maximum_seconds=None, *, independent_budget=False):
             remaining = max(0.0, settings.solver_time_limit_seconds - (perf_counter() - started))
-            model.setParam("TimeLimit", remaining)
+            time_limit = maximum_seconds if independent_budget else (
+                remaining if maximum_seconds is None else min(remaining, maximum_seconds))
+            model.setParam("TimeLimit", time_limit)
             model.optimize()
             row = {"stage": name, "status": classify_status(model.Status, model.SolCount),
-                   "runtime_seconds": float(model.Runtime), "objective": None, "bound": None, "gap": None}
+                   "runtime_seconds": float(model.Runtime), "time_limit_seconds": float(time_limit),
+                   "objective": None, "bound": None, "gap": None}
             if model.SolCount:
                 row.update(objective=float(model.ObjVal), bound=float(model.ObjBound),
                            gap=float(model.MIPGap) if np.isfinite(model.MIPGap) else None)
             diagnostics["stages"].append(row)
             return model.SolCount > 0
 
-        if not optimize_stage("minimum_absolute_imbalance" if oracle else "price_blind"):
+        fallback_gap = settings.oracle_fallback_max_relative_gap if oracle else None
+        independent_first = oracle and settings.oracle_stage2_time_limit_seconds is not None
+        first_budget = settings.solver_time_limit_seconds if independent_first else None
+        if fallback_gap is not None and not independent_first:
+            first_budget = max(0.0, settings.solver_time_limit_seconds - (perf_counter() - started))
+            first_budget *= 1 - settings.oracle_fallback_time_reserve_fraction
+        found = optimize_stage("minimum_absolute_imbalance" if oracle else "price_blind", first_budget,
+                               independent_budget=independent_first)
+        # If the reserved first stage has not met the requested fallback gap,
+        # spend the remaining time improving it rather than accept a poor bound.
+        if fallback_gap is not None and model.Status == gp.GRB.TIME_LIMIT:
+            first_gap = None
+            if found:
+                preliminary = _plan_from_solution(inputs, variables, expressions)
+                preliminary_components, _ = validate_mpc_plan(inputs, preliminary,
+                    max(1e-7, 2 * model.Params.FeasibilityTol))
+                first_gap = _oracle_incumbent_gap(preliminary_components["absolute_imbalance_mwh"], model.ObjBound)
+            if (first_gap is None or first_gap > fallback_gap) and not independent_first:
+                if perf_counter() - started < settings.solver_time_limit_seconds:
+                    found = optimize_stage("minimum_absolute_imbalance_continued")
+        if not found:
             result.status = diagnostics["stages"][-1]["status"]
             return result
         # Keep the certified/feasible first-stage plan before replacing its objective.
@@ -688,14 +736,27 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
         result.plan = first_plan
         certified = model.Status == gp.GRB.OPTIMAL
         diagnostics["stage1_minimum_certified"] = bool(oracle and certified)
-        if oracle and certified:
+        first_gap = _oracle_incumbent_gap(stage1_components["absolute_imbalance_mwh"], model.ObjBound) if oracle else None
+        qualified = bool(oracle and model.Status == gp.GRB.TIME_LIMIT and fallback_gap is not None
+                         and first_gap is not None and first_gap <= fallback_gap)
+        if oracle:
+            bound = float(model.ObjBound)
+            diagnostics.update(stage1_incumbent_mwh=stage1_components["absolute_imbalance_mwh"],
+                stage1_lower_bound_mwh=bound if np.isfinite(bound) else None, stage1_relative_gap_reconstructed=first_gap,
+                oracle_fallback_qualified=qualified, oracle_fallback_max_relative_gap=fallback_gap)
+        if oracle and (certified or qualified):
             minimum = stage1_components["absolute_imbalance_mwh"]
             budget = minimum * settings.oracle_relative_imbalance_budget + settings.oracle_absolute_imbalance_budget_mwh
-            diagnostics.update(stage1_l_min_mwh=minimum, oracle_additional_budget_mwh=budget,
-                               oracle_imbalance_cap_mwh=minimum + budget)
+            diagnostics.update(oracle_cap_reference="certified_incumbent" if certified else "gap_qualified_incumbent",
+                               oracle_additional_budget_mwh=budget, oracle_imbalance_cap_mwh=minimum + budget)
+            if certified:
+                diagnostics["stage1_l_min_mwh"] = minimum
             model.addConstr(expressions["absolute_imbalance_mwh"] <= minimum + budget, name="oracle_imbalance_budget")
             model.setObjective(expressions["settlement_eur"] - costs, gp.GRB.MAXIMIZE)
-            if perf_counter() - started < settings.solver_time_limit_seconds and optimize_stage("signed_settlement_economics"):
+            separate_budget = settings.oracle_stage2_time_limit_seconds is not None
+            can_refine = separate_budget or perf_counter() - started < settings.solver_time_limit_seconds
+            if can_refine and optimize_stage("signed_settlement_economics",
+                    settings.oracle_stage2_time_limit_seconds, independent_budget=separate_budget):
                 candidate = _plan_from_solution(inputs, variables, expressions)
                 candidate_components, _ = validate_mpc_plan(inputs, candidate,
                     max(1e-7, 2 * model.Params.FeasibilityTol))
@@ -726,9 +787,9 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
                 raise ValueError(f"MPC objective component validation failed: {errors}")
         result.plan.components = components
         diagnostics["components"] = components
-        if oracle and certified:
+        if oracle and (certified or qualified):
             diagnostics["oracle_additional_imbalance_used_mwh"] = max(0.0,
-                components["absolute_imbalance_mwh"] - diagnostics["stage1_l_min_mwh"])
+                components["absolute_imbalance_mwh"] - diagnostics["stage1_incumbent_mwh"])
         diagnostics["planning_objective_value"] = (components["settlement_eur"] - sum(components[k] for k in
             ("degradation_eur", "import_cost_eur", "terminal_cost_eur")) if diagnostics.get("oracle_stage2_used") else
             components["absolute_imbalance_mwh"] if oracle else
@@ -756,9 +817,9 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
         diagnostics["status"] = result.status
         diagnostics["planning_objective_units"] = ("MWh" if inputs.oracle is not None
             and not diagnostics.get("oracle_stage2_used", False) else "EUR")
-        if result.plan is not None and "stage1_l_min_mwh" in diagnostics:
+        if result.plan is not None and "oracle_imbalance_cap_mwh" in diagnostics:
             diagnostics["oracle_additional_imbalance_used_mwh"] = max(0.0,
-                result.plan.components["absolute_imbalance_mwh"] - diagnostics["stage1_l_min_mwh"])
+                result.plan.components["absolute_imbalance_mwh"] - diagnostics["stage1_incumbent_mwh"])
         if result.plan is None:
             diagnostics["fallback_applied"] = True
         if model is not None:
