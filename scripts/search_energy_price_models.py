@@ -68,17 +68,20 @@ def run_search(config, *, check_only=False):
     jobs, coverage, lineage = [], [], {}
     for group, split in study["product_groups"].items():
         resolution = split["native_minutes"]
-        history, evidence = load_price_history(study["database"], provider="gme", dataset="day_ahead_prices",
-            zone="NORD", interval_minutes=resolution, native_resolution_minutes=resolution,
-            publication_local_time="12:57", publication_day_offset=-1, timezone=study["timezone"],
+        target_name = split.get("target", "DA")
+        target = source_manifest["plan"]["targets"][target_name]
+        # Retain each market's actual delivery window and declared decision and
+        # publication assumptions while splitting by native product duration.
+        history, evidence = load_price_history(study["database"], **target["source"],
+            interval_minutes=resolution, native_resolution_minutes=resolution, timezone=study["timezone"],
             start=split["history_start"], end=split["history_end"])
         lineage[group] = evidence
         datasets = {}
         for feature_set in study["feature_sets"]:
             names = tuple(item["name"] for item in feature_sets[feature_set])
             settings = PriceForecastSettings(lag_hours=tuple(study["lag_hours"]), interval_minutes=resolution,
-                timezone=study["timezone"], exogenous_features=names, decision_local_time="11:45",
-                decision_day_offset=-1, daily_lag_fallback="target_clock")
+                timezone=study["timezone"], exogenous_features=names, daily_lag_fallback="target_clock",
+                **target.get("settings", {}))
             datasets[feature_set] = prepare_search_matrix(history, settings, exogenous,
                 cutoff=split["cutoff"], validation_start=split["validation_start"], validation_end=split["validation_end"])
         days = complete_shared_days(list(datasets.values()), start=split["validation_start"],
@@ -90,7 +93,7 @@ def run_search(config, *, check_only=False):
             training_rows = int(data["training"].sum())
             if training_rows < 100:
                 raise ValueError(f"Insufficient native training rows for {group}/{feature_set}")
-            coverage.append({"group": group, "feature_set": feature_set, "native_minutes": resolution,
+            coverage.append({"group": group, "target": target_name, "feature_set": feature_set, "native_minutes": resolution,
                              "training_rows": training_rows, "shared_days": len(days),
                              "validation_rows": int(selected.sum()), "fallback_count": data["fallback_count"]})
             if check_only:

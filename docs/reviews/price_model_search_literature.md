@@ -20,7 +20,8 @@ current initial search selects on January–June 2025 for hourly products and
 February–April 2026 for quarter-hour products; later periods remain held out.
 Their different forecast eras make the two resolution models separate tasks,
 not directly comparable estimates of a treatment effect. Intraday and settlement
-models need their own native-resolution data and folds. More history may improve
+models use their own native-resolution data and folds in
+`configs/research/price_model_search_intraday.yaml`. More history may improve
 the hourly task, but cannot provide quarter-hour labels before those products.
 The available 2026 span is shorter than the year-long test recommended in the
 benchmark and cannot establish year-round generalization.
@@ -37,7 +38,7 @@ historical publication times are not a prerequisite at this stage.
 
 `scripts/search_energy_price_models.py` prepares native-resolution data and
 shared complete validation days for the candidate estimators. Its current
-configuration is a first day-ahead validation search, not a complete study over
+configurations are first validation searches, not a complete study over
 every auction, training window, feature set, hyperparameter or held-out period.
 These estimators are not yet integrated as portable MPC forecast artifacts.
 Do not label them LEAR or claim a selected model or improved score until the

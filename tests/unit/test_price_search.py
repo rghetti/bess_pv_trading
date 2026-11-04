@@ -61,3 +61,14 @@ def test_worker_saves_predictions_and_scores(tmp_path):
     assert result["training_rows"] == 20
     assert result["observations"] == 10
     assert len(pd.read_csv(output)) == 10
+
+
+def test_intraday_search_declares_separate_native_market_models():
+    """Each auction and settlement is fitted as its own quarter-hour task."""
+    from pathlib import Path
+    from bess_pv_trading.config import load_config
+
+    root = Path(__file__).resolve().parents[2]
+    study = load_config(root / "configs/research/price_model_search_intraday.yaml")["price_model_search"]
+    assert {group["target"] for group in study["product_groups"].values()} == {"IDA1", "IDA2", "IDA3", "settlement"}
+    assert all(group["native_minutes"] == 15 for group in study["product_groups"].values())
