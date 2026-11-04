@@ -487,6 +487,9 @@ def test_lagged_auction_price_keeps_original_release_clock():
     assert _exogenous_values(feature, ["past_ida1_24h"], starts, late)[0, 0] == 75.0
     with pytest.raises(ValueError, match="at least 24 hours"):
         _lagged_auction_feature(source, "IDA1", 0)
+    settlement = _lagged_auction_feature(source, "settlement", 72)
+    assert settlement.feature.iloc[0] == "past_settlement_72h"
+    assert settlement.available_at.iloc[0] == source.available_at.iloc[0]
 
 
 def test_cleared_search_includes_same_and_neighboring_historical_products():

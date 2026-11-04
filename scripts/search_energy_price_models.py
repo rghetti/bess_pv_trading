@@ -435,16 +435,16 @@ def _neighbor_price_feature(prior_values, name, offset, *, boundary="unbounded",
 
 
 def _lagged_auction_name(market, lag_hours):
-    """Validate and name a strictly historical auction-price feature."""
-    if market not in {"DA", "IDA1", "IDA2", "IDA3"}:
-        raise ValueError("Unknown lagged auction market")
+    """Validate and name a strictly historical market-price feature."""
+    if market not in {"DA", "IDA1", "IDA2", "IDA3", "settlement"}:
+        raise ValueError("Unknown lagged price market")
     if isinstance(lag_hours, bool) or not isinstance(lag_hours, int) or lag_hours < 24:
         raise ValueError("Lagged auction features require an integer lag of at least 24 hours")
     return f"past_{market.lower()}_{lag_hours}h"
 
 
 def _lagged_auction_feature(prior_values, market, lag_hours):
-    """Move past auction deliveries to later products, retaining publication time."""
+    """Move past market deliveries to later products, retaining publication time."""
     name = _lagged_auction_name(market, lag_hours)
     feature = prior_values.copy()
     feature["product_start"] += pd.Timedelta(hours=lag_hours)
