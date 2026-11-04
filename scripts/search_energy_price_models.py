@@ -100,6 +100,19 @@ def _candidate_predict(spec, train_x, train_y, test_x, *, train_starts=None, tes
     return prediction
 
 
+def _validate_slot_coverage(train_starts, test_starts, timezone, minimum):
+    """Fail preflight if any evaluated local slot lacks enough eligible examples."""
+    train_local = pd.DatetimeIndex(pd.to_datetime(train_starts, utc=True)).tz_convert(timezone)
+    test_local = pd.DatetimeIndex(pd.to_datetime(test_starts, utc=True)).tz_convert(timezone)
+    train_slots = train_local.hour * 60 + train_local.minute
+    test_slots = np.unique(test_local.hour * 60 + test_local.minute)
+    counts = {int(slot): int(np.sum(train_slots == slot)) for slot in test_slots}
+    insufficient = {slot: count for slot, count in counts.items() if count < minimum}
+    if insufficient:
+        raise ValueError(f"Insufficient per-slot training coverage: {insufficient}")
+    return min(counts.values()) if counts else 0
+
+
 def _fit_candidate(job):
     """Fit one estimator and retain its interval-level validation predictions."""
     configure_worker_threads(job["threads"], configure_torch=False)
@@ -422,9 +435,16 @@ def run_search(config, *, check_only=False):
             training_rows = int(data["training"].sum())
             if training_rows < 100:
                 raise ValueError(f"Insufficient native training rows for {group}/{feature_set}")
+            slot_candidates = [candidate for candidate in study["candidates"] if candidate["family"].startswith("slot_")]
+            slot_minimum = None
+            if slot_candidates:
+                required = max(candidate["parameters"].get("min_rows_per_slot", 30) for candidate in slot_candidates)
+                slot_minimum = _validate_slot_coverage(data["starts"][data["training"]], data["starts"][selected],
+                                                       study["timezone"], required)
             coverage.append({"group": group, "target": target_name, "feature_set": feature_set, "native_minutes": resolution,
                              "training_rows": training_rows, "shared_days": len(days),
-                             "validation_rows": int(selected.sum()), "fallback_count": data["fallback_count"]})
+                             "validation_rows": int(selected.sum()), "fallback_count": data["fallback_count"],
+                             "minimum_training_rows_per_evaluated_slot": slot_minimum})
             if check_only:
                 continue
             dataset = destination / f"{group}__{feature_set}.npz"

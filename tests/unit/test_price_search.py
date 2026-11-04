@@ -209,6 +209,16 @@ def test_local_slot_models_fit_separate_relations_without_future_labels():
             train_starts=starts[:30], test_starts=starts[30:], timezone="UTC", seed=1, threads=1)
 
 
+def test_slot_preflight_rejects_missing_or_sparse_delivery_slots():
+    """Total training volume must not hide a missing delivery slot."""
+    from scripts.search_energy_price_models import _validate_slot_coverage
+
+    starts = pd.to_datetime(["2025-01-01T00:00Z", "2025-01-02T00:00Z", "2025-01-01T01:00Z"])
+    assert _validate_slot_coverage(starts, starts[:1], "UTC", 2) == 2
+    with pytest.raises(ValueError, match="Insufficient per-slot"):
+        _validate_slot_coverage(starts, starts[2:], "UTC", 2)
+
+
 def test_slot_worker_reads_training_timestamps_and_writes_predictions(tmp_path):
     """The isolated worker carries local-slot timestamps through the artifact path."""
     from scripts.search_energy_price_models import _fit_candidate
