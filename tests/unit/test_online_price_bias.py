@@ -25,3 +25,24 @@ def test_online_bias_uses_only_prior_published_and_completed_products():
     changed = actual.copy()
     changed[2] = 10000
     assert online_bias(changed, predicted, *args, window_days=7, block_hours=24, shrinkage=0) == pytest.approx(correction)
+
+
+def test_bias_configuration_selection_does_not_use_later_targets():
+    """Perturbing evaluation labels cannot change tuning-period selection."""
+    from scripts.evaluate_online_price_bias import evaluate_bias
+
+    starts = pd.date_range("2026-01-01T12:00Z", periods=8, freq="D").as_unit("ns")
+    actual = np.array([100., 102., 104., 106., 108., 110., 112., 114.])
+    predicted = np.full(8, 100.)
+    ends = (starts + pd.Timedelta(hours=1)).asi8
+    decisions = (starts - pd.Timedelta(hours=2)).asi8
+    days = starts.strftime("%Y-%m-%d")
+    settings = {"tune_start": "2026-01-01", "tune_end_exclusive": "2026-01-05",
+                "test_start": "2026-01-05", "test_end_exclusive": "2026-01-09",
+                "window_days": [3, 7], "block_hours": [24], "shrinkage": [0, 2]}
+    args = (predicted, predicted + 5, starts.asi8, ends, ends, decisions, days, np.full(8, 12), settings)
+    first, test, _ = evaluate_bias(actual, *args)
+    changed = actual.copy()
+    changed[test] += 500
+    second, _, _ = evaluate_bias(changed, *args)
+    assert first["selected"] == second["selected"]
