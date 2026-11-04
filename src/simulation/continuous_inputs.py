@@ -85,15 +85,17 @@ def _replacement_evidence(config):
     artifact = config_path(config, model["artifact_path"])
     if not artifact.is_file():
         return {"status": "fallback_artifact_missing", "artifact": str(artifact)}
-    metadata = json.loads(artifact.read_text()) if model.get("kind") == "weather_bundle" else {}
+    metadata = json.loads(artifact.read_text()) if model.get("kind") in {"weather_bundle", "reviewed_hpo"} else {}
     checksums = {artifact.name: hashlib.sha256(artifact.read_bytes()).hexdigest()}
     # A model can change independently of YAML; pin and validate every bundle file.
     for name, expected in metadata.get("checksums", {}).items():
+        if model.get("kind") == "reviewed_hpo" and name == "prediction_mw.npy":
+            continue
         actual = hashlib.sha256((artifact.parent / name).read_bytes()).hexdigest()
         if actual != expected:
             raise ValueError(f"Forecast bundle checksum mismatch: {name}")
         checksums[name] = actual
-    if model.get("kind") in {"weather_bundle", "neural"}:
+    if model.get("kind") in {"weather_bundle", "neural", "reviewed_hpo"}:
         import torch
         torch.set_num_threads(int(config["solver"]["threads"]))
     return {"status": "pinned", "model": model["name"], "artifact": str(artifact),
@@ -112,9 +114,8 @@ def _replace_initial_forecast(config, day, cutoff, grid, bundle, forecast, actua
     farm = int(config["forecast"]["farm_id"])
     model = models.get(str(farm), models.get(farm))
     available = pd.Timestamp(evidence["available_at_utc"])
-    if model["kind"] != "weather_bundle" or (available > cutoff and not settings.get("allow_retrospective_artifacts", False)):
+    if model["kind"] not in {"weather_bundle", "reviewed_hpo"} or (available > cutoff and not settings.get("allow_retrospective_artifacts", False)):
         return forecast, actual, bundle, provenance
-    from ..forecasting.inference.pv_forecast_bundle import predict_bundle
 
     frame = bundle.values.copy(deep=True)
     frame["interval_start_utc"] = pd.DatetimeIndex(grid.starts)
@@ -124,7 +125,18 @@ def _replace_initial_forecast(config, day, cutoff, grid, bundle, forecast, actua
     frame["auction"] = "DA"
     frame["forecast_cycle_utc"] = pd.Timestamp(bundle.forecast_vintage)
     policy = config.get("policy", {}).get("forecast_pv_night", {})
-    forecast = predict_bundle(frame, Path(evidence["artifact"]).parent, farm_id=farm, night_policy=policy)
+    if model['kind'] == 'reviewed_hpo':
+        if getattr(bundle, 'provenance', {}).get('reviewed_hpo_model') == model['name']:
+            forecast = bundle.values['pv_ac_mw'].to_numpy(dtype=float).copy()
+        else:
+            from ..forecasting.inference.pv_reviewed_hpo import predict_reviewed_hpo
+            frame['forecast_available_at_utc'] = pd.Timestamp(bundle.available_at)
+            frame['decision_cutoff_utc'] = pd.Timestamp(cutoff)
+            forecast = predict_reviewed_hpo(frame, Path(evidence['artifact']).parent,
+                                            farm_id=farm, night_policy=policy)
+    else:
+        from ..forecasting.inference.pv_forecast_bundle import predict_bundle
+        forecast = predict_bundle(frame, Path(evidence["artifact"]).parent, farm_id=farm, night_policy=policy)
     values = bundle.values.copy(deep=True)
     values["pv_ac_mw"] = forecast
     bundle = replace(bundle, values=values)
@@ -160,8 +172,8 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
         raise ValueError("PV ensemble model selection is missing for the selected farm")
     use_bundle = bool(replacement.get("enabled") and model is not None)
     if use_bundle:
-        if model.get("kind") != "weather_bundle":
-            raise ValueError("PV ensemble model requires a configured weather bundle for the selected farm")
+        if model.get("kind") not in {"weather_bundle", "reviewed_hpo"}:
+            raise ValueError("PV ensemble model requires a supported weather model bundle")
         artifact = config_path(config, model["artifact_path"])
         if not artifact.is_file():
             raise ValueError(f"PV ensemble model artifact is missing: {artifact}")
@@ -187,8 +199,6 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
             if use_bundle:
                 if available_at > pd.Timestamp(first_cutoff) and not replacement.get("allow_retrospective_artifacts", False):
                     raise ValueError(f"PV ensemble model was not available at the first cutoff for {day}")
-                from ..forecasting.inference.pv_forecast_bundle import predict_bundle
-
                 # Keep member curves independent for both interpolation and neural sequence packing.
                 frame = weather.values.copy().reset_index(drop=False)
                 frame["interval_start_utc"] = np.tile(starts, len(members))
@@ -196,8 +206,19 @@ def _prepare_pv_ensembles(config, days_data, progress=None):
                 frame["auction"] = "DA"
                 frame["forecast_cycle_utc"] = cycle
                 frame["_scenario_member"] = frame["member"].astype(str)
-                predicted = predict_bundle(frame, artifact.parent, farm_id=farm_id,
-                                           night_policy=forecast_night)
+                if model['kind'] == 'reviewed_hpo':
+                    from ..forecasting.inference.pv_reviewed_hpo import predict_reviewed_hpo
+                    frame['forecast_available_at_utc'] = pd.Timestamp(weather.available_at)
+                    frame['decision_cutoff_utc'] = pd.Timestamp(first_cutoff)
+                    predicted = np.empty(len(frame), dtype=float)
+                    for member in members:
+                        member_mask = frame['_scenario_member'].to_numpy() == member
+                        predicted[member_mask] = predict_reviewed_hpo(frame.loc[member_mask].copy(),
+                            artifact.parent, farm_id=farm_id, night_policy=forecast_night)
+                else:
+                    from ..forecasting.inference.pv_forecast_bundle import predict_bundle
+                    predicted = predict_bundle(frame, artifact.parent, farm_id=farm_id,
+                                               night_policy=forecast_night)
                 values = np.stack([predicted[frame["_scenario_member"].to_numpy() == member]
                                    for member in members])
                 conversion = {"model": model.get("name"), "kind": model["kind"],
@@ -300,7 +321,10 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     settings = config["continuous_optimization"]
     # Keep legacy tracking preflight/fingerprints unchanged. MPC workflows pin
     # model artifacts and use the selected model for their initial fallback too.
-    replacement_evidence = _replacement_evidence(config) if uses_realtime_control(config) else None
+    replacement = config.get('pv', {}).get('forecast_replacement', {})
+    selected = replacement.get('models_by_farm', {}).get(str(config['forecast']['farm_id']))
+    reviewed = replacement.get('enabled', False) and selected and selected.get('kind') == 'reviewed_hpo'
+    replacement_evidence = _replacement_evidence(config) if uses_realtime_control(config) or reviewed else None
     try:
         first = date.fromisoformat(str(settings["start_date"]))
         last = date.fromisoformat(str(settings["end_date"]))

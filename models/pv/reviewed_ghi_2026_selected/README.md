@@ -28,10 +28,12 @@ evaluation also split neural sequences at prior excluded intervals.
 
 The adapter `predict_reviewed_hpo` in
 `src/forecasting/inference/pv_reviewed_hpo.py` loads these bundles; it requires
-the forecast features and timezone-aware forecast-cycle, availability and
-decision-cutoff timestamps. It currently returns raw bounded predictions and
-**does not apply the monthly nighttime zero policy**: callers must apply the
-configured local night window to every output before using, scoring or plotting
-it. These bundles use a different schema from the older continuous-optimization
-weather bundles; registering them in that workflow requires a compatible
-integration and explicit forecast-availability handling.
+the forecast features, timezone-aware forecast-cycle, availability and
+decision-cutoff timestamps, and an enabled monthly night policy. It clips
+predictions to zero in that policy's local nighttime windows. Available later
+forecast cycles are supported as requested; their performance differs from the
+reported evaluation on the preceding-day cycle and must be evaluated separately.
+The continuous optimization registry supports these bundles when replacement is
+explicitly enabled and the model is available at the cutoff, or retrospective
+use is explicitly enabled. Missing inputs and unavailable weather are errors;
+the model is not silently given future weather.

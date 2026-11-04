@@ -231,9 +231,18 @@ def test_trial_records_only_validation_and_refit_replays_selected_model(tmp_path
         'forecast_available_at_utc': [pd.Timestamp('2026-08-01T06:00Z')] * 4,
         'decision_cutoff_utc': [pd.Timestamp('2026-08-01T10:00Z')] * 4,
         'forecast_ghi': [.5] * 4, 'forecast_bhi': [.3] * 4})
-    assert np.isfinite(predict_reviewed_hpo(forecast, bundle, farm_id=1)).all()
+    policy = config['policy']['forecast_pv_night']
+    assert np.isfinite(predict_reviewed_hpo(forecast, bundle, farm_id=1, night_policy=policy)).all()
+    night_forecast = forecast.copy()
+    night_forecast['interval_start_utc'] = pd.date_range('2026-08-01T22:00Z', periods=4, freq='15min')
+    night_forecast['forecast_cycle_utc'] = pd.Timestamp('2026-08-01T12:00Z')
+    night_forecast['forecast_available_at_utc'] = pd.Timestamp('2026-08-01T18:00Z')
+    night_forecast['decision_cutoff_utc'] = pd.Timestamp('2026-08-01T19:00Z')
+    night_forecast.loc[0, 'forecast_ghi'] = np.nan
+    np.testing.assert_array_equal(predict_reviewed_hpo(night_forecast, bundle, farm_id=1,
+                                                      night_policy=policy), np.zeros(4))
     with pytest.raises(ValueError, match='different farm'):
-        predict_reviewed_hpo(forecast, bundle, farm_id=345)
+        predict_reviewed_hpo(forecast, bundle, farm_id=345, night_policy=policy)
     # Exercise the entire report path using only this small synthetic fixture.
     options = deepcopy(config)
     options['pv_reviewed_hpo']['farm_ids'] = [1]
@@ -283,8 +292,7 @@ def test_inference_uses_forecast_ghi_and_checks_vintage_and_availability():
         inference_features(changed, preprocessor, 'Europe/Rome')
     changed = frame.copy()
     changed['forecast_cycle_utc'] = pd.Timestamp('2026-08-01T06:00Z')
-    with pytest.raises(ValueError, match='preceding delivery day'):
-        inference_features(changed, preprocessor, 'Europe/Rome')
+    assert len(inference_features(changed, preprocessor, 'Europe/Rome')) == 4
     changed = frame.copy()
     changed.loc[0, 'forecast_ghi'] = np.nan
     with pytest.raises(ValueError, match='Forecast GHI'):

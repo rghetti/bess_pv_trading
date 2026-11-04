@@ -8,6 +8,54 @@ import pytest
 from bess_pv_trading.simulation.continuous import ContinuousReplay
 
 
+def test_reviewed_model_replay_accepts_later_available_cycle_and_zeroes_night():
+    """The selected model sees the actual updating cycle and clips local nighttime."""
+    from bess_pv_trading.config import load_config
+    from bess_pv_trading.data import night_window_mask
+
+    starts = pd.date_range('2026-11-05', periods=96, freq='15min', tz='Europe/Rome').tz_convert('UTC')
+    vintage = pd.Timestamp('2026-11-04T12:00Z')
+    cutoff = pd.Timestamp('2026-11-04T19:00Z')
+    frame = pd.DataFrame({'pv_ac_mw': .1, 'solar_zenith_deg': 40.,
+        'forecast_ghi': 200., 'forecast_bhi': 100., 'temperature_c': 20.,
+        'wind_u_10m': 1., 'wind_v_10m': 2., 'dew_point_c': 12.,
+        'cloud_total_pct': 50., 'cloud_low_pct': 20., 'cloud_mid_pct': 20.,
+        'cloud_high_pct': 10., 'precipitation_mm': 0., 'snow_water_equivalent_m': 0.,
+        'visibility_km': 10., 'wind_u_100m': 2., 'wind_v_100m': 3.}, index=starts)
+    bundle = SimpleNamespace(values=frame, farm_id=901, members=['one'],
+        available_at=vintage + pd.Timedelta(hours=6), forecast_vintage=vintage)
+    replay = ContinuousReplay.__new__(ContinuousReplay)
+    replay.perfect = False
+    replay.plant = SimpleNamespace(farm_id=901)
+    replay.config = load_config('configs/standard.yaml', overrides={'farm_id': 901})
+    replay.config['pv']['forecast_replacement']['enabled'] = True
+    replay.prepared = {'forecast_provider': lambda cutoff, requested: bundle,
+                       'calendar': SimpleNamespace(timezone='Europe/Rome')}
+    values, provenance = replay._forecast(cutoff, starts, 'DA')
+    night = night_window_mask(starts, replay.config['policy']['forecast_pv_night'])
+    assert np.isfinite(values).all() and np.all(values[night] == 0.)
+    assert np.any(values[~night] > 0.)
+    assert provenance['pv_forecast_model_kind'] == 'reviewed_hpo'
+    assert provenance['pv_forecast_vintage_utc'] == vintage.isoformat()
+    # The shared day-ahead and intraday forecast loader uses the same model.
+    from bess_pv_trading.data.contracts import ForecastBundle
+    from bess_pv_trading.simulation.gme_oracle import _apply_reviewed_forecast
+    weather = ForecastBundle(901, vintage, bundle.available_at, frame.copy(), {},
+                             provenance={'decision_cutoff_utc': cutoff.isoformat()})
+    converted = _apply_reviewed_forecast(replay.config, replay.prepared['calendar'], weather, cutoff, starts)
+    np.testing.assert_allclose(converted.values.pv_ac_mw, values)
+    assert converted.provenance['reviewed_hpo_model'] == 'reviewed_ghi_bilstm_901'
+    assert converted.provenance['reviewed_hpo_training_weather_cycle'] == 'preceding_day_00_utc'
+    assert converted.provenance['reviewed_hpo_artifact_sha256']
+    # The model cannot be used before its documented publication without an override.
+    from dataclasses import replace
+    earlier = pd.Timestamp('2026-11-04T02:00Z')
+    prior = replace(weather, forecast_vintage=pd.Timestamp('2026-11-03T12:00Z'),
+                    available_at=pd.Timestamp('2026-11-03T18:00Z'))
+    unavailable = _apply_reviewed_forecast(replay.config, replay.prepared['calendar'], prior, earlier, starts)
+    assert unavailable.provenance['reviewed_hpo_status'] == 'fallback_artifact_not_yet_available'
+
+
 def test_scenario_members_are_interpolated_and_packed_independently():
     """A missing value in one trajectory must never borrow another member's weather."""
     from bess_pv_trading.forecasting.data.pv_neural_data import pack_sequences
@@ -34,6 +82,39 @@ def test_scenario_members_are_interpolated_and_packed_independently():
     np.testing.assert_array_equal(packed['indices'], [[0, 1, 2], [3, 4, 5]])
 
 
+def test_reviewed_ensemble_predicts_each_member_independently(monkeypatch):
+    """The shared deterministic model must not mix ensemble weather trajectories."""
+    import xarray as xr
+    from bess_pv_trading.config import load_config
+    from bess_pv_trading.simulation.continuous_inputs import _prepare_pv_ensembles
+
+    config = load_config('configs/standard.yaml', overrides={'farm_id': 1})
+    config['pv']['forecast_replacement']['enabled'] = True
+    config['continuous_optimization']['pv_ensemble'].update(zarr='unused', member_count=2)
+    day = '2026-11-06'
+    starts = pd.date_range('2026-11-06T09:00Z', periods=4, freq='15min')
+    cycle = pd.Timestamp('2026-11-05T00:00Z')
+    weather = SimpleNamespace(available_at=cycle + pd.Timedelta(hours=6),
+        values=pd.DataFrame({'member': ['a'] * 4 + ['b'] * 4,
+            'forecast_ghi': [100.] * 4 + [200.] * 4}, index=starts.append(starts)))
+    archive = xr.Dataset(coords={'member': ['a', 'b']})
+    monkeypatch.setattr('xarray.open_zarr', lambda *args, **kwargs: archive)
+    monkeypatch.setattr('bess_pv_trading.forecasting.data.pv_probabilistic_data.align_cycle',
+                        lambda *args, **kwargs: weather)
+    monkeypatch.setattr('bess_pv_trading.data.load_metadata', lambda *args, **kwargs: {1: object()})
+    seen = []
+    def predict(frame, *args, **kwargs):
+        """Return a distinct value for each independent member."""
+        seen.append((frame['member'].iloc[0], frame.forecast_cycle_utc.iloc[0]))
+        return frame.forecast_ghi.to_numpy() / 1000
+    monkeypatch.setattr('bess_pv_trading.forecasting.inference.pv_reviewed_hpo.predict_reviewed_hpo', predict)
+    days = {day: {'grid': SimpleNamespace(starts=starts),
+                  'schedule': [SimpleNamespace(submission_at=cycle + pd.Timedelta(hours=10))]}}
+    _prepare_pv_ensembles(config, days)
+    assert seen == [('a', cycle), ('b', cycle)]
+    np.testing.assert_allclose(days[day]['ensemble_pv'], [[.1] * 4, [.2] * 4])
+
+
 @pytest.mark.parametrize("context", ["DA", "realtime_mpc"])
 def test_replay_uses_seasonal_night_policy_for_neural_forecasts(tmp_path, monkeypatch, context):
     from bess_pv_trading.config import load_config
@@ -53,6 +134,7 @@ def test_replay_uses_seasonal_night_policy_for_neural_forecasts(tmp_path, monkey
     replay.config = load_config('configs/standard.yaml', overrides={'farm_id': 345})
     replay.config['pv']['forecast_replacement'].update(enabled=True, allow_retrospective_artifacts=True)
     replay.config['pv']['forecast_replacement']['models_by_farm']['345']['artifact_path'] = str(manifest)
+    replay.config['pv']['forecast_replacement']['models_by_farm']['345']['kind'] = 'weather_bundle'
     replay.prepared = {'forecast_provider': lambda cutoff, requested: bundle,
                        'calendar': SimpleNamespace(timezone='Europe/Rome')}
     captured = {}

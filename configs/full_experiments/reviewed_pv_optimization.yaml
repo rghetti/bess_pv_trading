@@ -1,0 +1,14 @@
+# Shared inputs for future reviewed-PV optimization experiments; dates and
+# market/solver settings belong in the actual experiment configuration.
+include: ../standard.yaml
+
+forecast:
+  curated_realized:
+    enabled: true
+    dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
+
+pv:
+  forecast_replacement:
+    enabled: true
+    # Historical replay is retrospective: these weights were selected in November 2026.
+    allow_retrospective_artifacts: true

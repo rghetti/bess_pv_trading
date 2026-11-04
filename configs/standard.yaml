@@ -224,13 +224,13 @@ pv:
     enabled: false
     fallback: pvlib
     allow_retrospective_artifacts: false
-    # Selected per-farm pilot bundles are ready for continuous optimization.
-    # Replacement remains disabled by default; enable explicitly in an experiment.
+    # Reviewed-GHI models are opt-in and require a causally available forecast cycle.
+    # Historical use before model availability requires an explicit retrospective override.
     models_by_farm:
-      '1': {name: farm_1_direct_tcn, kind: weather_bundle, artifact_path: models/pv/farm_1/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-10-27T00:00:00Z'}
-      '345': {name: farm_345_direct_tcn, kind: weather_bundle, artifact_path: models/pv/farm_345/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-10-27T00:00:00Z'}
-      '901': {name: farm_901_direct_tcn_timing, kind: weather_bundle, artifact_path: models/pv/farm_901/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-10-27T00:00:00Z'}
-      '910': {name: farm_910_direct_tcn_timing, kind: weather_bundle, artifact_path: models/pv/farm_910/pilot_2025_train/direct_tcn/manifest.json, available_at_utc: '2026-10-27T00:00:00Z'}
+      '1': {name: reviewed_ghi_bigru_1, kind: reviewed_hpo, artifact_path: models/pv/reviewed_ghi_2026_selected/farm_1/result.json, available_at_utc: '2026-11-04T03:09:00Z'}
+      '345': {name: reviewed_ghi_transformer_345, kind: reviewed_hpo, artifact_path: models/pv/reviewed_ghi_2026_selected/farm_345/result.json, available_at_utc: '2026-11-04T03:09:00Z'}
+      '901': {name: reviewed_ghi_bilstm_901, kind: reviewed_hpo, artifact_path: models/pv/reviewed_ghi_2026_selected/farm_901/result.json, available_at_utc: '2026-11-04T03:09:00Z'}
+      '910': {name: reviewed_ghi_tcn_910, kind: reviewed_hpo, artifact_path: models/pv/reviewed_ghi_2026_selected/farm_910/result.json, available_at_utc: '2026-11-04T03:09:00Z'}
   transposition_model: isotropic
   bifacial:
     enabled: false

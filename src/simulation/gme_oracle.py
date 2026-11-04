@@ -6,6 +6,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import deepcopy
 from datetime import datetime, timezone
+import hashlib
+import json
 from pathlib import Path
 import subprocess
 from typing import Any, Mapping
@@ -590,6 +592,45 @@ def _load_auction_prices(config: Mapping[str, Any], calendar: AuctionCalendar,
     return actual, provenance, skipped
 
 
+def _apply_reviewed_forecast(config, calendar, bundle, cutoff, starts):
+    """Apply an available reviewed model to this exact causal weather cycle."""
+    settings = config['pv'].get('forecast_replacement', {})
+    models = settings.get('models_by_farm', {})
+    farm = int(config['forecast']['farm_id'])
+    model = models.get(str(farm), models.get(farm))
+    if not settings.get('enabled') or not model or model.get('kind') != 'reviewed_hpo':
+        return bundle
+    artifact = config_path(config, model['artifact_path'])
+    available = pd.Timestamp(model['available_at_utc'])
+    if available.tzinfo is None:
+        raise ValueError('PV model availability must be timezone-aware')
+    retrospective = available > pd.Timestamp(cutoff)
+    if not artifact.is_file() or (retrospective and not settings.get('allow_retrospective_artifacts', False)):
+        status = 'fallback_artifact_missing' if not artifact.is_file() else 'fallback_artifact_not_yet_available'
+        return replace(bundle, provenance={**bundle.provenance, 'reviewed_hpo_status': status})
+    from ..forecasting.inference.pv_reviewed_hpo import predict_reviewed_hpo
+
+    frame = bundle.values.copy(deep=True)
+    frame['interval_start_utc'] = starts
+    frame['delivery_day'] = pd.DatetimeIndex(starts).tz_convert(calendar.timezone).strftime('%Y-%m-%d')
+    frame['forecast_cycle_utc'] = pd.Timestamp(bundle.forecast_vintage)
+    frame['forecast_available_at_utc'] = pd.Timestamp(bundle.available_at)
+    frame['decision_cutoff_utc'] = pd.Timestamp(cutoff)
+    prediction = predict_reviewed_hpo(frame, artifact.parent, farm_id=farm,
+                                      night_policy=config['policy']['forecast_pv_night'])
+    values = bundle.values.copy(deep=True)
+    values['pv_ac_mw'] = prediction
+    record = json.loads(artifact.read_text())
+    return replace(bundle, values=values, provenance={**bundle.provenance,
+        'reviewed_hpo_status': 'retrospective_artifact' if retrospective else 'artifact',
+        'reviewed_hpo_model': model['name'], 'reviewed_hpo_artifact': str(artifact),
+        'reviewed_hpo_artifact_sha256': hashlib.sha256(artifact.read_bytes()).hexdigest(),
+        'reviewed_hpo_file_sha256': {name: value for name, value in record['checksums'].items()
+                                     if name != 'prediction_mw.npy'},
+        'reviewed_hpo_available_at_utc': available.isoformat(),
+        'reviewed_hpo_training_weather_cycle': 'preceding_day_00_utc'})
+
+
 def _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts,
                            vintage_cache=None, pv_cache=None, pv_cache_counters=None):
     """Convert the latest eligible weather cycle on the requested remaining grid."""
@@ -619,8 +660,9 @@ def _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts,
                     np.count_nonzero(converted["night_missing_mask"][positions]))}
             if pv_cache_counters is not None:
                 pv_cache_counters["hits"] += 1
-            return replace(cached_bundle, values=cached_bundle.values.iloc[positions].copy(deep=True),
-                           available_at=weather.available_at, provenance=provenance)
+            physical = replace(cached_bundle, values=cached_bundle.values.iloc[positions].copy(deep=True),
+                               available_at=weather.available_at, provenance=provenance)
+            return _apply_reviewed_forecast(config, calendar, physical, cutoff, starts)
     if pv_cache_counters is not None:
         pv_cache_counters["misses"] += 1
     weather = align_forecast(weather, starts, config["forecast_semantics"],
@@ -646,7 +688,7 @@ def _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, starts,
     if pv_cache is not None and not config["pv"].get("parameter_registry"):
         pv_cache[cache_key] = {"bundle": replace(pv, values=pv.values.copy(deep=True),
             provenance=deepcopy(pv.provenance)), "night_missing_mask": missing.copy()}
-    return pv
+    return _apply_reviewed_forecast(config, calendar, pv, cutoff, starts)
 
 
 class _ForecastPreflightSession:
@@ -743,11 +785,30 @@ def _load_pv(config: dict[str, Any], calendar: AuctionCalendar, grid, *, decisio
         metadata = load_metadata(config_path(config, config["inputs"]["metadata_parquet"]), [farm_id])[farm_id]
         pv = _forecast_pv_at_cutoff(config, calendar, dataset, metadata, cutoff, grid.starts)
         forecast = pd.to_numeric(pv.values["pv_ac_mw"], errors="coerce").to_numpy(dtype=float, copy=True)
-        observed = load_observations(dataset, [farm_id], variables=(forecast_settings.get("realized_power_variable", "power"),),
-            start=grid.starts[0], end=grid.starts[-1],
-            telemetry_latency_minutes=float(config.get("source", {}).get("telemetry_latency_minutes", 0)))
+        if not forecast_settings.get('curated_realized', {}).get('enabled', False):
+            observed = load_observations(dataset, [farm_id], variables=(forecast_settings.get("realized_power_variable", "power"),),
+                start=grid.starts[0], end=grid.starts[-1],
+                telemetry_latency_minutes=float(config.get("source", {}).get("telemetry_latency_minutes", 0)))
     finally:
         dataset.close()
+    if forecast_settings.get('curated_realized', {}).get('enabled', False):
+        from .curated_pv import load_curated_realized_pv
+        actual, curated = load_curated_realized_pv(config, farm_id, grid)
+        night_policy = config['policy']['realized_pv_night']
+        _, night_provenance = _clip_realized_pv_night(actual, grid, night_policy)
+        night_provenance['missing_zeroed_intervals'] = 0
+        night_provenance['missing_zeroed_interval_ids'] = []
+        return forecast, actual, pv, {'farm_id': farm_id, 'farm_metadata': asdict(metadata),
+            'installed_ac_capacity_mw': metadata.ac_capacity_mw,
+            'forecast_cutoff_utc': cutoff.isoformat(), 'forecast_vintage_utc': pv.forecast_vintage.isoformat(),
+            'forecast_available_at_utc': pv.available_at.isoformat(),
+            'forecast_member_count': len(pv.members), 'forecast_member_origin': pv.member_origin,
+            'forecast_missing_filled_night_zero_intervals': pv.provenance['forecast_missing_filled_night_zero_intervals'],
+            'realized_power_variable': 'model_target_mw', 'realized_power_scale_to_mw': 1.0,
+            'realized_power_source_basis': 'curated AC MW, including counterfactual synthetic replacements',
+            'realized_power_missing_fallback_intervals': 0, 'realized_power_raw_missing_intervals': 0,
+            'realized_power_fallback_interval_ids': [], 'realized_pv_night_clipping': night_provenance,
+            'curated_realized_pv': curated, 'pv_conversion_provenance': pv.provenance}
     variable = forecast_settings.get("realized_power_variable", "power")
     rows = observed.frame.loc[observed.frame.variable == variable]
     raw = pd.Series(pd.to_numeric(rows.raw_value, errors="coerce").to_numpy(dtype=float),

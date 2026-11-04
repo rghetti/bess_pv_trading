@@ -9,6 +9,7 @@ import joblib
 import numpy as np
 import pandas as pd
 
+from ...data import night_window_mask
 from ..data.pv_neural_data import transform_features
 from ..data.pv_reviewed_hpo_data import calendar_features
 from ..models.pv_reviewed_hpo_models import build_neural_network, build_sequences, predict_neural
@@ -43,9 +44,6 @@ def inference_features(frame, preprocessor, timezone):
     if not np.array_equal(days, frame.delivery_day.to_numpy()):
         raise ValueError('Forecast delivery-day labels disagree with local interval times')
     vintages = _utc_column(frame, 'forecast_cycle_utc')
-    expected = pd.DatetimeIndex(pd.to_datetime(frame.delivery_day, utc=True)) - pd.Timedelta(days=1)
-    if not vintages.equals(expected):
-        raise ValueError('This model requires the preceding delivery day 00 UTC forecast cycle')
     available = _utc_column(frame, 'forecast_available_at_utc')
     cutoff = _utc_column(frame, 'decision_cutoff_utc')
     if (available > cutoff).any() or (available < vintages).any():
@@ -66,8 +64,10 @@ def inference_features(frame, preprocessor, timezone):
     return columns.loc[:, names].replace([np.inf, -np.inf], np.nan)
 
 
-def predict_reviewed_hpo(frame, bundle_directory, *, farm_id):
+def predict_reviewed_hpo(frame, bundle_directory, *, farm_id, night_policy):
     """Predict 15-minute AC MW with a saved winner and causally available forecasts."""
+    if not night_policy or not night_policy.get('enabled', True) or 'monthly_windows' not in night_policy:
+        raise ValueError('Reviewed PV inference requires an enabled monthly night policy')
     directory = Path(bundle_directory)
     record = json.loads((directory / 'result.json').read_text())
     if record.get('schema') != 'reviewed_ghi_forecast_bundle_v1':
@@ -82,26 +82,36 @@ def predict_reviewed_hpo(frame, bundle_directory, *, farm_id):
         if _sha(directory / name) != expected:
             raise ValueError(f'Model bundle checksum mismatch: {name}')
     preprocessor = json.loads((directory / 'preprocessor.json').read_text())
-    features = inference_features(frame, preprocessor, record['timezone'])
+    # Missing nighttime irradiance cannot affect the required zero output;
+    # preserve strict forecast-GHI validation for all daylight intervals.
+    inputs = frame.copy()
+    night = night_window_mask(_utc_column(inputs, 'interval_start_utc'), night_policy)
+    if 'forecast_ghi' in inputs:
+        missing_night = night & pd.isna(inputs['forecast_ghi']).to_numpy()
+        inputs.loc[missing_night, 'forecast_ghi'] = 0.0
+    features = inference_features(inputs, preprocessor, record['timezone'])
     matrix = transform_features(features, preprocessor).astype(np.float32)
     rating = float(record['rating_mw'])
     if (directory / 'model.joblib').exists():
         model = joblib.load(directory / 'model.joblib')
-        return np.clip(model.predict(matrix), 0, 1) * rating
-    if not (directory / 'model.pt').exists():
-        raise ValueError('Model bundle is missing its trained weights')
-    import torch
-    model = build_neural_network(trial['family'], matrix.shape[1], trial['parameters'])
-    model.load_state_dict(torch.load(directory / 'model.pt', map_location='cpu', weights_only=True))
-    scaffold = frame.reset_index(drop=True).copy()
-    scaffold['retained_prior_exclusion'] = False
-    scaffold['model_target_mw'] = np.nan
-    scaffold['split'] = 'prediction'
-    empty = np.zeros(len(scaffold), dtype=bool)
-    packed = build_sequences(scaffold, matrix,
-        {'train': empty, 'validation': empty, 'test': empty}, rating)
-    groups = np.arange(len(packed['split']))
-    result = predict_neural(model, packed, groups, int(trial['parameters']['batch_size']), len(frame), rating)
+        result = np.clip(model.predict(matrix), 0, 1) * rating
+    else:
+        if not (directory / 'model.pt').exists():
+            raise ValueError('Model bundle is missing its trained weights')
+        import torch
+        model = build_neural_network(trial['family'], matrix.shape[1], trial['parameters'])
+        model.load_state_dict(torch.load(directory / 'model.pt', map_location='cpu', weights_only=True))
+        scaffold = inputs.reset_index(drop=True).copy()
+        scaffold['retained_prior_exclusion'] = False
+        scaffold['model_target_mw'] = np.nan
+        scaffold['split'] = 'prediction'
+        empty = np.zeros(len(scaffold), dtype=bool)
+        packed = build_sequences(scaffold, matrix,
+            {'train': empty, 'validation': empty, 'test': empty}, rating)
+        groups = np.arange(len(packed['split']))
+        result = predict_neural(model, packed, groups, int(trial['parameters']['batch_size']), len(frame), rating)
     if not np.isfinite(result).all():
         raise ValueError('A forecast interval has no neural prediction')
-    return np.clip(result, 0, rating)
+    result = np.clip(result, 0, rating)
+    result[night] = 0.0
+    return result

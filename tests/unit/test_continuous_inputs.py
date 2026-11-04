@@ -118,7 +118,7 @@ def test_selected_bundle_initialization_and_artifacts_are_pinned(prepared_case, 
     manifest = tmp_path / "manifest.json"
     manifest.write_text('{"checksums": {}, "training_period": "2025"}')
     model = config["pv"]["forecast_replacement"]["models_by_farm"][str(config["farm_id"])]
-    model.update(artifact_path=str(manifest), available_at_utc="2020-01-01T00:00:00Z")
+    model.update(kind="weather_bundle", artifact_path=str(manifest), available_at_utc="2020-01-01T00:00:00Z")
     monkeypatch.setattr("bess_pv_trading.forecasting.inference.pv_forecast_bundle.predict_bundle",
         lambda frame, *args, **kwargs: np.full(len(frame), 0.2))
     prepared = continuous_inputs.prepare_continuous_inputs(config)

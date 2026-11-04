@@ -323,6 +323,8 @@ class ContinuousReplay:
                 # no auction identity; use a supported label for the packer.
                 model_frame["auction"] = str(auction) if auction in {"DA", "IDA1", "IDA2", "IDA3"} else "DA"
                 model_frame["forecast_cycle_utc"] = pd.Timestamp(bundle.forecast_vintage)
+                model_frame["forecast_available_at_utc"] = pd.Timestamp(bundle.available_at)
+                model_frame["decision_cutoff_utc"] = pd.Timestamp(cutoff)
                 # Update `midpoint` when this condition is met.
                 if "lead_hours" not in model_frame:
                     midpoint=starts+pd.Timedelta(minutes=float(self.config['source']['historical_interval_minutes'])/2)
@@ -337,6 +339,13 @@ class ContinuousReplay:
                     from ..forecasting.inference.pv_forecast_bundle import predict_bundle
                     options = {"night_policy": forecast_night} if forecast_night is not None else {}
                     replacement = predict_bundle(model_frame,artifact.parent,farm_id=self.plant.farm_id, **options)
+                elif model["kind"] == "reviewed_hpo":
+                    if getattr(bundle, 'provenance', {}).get('reviewed_hpo_model') == model['name']:
+                        replacement = values.copy()
+                    else:
+                        from ..forecasting.inference.pv_reviewed_hpo import predict_reviewed_hpo
+                        replacement = predict_reviewed_hpo(model_frame, artifact.parent,
+                            farm_id=self.plant.farm_id, night_policy=forecast_night)
                 # Operational trajectories never inspect future measured production when `model['kind'] == 'neural'`.
                 elif model["kind"] == "neural":
                     from ..forecasting.inference.pv_neural_predict import predict_neural_frame
@@ -372,6 +381,8 @@ class ContinuousReplay:
                     "pv_forecast_model_kind": model["kind"], "pv_forecast_model_artifact": str(artifact),
                     "pv_forecast_model_available_at_utc": available_at.isoformat(),
                     "pv_forecast_model_retrospective": bool(retrospective)}
+                if model['kind'] == 'reviewed_hpo':
+                    model_provenance['pv_forecast_model_training_weather_cycle'] = 'preceding_day_00_utc'
         if forecast_night is not None:
             values = values.copy()
             values[night_window_mask(starts, forecast_night)] = 0.0
