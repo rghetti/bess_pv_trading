@@ -226,8 +226,21 @@ def _validation_selection(study, root):
                 if baseline not in expected_candidates:
                     raise ValueError("Selection baseline is not a declared candidate")
                 chosen[group].add((feature, baseline))
+        # Carry selected hyperparameters to each declared matching feature set
+        # so the later comparison remains paired rather than reselecting models.
+        paired_features = set()
+        for pair in selection.get("matched_feature_pairs", []):
+            if (not isinstance(pair, list) or len(pair) != 2 or pair[0] == pair[1]
+                    or any(feature not in previous_features or feature in paired_features for feature in pair)):
+                raise ValueError("Matched selection pairs must contain distinct declared feature sets")
+            paired_features.update(pair)
+            for feature, candidate in tuple(chosen[group]):
+                if feature in pair:
+                    counterpart = pair[1] if feature == pair[0] else pair[0]
+                    chosen[group].add((counterpart, candidate))
     evidence = {"source_manifest": str(path), "source_manifest_sha256": _sha256(path),
                 "criterion": "pooled_validation_mae", "top_n": selection["top_n"],
+                "matched_feature_pairs": selection.get("matched_feature_pairs", []),
                 "selected": {group: [list(pair) for pair in sorted(pairs)] for group, pairs in chosen.items()}}
     return chosen, evidence
 

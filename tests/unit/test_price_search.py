@@ -291,6 +291,29 @@ def test_holdout_selection_uses_validation_and_rejects_early_cutoff(tmp_path):
         _validation_selection(study, tmp_path)
 
 
+def test_holdout_selection_keeps_matching_model_features(tmp_path):
+    """Preselected candidates retain the same hyperparameters in each ablation arm."""
+    import json
+    from scripts.search_energy_price_models import _validation_selection
+
+    source = {"lag_hours": [24], "feature_sets": ["base", "added"], "seed": 1, "timezone": "UTC",
+              "source_study": "source", "candidates": [{"id": "best"}, {"id": "reference"}],
+              "product_groups": {"quarter": {"native_minutes": 15, "validation_end": "2025-07-01"}}}
+    records = [{"group": "quarter", "feature_set": feature, "candidate": candidate,
+                "mae_eur_per_mwh": 1 if (feature, candidate) == ("added", "best") else 2}
+               for feature in source["feature_sets"] for candidate in ["best", "reference"]]
+    manifest = {"status": "complete", "failures": [], "config": source, "results": records,
+                "source_lineage": {"quarter": {"availability": {
+                    "kind": "assumed_delivery_day_publication_clock", "timezone": "UTC", "day_offset": -1}}}}
+    (tmp_path / "validation.json").write_text(json.dumps(manifest))
+    study = {**source, "product_groups": {"quarter": {"native_minutes": 15, "cutoff": "2025-07-01T01:00Z"}},
+             "selection": {"source_manifest": "validation.json", "top_n": 1,
+                           "matched_feature_pairs": [["base", "added"]]}}
+    selected, evidence = _validation_selection(study, tmp_path)
+    assert selected["quarter"] == {("base", "best"), ("added", "best")}
+    assert evidence["matched_feature_pairs"] == [["base", "added"]]
+
+
 def test_search_report_renders_metrics_and_plot(tmp_path):
     """Report files contain relative metrics and a comparison plot."""
     from scripts.search_energy_price_models import _write_report
