@@ -160,6 +160,15 @@ effect to vary smoothly over the daily price shape. Feature scaling is fitted
 inside each training split. This is a structured interaction basis, not an
 unrestricted per-product model.
 
+The prepared per-slot DA and IDA configurations fit separate ridge, Lasso and
+elastic-net models for each local delivery clock slot, with at least 50 training
+products per slot. Day-ahead variants include previous-day hourly curves; IDA
+variants include earlier-auction prices. Training and prediction use the same
+native product resolution and explicitly fail if a slot lacks enough training
+rows. DST repeated local slots share one model; no target interval is invented.
+This is a LEAR-inspired per-slot comparison, not a claim of exact replication of
+the literature's model, calibration or hyperparameter search.
+
 `scripts/evaluate_price_ensembles.py` evaluates simple equally weighted
 forecast combinations after the IDA search completes. For each market, it
 ranks candidates by point MAE on 1 February--15 March 2026, chooses the number

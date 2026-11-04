@@ -1,0 +1,105 @@
+# CPU per-delivery-slot DA regressions with historical price curves.
+include: ../standard.yaml
+price_model_search:
+  run_id: nord_da_per_slot_search_v1
+  output_root: outputs/energy_price_forecasts
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  timezone: Europe/Rome
+  workers: 3
+  threads_per_worker: 1
+  seed: 17
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  feature_sets:
+  - curve_price
+  - curve_fundamentals
+  product_groups:
+    hourly:
+      native_minutes: 60
+      history_start: '2024-01-01T00:00:00+01:00'
+      history_end: '2025-07-01T00:00:00+02:00'
+      cutoff: '2024-12-31T10:00:00Z'
+      validation_start: '2025-01-01'
+      validation_end: '2025-07-01'
+    quarter_hourly:
+      native_minutes: 15
+      history_start: '2025-10-01T00:00:00+02:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      feature_sets:
+      - curve_price
+      - curve_fundamentals
+      - curve_combined
+  candidates:
+  - id: slot_ridge_1
+    family: slot_ridge
+    parameters:
+      alpha: 1.0
+      min_rows_per_slot: 50
+  - id: slot_ridge_20
+    family: slot_ridge
+    parameters:
+      alpha: 20.0
+      min_rows_per_slot: 50
+  - id: slot_ridge_200
+    family: slot_ridge
+    parameters:
+      alpha: 200.0
+      min_rows_per_slot: 50
+  - id: slot_lasso_0.01
+    family: slot_lasso
+    parameters:
+      alpha: 0.01
+      max_iter: 5000
+      min_rows_per_slot: 50
+  - id: slot_lasso_0.1
+    family: slot_lasso
+    parameters:
+      alpha: 0.1
+      max_iter: 5000
+      min_rows_per_slot: 50
+  - id: slot_lasso_0.5
+    family: slot_lasso
+    parameters:
+      alpha: 0.5
+      max_iter: 5000
+      min_rows_per_slot: 50
+  - id: slot_elastic_0.01
+    family: slot_elastic_net
+    parameters:
+      alpha: 0.01
+      l1_ratio: 0.5
+      max_iter: 5000
+      min_rows_per_slot: 50
+  - id: slot_elastic_0.1
+    family: slot_elastic_net
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+      min_rows_per_slot: 50
+  feature_set_aliases:
+    curve_price: price_only
+    curve_fundamentals: fundamentals
+    curve_combined: combined
+  daily_curve_lag_days:
+  - 1
+  - 2
+  - 7
+  add_daily_curve_features_to:
+  - curve_price
+  - curve_fundamentals
+  - curve_combined

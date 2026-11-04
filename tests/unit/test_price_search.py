@@ -191,6 +191,43 @@ def test_rolling_worker_records_refit_counts_and_predictions(tmp_path):
     assert len(pd.read_csv(output)) == 6
 
 
+def test_local_slot_models_fit_separate_relations_without_future_labels():
+    """Each delivery clock slot has its own model and missing slots fail explicitly."""
+    from scripts.search_energy_price_models import _candidate_predict
+
+    days = pd.date_range("2025-01-01T00:00Z", periods=20, freq="D")
+    starts = pd.DatetimeIndex([day + pd.Timedelta(hours=hour) for day in days for hour in (0, 1)])
+    features = np.arange(40, dtype=float).reshape(-1, 1)
+    targets = features[:, 0] + np.where(starts.hour == 0, 20.0, -20.0)
+    spec = {"family": "slot_ridge", "parameters": {"alpha": 0.0, "min_rows_per_slot": 1}}
+    prediction = _candidate_predict(spec, features[:30], targets[:30], features[30:],
+        train_starts=starts[:30], test_starts=starts[30:], timezone="UTC", seed=1, threads=1)
+    np.testing.assert_allclose(prediction, targets[30:], atol=1e-9)
+    spec["parameters"]["min_rows_per_slot"] = 16
+    with pytest.raises(ValueError, match="Insufficient training rows"):
+        _candidate_predict(spec, features[:30], targets[:30], features[30:],
+            train_starts=starts[:30], test_starts=starts[30:], timezone="UTC", seed=1, threads=1)
+
+
+def test_slot_worker_reads_training_timestamps_and_writes_predictions(tmp_path):
+    """The isolated worker carries local-slot timestamps through the artifact path."""
+    from scripts.search_energy_price_models import _fit_candidate
+
+    days = pd.date_range("2025-01-01T00:00Z", periods=20, freq="D")
+    starts = pd.DatetimeIndex([day + pd.Timedelta(hours=hour) for day in days for hour in (0, 1)])
+    features = np.arange(40, dtype=float).reshape(-1, 1)
+    targets = features[:, 0] + np.where(starts.hour == 0, 20., -20.)
+    data = tmp_path / "slots.npz"
+    output = tmp_path / "prediction.csv"
+    np.savez(data, train_x=features[:30], train_y=targets[:30], validation_x=features[30:],
+        validation_y=targets[30:], reference=targets[30:] + 1,
+        train_starts=np.asarray(starts[:30].astype(str), dtype=str), starts=np.asarray(starts[30:].astype(str), dtype=str))
+    result = _fit_candidate({"dataset": str(data), "output": str(output), "threads": 1, "seed": 1,
+        "group": "hourly", "feature_set": "curve", "timezone": "UTC",
+        "candidate": {"id": "slot", "family": "slot_ridge", "parameters": {"alpha": 0., "min_rows_per_slot": 5}}})
+    assert result["mae_eur_per_mwh"] < 1e-9
+
+
 def test_intraday_search_declares_separate_native_market_models():
     """Each auction and settlement is fitted as its own quarter-hour task."""
     from pathlib import Path

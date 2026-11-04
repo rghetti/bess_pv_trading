@@ -68,6 +68,38 @@ def _rolling_blocks(starts, decisions_ns, available_ns, product_end_ns, timezone
     return result
 
 
+def _candidate_predict(spec, train_x, train_y, test_x, *, train_starts=None, test_starts=None,
+                       timezone=None, seed, threads):
+    """Fit a pooled model or independently regularized local delivery slots."""
+    family = spec["family"]
+    options = dict(spec["parameters"])
+    if not family.startswith("slot_"):
+        estimator = make_price_candidate(family, options, seed=seed, threads=threads)
+        estimator.fit(train_x, train_y)
+        return estimator.predict(test_x)
+    minimum = options.pop("min_rows_per_slot", 30)
+    if isinstance(minimum, bool) or not isinstance(minimum, int) or minimum < 1:
+        raise ValueError("Per-slot model needs positive min_rows_per_slot")
+    if train_starts is None or test_starts is None or timezone is None:
+        raise ValueError("Per-slot models require aligned local delivery timestamps")
+    train_local = pd.DatetimeIndex(pd.to_datetime(train_starts, utc=True)).tz_convert(timezone)
+    test_local = pd.DatetimeIndex(pd.to_datetime(test_starts, utc=True)).tz_convert(timezone)
+    if len(train_local) != len(train_y) or len(test_local) != len(test_x):
+        raise ValueError("Per-slot timestamps must match the corresponding feature rows")
+    train_slots = train_local.hour * 60 + train_local.minute
+    test_slots = test_local.hour * 60 + test_local.minute
+    prediction = np.full(len(test_x), np.nan)
+    for slot in np.unique(test_slots):
+        training = train_slots == slot
+        evaluation = test_slots == slot
+        if training.sum() < minimum:
+            raise ValueError(f"Insufficient training rows for local delivery slot {slot}")
+        estimator = make_price_candidate(family.removeprefix("slot_"), options, seed=seed, threads=threads)
+        estimator.fit(train_x[training], train_y[training])
+        prediction[evaluation] = estimator.predict(test_x[evaluation])
+    return prediction
+
+
 def _fit_candidate(job):
     """Fit one estimator and retain its interval-level validation predictions."""
     configure_worker_threads(job["threads"], configure_torch=False)
@@ -79,11 +111,13 @@ def _fit_candidate(job):
     train_anchor = 0 if residual_index is None else data["train_x"][:, residual_index]
     validation_anchor = 0 if residual_index is None else data["validation_x"][:, residual_index]
     rolling = job.get("rolling_refit")
+    slot_model = spec["family"].startswith("slot_")
+    initial_starts = data["train_starts"] if slot_model else None
     refits = []
     if rolling is None:
-        estimator = make_price_candidate(spec["family"], spec["parameters"], seed=job["seed"], threads=job["threads"])
-        estimator.fit(data["train_x"], data["train_y"] - train_anchor)
-        prediction = estimator.predict(data["validation_x"]) + validation_anchor
+        prediction = _candidate_predict(spec, data["train_x"], data["train_y"] - train_anchor, data["validation_x"],
+            train_starts=initial_starts, test_starts=data["starts"] if slot_model else None,
+            timezone=job.get("timezone"), seed=job["seed"], threads=job["threads"]) + validation_anchor
     else:
         prediction = np.full(len(data["validation_y"]), np.nan)
         for begin, end, past, test in _rolling_blocks(data["starts"], data["decisions_ns"], data["available_ns"],
@@ -95,10 +129,11 @@ def _fit_candidate(job):
             initial_target = data["train_y"] - train_anchor
             past_anchor = 0 if residual_index is None else data["validation_x"][past, residual_index]
             train_y = np.concatenate([initial_target, data["validation_y"][past] - past_anchor])
-            estimator = make_price_candidate(spec["family"], spec["parameters"], seed=job["seed"], threads=job["threads"])
-            estimator.fit(train_x, train_y)
             test_anchor = 0 if residual_index is None else data["validation_x"][test, residual_index]
-            prediction[test] = estimator.predict(data["validation_x"][test]) + test_anchor
+            train_starts = np.concatenate([initial_starts, data["starts"][past]]) if slot_model else None
+            prediction[test] = _candidate_predict(spec, train_x, train_y, data["validation_x"][test],
+                train_starts=train_starts, test_starts=data["starts"][test] if slot_model else None,
+                timezone=job.get("timezone"), seed=job["seed"], threads=job["threads"]) + test_anchor
             refits.append({"start_day": begin.isoformat(), "end_day_exclusive": end.isoformat(),
                            "added_prior_intervals": len(past), "training_intervals": len(train_y),
                            "predicted_intervals": len(test)})
@@ -394,6 +429,7 @@ def run_search(config, *, check_only=False):
                 continue
             dataset = destination / f"{group}__{feature_set}.npz"
             np.savez(dataset, train_x=data["matrix"][data["training"]], train_y=data["target"][data["training"]],
+                     train_starts=np.asarray(data["starts"][data["training"]].astype(str), dtype=str),
                      validation_x=data["matrix"][selected], validation_y=data["target"][selected],
                      reference=data["matrix"][selected, 0],
                      decisions_ns=data["decisions"].as_unit("ns").asi8[selected],

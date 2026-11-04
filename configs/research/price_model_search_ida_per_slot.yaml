@@ -1,0 +1,139 @@
+# CPU per-delivery-slot IDA regressions using earlier cleared auctions.
+include: ../standard.yaml
+price_model_search:
+  run_id: nord_ida_per_slot_search_v1
+  output_root: outputs/energy_price_forecasts
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  timezone: Europe/Rome
+  workers: 3
+  threads_per_worker: 1
+  seed: 17
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  feature_sets:
+  - cleared_only
+  - cleared_fundamentals
+  - spread_cleared_fundamentals
+  product_groups:
+    ida1_quarter_hourly:
+      target: IDA1
+      native_minutes: 15
+      history_start: '2025-01-01T00:00:00+01:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      market_price_features:
+      - DA
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+    ida2_quarter_hourly:
+      target: IDA2
+      native_minutes: 15
+      history_start: '2025-01-01T00:00:00+01:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      market_price_features:
+      - DA
+      - IDA1
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+    ida3_quarter_hourly:
+      target: IDA3
+      native_minutes: 15
+      history_start: '2025-01-01T00:00:00+01:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      market_price_features:
+      - DA
+      - IDA1
+      - IDA2
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      lag_hours:
+      - 24
+      - 48
+      - 72
+      - 168
+      - 336
+  candidates:
+  - id: slot_ridge_1
+    family: slot_ridge
+    parameters:
+      alpha: 1.0
+      min_rows_per_slot: 50
+  - id: slot_ridge_20
+    family: slot_ridge
+    parameters:
+      alpha: 20.0
+      min_rows_per_slot: 50
+  - id: slot_ridge_200
+    family: slot_ridge
+    parameters:
+      alpha: 200.0
+      min_rows_per_slot: 50
+  - id: slot_lasso_0.01
+    family: slot_lasso
+    parameters:
+      alpha: 0.01
+      max_iter: 5000
+      min_rows_per_slot: 50
+  - id: slot_lasso_0.1
+    family: slot_lasso
+    parameters:
+      alpha: 0.1
+      max_iter: 5000
+      min_rows_per_slot: 50
+  - id: slot_lasso_0.5
+    family: slot_lasso
+    parameters:
+      alpha: 0.5
+      max_iter: 5000
+      min_rows_per_slot: 50
+  - id: slot_elastic_0.01
+    family: slot_elastic_net
+    parameters:
+      alpha: 0.01
+      l1_ratio: 0.5
+      max_iter: 5000
+      min_rows_per_slot: 50
+  - id: slot_elastic_0.1
+    family: slot_elastic_net
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+      min_rows_per_slot: 50
+  feature_set_aliases:
+    cleared_only: price_only
+    cleared_fundamentals: fundamentals
+    cleared_combined: combined
+    spread_cleared_fundamentals: fundamentals
+    spread_cleared_combined: combined
+  add_market_price_features_to:
+  - cleared_only
+  - cleared_fundamentals
+  - cleared_combined
+  - spread_cleared_fundamentals
+  - spread_cleared_combined
+  residual_target_features:
+    spread_cleared_fundamentals: cleared_da
+    spread_cleared_combined: cleared_da
