@@ -1,0 +1,466 @@
+[
+  {
+    "options": {},
+    "status": "oracle_refinement_rejected",
+    "diagnostics": {
+      "cutoff_utc": "2026-01-15T15:45:00+00:00",
+      "controller": "deterministic_mpc_price_oracle",
+      "price_oracle_enabled": true,
+      "scenario_ids": [
+        "deterministic"
+      ],
+      "current_pv_information": "forecast",
+      "current_interval_pv_oracle_enabled": false,
+      "current_realized_pv_mw": null,
+      "scenario_weights": [
+        1.0
+      ],
+      "scenario_count": 1,
+      "horizon_intervals": 29,
+      "forecast_provenance": {},
+      "horizon_start_utc": "2026-01-15 15:45:00+00:00",
+      "horizon_end_utc": "2026-01-15 23:00:00+00:00",
+      "horizon_hours": 7.25,
+      "oracle_provenance": {
+        "diagnostic": true
+      },
+      "stages": [
+        {
+          "stage": "minimum_absolute_imbalance",
+          "status": "optimal",
+          "runtime_seconds": 0.0037679672241210938,
+          "time_limit_seconds": 10.0,
+          "objective": 9.640340795924462e-07,
+          "bound": 9.640340795646907e-07,
+          "gap": 0.0
+        },
+        {
+          "stage": "signed_settlement_economics",
+          "status": "optimal",
+          "runtime_seconds": 0.0046689510345458984,
+          "time_limit_seconds": 10.0,
+          "objective": -20.369139960800823,
+          "bound": -20.369139960800823,
+          "gap": 0.0
+        }
+      ],
+      "fallback_applied": false,
+      "absolute_mip_gap_configured": false,
+      "build_seconds": 0.1208980493247509,
+      "interval_support_count": 29,
+      "scenario_interval_count": 29,
+      "model_variables": 234,
+      "model_binary_variables": 29,
+      "model_constraints": 176,
+      "stage1_minimum_certified": true,
+      "stage1_incumbent_mwh": 9.640340795924462e-07,
+      "stage1_lower_bound_mwh": 9.640340795646907e-07,
+      "stage1_relative_gap_reconstructed": 2.8791073057669107e-11,
+      "oracle_fallback_qualified": false,
+      "oracle_fallback_max_relative_gap": null,
+      "oracle_cap_reference": "certified_incumbent",
+      "oracle_additional_budget_mwh": 0.0,
+      "oracle_imbalance_cap_mwh": 9.640340795924462e-07,
+      "stage1_l_min_mwh": 9.640340795924462e-07,
+      "oracle_candidate_reconstructed_imbalance_mwh": 1.9280681591848925e-06,
+      "failure_reason": "Oracle refinement exceeds reconstructed imbalance cap: 1.9280681591848925e-06 > 9.640340795924462e-07",
+      "oracle_stage2_used": false,
+      "accepted_action_source": "price_blind_stage1",
+      "physical_residuals": {
+        "initial_energy": 0.0,
+        "energy_transition": 0.0,
+        "energy_lower": -0.19211157554981084,
+        "energy_upper": -0.34462983358938126,
+        "charge_discharge_lower": -0.0,
+        "power": 0.0,
+        "exclusivity": 0.0,
+        "utilization_lower": -1.0,
+        "utilization_upper": 0.0,
+        "poi_import": -1.5246,
+        "poi_export": -1.0152079831066514,
+        "grid": 0.0,
+        "imbalance": 0.0,
+        "expected_absolute": 0.0,
+        "expected_shortfall": 0.0
+      },
+      "components": {
+        "absolute_imbalance_mwh": 9.640340795924462e-07,
+        "degradation_eur": 8.474870727159196,
+        "terminal_cost_eur": 11.894421222509457,
+        "import_cost_eur": 0.0,
+        "settlement_eur": -0.00021785916954485815
+      },
+      "planning_objective_value": 9.640340795924462e-07,
+      "solve_wall_seconds": 0.13863846845924854,
+      "runtime_seconds": 0.008436918258666992,
+      "status": "oracle_refinement_rejected",
+      "planning_objective_units": "MWh",
+      "oracle_additional_imbalance_used_mwh": 0.0
+    },
+    "config_sha256": "373160d69d83c5fafa8b573af1fd5ae12b639043550694d1f4583e434a6de4bd"
+  },
+  {
+    "options": {
+      "Presolve": 0
+    },
+    "status": "optimal",
+    "diagnostics": {
+      "cutoff_utc": "2026-01-15T15:45:00+00:00",
+      "controller": "deterministic_mpc_price_oracle",
+      "price_oracle_enabled": true,
+      "scenario_ids": [
+        "deterministic"
+      ],
+      "current_pv_information": "forecast",
+      "current_interval_pv_oracle_enabled": false,
+      "current_realized_pv_mw": null,
+      "scenario_weights": [
+        1.0
+      ],
+      "scenario_count": 1,
+      "horizon_intervals": 29,
+      "forecast_provenance": {},
+      "horizon_start_utc": "2026-01-15 15:45:00+00:00",
+      "horizon_end_utc": "2026-01-15 23:00:00+00:00",
+      "horizon_hours": 7.25,
+      "oracle_provenance": {
+        "diagnostic": true
+      },
+      "stages": [
+        {
+          "stage": "minimum_absolute_imbalance",
+          "status": "optimal",
+          "runtime_seconds": 0.001789093017578125,
+          "time_limit_seconds": 10.0,
+          "objective": 9.640340795924462e-07,
+          "bound": 9.640340795924462e-07,
+          "gap": 0.0
+        },
+        {
+          "stage": "signed_settlement_economics",
+          "status": "optimal",
+          "runtime_seconds": 0.004111051559448242,
+          "time_limit_seconds": 10.0,
+          "objective": -20.369509808838195,
+          "bound": -20.369509808838195,
+          "gap": 0.0
+        }
+      ],
+      "fallback_applied": false,
+      "absolute_mip_gap_configured": false,
+      "build_seconds": 0.014212164096534252,
+      "interval_support_count": 29,
+      "scenario_interval_count": 29,
+      "model_variables": 234,
+      "model_binary_variables": 29,
+      "model_constraints": 176,
+      "stage1_minimum_certified": true,
+      "stage1_incumbent_mwh": 9.640340795924462e-07,
+      "stage1_lower_bound_mwh": 9.640340795924462e-07,
+      "stage1_relative_gap_reconstructed": 0.0,
+      "oracle_fallback_qualified": false,
+      "oracle_fallback_max_relative_gap": null,
+      "oracle_cap_reference": "certified_incumbent",
+      "oracle_additional_budget_mwh": 0.0,
+      "oracle_imbalance_cap_mwh": 9.640340795924462e-07,
+      "stage1_l_min_mwh": 9.640340795924462e-07,
+      "oracle_candidate_reconstructed_imbalance_mwh": 9.640340795924462e-07,
+      "oracle_stage2_used": true,
+      "physical_residuals": {
+        "initial_energy": 0.0,
+        "energy_transition": 0.0,
+        "energy_lower": -0.19211157554981084,
+        "energy_upper": -0.34462983358938126,
+        "charge_discharge_lower": -0.0,
+        "power": 0.0,
+        "exclusivity": 0.0,
+        "utilization_lower": -1.0,
+        "utilization_upper": 0.0,
+        "poi_import": -1.5246,
+        "poi_export": -1.0152079831066514,
+        "grid": 0.0,
+        "imbalance": 0.0,
+        "expected_absolute": 0.0,
+        "expected_shortfall": 0.0
+      },
+      "recomputed_components": {
+        "absolute_imbalance_mwh": 9.640340795924462e-07,
+        "degradation_eur": 8.474870727159196,
+        "terminal_cost_eur": 11.894421222509457,
+        "import_cost_eur": 0.0,
+        "settlement_eur": -0.00021785916954485815
+      },
+      "component_residuals": {
+        "degradation_eur": 0.0,
+        "terminal_cost_eur": 0.0,
+        "import_cost_eur": 0.0,
+        "settlement_eur": 1.0780764302109613e-15
+      },
+      "component_validation_allowances": {
+        "absolute_imbalance_mwh": 1e-06,
+        "import_cost_eur": 1e-06,
+        "settlement_eur": 1.6115324e-05,
+        "terminal_cost_eur": 1e-06,
+        "degradation_eur": 1.6028384267765318e-06
+      },
+      "components": {
+        "absolute_imbalance_mwh": 9.640340795924462e-07,
+        "degradation_eur": 8.474870727159196,
+        "terminal_cost_eur": 11.894421222509457,
+        "import_cost_eur": 0.0,
+        "settlement_eur": -0.00021785916954485815
+      },
+      "oracle_additional_imbalance_used_mwh": 0.0,
+      "planning_objective_value": -20.3695098088382,
+      "accepted_action_source": "economic",
+      "solve_wall_seconds": 0.053965757600963116,
+      "runtime_seconds": 0.005900144577026367,
+      "status": "optimal",
+      "planning_objective_units": "EUR"
+    },
+    "config_sha256": "373160d69d83c5fafa8b573af1fd5ae12b639043550694d1f4583e434a6de4bd"
+  },
+  {
+    "options": {
+      "NumericFocus": 3
+    },
+    "status": "optimal",
+    "diagnostics": {
+      "cutoff_utc": "2026-01-15T15:45:00+00:00",
+      "controller": "deterministic_mpc_price_oracle",
+      "price_oracle_enabled": true,
+      "scenario_ids": [
+        "deterministic"
+      ],
+      "current_pv_information": "forecast",
+      "current_interval_pv_oracle_enabled": false,
+      "current_realized_pv_mw": null,
+      "scenario_weights": [
+        1.0
+      ],
+      "scenario_count": 1,
+      "horizon_intervals": 29,
+      "forecast_provenance": {},
+      "horizon_start_utc": "2026-01-15 15:45:00+00:00",
+      "horizon_end_utc": "2026-01-15 23:00:00+00:00",
+      "horizon_hours": 7.25,
+      "oracle_provenance": {
+        "diagnostic": true
+      },
+      "stages": [
+        {
+          "stage": "minimum_absolute_imbalance",
+          "status": "optimal",
+          "runtime_seconds": 0.0383148193359375,
+          "time_limit_seconds": 10.0,
+          "objective": 9.640340795924462e-07,
+          "bound": 9.640340795646907e-07,
+          "gap": 0.0
+        },
+        {
+          "stage": "signed_settlement_economics",
+          "status": "optimal",
+          "runtime_seconds": 0.04465079307556152,
+          "time_limit_seconds": 10.0,
+          "objective": -20.3695098088382,
+          "bound": -20.369509808838195,
+          "gap": 0.0
+        }
+      ],
+      "fallback_applied": false,
+      "absolute_mip_gap_configured": false,
+      "build_seconds": 0.04746943712234497,
+      "interval_support_count": 29,
+      "scenario_interval_count": 29,
+      "model_variables": 234,
+      "model_binary_variables": 29,
+      "model_constraints": 176,
+      "stage1_minimum_certified": true,
+      "stage1_incumbent_mwh": 9.640340795924462e-07,
+      "stage1_lower_bound_mwh": 9.640340795646907e-07,
+      "stage1_relative_gap_reconstructed": 2.8791073057669107e-11,
+      "oracle_fallback_qualified": false,
+      "oracle_fallback_max_relative_gap": null,
+      "oracle_cap_reference": "certified_incumbent",
+      "oracle_additional_budget_mwh": 0.0,
+      "oracle_imbalance_cap_mwh": 9.640340795924462e-07,
+      "stage1_l_min_mwh": 9.640340795924462e-07,
+      "oracle_candidate_reconstructed_imbalance_mwh": 9.640340795924462e-07,
+      "oracle_stage2_used": true,
+      "physical_residuals": {
+        "initial_energy": 0.0,
+        "energy_transition": 0.0,
+        "energy_lower": -0.19211157554981084,
+        "energy_upper": -0.34462983358938126,
+        "charge_discharge_lower": -0.0,
+        "power": 0.0,
+        "exclusivity": 0.0,
+        "utilization_lower": -1.0,
+        "utilization_upper": 0.0,
+        "poi_import": -1.5246,
+        "poi_export": -1.0152079831066514,
+        "grid": 0.0,
+        "imbalance": 0.0,
+        "expected_absolute": 0.0,
+        "expected_shortfall": 0.0
+      },
+      "recomputed_components": {
+        "absolute_imbalance_mwh": 9.640340795924462e-07,
+        "degradation_eur": 8.474870727159196,
+        "terminal_cost_eur": 11.894421222509457,
+        "import_cost_eur": 0.0,
+        "settlement_eur": -0.00021785916954485815
+      },
+      "component_residuals": {
+        "degradation_eur": 0.0,
+        "terminal_cost_eur": 0.0,
+        "import_cost_eur": 0.0,
+        "settlement_eur": 0.0
+      },
+      "component_validation_allowances": {
+        "absolute_imbalance_mwh": 1e-06,
+        "import_cost_eur": 1e-06,
+        "settlement_eur": 1.6115324e-05,
+        "terminal_cost_eur": 1e-06,
+        "degradation_eur": 1.6028384267765318e-06
+      },
+      "components": {
+        "absolute_imbalance_mwh": 9.640340795924462e-07,
+        "degradation_eur": 8.474870727159196,
+        "terminal_cost_eur": 11.894421222509457,
+        "import_cost_eur": 0.0,
+        "settlement_eur": -0.00021785916954485815
+      },
+      "oracle_additional_imbalance_used_mwh": 0.0,
+      "planning_objective_value": -20.3695098088382,
+      "accepted_action_source": "economic",
+      "solve_wall_seconds": 0.1566730374470353,
+      "runtime_seconds": 0.08296561241149902,
+      "status": "optimal",
+      "planning_objective_units": "EUR"
+    },
+    "config_sha256": "373160d69d83c5fafa8b573af1fd5ae12b639043550694d1f4583e434a6de4bd"
+  },
+  {
+    "options": {
+      "Presolve": 0,
+      "NumericFocus": 3
+    },
+    "status": "optimal",
+    "diagnostics": {
+      "cutoff_utc": "2026-01-15T15:45:00+00:00",
+      "controller": "deterministic_mpc_price_oracle",
+      "price_oracle_enabled": true,
+      "scenario_ids": [
+        "deterministic"
+      ],
+      "current_pv_information": "forecast",
+      "current_interval_pv_oracle_enabled": false,
+      "current_realized_pv_mw": null,
+      "scenario_weights": [
+        1.0
+      ],
+      "scenario_count": 1,
+      "horizon_intervals": 29,
+      "forecast_provenance": {},
+      "horizon_start_utc": "2026-01-15 15:45:00+00:00",
+      "horizon_end_utc": "2026-01-15 23:00:00+00:00",
+      "horizon_hours": 7.25,
+      "oracle_provenance": {
+        "diagnostic": true
+      },
+      "stages": [
+        {
+          "stage": "minimum_absolute_imbalance",
+          "status": "optimal",
+          "runtime_seconds": 0.0030040740966796875,
+          "time_limit_seconds": 10.0,
+          "objective": 9.640340795876758e-07,
+          "bound": 9.640340795876758e-07,
+          "gap": 0.0
+        },
+        {
+          "stage": "signed_settlement_economics",
+          "status": "optimal",
+          "runtime_seconds": 0.012827157974243164,
+          "time_limit_seconds": 10.0,
+          "objective": -20.369509808838195,
+          "bound": -20.369509808838195,
+          "gap": 0.0
+        }
+      ],
+      "fallback_applied": false,
+      "absolute_mip_gap_configured": false,
+      "build_seconds": 0.020658559165894985,
+      "interval_support_count": 29,
+      "scenario_interval_count": 29,
+      "model_variables": 234,
+      "model_binary_variables": 29,
+      "model_constraints": 176,
+      "stage1_minimum_certified": true,
+      "stage1_incumbent_mwh": 9.640340795924462e-07,
+      "stage1_lower_bound_mwh": 9.640340795876758e-07,
+      "stage1_relative_gap_reconstructed": 4.948465681786877e-12,
+      "oracle_fallback_qualified": false,
+      "oracle_fallback_max_relative_gap": null,
+      "oracle_cap_reference": "certified_incumbent",
+      "oracle_additional_budget_mwh": 0.0,
+      "oracle_imbalance_cap_mwh": 9.640340795924462e-07,
+      "stage1_l_min_mwh": 9.640340795924462e-07,
+      "oracle_candidate_reconstructed_imbalance_mwh": 9.640340795924462e-07,
+      "oracle_stage2_used": true,
+      "physical_residuals": {
+        "initial_energy": 0.0,
+        "energy_transition": 0.0,
+        "energy_lower": -0.19211157554981084,
+        "energy_upper": -0.34462983358938126,
+        "charge_discharge_lower": -0.0,
+        "power": 0.0,
+        "exclusivity": 0.0,
+        "utilization_lower": -1.0,
+        "utilization_upper": 0.0,
+        "poi_import": -1.5246,
+        "poi_export": -1.0152079831066514,
+        "grid": 0.0,
+        "imbalance": 0.0,
+        "expected_absolute": 0.0,
+        "expected_shortfall": 0.0
+      },
+      "recomputed_components": {
+        "absolute_imbalance_mwh": 9.640340795924462e-07,
+        "degradation_eur": 8.474870727159196,
+        "terminal_cost_eur": 11.894421222509457,
+        "import_cost_eur": 0.0,
+        "settlement_eur": -0.00021785916954485815
+      },
+      "component_residuals": {
+        "degradation_eur": 0.0,
+        "terminal_cost_eur": 0.0,
+        "import_cost_eur": 0.0,
+        "settlement_eur": 1.0780764302109613e-15
+      },
+      "component_validation_allowances": {
+        "absolute_imbalance_mwh": 1e-06,
+        "import_cost_eur": 1e-06,
+        "settlement_eur": 1.6115324e-05,
+        "terminal_cost_eur": 1e-06,
+        "degradation_eur": 1.6028384267765318e-06
+      },
+      "components": {
+        "absolute_imbalance_mwh": 9.640340795924462e-07,
+        "degradation_eur": 8.474870727159196,
+        "terminal_cost_eur": 11.894421222509457,
+        "import_cost_eur": 0.0,
+        "settlement_eur": -0.00021785916954485815
+      },
+      "oracle_additional_imbalance_used_mwh": 0.0,
+      "planning_objective_value": -20.3695098088382,
+      "accepted_action_source": "economic",
+      "solve_wall_seconds": 0.06257106363773346,
+      "runtime_seconds": 0.01583123207092285,
+      "status": "optimal",
+      "planning_objective_units": "EUR"
+    },
+    "config_sha256": "373160d69d83c5fafa8b573af1fd5ae12b639043550694d1f4583e434a6de4bd"
+  }
+]

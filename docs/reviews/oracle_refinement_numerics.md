@@ -48,6 +48,15 @@ MWh. The first-stage action remained the accepted plan. Thus the tighter setting
 is not a general fix, even among the already observed rejection cases. See
 `oracle_farm345_tighter_tolerance.json` for the replay diagnostic.
 
+For that same farm 345 horizon at `1e-9`, individual diagnostic re-solves with
+Gurobi `Presolve=0`, `NumericFocus=3`, and both settings together each passed the
+unchanged reconstructed cap check. The baseline at the same tolerance again
+failed it. Each option was tried once on this small 29-interval deterministic
+horizon; these observations neither identify a unique cause nor establish the
+runtime or reliability of these settings on other instances. No automatic
+retry or solver-default change has been introduced. The full results are in
+`oracle_farm345_solver_options.json`.
+
 The adjacent `oracle_rejection_*.json` files contain the individual diagnostic
 outputs, including solver stages, reconstructed components and failure reasons.
 The original-extraction comparison can be repeated with
