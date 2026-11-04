@@ -32,6 +32,68 @@ def _period_mask(days, start, end):
     return (days >= start) & (days < end)
 
 
+def evaluate_hourwise(actual, reference, predictions, identifiers, days, hours, settings):
+    """Select time-block candidate ensembles on earlier data and score later days."""
+    actual = np.asarray(actual, dtype=float)
+    reference = np.asarray(reference, dtype=float)
+    predictions = np.asarray(predictions, dtype=float)
+    days, hours = np.asarray(days, dtype=str), np.asarray(hours)
+    if (predictions.ndim != 2 or predictions.shape != (len(actual), len(identifiers))
+            or reference.shape != actual.shape or len(days) != len(actual) or len(hours) != len(actual)
+            or not len(identifiers) or len(set(identifiers)) != len(identifiers)
+            or not np.isfinite(predictions).all() or not np.isfinite(actual).all()
+            or not np.isfinite(reference).all() or not np.isfinite(hours).all()
+            or np.any(hours != np.floor(hours)) or np.any((hours < 0) | (hours >= 24))):
+        raise ValueError("Time-block inputs must contain aligned finite observations and local hours")
+    if not (settings["rank_start"] < settings["rank_end_exclusive"] <= settings["tune_start"]
+            < settings["tune_end_exclusive"] <= settings["test_start"] < settings["test_end_exclusive"]):
+        raise ValueError("Time-block periods must be chronological and nonoverlapping")
+    rank = _period_mask(days, settings["rank_start"], settings["rank_end_exclusive"])
+    tune = _period_mask(days, settings["tune_start"], settings["tune_end_exclusive"])
+    test = _period_mask(days, settings["test_start"], settings["test_end_exclusive"])
+    if not rank.any() or not tune.any() or not test.any():
+        raise ValueError("Each time-block period requires observations")
+    widths = settings["hourwise"]["block_hours"]
+    sizes = settings["hourwise"]["ensemble_sizes"]
+    if (not widths or len(set(widths)) != len(widths) or any(isinstance(width, bool)
+            or not isinstance(width, int) or width < 1 or 24 % width for width in widths)
+            or not sizes or len(set(sizes)) != len(sizes) or any(isinstance(size, bool)
+            or not isinstance(size, int) or size < 1 or size > len(identifiers) for size in sizes)):
+        raise ValueError("Time-block widths must divide 24 and sizes must fit candidate count")
+
+    # Fix rankings using only early observations within each local time block.
+    trials, rankings = [], {}
+    for width in widths:
+        blocks = hours.astype(int) // width
+        for block in np.unique(blocks[tune | test]):
+            mask = rank & (blocks == block)
+            if not mask.any():
+                raise ValueError("Every evaluated time block needs ranking observations")
+            errors = np.abs(predictions[mask] - actual[mask, None]).mean(axis=0)
+            rankings[(width, int(block))] = sorted(range(len(identifiers)),
+                key=lambda index: (errors[index], identifiers[index]))
+        for size in sizes:
+            forecast = np.empty(int(tune.sum()))
+            selected_blocks = blocks[tune]
+            for block in np.unique(selected_blocks):
+                selected = selected_blocks == block
+                forecast[selected] = predictions[tune][selected][:, rankings[(width, int(block))][:size]].mean(axis=1)
+            trials.append({"block_hours": width, "size": size,
+                           **point_metrics(actual[tune], forecast, reference[tune])})
+    chosen = min(trials, key=lambda row: (row["mae_eur_per_mwh"], -row["block_hours"], row["size"]))
+    width, size = chosen["block_hours"], chosen["size"]
+    blocks = hours[test].astype(int) // width
+    forecast = np.empty(int(test.sum()))
+    selected = {}
+    for block in np.unique(blocks):
+        mask = blocks == block
+        indices = rankings[(width, int(block))][:size]
+        forecast[mask] = predictions[test][mask][:, indices].mean(axis=1)
+        selected[str(int(block))] = [identifiers[index] for index in indices]
+    return {"block_hours": width, "size": size, "selected_candidates_by_block": selected,
+            "trials": trials, "test": point_metrics(actual[test], forecast, reference[test])}, test, forecast
+
+
 def evaluate_stacking(actual, reference, predictions, identifiers, days, settings):
     """Rank, fit and select convex combinations on successive days before testing."""
     from scipy.optimize import minimize
@@ -194,6 +256,15 @@ def run(config):
             forecasts.append(frame.point.to_numpy(float))
         days = starts.tz_convert(settings["timezone"]).strftime("%Y-%m-%d").to_numpy()
         result, test, forecast = evaluate_group(actual, reference, np.column_stack(forecasts), identifiers, days, settings)
+        if settings.get("hourwise"):
+            # Choose block width and ensemble size before the later evaluation period.
+            hourwise, block_test, block_forecast = evaluate_hourwise(actual, reference, np.column_stack(forecasts),
+                identifiers, days, starts.tz_convert(settings["timezone"]).hour, settings)
+            if not np.array_equal(test, block_test):
+                raise ValueError("Time-block and equal-weight evaluation periods differ")
+            result["hourwise"] = hourwise
+            pd.DataFrame({"product_start": starts[test], "actual": actual[test], "hourwise": block_forecast}).to_csv(
+                output / f"{group}_hourwise_predictions.csv", index=False)
         if settings.get("stacking"):
             # Fit and validate weights on earlier tuning days before scoring the later slice.
             stack, stack_test, stack_forecast = evaluate_stacking(
@@ -242,6 +313,19 @@ def run(config):
             wape = "n/a" if scores["wape_percent"] is None else f"{scores['wape_percent']:.2f}"
             relative = "n/a" if scores["relative_mae_to_naive"] is None else f"{scores['relative_mae_to_naive']:.3f}"
             lines.append(f"| {group} | {len(result['stacking']['weights'])} | {scores['mae_eur_per_mwh']:.3f} | "
+                         f"{wape} | {relative} |")
+    if settings.get("hourwise"):
+        lines.extend(["", "## Local time-block combinations", "",
+                      "Candidate rankings use earlier data within each local-hour block; block width and "
+                      "ensemble size are selected on tuning days before the later evaluation.", "",
+                      "| Market | Block hours | Models per block | Later MAE EUR/MWh | Later WAPE % | Relative MAE |",
+                      "|---|---:|---:|---:|---:|---:|"])
+        for group, result in results["groups"].items():
+            block = result["hourwise"]
+            scores = block["test"]
+            wape = "n/a" if scores["wape_percent"] is None else f"{scores['wape_percent']:.2f}"
+            relative = "n/a" if scores["relative_mae_to_naive"] is None else f"{scores['relative_mae_to_naive']:.3f}"
+            lines.append(f"| {group} | {block['block_hours']} | {block['size']} | {scores['mae_eur_per_mwh']:.3f} | "
                          f"{wape} | {relative} |")
     (output / "summary.md").write_text("\n".join(lines) + "\n")
     return results
