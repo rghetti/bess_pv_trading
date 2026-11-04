@@ -83,9 +83,13 @@ def audit_conditional_horizons(directory, config, actual, ledger, solves, tolera
         if len(intervals) != diagnostic["horizon_intervals"]:
             failures.append({"solve_id": solve_id, "reason": "incomplete_horizon"})
             continue
+        # Align the scenario/interval grid once instead of pivoting each field
+        # separately; a duplicate pair still fails rather than being aggregated.
+        grid_index = pd.MultiIndex.from_product([scenarios, intervals], names=["scenario_id", "interval_id"])
+        aligned = frame.set_index(["scenario_id", "interval_id"]).reindex(grid_index)
+
         def matrix(name):
-            return frame.pivot(index="scenario_id", columns="interval_id", values=name).reindex(
-                index=scenarios, columns=intervals).to_numpy(float)
+            return aligned[name].to_numpy(dtype=float).reshape(len(scenarios), len(intervals))
         pv, charge, discharge = (matrix(name) for name in ("pv_ac_mw", "charge_mw", "discharge_mw"))
         utilization, start, end = (matrix(name) for name in ("pv_utilization_fraction", "energy_start_mwh", "energy_end_mwh"))
         grid, imbalance, nodes = (matrix(name) for name in ("grid_mw", "imbalance_mwh", "control_node"))

@@ -120,7 +120,8 @@ def test_conditional_horizons_stream_and_check_every_scenario(tmp_path, storage)
         "cutoff_utc": "2026-01-15T12:00:00Z", "controller": "ensemble_mpc_adaptive"}
     rows = []
     for index, interval in frame.iterrows():
-        for scenario in ["a", "b"]:
+        # History rows need not arrive in diagnostic scenario order.
+        for scenario in ["b", "a"]:
             rows.append({"delivery_day": "2026-01-15", "solve_id": solve_id,
                 "scenario_id": scenario, "weight": 0.5, "control_node": index,
                 "pv_utilization_fraction": 1.0, **{name: interval[name] for name in (
