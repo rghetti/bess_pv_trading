@@ -10,12 +10,14 @@ import json
 import multiprocessing
 from pathlib import Path
 import sys
+import warnings
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 import numpy as np
 import pandas as pd
+from sklearn.exceptions import ConvergenceWarning
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.forecasting.energy_prices import (PreparedExogenous, PriceForecastSettings, historical_decision_times,
@@ -124,7 +126,7 @@ def _training_window(starts, window_days):
     return np.asarray(times >= times.max() - pd.Timedelta(days=window_days))
 
 
-def _fit_candidate(job):
+def _fit_candidate_impl(job):
     """Fit one estimator and retain its interval-level validation predictions."""
     configure_worker_threads(job["threads"], configure_torch=False)
     data = np.load(job["dataset"], allow_pickle=False)
@@ -186,6 +188,19 @@ def _fit_candidate(job):
             "rolling_refit_count": len(refits), **metrics}
 
 
+def _fit_candidate(job):
+    """Record optimizer convergence warnings alongside each candidate score."""
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always", ConvergenceWarning)
+        result = _fit_candidate_impl(job)
+    messages = [str(item.message) for item in caught if issubclass(item.category, ConvergenceWarning)]
+    for item in caught:
+        if not issubclass(item.category, ConvergenceWarning):
+            warnings.warn_explicit(item.message, item.category, item.filename, item.lineno)
+    result["convergence_warnings"] = messages
+    return result
+
+
 def _validation_selection(study, root):
     """Freeze top validation candidates and named baselines before any holdout fit."""
     selection = study.get("selection")
@@ -245,7 +260,10 @@ def _validation_selection(study, root):
             raise ValueError(f"Incomplete or duplicate validation results for {group}")
         if any(not np.isfinite(row["mae_eur_per_mwh"]) for row in rows):
             raise ValueError("Validation selection requires finite MAE scores")
-        ordered = sorted(rows, key=lambda row: (row["mae_eur_per_mwh"], row["feature_set"], row["candidate"]))
+        eligible = [row for row in rows if not row.get("convergence_warnings")]
+        if len(eligible) < selection["top_n"]:
+            raise ValueError("Not enough converged validation candidates for selection")
+        ordered = sorted(eligible, key=lambda row: (row["mae_eur_per_mwh"], row["feature_set"], row["candidate"]))
         chosen[group] = {(row["feature_set"], row["candidate"]) for row in ordered[:selection["top_n"]]}
         for feature in previous_features:
             for baseline in selection.get("baseline_candidates", []):
@@ -357,6 +375,10 @@ def _write_report(destination, manifest):
              "WAPE is total absolute error divided by total absolute observed price. "
              "Relative MAE compares the same intervals with the available seasonal lag. "
              "These results are retrospective and contain no trading-profit evaluation.", ""]
+    warned = [row for row in manifest["results"] if row.get("convergence_warnings")]
+    if warned:
+        lines.extend([f"Optimizer convergence warnings occurred in **{len(warned)}** candidate fits; "
+                      "details are retained in the manifest. Those fits are excluded from later candidate ranking.", ""])
     if manifest.get("selection"):
         lines.extend(["Candidates were fixed using the earlier validation manifest; "
                       "this period is an evaluation of that selection, not a new selection stage.", ""])

@@ -52,7 +52,8 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
     if family == "elastic_net":
         return make_pipeline(StandardScaler(), ElasticNet(random_state=seed, **options))
     if family == "huber":
-        return make_pipeline(StandardScaler(), HuberRegressor(**options))
+        estimator = make_pipeline(StandardScaler(), HuberRegressor(**options))
+        return TransformedTargetRegressor(regressor=estimator, transformer=StandardScaler())
     if family in {"interaction_ridge", "interaction_lasso", "interaction_elastic_net", "interaction_huber"}:
         lag_count = options.pop("lag_count")
         if family == "interaction_ridge":
@@ -63,7 +64,10 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
             estimator = ElasticNet(random_state=seed, **options)
         else:
             estimator = HuberRegressor(**options)
-        return make_pipeline(IntradayShapeInteractions(lag_count), StandardScaler(), estimator)
+        pipeline = make_pipeline(IntradayShapeInteractions(lag_count), StandardScaler(), estimator)
+        if family == "interaction_huber":
+            return TransformedTargetRegressor(regressor=pipeline, transformer=StandardScaler())
+        return pipeline
     if family == "hist_gradient_boosting":
         return HistGradientBoostingRegressor(random_state=seed, **options)
     if family == "random_forest":

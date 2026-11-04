@@ -295,6 +295,23 @@ def test_candidate_fits_only_the_configured_recent_window(tmp_path):
     assert result["train_window_days"] == 30
 
 
+def test_candidate_records_optimizer_convergence_warnings(tmp_path):
+    """A nonconverged model is visible in the saved candidate metadata."""
+    from scripts.search_energy_price_models import _fit_candidate
+
+    rng = np.random.default_rng(3)
+    inputs = rng.normal(size=(200, 4))
+    target = inputs @ np.array([1.0, 2.0, 3.0, 4.0]) + 50
+    path = tmp_path / "dataset.npz"
+    np.savez(path, train_x=inputs[:150], train_y=target[:150], validation_x=inputs[150:],
+             validation_y=target[150:], starts=np.asarray(pd.date_range("2026-01-01", periods=50,
+                 freq="h", tz="UTC").astype(str), dtype=str), reference=target[150:] + 1)
+    result = _fit_candidate({"dataset": str(path), "output": str(tmp_path / "pred.csv"), "threads": 1,
+        "candidate": {"id": "huber", "family": "huber", "parameters": {"max_iter": 1}},
+        "seed": 1, "group": "quarter", "feature_set": "base"})
+    assert result["convergence_warnings"]
+
+
 def test_holdout_selection_uses_validation_and_rejects_early_cutoff(tmp_path):
     """Selection cannot consult held-out scores or occur before validation ends."""
     import json
@@ -316,6 +333,10 @@ def test_holdout_selection_uses_validation_and_rejects_early_cutoff(tmp_path):
     selected, evidence = _validation_selection(study, tmp_path)
     assert selected["hourly"] == {("price_only", "a"), ("price_only", "b")}
     assert evidence["criterion"] == "pooled_validation_mae"
+    manifest["results"][1]["convergence_warnings"] = ["did not converge"]
+    (tmp_path / "validation.json").write_text(json.dumps(manifest))
+    selected, _ = _validation_selection(study, tmp_path)
+    assert selected["hourly"] == {("price_only", "a")}
     study["product_groups"]["hourly"]["cutoff"] = "2025-06-30T23:00Z"
     with pytest.raises(ValueError, match="precedes"):
         _validation_selection(study, tmp_path)
