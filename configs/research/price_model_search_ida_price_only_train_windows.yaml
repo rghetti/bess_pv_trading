@@ -1,0 +1,217 @@
+# Compare full and recent training windows for price-only IDA models.
+include: ../standard.yaml
+price_model_search:
+  run_id: nord_ida_2026_price_only_train_windows_early_v1
+  output_root: outputs/energy_price_forecasts
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  timezone: Europe/Rome
+  workers: 8
+  threads_per_worker: 1
+  seed: 17
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  feature_sets:
+  - cleared_only
+  - spread_cleared_only
+  product_groups:
+    ida1_quarter_hourly:
+      target: IDA1
+      native_minutes: 15
+      history_start: '2025-01-01T00:00:00+01:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      market_price_features:
+      - DA
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      feature_sets:
+      - cleared_only
+      - spread_cleared_only
+    ida2_quarter_hourly:
+      target: IDA2
+      native_minutes: 15
+      history_start: '2025-01-01T00:00:00+01:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      market_price_features:
+      - DA
+      - IDA1
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      feature_sets:
+      - cleared_only
+      - spread_cleared_only
+    ida3_quarter_hourly:
+      target: IDA3
+      native_minutes: 15
+      history_start: '2025-01-01T00:00:00+01:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      market_price_features:
+      - DA
+      - IDA1
+      - IDA2
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      lag_hours:
+      - 24
+      - 48
+      - 72
+      - 168
+      - 336
+      feature_sets:
+      - cleared_only
+      - spread_cleared_only
+  candidates:
+  - id: ridge_20
+    family: ridge
+    parameters:
+      alpha: 20.0
+  - family: ridge
+    id: ridge_20_window90
+    parameters:
+      alpha: 20.0
+    train_window_days: 90
+  - family: ridge
+    id: ridge_20_window180
+    parameters:
+      alpha: 20.0
+    train_window_days: 180
+  - family: ridge
+    id: ridge_20_window365
+    parameters:
+      alpha: 20.0
+    train_window_days: 365
+  - id: lasso_1
+    family: lasso
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+  - family: lasso
+    id: lasso_1_window90
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+    train_window_days: 90
+  - family: lasso
+    id: lasso_1_window180
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+    train_window_days: 180
+  - family: lasso
+    id: lasso_1_window365
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+    train_window_days: 365
+  - id: elastic_01
+    family: elastic_net
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - family: elastic_net
+    id: elastic_01_window90
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+    train_window_days: 90
+  - family: elastic_net
+    id: elastic_01_window180
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+    train_window_days: 180
+  - family: elastic_net
+    id: elastic_01_window365
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+    train_window_days: 365
+  - id: extra_leaf15_features06
+    family: extra_trees
+    parameters:
+      n_estimators: 150
+      min_samples_leaf: 15
+      max_features: 0.6
+  - family: extra_trees
+    id: extra_leaf15_features06_window90
+    parameters:
+      max_features: 0.6
+      min_samples_leaf: 15
+      n_estimators: 150
+    train_window_days: 90
+  - family: extra_trees
+    id: extra_leaf15_features06_window180
+    parameters:
+      max_features: 0.6
+      min_samples_leaf: 15
+      n_estimators: 150
+    train_window_days: 180
+  - family: extra_trees
+    id: extra_leaf15_features06_window365
+    parameters:
+      max_features: 0.6
+      min_samples_leaf: 15
+      n_estimators: 150
+    train_window_days: 365
+  - id: extra_leaf15_features10
+    family: extra_trees
+    parameters:
+      n_estimators: 150
+      min_samples_leaf: 15
+      max_features: 1.0
+  - family: extra_trees
+    id: extra_leaf15_features10_window90
+    parameters:
+      max_features: 1.0
+      min_samples_leaf: 15
+      n_estimators: 150
+    train_window_days: 90
+  - family: extra_trees
+    id: extra_leaf15_features10_window180
+    parameters:
+      max_features: 1.0
+      min_samples_leaf: 15
+      n_estimators: 150
+    train_window_days: 180
+  - family: extra_trees
+    id: extra_leaf15_features10_window365
+    parameters:
+      max_features: 1.0
+      min_samples_leaf: 15
+      n_estimators: 150
+    train_window_days: 365
+  feature_set_aliases:
+    cleared_only: price_only
+    spread_cleared_only: price_only
+  add_market_price_features_to:
+  - cleared_only
+  - spread_cleared_only
+  residual_target_features:
+    spread_cleared_only: cleared_da
+  common_training_rows: true
