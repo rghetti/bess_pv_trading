@@ -60,6 +60,30 @@ assumptions. The paired sample does not establish prospective performance or
 the 4% target. Predictions and refits are in
 `outputs/energy_price_forecasts/nord_da_2026_price_ida_weather_may_aug_rolling_v1/`.
 
+## September–October rolling evaluation
+
+The same interaction Elastic Net was refitted weekly with a one-day gap on
+4,800 shared products across 50 complete days. All four fits completed without
+recorded failures or convergence warnings. This shared sample differs from the
+52-day price-and-weather-only replay because prior IDA inputs add exclusions.
+
+| Feature arm | MAE EUR/MWh | WAPE |
+| --- | ---: | ---: |
+| DA curves | 16.658 | 7.781% |
+| DA curves and weather | 16.306 | 7.617% |
+| DA curves and prior IDAs | 16.455 | 7.686% |
+| DA curves, prior IDAs and weather | 16.078 | 7.510% |
+
+The paired MAE gains from prior IDAs were 0.203 EUR/MWh without weather and
+0.228 with weather; the weather gain with prior IDAs was 0.377 EUR/MWh.
+Independent-day bootstrap 95% percentile intervals, 5,000 resamples with seed
+173, were -0.058–0.482, 0.0001–0.474 and -0.207–0.994 EUR/MWh. These omit
+serial dependence, model selection and repeated inspection, and one endpoint
+is extremely close to zero. Historical availability and weather vintage remain
+assumptions. The sample does not establish a robust prospective gain or the
+4% target. Predictions and refits are in
+`outputs/energy_price_forecasts/nord_da_2026_price_ida_weather_sep_oct_rolling_v1/`.
+
 ## Robust boosting selection
 
 A follow-up CPU grid fitted 500-iteration LightGBM L1 and CatBoost MAE models

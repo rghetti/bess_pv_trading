@@ -60,6 +60,8 @@ May–August replay scored 10.980% on 107 shared days; prior IDA prices gave
 a small paired improvement in both weather arms, while the weather gain with
 prior IDAs had an interval spanning zero. Weather vintage and historical
 auction clocks remain assumptions.
+The combined arm scored 7.510% on 50 shared September–October days; feature
+comparisons remain exploratory and have selection and missing-data limitations.
 
 A [two-model DA blend](price_da_cross_model_blend_2026.md) improved the
 stronger individual forecast slightly on a previously inspected 51-day
@@ -96,3 +98,5 @@ ranked the latest-cleared baseline first in all three auctions.
 The [per-slot search](price_per_slot_selection_2026.md) also trailed its
 matched quarter-hourly references on the early selection products; its older
 manifests do not record per-fit convergence warnings.
+The [latest-cleared neighbor search](price_ida_latest_bidirectional_2026.md)
+showed small early selection gains, with paired intervals spanning zero.
