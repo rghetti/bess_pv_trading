@@ -29,5 +29,30 @@ historical auction and weather release clocks remain assumptions. Forecasts,
 coverage and source hashes are in
 `outputs/energy_price_forecasts/nord_ida_2026_bidirectional_latest_spread_early_v1/`.
 
-Matched later replays have been queued for the selected candidates and the
+Matched later replays were configured for the selected candidates and the
 zero-spread references; later dates have also been examined in related work.
+
+## May–August rolling replay
+
+The selected candidates and zero-spread references were refitted weekly with
+a one-day gap from 3 May through 31 August 2026. All 12 fits completed without
+recorded failures or convergence warnings. Each comparison uses identical
+products within the auction; the boundary policy and common-input requirements
+give IDA2 114 complete days, versus 109 in the earlier one-direction weather
+study, so their aggregate scores are not a direct neighbor ablation.
+
+| Auction | Days | Products | Selected weather model MAE EUR/MWh | Model WAPE | Latest-cleared MAE EUR/MWh | Baseline WAPE |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| IDA1 | 115 | 11,040 | 6.678 | 4.557% | 6.677 | 4.557% |
+| IDA2 | 114 | 10,944 | 7.873 | 5.350% | 7.834 | 5.323% |
+| IDA3 | 113 | 5,424 | 13.171 | 9.073% | 13.053 | 8.992% |
+
+The selected models are respectively Elastic Net, Extra Trees and ridge. Their
+paired MAE gains over the baseline were approximately 0.000, -0.040 and
+-0.118 EUR/MWh. Independent-day bootstrap 95% percentile intervals, using
+5,000 resamples and seed 173, were -0.139–0.132, -0.213–0.135 and
+-0.496–0.273 EUR/MWh. They omit serial dependence and selection uncertainty;
+all span zero. These previously inspected dates and assumed information clocks
+do not establish prospective improvement or the 4% target. Predictions and
+refits are in
+`outputs/energy_price_forecasts/nord_ida_2026_bidirectional_latest_spread_may_aug_v1/`.

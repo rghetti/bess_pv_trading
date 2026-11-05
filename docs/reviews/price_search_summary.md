@@ -105,4 +105,5 @@ its matched reference on 81 ordinary selection days, excluding DST days.
 An analogous [joint IDA spread-curve pilot](price_ida_daily_spread_pilot_2026.md)
 did not beat the latest-cleared baseline on its matched ordinary selection days.
 The [latest-cleared neighbor search](price_ida_latest_bidirectional_2026.md)
-showed small early selection gains, with paired intervals spanning zero.
+showed small early selection gains, with paired intervals spanning zero; its
+May–August rolling models did not establish gains over their matched baselines.
