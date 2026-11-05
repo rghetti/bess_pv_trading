@@ -40,3 +40,23 @@ comparison cannot establish a reliable advantage in either direction.
 September–October replay is running. Matched forecasts, refit records,
 source coverage and hashes are saved in
 `outputs/energy_price_forecasts/nord_da_2026_recency_weighted_may_aug_rolling_v1/`.
+
+## September–October replay and convergence audit
+
+The initial September–October replay completed six fits without recorded
+failures on 4,800 products over 50 shared days. The unweighted weather model
+scored 16.306 EUR/MWh MAE and 7.617% WAPE, versus 17.182 and 8.026% for its
+recency-weighted counterpart. With prior IDA prices as well, the respective
+scores were 16.078 and 7.510% versus 16.916 and 7.902%. Paired
+baseline-minus-weighted MAE differences were -0.876 and -0.838 EUR/MWh,
+with 95% independent-day bootstrap percentile intervals -1.654–-0.141 and
+-1.601–-0.114 (5,000 resamples, seed 173).
+
+However, the weighted model emitted convergence warnings in three refits
+without prior IDAs and four with them at the 5,000-iteration limit. The
+unweighted fits had no recorded warnings. The apparent disadvantage of
+weighting is therefore diagnostic, not a defensible ranking of converged
+models. A matched rerun of both weather feature arms, fixing the same
+preselected half-life and raising the weighted model limit to 30,000
+iterations, has been started. The samples are retrospective and the
+bootstrap intervals omit serial dependence and selection uncertainty.
