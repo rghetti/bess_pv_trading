@@ -1,0 +1,236 @@
+# Matched latest-cleared spreads with bidirectional earlier-auction neighbors.
+include: ../standard.yaml
+price_model_search:
+  run_id: nord_ida_2026_bidirectional_latest_spread_early_v1
+  output_root: outputs/energy_price_forecasts
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  timezone: Europe/Rome
+  workers: 4
+  threads_per_worker: 1
+  seed: 17
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  feature_sets:
+  - spread_price
+  - spread_price_weather
+  product_groups:
+    ida1_quarter_hourly:
+      target: IDA1
+      native_minutes: 15
+      history_start: '2025-01-01T00:00:00+01:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      market_price_features:
+      - DA
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      - 15
+      - 60
+      market_neighbor_boundary: same_product
+    ida2_quarter_hourly:
+      target: IDA2
+      native_minutes: 15
+      history_start: '2025-01-01T00:00:00+01:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      market_price_features:
+      - DA
+      - IDA1
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      - 15
+      - 60
+      market_neighbor_boundary: same_product
+    ida3_quarter_hourly:
+      target: IDA3
+      native_minutes: 15
+      history_start: '2025-01-01T00:00:00+01:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      market_price_features:
+      - DA
+      - IDA1
+      - IDA2
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      - 15
+      - 60
+      lag_hours:
+      - 24
+      - 48
+      - 72
+      - 168
+      - 336
+      market_neighbor_boundary: same_product
+  candidates:
+  - id: ridge_20
+    family: ridge
+    parameters:
+      alpha: 20.0
+  - id: lasso_1
+    family: lasso
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+  - id: elastic_01
+    family: elastic_net
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - id: extra_leaf15_features06
+    family: extra_trees
+    parameters:
+      n_estimators: 150
+      min_samples_leaf: 15
+      max_features: 0.6
+  - id: extra_leaf15_features10
+    family: extra_trees
+    parameters:
+      n_estimators: 150
+      min_samples_leaf: 15
+      max_features: 1.0
+  - id: zero_spread
+    family: zero_spread
+    parameters: {}
+  feature_set_aliases:
+    spread_price: price_only
+    spread_price_weather: price_only
+  add_market_price_features_to:
+  - spread_price
+  - spread_price_weather
+  residual_target_features:
+    spread_price: latest_cleared_auction
+    spread_price_weather: latest_cleared_auction
+  add_supplemental_features_to:
+  - spread_price_weather
+  supplemental_features:
+  - name: regional_milan_temperature_2m
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: °C
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: milan
+      variable: temperature_2m
+      source_kind: provider_archive_operational_or_hindcast_unverified
+  - name: regional_milan_shortwave_radiation
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: W/m²
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: milan
+      variable: shortwave_radiation
+      source_kind: provider_archive_operational_or_hindcast_unverified
+    weather_mean_interval_minutes: 60
+  - name: regional_turin_temperature_2m
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: °C
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: turin
+      variable: temperature_2m
+      source_kind: provider_archive_operational_or_hindcast_unverified
+  - name: regional_turin_shortwave_radiation
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: W/m²
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: turin
+      variable: shortwave_radiation
+      source_kind: provider_archive_operational_or_hindcast_unverified
+    weather_mean_interval_minutes: 60
+  - name: regional_verona_temperature_2m
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: °C
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: verona
+      variable: temperature_2m
+      source_kind: provider_archive_operational_or_hindcast_unverified
+  - name: regional_verona_shortwave_radiation
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: W/m²
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: verona
+      variable: shortwave_radiation
+      source_kind: provider_archive_operational_or_hindcast_unverified
+    weather_mean_interval_minutes: 60
+  - name: regional_venice_temperature_2m
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: °C
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: venice
+      variable: temperature_2m
+      source_kind: provider_archive_operational_or_hindcast_unverified
+  - name: regional_venice_shortwave_radiation
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: W/m²
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: venice
+      variable: shortwave_radiation
+      source_kind: provider_archive_operational_or_hindcast_unverified
+    weather_mean_interval_minutes: 60
+  common_training_rows: true
