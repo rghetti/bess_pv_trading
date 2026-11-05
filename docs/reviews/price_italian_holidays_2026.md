@@ -25,6 +25,7 @@ in the main price-search report.
 | DA interaction, weather | 2 | 7,868 | 12.278 | 9.578% | 12.191 | 9.510% |
 | DA interaction, weather and prior IDAs | 2 | 7,868 | 12.133 | 9.465% | 12.055 | 9.404% |
 | IDA1 Elastic Net spread, weather | 3 | 8,444 | 5.929 | 4.656% | 5.923 | 4.651% |
+| IDA2 Extra Trees spread, weather | 3 | 8,348 | 6.885 | 5.377% | 6.897 | 5.387% |
 | IDA3 ridge spread, weather | 3 | 4,128 | 11.442 | 9.103% | 11.373 | 9.049% |
 
 No convergence warnings were recorded for these fits. The DA holiday dates
@@ -32,8 +33,8 @@ are April 6 and April 25; Easter Sunday is missing from the shared DA sample.
 For the DA model with prior IDAs, MAE improved by 3.51 EUR/MWh on April 6 and
 1.84 on April 25, but these are only two dates and their selection period was
 already inspected. This does not establish why prices changed, a prospective
-benefit, or the 4% target. The IDA2 test and weekly May–August and
-September–October DA replays are in progress; holiday-specific metrics will
+benefit, or the 4% target. Weekly May–August and September–October DA and IDA
+replays are in progress; holiday-specific metrics will
 be reported separately from full-period averages. In particular May 1 is
 outside the May–August replay's May 3 start. Later periods have been inspected
 in previous searches and are not untouched final holdouts.
@@ -41,3 +42,5 @@ in previous searches and are not untouched final holdouts.
 The reusable implementation is `src/forecasting/italian_holidays.py`; the
 matched experiment is `scripts/evaluate_italian_holiday_feature.py`. It records
 the saved matrix hash, model parameters, dates and convergence warnings.
+The first saved comparisons are in
+`outputs/energy_price_forecasts/italian_holiday_early_2026_v1/`.
