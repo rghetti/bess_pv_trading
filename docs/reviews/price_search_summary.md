@@ -73,4 +73,5 @@ model or feature combination. The [XGBoost](price_xgboost_2026.md),
 [IDA weather](price_ida_spread_weather_2026.md) reports give examples of
 matched comparisons and their limitations. A short-history
 [Swiss-border DA comparison](price_da_swiss_border_2026.md) did not beat its
-matched price-only reference; an IDA border study remains underway.
+matched price-only reference; the [IDA border search](price_ida_swiss_border_2026.md)
+ranked the latest-cleared baseline first in all three auctions.
