@@ -325,6 +325,23 @@ def _validation_selection(study, root):
     return chosen, evidence
 
 
+def _comparable_catalog_evidence(value, database):
+    """Normalize only a catalog's own location while retaining snapshot evidence."""
+    if isinstance(value, dict):
+        result = {}
+        for key, item in value.items():
+            if key == "database" and item == database:
+                result[key] = "<catalog>"
+            elif key in {"manifest", "directory"} and isinstance(item, str) and item.startswith(database + "::"):
+                result[key] = "<catalog>" + item[len(database):]
+            else:
+                result[key] = _comparable_catalog_evidence(item, database)
+        return result
+    if isinstance(value, list):
+        return [_comparable_catalog_evidence(item, database) for item in value]
+    return value
+
+
 def _verify_supplemental_selection_sources(study, validation_manifest):
     """Verify selection-period supplemental rows before extending a holdout."""
     source_study = validation_manifest["config"]
@@ -343,7 +360,8 @@ def _verify_supplemental_selection_sources(study, validation_manifest):
     _, current = load_catalog_features(study["database"], study["supplemental_features"],
         start=first, end=last, timezone=study["timezone"], interval_minutes=15,
         database_threads=study["threads_per_worker"])
-    if current != source_evidence:
+    if (_comparable_catalog_evidence(current, current["database"])
+            != _comparable_catalog_evidence(source_evidence, source_evidence["database"])):
         raise ValueError("Supplemental feature source snapshots or selected rows changed since validation")
     return {"selection_start": first.isoformat(), "selection_end": last.isoformat(),
             "verification": "exact_selection_period_feature_lineage_and_projected_row_hash"}
@@ -363,7 +381,11 @@ def _verify_price_selection_sources(study, validation_manifest, source_targets):
             _, current = load_price_history(study["database"], **source_targets[market]["source"],
                 interval_minutes=resolution, native_resolution_minutes=native, timezone=study["timezone"],
                 start=start, end=end)
-            if json.dumps(current, sort_keys=True, default=str) != json.dumps(expected, sort_keys=True, default=str):
+            old_database = expected.get("database")
+            new_database = current.get("database")
+            left = _comparable_catalog_evidence(current, new_database) if new_database else current
+            right = _comparable_catalog_evidence(expected, old_database) if old_database else expected
+            if json.dumps(left, sort_keys=True, default=str) != json.dumps(right, sort_keys=True, default=str):
                 raise ValueError(f"Auction price snapshots changed since selection for {group}/{market}")
 
         # Old manifests add feature provenance alongside target provenance;

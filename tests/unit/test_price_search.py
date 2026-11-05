@@ -606,6 +606,20 @@ def test_resume_checks_saved_arrays_and_completed_forecast_scores(tmp_path):
         _verify_resumed_results(manifest, [job])
 
 
+def test_catalog_comparison_accepts_relocation_but_not_changed_snapshots():
+    """Only catalog locator paths may differ between identical snapshot evidence."""
+    from scripts.search_energy_price_models import _comparable_catalog_evidence
+
+    def evidence(path, digest):
+        return {"database": path, "snapshot_sources": [{"directory": path + "::requests/abc",
+            "manifest": path + "::requests/abc/manifest.json", "storage": {"database": path},
+            "raw_sha256": digest, "source_file": "/other/original.xlsx"}]}
+
+    original = _comparable_catalog_evidence(evidence("/old.duckdb", "old"), "/old.duckdb")
+    assert original == _comparable_catalog_evidence(evidence("/copy.duckdb", "old"), "/copy.duckdb")
+    assert original != _comparable_catalog_evidence(evidence("/copy.duckdb", "new"), "/copy.duckdb")
+
+
 def test_price_holdout_rechecks_selection_period_snapshots(monkeypatch):
     """Holdout preparation rejects a revised target or lagged auction snapshot."""
     from scripts import search_energy_price_models as search
