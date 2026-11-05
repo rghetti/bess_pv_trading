@@ -36,3 +36,16 @@ condition on the selected model and correction and do not capture selection,
 missing-day or historical availability uncertainty. They therefore do not
 establish that the correction reliably improves forecasts or that long-run
 WAPE is below 4%.
+
+## Selected training-window follow-up
+
+The same September-tuned correction grid was applied to the earlier-selected
+models from `price_ida_training_windows_sep_oct_2026.md`. For IDA2, the selected
+365-day Lasso scored 4.50% WAPE and 10.349 EUR/MWh MAE on the 19 available
+October days before correction, and 4.45% and 10.234 EUR/MWh afterward. The
+selected correction uses a three-day window, one-hour blocks and shrinkage 96.
+IDA1 and IDA3 select the same underlying models and corrections as the table
+above. These are exploratory comparisons on previously inspected dates, not a
+fresh holdout; the short coverage, publication-clock and selection limitations
+remain. The full outputs and daily plots are in
+`nord_ida_2026_train_windows_sep_oct_bias_v1`.
