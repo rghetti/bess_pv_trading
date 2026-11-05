@@ -15,6 +15,7 @@ from bess_pv_trading.forecasting.price_search_models import make_price_candidate
     ("hist_gradient_boosting", {"max_iter": 20, "min_samples_leaf": 4}),
     ("random_forest", {"n_estimators": 10, "min_samples_leaf": 2}),
     ("extra_trees", {"n_estimators": 10, "min_samples_leaf": 2}),
+    ("knn", {"n_neighbors": 5, "weights": "distance"}),
     ("mlp", {"hidden_layer_sizes": (8,), "max_iter": 50}),
     ("lightgbm", {"n_estimators": 10, "min_child_samples": 4}),
     ("catboost", {"iterations": 10, "depth": 3}),

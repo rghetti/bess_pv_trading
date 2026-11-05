@@ -12,6 +12,7 @@ from sklearn.compose import TransformedTargetRegressor
 from sklearn.ensemble import ExtraTreesRegressor, HistGradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import ElasticNet, HuberRegressor, Lasso, Ridge, SGDRegressor
 from sklearn.neural_network import MLPRegressor
+from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
@@ -94,6 +95,9 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
         return RandomForestRegressor(random_state=seed, n_jobs=threads, **options)
     if family == "extra_trees":
         return ExtraTreesRegressor(random_state=seed, n_jobs=threads, **options)
+    if family == "knn":
+        # Scale each training feature before searching for comparable products.
+        return make_pipeline(StandardScaler(), KNeighborsRegressor(n_jobs=threads, **options))
     if family == "mlp":
         # Scale targets as well as predictors; inverse transformation returns EUR/MWh.
         estimator = make_pipeline(StandardScaler(), MLPRegressor(random_state=seed, **options))
