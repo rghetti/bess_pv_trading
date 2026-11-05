@@ -27,6 +27,26 @@ out-of-sample performance or the 4% target. Full candidate results, source
 snapshots and forecasts are in
 `outputs/energy_price_forecasts/nord_da_2026_price_weather_early_v1/`.
 
+## May–August rolling replay
+
+The early-selected Elastic Net was refitted weekly with a one-day gap for
+3 May–31 August 2026. Both feature arms used 11,520 identical quarter-hour
+products across 120 complete days and finished without recorded failures or
+convergence warnings.
+
+| Features | MAE EUR/MWh | WAPE |
+| --- | ---: | ---: |
+| Price only | 16.564 | 11.171% |
+| Price and regional weather | 16.840 | 11.357% |
+
+The weather model's paired MAE gain over price-only was -0.277 EUR/MWh. A
+5,000-resample independent-delivery-day bootstrap with seed 173 gives a 95%
+percentile interval of -0.748 to 0.201 EUR/MWh. This comparison is exploratory:
+some days were examined in other studies, and the interval excludes serial
+dependence and selection uncertainty. Source weather vintage and release timing
+remain unverified assumptions. Predictions and refits are in
+`outputs/energy_price_forecasts/nord_da_2026_price_weather_may_aug_rolling_v1/`.
+
 ## September–October rolling replay
 
 The earlier-selected Elastic Net was refitted weekly with a one-day gap. The

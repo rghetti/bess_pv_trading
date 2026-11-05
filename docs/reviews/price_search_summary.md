@@ -33,9 +33,14 @@ specific missing dates and fallback use are detailed in the linked reports.
 The plain DA price-only model on the weather study's shared products scored
 16.845 EUR/MWh and 7.850% WAPE; the 0.216 EUR/MWh improvement interval
 includes zero. DA errors in that sample are highest in the 12:00–17:59 local
-block: 10.660% with weather. See [DA price and weather](price_da_price_weather_2026.md),
-[price-only comparison](price_price_only_sep_oct_2026.md), and
-[October correction](price_online_bias_sep_oct_2026.md).
+block: 10.660% with weather. In a separate 120-day May–August comparison,
+the weather model scored 11.357% versus 11.171% for the paired price-only
+model; the paired gain interval also includes zero. The later IDA weather
+replay did not establish an improvement on the latest-cleared benchmark and
+its IDA2 weather model scored worse. See [DA price and weather](price_da_price_weather_2026.md),
+[price-only comparison](price_price_only_sep_oct_2026.md),
+[October correction](price_online_bias_sep_oct_2026.md), and
+[IDA weather replay](price_ida_spread_weather_2026.md).
 
 ## Separate historical product regimes
 
@@ -58,6 +63,6 @@ are tested configurations, not an exhaustive enumeration of every possible
 model or feature combination. The [XGBoost](price_xgboost_2026.md),
 [neural](price_da_regularized_mlp_2026.md), and
 [IDA weather](price_ida_spread_weather_2026.md) reports give examples of
-matched comparisons and their limitations. Later IDA weather and DA interaction
-replays are underway; their manifests, rather than partial scores, determine
+matched comparisons and their limitations. The longer IDA weather and later DA
+interaction replays are underway; their manifests, rather than partial scores, determine
 completion.
