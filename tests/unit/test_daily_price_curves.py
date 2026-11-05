@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from scripts.evaluate_daily_price_curves import check_joint_cutoffs, full_local_days
+from scripts.evaluate_daily_price_curves import check_joint_cutoffs, curve_target_and_anchor, full_local_days
 
 
 def test_excludes_partial_and_dst_local_days():
@@ -27,3 +27,14 @@ def test_joint_curve_requires_one_decision_time_per_day():
     check_joint_cutoffs(np.array([1, 1, 2, 2]), rows)
     with pytest.raises(ValueError, match="share one"):
         check_joint_cutoffs(np.array([1, 2, 2, 2]), rows)
+
+
+def test_residual_curve_uses_only_first_lag_per_product():
+    """The residual anchor is the first feature in each product's input row."""
+    features = np.array([[10, 99, 20, 88]], dtype=float)
+    targets = np.array([[13, 15]], dtype=float)
+    residual, anchor = curve_target_and_anchor(features, targets, "first_lag_residual")
+    np.testing.assert_array_equal(anchor, [[10, 20]])
+    np.testing.assert_array_equal(residual, [[3, -5]])
+    with pytest.raises(ValueError, match="Unknown"):
+        curve_target_and_anchor(features, targets, "invalid")

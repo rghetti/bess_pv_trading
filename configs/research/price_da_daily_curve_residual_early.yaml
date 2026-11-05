@@ -1,0 +1,14 @@
+# Joint daily DA residual curves anchored to the prior 24-hour price lag.
+include: ../standard.yaml
+daily_price_curves:
+  source_search: outputs/energy_price_forecasts/nord_da_2026_price_ida_weather_early_v1
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_da_2026_daily_curve_residual_early_v1
+  group: quarter_hourly
+  interval_minutes: 15
+  timezone: Europe/Rome
+  feature_sets: [curve_price, ida_curve_price_weather]
+  baseline_candidate: interaction_elastic_net_0.1
+  target_mode: first_lag_residual
+  target_ranks: [4, 8, 16]
+  ridge_alphas: [100.0, 1000.0, 10000.0]

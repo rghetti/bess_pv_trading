@@ -62,6 +62,16 @@ def check_joint_cutoffs(decisions, rows):
         raise ValueError("Daily curve products must share one forecast decision time")
 
 
+def curve_target_and_anchor(features, targets, mode):
+    """Build either absolute targets or residuals from the first price lag."""
+    if mode not in {"absolute", "first_lag_residual"}:
+        raise ValueError("Unknown curve target mode")
+    if features.ndim != 2 or targets.ndim != 2 or len(features) != len(targets) or features.shape[1] % targets.shape[1]:
+        raise ValueError("Daily features and targets must have compatible shapes")
+    anchor = features.reshape(len(features), targets.shape[1], -1)[:, :, 0]
+    return (targets, np.zeros_like(anchor)) if mode == "absolute" else (targets - anchor, anchor)
+
+
 def run(settings, root):
     """Fit target-curve PCA and ridge only on the saved early training days."""
     import matplotlib
@@ -77,6 +87,10 @@ def run(settings, root):
     split = manifest["config"]["product_groups"][group]
     if split["native_minutes"] != settings["interval_minutes"]:
         raise ValueError("Curve grid must use the source native product resolution")
+    target_mode = settings.get("target_mode", "absolute")
+    lag_hours = split.get("lag_hours", manifest["config"]["lag_hours"])
+    if target_mode == "first_lag_residual" and (not lag_hours or lag_hours[0] != 24):
+        raise ValueError("Residual curve anchor must be the source's first 24-hour price lag")
     ranks = settings["target_ranks"]
     alphas = settings["ridge_alphas"]
     if (not ranks or not alphas or any(isinstance(x, bool) or not isinstance(x, int) or x < 1 for x in ranks)
@@ -106,6 +120,8 @@ def run(settings, root):
         scaler = StandardScaler()
         scaled_train = scaler.fit_transform(train_x)
         scaled_valid = scaler.transform(valid_x)
+        train_target, _ = curve_target_and_anchor(train_x, train_y, target_mode)
+        _, validation_anchor = curve_target_and_anchor(valid_x, valid_y, target_mode)
         baseline_values = baseline.point.to_numpy()[valid_rows]
         baseline_error = np.abs(valid_y - baseline_values)
         denominator = float(np.abs(valid_y).sum())
@@ -114,11 +130,11 @@ def run(settings, root):
         for rank in ranks:
             # PCA and regression are both fitted exclusively on training days.
             pca = PCA(n_components=rank, svd_solver="full")
-            latent = pca.fit_transform(train_y)
+            latent = pca.fit_transform(train_target)
             for alpha in alphas:
                 estimator = Ridge(alpha=alpha, solver="cholesky")
                 estimator.fit(scaled_train, latent)
-                predicted = pca.inverse_transform(estimator.predict(scaled_valid))
+                predicted = pca.inverse_transform(estimator.predict(scaled_valid)) + validation_anchor
                 error = np.abs(valid_y - predicted)
                 row = {"feature_set": feature, "target_rank": rank, "ridge_alpha": alpha,
                     "train_days": len(train_y), "validation_days": len(valid_y), "products": int(valid_y.size),
