@@ -91,3 +91,13 @@ assumed, and both periods have been examined; this is exploratory and does not
 establish 4% DA accuracy. Settings, aligned predictions and a daily-error plot
 are saved in `nord_da_2026_regional_weather_online_bias_v1` under
 `outputs/energy_price_forecasts`.
+
+On those same 4,896 July–August products, the saved price-history reference
+(the first configured lag, nominally 24 hours, with the configured fallback)
+scored 20.189 EUR/MWh MAE and 12.342% WAPE. The corrected weather forecast's
+MAE gain over that reference was 5.797 EUR/MWh. A paired 5,000-resample
+independent-day bootstrap with seed 173 gives a 95% percentile interval of
++3.367 to +8.522 EUR/MWh for this gain. The comparison uses identical product
+timestamps and actual values. Its interval omits serial dependence, selection
+uncertainty and historical publication-clock uncertainty; fallback means the
+reference is not necessarily the exact previous-day price for every product.
