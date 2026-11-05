@@ -60,3 +60,15 @@ models. A matched rerun of both weather feature arms, fixing the same
 preselected half-life and raising the weighted model limit to 30,000
 iterations, has been started. The samples are retrospective and the
 bootstrap intervals omit serial dependence and selection uncertainty.
+
+The higher-iteration audit has now completed all four matched fits without
+recorded failures or convergence warnings, on the same 50 days and 4,800
+products. Without prior IDAs, unweighted versus weighted MAE/WAPE were
+16.306 EUR/MWh/7.617% versus 17.183/8.026%. With prior IDAs, they were
+16.078/7.510% versus 16.917/7.902%. Baseline-minus-weighted MAE differences
+were -0.877 and -0.839 EUR/MWh, with independent-day 95% bootstrap intervals
+-1.655–-0.142 and -1.603–-0.114, respectively (5,000 resamples, seed 173).
+This convergence check supports the observed disadvantage for these samples,
+subject to the retrospective selection, assumed source clocks, and omitted
+serial and model-selection uncertainty. Audit predictions and warnings are in
+`outputs/energy_price_forecasts/nord_da_2026_recency_convergence_sep_oct_rolling_v1/`.
