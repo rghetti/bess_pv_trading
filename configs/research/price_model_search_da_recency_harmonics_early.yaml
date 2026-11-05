@@ -1,0 +1,229 @@
+# Targeted midday-shape search on common weather-feature rows.
+include: ../standard.yaml
+price_model_search:
+  run_id: nord_da_2026_recency_harmonics_early_v1
+  output_root: outputs/energy_price_forecasts
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  timezone: Europe/Rome
+  workers: 4
+  threads_per_worker: 1
+  seed: 17
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  feature_sets: &id001
+  - curve_price_weather
+  - ida_curve_price_weather
+  product_groups:
+    quarter_hourly:
+      native_minutes: 15
+      history_start: '2025-10-01T00:00:00+02:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      feature_sets: *id001
+      lagged_market_price_features:
+      - market: IDA1
+        lag_hours: 24
+      - market: IDA1
+        lag_hours: 48
+      - market: IDA2
+        lag_hours: 24
+      - market: IDA2
+        lag_hours: 48
+  candidates:
+  - id: recency_2880_harmonics_1
+    family: recency_interaction_elastic_net
+    parameters:
+      half_life_observations: 2880
+      lag_count: 11
+      harmonics: 1
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - id: recency_2880_harmonics_2
+    family: recency_interaction_elastic_net
+    parameters:
+      half_life_observations: 2880
+      lag_count: 11
+      harmonics: 2
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - id: recency_2880_harmonics_3
+    family: recency_interaction_elastic_net
+    parameters:
+      half_life_observations: 2880
+      lag_count: 11
+      harmonics: 3
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - id: recency_8640_harmonics_1
+    family: recency_interaction_elastic_net
+    parameters:
+      half_life_observations: 8640
+      lag_count: 11
+      harmonics: 1
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - id: recency_8640_harmonics_2
+    family: recency_interaction_elastic_net
+    parameters:
+      half_life_observations: 8640
+      lag_count: 11
+      harmonics: 2
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - id: recency_8640_harmonics_3
+    family: recency_interaction_elastic_net
+    parameters:
+      half_life_observations: 8640
+      lag_count: 11
+      harmonics: 3
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  feature_set_aliases:
+    curve_price: price_only
+    curve_price_weather: price_only
+    ida_curve_price: price_only
+    ida_curve_price_weather: price_only
+  daily_curve_lag_days:
+  - 1
+  - 2
+  - 7
+  add_daily_curve_features_to:
+  - curve_price
+  - curve_price_weather
+  - ida_curve_price
+  - ida_curve_price_weather
+  common_training_rows: true
+  add_supplemental_features_to:
+  - curve_price_weather
+  - ida_curve_price_weather
+  supplemental_features:
+  - name: regional_milan_temperature_2m
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: °C
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: milan
+      variable: temperature_2m
+      source_kind: provider_archive_operational_or_hindcast_unverified
+  - name: regional_milan_shortwave_radiation
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: W/m²
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: milan
+      variable: shortwave_radiation
+      source_kind: provider_archive_operational_or_hindcast_unverified
+    weather_mean_interval_minutes: 60
+  - name: regional_turin_temperature_2m
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: °C
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: turin
+      variable: temperature_2m
+      source_kind: provider_archive_operational_or_hindcast_unverified
+  - name: regional_turin_shortwave_radiation
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: W/m²
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: turin
+      variable: shortwave_radiation
+      source_kind: provider_archive_operational_or_hindcast_unverified
+    weather_mean_interval_minutes: 60
+  - name: regional_verona_temperature_2m
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: °C
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: verona
+      variable: temperature_2m
+      source_kind: provider_archive_operational_or_hindcast_unverified
+  - name: regional_verona_shortwave_radiation
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: W/m²
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: verona
+      variable: shortwave_radiation
+      source_kind: provider_archive_operational_or_hindcast_unverified
+    weather_mean_interval_minutes: 60
+  - name: regional_venice_temperature_2m
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: °C
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: venice
+      variable: temperature_2m
+      source_kind: provider_archive_operational_or_hindcast_unverified
+  - name: regional_venice_shortwave_radiation
+    kind: weather
+    provider: open_meteo
+    dataset: weather_forecast
+    zone: NORD
+    expected_unit: W/m²
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    allow_hindcasts: true
+    selectors:
+      location_id: venice
+      variable: shortwave_radiation
+      source_kind: provider_archive_operational_or_hindcast_unverified
+    weather_mean_interval_minutes: 60
+  add_lagged_market_features_to:
+  - ida_curve_price
+  - ida_curve_price_weather
