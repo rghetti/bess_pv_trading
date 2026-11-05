@@ -1,0 +1,23 @@
+# Compare selected IDA weather models to their matched latest-cleared prices.
+include: ../standard.yaml
+matched_price_baselines:
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_ida_2026_weather_baseline_comparison_v1
+  timezone: Europe/Rome
+  markets: [IDA1, IDA2, IDA3]
+  studies:
+    - label: May–August 2026
+      run: outputs/energy_price_forecasts/nord_ida_2026_spread_price_weather_may_aug_rolling_v1
+      groups: &groups
+        - market: IDA1
+          reference_file: ida1_quarter_hourly__spread_price__zero_spread.csv
+          model_file: ida1_quarter_hourly__spread_price_weather__elastic_01.csv
+        - market: IDA2
+          reference_file: ida2_quarter_hourly__spread_price__zero_spread.csv
+          model_file: ida2_quarter_hourly__spread_price_weather__extra_leaf15_features06.csv
+        - market: IDA3
+          reference_file: ida3_quarter_hourly__spread_price__zero_spread.csv
+          model_file: ida3_quarter_hourly__spread_price_weather__ridge_20.csv
+    - label: September–October 2026
+      run: outputs/energy_price_forecasts/nord_ida_2026_spread_price_weather_sep_oct_rolling_v1
+      groups: *groups

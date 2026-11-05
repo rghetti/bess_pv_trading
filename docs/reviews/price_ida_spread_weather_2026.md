@@ -77,6 +77,12 @@ previously examined dates and the assumed historical clocks do not establish
 an operational gain or the 4% target. Saved predictions and refits are in
 `outputs/energy_price_forecasts/nord_ida_2026_spread_price_weather_may_aug_rolling_v1/`.
 
+The matched May–August and September–October WAPE comparison is plotted in
+`outputs/energy_price_forecasts/nord_ida_2026_weather_baseline_comparison_v1/matched_wape.png`;
+the adjacent CSV records each market's product and day counts, MAE and WAPE.
+The reproducible plot configuration is
+`configs/research/price_ida_weather_baselines_plot.yaml`.
+
 ### Online bias correction
 
 A residual-correction grid was tuned on May–June and evaluated on July–August
