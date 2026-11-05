@@ -100,3 +100,21 @@ previously examined, and publication and weather-vintage assumptions remain;
 the results do not demonstrate a reliable gain or the 4% target. The full grid,
 aligned predictions and daily-error plots are in
 `outputs/energy_price_forecasts/nord_ida_2026_spread_price_weather_online_bias_v1/`.
+
+### Correcting the latest-cleared baseline directly
+
+The same correction grid was applied directly to the saved zero-spread
+latest-cleared-price reference, rather than to a fitted model. Correction
+settings were selected on May–June and fixed for July–August. The source
+predictions were checked against their saved target and timing arrays; the
+study records their checksums and retains the publication-clock assumptions.
+
+| Auction | Products | Latest-cleared MAE EUR/MWh | WAPE | Corrected MAE EUR/MWh | Corrected WAPE | Selected correction |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| IDA1 | 5,472 | 7.438 | 4.523% | 7.438 | 4.523% | None |
+| IDA2 | 4,992 | 8.425 | 5.125% | 8.443 | 5.137% | 3-day window, 4-hour blocks, shrinkage 96 |
+| IDA3 | 2,640 | 13.610 | 8.296% | 13.610 | 8.296% | None |
+
+This exploratory correction does not improve the latest-cleared reference on
+these previously inspected July–August products. The output and full tuning
+grid are in `outputs/energy_price_forecasts/nord_ida_2026_latest_cleared_online_bias_v1/`.
