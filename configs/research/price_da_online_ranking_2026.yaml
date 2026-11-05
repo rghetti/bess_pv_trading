@@ -1,0 +1,15 @@
+# Select an adaptive model-ranking rule chronologically on shared DA forecasts.
+include: ../standard.yaml
+online_price_ranking:
+  source_search: outputs/energy_price_forecasts/nord_da_2026_regional_weather_selected_rolling_v1
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_da_2026_online_ranking_v1
+  group: quarter_hourly
+  timezone: Europe/Rome
+  tune_start: '2026-05-03'
+  tune_end_exclusive: '2026-07-01'
+  test_start: '2026-07-01'
+  test_end_exclusive: '2026-09-01'
+  reference_candidate: ida_regional_weather/interaction_elastic_0.1
+  window_days: [7, 14, 28, 56]
+  top_k: [1, 2, 4]
