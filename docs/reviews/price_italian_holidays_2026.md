@@ -48,6 +48,20 @@ independent-day bootstrap intervals were -0.151–0.236 and -0.153–0.212
 June 2 and August 15. This modest result does not establish a reliable gain;
 the September–October replay remains in progress.
 
+The holiday-flag IDA2 May–August replay also completed without warnings on
+114 shared days. Its selected Extra Trees spread model scored 5.350% WAPE
+without the flag and 5.357% with it. The paired baseline-minus-holiday MAE
+difference was -0.011 EUR/MWh with a 95% independent-day bootstrap interval
+of -0.038–0.017 (5,000 resamples, seed 173). June 2 and August 15 were the
+only holiday dates in this sample; the result does not show a measurable gain.
+
+The September–October DA weather model without prior IDAs scored 7.617% WAPE
+without the holiday flag and 7.610% with it on 50 days. No national holiday
+occurred in this evaluation window, so it measures only the small change in
+fitted coefficients from having holiday examples in training. The matched
+weather-plus-prior-IDAs DA comparison and IDA2 autumn replay remain in
+progress.
+
 The IDA1 and IDA3 rolling replays have completed without warnings. In
 May–August, IDA1 baseline and holiday-feature WAPE were 4.557% and 4.558%
 over 115 days; IDA3 scored 9.073% and 9.100% over 113 days. The two shared
