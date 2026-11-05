@@ -1,0 +1,733 @@
+{
+  "status": "passed",
+  "trajectory_count": 72,
+  "totals": {
+    "intervals": 214272,
+    "trade_rows": 508032,
+    "auction_price_curve_checks": 5912,
+    "pv_daily_fingerprint_checks": 2232,
+    "settlement_fingerprint_checks": 72
+  },
+  "trajectories": [
+    {
+      "farm": 1,
+      "mode": "forecast",
+      "profile": "DA",
+      "intervals": 2976,
+      "trade_rows": 2976,
+      "auction_price_curve_checks": 31,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "forecast",
+      "profile": "DA+IDA1",
+      "intervals": 2976,
+      "trade_rows": 5856,
+      "auction_price_curve_checks": 61,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "forecast",
+      "profile": "DA+IDA2",
+      "intervals": 2976,
+      "trade_rows": 5952,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "forecast",
+      "profile": "DA+IDA3",
+      "intervals": 2976,
+      "trade_rows": 4464,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "forecast",
+      "profile": "DA+IDA1+IDA2",
+      "intervals": 2976,
+      "trade_rows": 8832,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "forecast",
+      "profile": "DA+IDA1+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7344,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "forecast",
+      "profile": "DA+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7440,
+      "auction_price_curve_checks": 93,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "forecast",
+      "profile": "DA+IDA1+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "forecast",
+      "profile": "sequential_all_auctions",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "oracle",
+      "profile": "DA",
+      "intervals": 2976,
+      "trade_rows": 2976,
+      "auction_price_curve_checks": 31,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "oracle",
+      "profile": "DA+IDA1",
+      "intervals": 2976,
+      "trade_rows": 5856,
+      "auction_price_curve_checks": 61,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "oracle",
+      "profile": "DA+IDA2",
+      "intervals": 2976,
+      "trade_rows": 5952,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "oracle",
+      "profile": "DA+IDA3",
+      "intervals": 2976,
+      "trade_rows": 4464,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "oracle",
+      "profile": "DA+IDA1+IDA2",
+      "intervals": 2976,
+      "trade_rows": 8832,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "oracle",
+      "profile": "DA+IDA1+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7344,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "oracle",
+      "profile": "DA+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7440,
+      "auction_price_curve_checks": 93,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "oracle",
+      "profile": "DA+IDA1+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 1,
+      "mode": "oracle",
+      "profile": "sequential_all_auctions",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "forecast",
+      "profile": "DA",
+      "intervals": 2976,
+      "trade_rows": 2976,
+      "auction_price_curve_checks": 31,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "forecast",
+      "profile": "DA+IDA1",
+      "intervals": 2976,
+      "trade_rows": 5856,
+      "auction_price_curve_checks": 61,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "forecast",
+      "profile": "DA+IDA2",
+      "intervals": 2976,
+      "trade_rows": 5952,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "forecast",
+      "profile": "DA+IDA3",
+      "intervals": 2976,
+      "trade_rows": 4464,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "forecast",
+      "profile": "DA+IDA1+IDA2",
+      "intervals": 2976,
+      "trade_rows": 8832,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "forecast",
+      "profile": "DA+IDA1+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7344,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "forecast",
+      "profile": "DA+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7440,
+      "auction_price_curve_checks": 93,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "forecast",
+      "profile": "DA+IDA1+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "forecast",
+      "profile": "sequential_all_auctions",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "oracle",
+      "profile": "DA",
+      "intervals": 2976,
+      "trade_rows": 2976,
+      "auction_price_curve_checks": 31,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "oracle",
+      "profile": "DA+IDA1",
+      "intervals": 2976,
+      "trade_rows": 5856,
+      "auction_price_curve_checks": 61,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "oracle",
+      "profile": "DA+IDA2",
+      "intervals": 2976,
+      "trade_rows": 5952,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "oracle",
+      "profile": "DA+IDA3",
+      "intervals": 2976,
+      "trade_rows": 4464,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "oracle",
+      "profile": "DA+IDA1+IDA2",
+      "intervals": 2976,
+      "trade_rows": 8832,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "oracle",
+      "profile": "DA+IDA1+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7344,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "oracle",
+      "profile": "DA+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7440,
+      "auction_price_curve_checks": 93,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "oracle",
+      "profile": "DA+IDA1+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 345,
+      "mode": "oracle",
+      "profile": "sequential_all_auctions",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "forecast",
+      "profile": "DA",
+      "intervals": 2976,
+      "trade_rows": 2976,
+      "auction_price_curve_checks": 31,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "forecast",
+      "profile": "DA+IDA1",
+      "intervals": 2976,
+      "trade_rows": 5856,
+      "auction_price_curve_checks": 61,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "forecast",
+      "profile": "DA+IDA2",
+      "intervals": 2976,
+      "trade_rows": 5952,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "forecast",
+      "profile": "DA+IDA3",
+      "intervals": 2976,
+      "trade_rows": 4464,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "forecast",
+      "profile": "DA+IDA1+IDA2",
+      "intervals": 2976,
+      "trade_rows": 8832,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "forecast",
+      "profile": "DA+IDA1+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7344,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "forecast",
+      "profile": "DA+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7440,
+      "auction_price_curve_checks": 93,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "forecast",
+      "profile": "DA+IDA1+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "forecast",
+      "profile": "sequential_all_auctions",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "oracle",
+      "profile": "DA",
+      "intervals": 2976,
+      "trade_rows": 2976,
+      "auction_price_curve_checks": 31,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "oracle",
+      "profile": "DA+IDA1",
+      "intervals": 2976,
+      "trade_rows": 5856,
+      "auction_price_curve_checks": 61,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "oracle",
+      "profile": "DA+IDA2",
+      "intervals": 2976,
+      "trade_rows": 5952,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "oracle",
+      "profile": "DA+IDA3",
+      "intervals": 2976,
+      "trade_rows": 4464,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "oracle",
+      "profile": "DA+IDA1+IDA2",
+      "intervals": 2976,
+      "trade_rows": 8832,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "oracle",
+      "profile": "DA+IDA1+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7344,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "oracle",
+      "profile": "DA+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7440,
+      "auction_price_curve_checks": 93,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "oracle",
+      "profile": "DA+IDA1+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 901,
+      "mode": "oracle",
+      "profile": "sequential_all_auctions",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "forecast",
+      "profile": "DA",
+      "intervals": 2976,
+      "trade_rows": 2976,
+      "auction_price_curve_checks": 31,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "forecast",
+      "profile": "DA+IDA1",
+      "intervals": 2976,
+      "trade_rows": 5856,
+      "auction_price_curve_checks": 61,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "forecast",
+      "profile": "DA+IDA2",
+      "intervals": 2976,
+      "trade_rows": 5952,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "forecast",
+      "profile": "DA+IDA3",
+      "intervals": 2976,
+      "trade_rows": 4464,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "forecast",
+      "profile": "DA+IDA1+IDA2",
+      "intervals": 2976,
+      "trade_rows": 8832,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "forecast",
+      "profile": "DA+IDA1+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7344,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "forecast",
+      "profile": "DA+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7440,
+      "auction_price_curve_checks": 93,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "forecast",
+      "profile": "DA+IDA1+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "forecast",
+      "profile": "sequential_all_auctions",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "oracle",
+      "profile": "DA",
+      "intervals": 2976,
+      "trade_rows": 2976,
+      "auction_price_curve_checks": 31,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "oracle",
+      "profile": "DA+IDA1",
+      "intervals": 2976,
+      "trade_rows": 5856,
+      "auction_price_curve_checks": 61,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "oracle",
+      "profile": "DA+IDA2",
+      "intervals": 2976,
+      "trade_rows": 5952,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "oracle",
+      "profile": "DA+IDA3",
+      "intervals": 2976,
+      "trade_rows": 4464,
+      "auction_price_curve_checks": 62,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "oracle",
+      "profile": "DA+IDA1+IDA2",
+      "intervals": 2976,
+      "trade_rows": 8832,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "oracle",
+      "profile": "DA+IDA1+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7344,
+      "auction_price_curve_checks": 92,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "oracle",
+      "profile": "DA+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 7440,
+      "auction_price_curve_checks": 93,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "oracle",
+      "profile": "DA+IDA1+IDA2+IDA3",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    },
+    {
+      "farm": 910,
+      "mode": "oracle",
+      "profile": "sequential_all_auctions",
+      "intervals": 2976,
+      "trade_rows": 10320,
+      "auction_price_curve_checks": 123,
+      "pv_daily_fingerprint_checks": 31,
+      "settlement_fingerprint_checks": 1
+    }
+  ]
+}

@@ -82,6 +82,18 @@ def test_report_pairs_profits_and_components(tmp_path, monkeypatch):
     assert 'Settlement | Degradation | Import fee | Trading fee' in summary
     assert 'retrospective' in summary
 
+    # A partial audit cannot be presented as validation of the paired study.
+    audit = {'status': 'passed', 'trajectory_count': 17, 'totals': {
+        'auction_price_curve_checks': 1, 'pv_daily_fingerprint_checks': 1,
+        'settlement_fingerprint_checks': 1}}
+    (tmp_path / 'ledger_validation.json').write_text(json.dumps(audit))
+    with pytest.raises(ValueError, match='Ledger validation evidence is incomplete'):
+        runner.report()
+    audit['trajectory_count'] = 18
+    (tmp_path / 'ledger_validation.json').write_text(json.dumps(audit))
+    runner.report()
+    assert 'Independent ledger audit passed for 18 trajectories' in (tmp_path / 'summary.md').read_text()
+
     # Corruptions must be rejected even when row counts are unchanged.
     daily_path = root / 'csv/daily_participation.csv'
     frame = pd.read_csv(daily_path)

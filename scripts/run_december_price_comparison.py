@@ -291,6 +291,19 @@ def report():
         lines.append(f"| {source['farm']} | {source['mode']} | {sum(x['active_attempt_count'] for x in audit)} | "
             + ', '.join(f'{key}: {value}' for key, value in sorted(statuses.items()))
             + f" | {sum(x['fallback_count'] for x in audit)} | {gap_text} |")
+    ledger_path = OUTPUT / 'ledger_validation.json'
+    if ledger_path.exists():
+        ledger = json.loads(ledger_path.read_text())
+        expected_count = len(FARMS) * len(MODES) * 9
+        if ledger.get('status') != 'passed' or ledger.get('trajectory_count') != expected_count:
+            raise ValueError('Ledger validation evidence is incomplete')
+        totals = ledger['totals']
+        lines.extend(['', f"Independent ledger audit passed for {ledger['trajectory_count']} trajectories: "
+            f"{totals['auction_price_curve_checks']} actual auction-price curve checks, "
+            f"{totals['pv_daily_fingerprint_checks']} realized PV day checks and "
+            f"{totals['settlement_fingerprint_checks']} full settlement-price checks. "
+            'The audit also reconstructs auction and imbalance cashflows. '
+            '[Ledger validation evidence](ledger_validation.json).'])
     lines.extend(['', '## Assumptions and validation', ''])
     lines.extend(['Execution-target source counts below are quarter-hours per farm, shared by '
                   'all profiles and both arms; night-policy counts are listed separately from metered values.', '',
@@ -322,6 +335,10 @@ def report():
         'fee assumptions are illustrative. Curated PV replacements can use retrospective historical '
         'GHI and are counterfactual rather than metered production. Availability uses assumed source '
         'publication clocks; the comparison does not reconstruct historical revisions.', '',
+        'The model assumes price taking and guaranteed full execution, including offsetting trades '
+        'across auctions. The tracking controller uses realized interval-average PV; it is not a '
+        'tested live telemetry or trading system. These assumptions and perfect knowledge of auction '
+        'curves can materially affect the size of the oracle advantage.', '',
         'Validation: complete unique profile/date sets; matching saved physical settings, weather, '
         'realized PV, clearing and settlement inputs; run/preflight fingerprints; daily-to-monthly '
         'cash reconciliation; continuous daily battery boundaries. Runtime reporting also reconciles '

@@ -1,0 +1,2030 @@
+[
+  {
+    "farm": 1,
+    "mode": "forecast",
+    "directory": "/home/rghetti/bess_pv_trading_realtime_mpc/outputs/continuous_optimization/december_2025_price_study/farm_1/december_2025_price_forecast_v1",
+    "config_fingerprint": "f07180482ad74d111eea2269f2bb2a85a524f6ceb8b14fcf0938e63a9d66496b",
+    "input_fingerprint": "2a28f8c2b48a253e1fffeffd96ad0d9df6d825decd2f54d8a2c68eac0638a138",
+    "policy": "continuous-participation-v1",
+    "status": "complete",
+    "run_id": "december_2025_price_forecast_v1",
+    "code_revision": "669afc095fdc41c1edc4861b4dc7061b0befbf49",
+    "delivery_days": [
+      "2025-12-01",
+      "2025-12-02",
+      "2025-12-03",
+      "2025-12-04",
+      "2025-12-05",
+      "2025-12-06",
+      "2025-12-07",
+      "2025-12-08",
+      "2025-12-09",
+      "2025-12-10",
+      "2025-12-11",
+      "2025-12-12",
+      "2025-12-13",
+      "2025-12-14",
+      "2025-12-15",
+      "2025-12-16",
+      "2025-12-17",
+      "2025-12-18",
+      "2025-12-19",
+      "2025-12-20",
+      "2025-12-21",
+      "2025-12-22",
+      "2025-12-23",
+      "2025-12-24",
+      "2025-12-25",
+      "2025-12-26",
+      "2025-12-27",
+      "2025-12-28",
+      "2025-12-29",
+      "2025-12-30",
+      "2025-12-31"
+    ],
+    "completed": [
+      "DA",
+      "DA+IDA1",
+      "DA+IDA2",
+      "DA+IDA3",
+      "DA+IDA1+IDA2",
+      "DA+IDA1+IDA3",
+      "DA+IDA2+IDA3",
+      "DA+IDA1+IDA2+IDA3",
+      "sequential_all_auctions"
+    ],
+    "comparison": [
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 2640.6889167585314,
+        "mean_daily_profit_eur": 85.1835134438236,
+        "std_daily_profit_eur": 104.15574388843702,
+        "final_energy_mwh": 0.0525,
+        "final_soc_percent": 6.999999999999999,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 2498.3943438952565,
+        "mean_daily_profit_eur": 80.59336593210504,
+        "std_daily_profit_eur": 87.23781734073124,
+        "final_energy_mwh": 0.0525,
+        "final_soc_percent": 6.999999999999999,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 2279.581443893951,
+        "mean_daily_profit_eur": 73.53488528690164,
+        "std_daily_profit_eur": 88.36784187709947,
+        "final_energy_mwh": 0.0525,
+        "final_soc_percent": 6.999999999999999,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 2265.0864172409247,
+        "mean_daily_profit_eur": 73.06730378196531,
+        "std_daily_profit_eur": 88.83709185187868,
+        "final_energy_mwh": 0.0525,
+        "final_soc_percent": 6.999999999999999,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 2130.7343525443766,
+        "mean_daily_profit_eur": 68.73336621110893,
+        "std_daily_profit_eur": 85.48894501189257,
+        "final_energy_mwh": 0.0525,
+        "final_soc_percent": 6.999999999999999,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 2083.7245911169603,
+        "mean_daily_profit_eur": 67.2169222940955,
+        "std_daily_profit_eur": 73.48098839355536,
+        "final_energy_mwh": 0.072375914966493,
+        "final_soc_percent": 9.6501219955324,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 2074.1783423467027,
+        "mean_daily_profit_eur": 66.90897878537751,
+        "std_daily_profit_eur": 67.87838444588974,
+        "final_energy_mwh": 0.0525,
+        "final_soc_percent": 6.999999999999999,
+        "fallback_count": 0
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "kind": "baseline",
+        "delivery_days": 31,
+        "total_net_profit_eur": 1720.4448464732293,
+        "mean_daily_profit_eur": 55.49822085397514,
+        "std_daily_profit_eur": 62.16876402180234,
+        "final_energy_mwh": 0.0525,
+        "final_soc_percent": 6.999999999999999,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 1601.8481179045993,
+        "mean_daily_profit_eur": 51.67251993240643,
+        "std_daily_profit_eur": 66.46753731806419,
+        "final_energy_mwh": 0.0525,
+        "final_soc_percent": 6.999999999999999,
+        "fallback_count": 0
+      }
+    ],
+    "comparison_scope": "Continuous realized cash profit; each profile carries its own physical and fee state. Final SOC may differ.",
+    "solver_audit": [
+      {
+        "profile": "DA",
+        "attempt_count": 31,
+        "active_attempt_count": 31,
+        "statuses": {
+          "optimal": 31
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 3.7110012456139346e-05
+      },
+      {
+        "profile": "DA+IDA1",
+        "attempt_count": 61,
+        "active_attempt_count": 61,
+        "statuses": {
+          "optimal": 61
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA2",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA3",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 4.347340835695611e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 8.476825473237018e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.223108205998075e-05
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "attempt_count": 93,
+        "active_attempt_count": 93,
+        "statuses": {
+          "optimal": 93
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 3.8750665529318206e-05
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      }
+    ],
+    "pv_target_source_counts": {
+      "monthly_night_zero": 1581,
+      "metered_ac": 990,
+      "pvlib_historical_ghi": 405
+    }
+  },
+  {
+    "farm": 1,
+    "mode": "oracle",
+    "directory": "/home/rghetti/bess_pv_trading_realtime_mpc/outputs/continuous_optimization/december_2025_price_study/farm_1/december_2025_price_oracle_v1",
+    "config_fingerprint": "51d9d15b098b79cb95798d99a231a5a393359118d853eb0d31d2c1f014c10bd9",
+    "input_fingerprint": "c1432640b319423f95149995a4952001c0811603135d24138875fbb834c7a0d3",
+    "policy": "continuous-participation-v1",
+    "status": "complete",
+    "run_id": "december_2025_price_oracle_v1",
+    "code_revision": "669afc095fdc41c1edc4861b4dc7061b0befbf49",
+    "delivery_days": [
+      "2025-12-01",
+      "2025-12-02",
+      "2025-12-03",
+      "2025-12-04",
+      "2025-12-05",
+      "2025-12-06",
+      "2025-12-07",
+      "2025-12-08",
+      "2025-12-09",
+      "2025-12-10",
+      "2025-12-11",
+      "2025-12-12",
+      "2025-12-13",
+      "2025-12-14",
+      "2025-12-15",
+      "2025-12-16",
+      "2025-12-17",
+      "2025-12-18",
+      "2025-12-19",
+      "2025-12-20",
+      "2025-12-21",
+      "2025-12-22",
+      "2025-12-23",
+      "2025-12-24",
+      "2025-12-25",
+      "2025-12-26",
+      "2025-12-27",
+      "2025-12-28",
+      "2025-12-29",
+      "2025-12-30",
+      "2025-12-31"
+    ],
+    "completed": [
+      "DA",
+      "DA+IDA1",
+      "DA+IDA2",
+      "DA+IDA3",
+      "DA+IDA1+IDA2",
+      "DA+IDA1+IDA3",
+      "DA+IDA2+IDA3",
+      "DA+IDA1+IDA2+IDA3",
+      "sequential_all_auctions"
+    ],
+    "comparison": [
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 10115.238388591424,
+        "mean_daily_profit_eur": 326.29801253520725,
+        "std_daily_profit_eur": 90.6272737187793,
+        "final_energy_mwh": 0.1710854122563142,
+        "final_soc_percent": 22.811388300841895,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 8011.700305810066,
+        "mean_daily_profit_eur": 258.44194534871184,
+        "std_daily_profit_eur": 78.2737913893352,
+        "final_energy_mwh": 0.1710854122563142,
+        "final_soc_percent": 22.811388300841895,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 7848.024003439024,
+        "mean_daily_profit_eur": 253.1620646270653,
+        "std_daily_profit_eur": 82.4474657912017,
+        "final_energy_mwh": 0.0525,
+        "final_soc_percent": 6.999999999999999,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 7503.311411597182,
+        "mean_daily_profit_eur": 242.0423035999091,
+        "std_daily_profit_eur": 78.08916979915544,
+        "final_energy_mwh": 0.3745845604621989,
+        "final_soc_percent": 49.944608061626525,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 6181.523230985389,
+        "mean_daily_profit_eur": 199.40397519307706,
+        "std_daily_profit_eur": 73.28537288977302,
+        "final_energy_mwh": 0.0525,
+        "final_soc_percent": 6.999999999999999,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 5468.781815193237,
+        "mean_daily_profit_eur": 176.41231661913667,
+        "std_daily_profit_eur": 77.89248339840994,
+        "final_energy_mwh": 0.0525,
+        "final_soc_percent": 6.999999999999999,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 4708.980970106349,
+        "mean_daily_profit_eur": 151.90261193891448,
+        "std_daily_profit_eur": 64.38059064511029,
+        "final_energy_mwh": 0.1710854122563142,
+        "final_soc_percent": 22.811388300841895,
+        "fallback_count": 0
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "kind": "baseline",
+        "delivery_days": 31,
+        "total_net_profit_eur": 1954.4334051045596,
+        "mean_daily_profit_eur": 63.04623887434063,
+        "std_daily_profit_eur": 62.92251559361116,
+        "final_energy_mwh": 0.29967394528684,
+        "final_soc_percent": 39.95652603824533,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 1758.5397431317106,
+        "mean_daily_profit_eur": 56.7270884881197,
+        "std_daily_profit_eur": 64.10273985312938,
+        "final_energy_mwh": 0.0525,
+        "final_soc_percent": 6.999999999999999,
+        "fallback_count": 0
+      }
+    ],
+    "comparison_scope": "Continuous realized cash profit; each profile carries its own physical and fee state. Final SOC may differ.",
+    "solver_audit": [
+      {
+        "profile": "DA",
+        "attempt_count": 31,
+        "active_attempt_count": 31,
+        "statuses": {
+          "optimal": 31
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA1",
+        "attempt_count": 61,
+        "active_attempt_count": 61,
+        "statuses": {
+          "optimal": 61
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.595109381640636e-05
+      },
+      {
+        "profile": "DA+IDA2",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA3",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 8.151612419466219e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 6.884961018005169e-05
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "attempt_count": 93,
+        "active_attempt_count": 93,
+        "statuses": {
+          "optimal": 93
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 2.7068837428135207e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 6.416497938168115e-06
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      }
+    ],
+    "pv_target_source_counts": {
+      "monthly_night_zero": 1581,
+      "metered_ac": 990,
+      "pvlib_historical_ghi": 405
+    }
+  },
+  {
+    "farm": 345,
+    "mode": "forecast",
+    "directory": "/home/rghetti/bess_pv_trading_realtime_mpc/outputs/continuous_optimization/december_2025_price_study/farm_345/december_2025_price_forecast_v1",
+    "config_fingerprint": "0d5d88e661178cdacc641feb70ac04db59a5cb08055f6d34e7a929f87e388c64",
+    "input_fingerprint": "1f797d6ba29f4ff67fffa8e5e0318d7b4b05593a90a865e845f23d40705bcb72",
+    "policy": "continuous-participation-v1",
+    "status": "complete",
+    "run_id": "december_2025_price_forecast_v1",
+    "code_revision": "669afc095fdc41c1edc4861b4dc7061b0befbf49",
+    "delivery_days": [
+      "2025-12-01",
+      "2025-12-02",
+      "2025-12-03",
+      "2025-12-04",
+      "2025-12-05",
+      "2025-12-06",
+      "2025-12-07",
+      "2025-12-08",
+      "2025-12-09",
+      "2025-12-10",
+      "2025-12-11",
+      "2025-12-12",
+      "2025-12-13",
+      "2025-12-14",
+      "2025-12-15",
+      "2025-12-16",
+      "2025-12-17",
+      "2025-12-18",
+      "2025-12-19",
+      "2025-12-20",
+      "2025-12-21",
+      "2025-12-22",
+      "2025-12-23",
+      "2025-12-24",
+      "2025-12-25",
+      "2025-12-26",
+      "2025-12-27",
+      "2025-12-28",
+      "2025-12-29",
+      "2025-12-30",
+      "2025-12-31"
+    ],
+    "completed": [
+      "DA",
+      "DA+IDA1",
+      "DA+IDA2",
+      "DA+IDA3",
+      "DA+IDA1+IDA2",
+      "DA+IDA1+IDA3",
+      "DA+IDA2+IDA3",
+      "DA+IDA1+IDA2+IDA3",
+      "sequential_all_auctions"
+    ],
+    "comparison": [
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 6350.903342590572,
+        "mean_daily_profit_eur": 204.8678497609862,
+        "std_daily_profit_eur": 150.76290254504045,
+        "final_energy_mwh": 0.07297388687727908,
+        "final_soc_percent": 7.297388687727908,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 6234.3077471216,
+        "mean_daily_profit_eur": 201.10670152005162,
+        "std_daily_profit_eur": 114.49672331242017,
+        "final_energy_mwh": 0.07297388687727906,
+        "final_soc_percent": 7.2973886877279055,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 5881.9644530879705,
+        "mean_daily_profit_eur": 189.74078880928937,
+        "std_daily_profit_eur": 115.826944398878,
+        "final_energy_mwh": 0.07261477324833263,
+        "final_soc_percent": 7.261477324833263,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 5794.454346210499,
+        "mean_daily_profit_eur": 186.91788213582257,
+        "std_daily_profit_eur": 140.2725415711378,
+        "final_energy_mwh": 0.07297494323540099,
+        "final_soc_percent": 7.297494323540099,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 5587.258798324342,
+        "mean_daily_profit_eur": 180.2341547846562,
+        "std_daily_profit_eur": 119.56938294880818,
+        "final_energy_mwh": 0.07270163247410849,
+        "final_soc_percent": 7.270163247410849,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 5531.863458291722,
+        "mean_daily_profit_eur": 178.44720833199102,
+        "std_daily_profit_eur": 112.69642416426437,
+        "final_energy_mwh": 0.07668453301372286,
+        "final_soc_percent": 7.668453301372286,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 5524.741346947259,
+        "mean_daily_profit_eur": 178.2174628047503,
+        "std_daily_profit_eur": 100.4728200700807,
+        "final_energy_mwh": 0.07301136850494494,
+        "final_soc_percent": 7.301136850494494,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 5027.257351546469,
+        "mean_daily_profit_eur": 162.16959198536998,
+        "std_daily_profit_eur": 89.24890427485154,
+        "final_energy_mwh": 0.07272282302821848,
+        "final_soc_percent": 7.272282302821847,
+        "fallback_count": 0
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "kind": "baseline",
+        "delivery_days": 31,
+        "total_net_profit_eur": 4898.989852547331,
+        "mean_daily_profit_eur": 158.03193072733325,
+        "std_daily_profit_eur": 80.11556781919596,
+        "final_energy_mwh": 0.07297388687727907,
+        "final_soc_percent": 7.297388687727907,
+        "fallback_count": 0
+      }
+    ],
+    "comparison_scope": "Continuous realized cash profit; each profile carries its own physical and fee state. Final SOC may differ.",
+    "solver_audit": [
+      {
+        "profile": "DA",
+        "attempt_count": 31,
+        "active_attempt_count": 31,
+        "statuses": {
+          "optimal": 31
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 3.0356015889696757e-05
+      },
+      {
+        "profile": "DA+IDA1",
+        "attempt_count": 61,
+        "active_attempt_count": 61,
+        "statuses": {
+          "optimal": 61
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 8.101831940909893e-05
+      },
+      {
+        "profile": "DA+IDA2",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 7.8880025742445e-05
+      },
+      {
+        "profile": "DA+IDA3",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.565269856379338e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 2.898059826116633e-05
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "attempt_count": 93,
+        "active_attempt_count": 93,
+        "statuses": {
+          "optimal": 93
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 2.559466771283495e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.218336425658707e-05
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      }
+    ],
+    "pv_target_source_counts": {
+      "monthly_night_zero": 1581,
+      "metered_ac": 1346,
+      "pvlib_retained_exclusion": 49
+    }
+  },
+  {
+    "farm": 345,
+    "mode": "oracle",
+    "directory": "/home/rghetti/bess_pv_trading_realtime_mpc/outputs/continuous_optimization/december_2025_price_study/farm_345/december_2025_price_oracle_v1",
+    "config_fingerprint": "23e0cdde6ff4cc7e283a2fc3bf3dcb91819b7f3e572860562bc04dfca261a805",
+    "input_fingerprint": "4b9ce8c48c317fdaac454b469b1292353cb8c22bfa7db94b4c5b6e7550d994c7",
+    "policy": "continuous-participation-v1",
+    "status": "complete",
+    "run_id": "december_2025_price_oracle_v1",
+    "code_revision": "669afc095fdc41c1edc4861b4dc7061b0befbf49",
+    "delivery_days": [
+      "2025-12-01",
+      "2025-12-02",
+      "2025-12-03",
+      "2025-12-04",
+      "2025-12-05",
+      "2025-12-06",
+      "2025-12-07",
+      "2025-12-08",
+      "2025-12-09",
+      "2025-12-10",
+      "2025-12-11",
+      "2025-12-12",
+      "2025-12-13",
+      "2025-12-14",
+      "2025-12-15",
+      "2025-12-16",
+      "2025-12-17",
+      "2025-12-18",
+      "2025-12-19",
+      "2025-12-20",
+      "2025-12-21",
+      "2025-12-22",
+      "2025-12-23",
+      "2025-12-24",
+      "2025-12-25",
+      "2025-12-26",
+      "2025-12-27",
+      "2025-12-28",
+      "2025-12-29",
+      "2025-12-30",
+      "2025-12-31"
+    ],
+    "completed": [
+      "DA",
+      "DA+IDA1",
+      "DA+IDA2",
+      "DA+IDA3",
+      "DA+IDA1+IDA2",
+      "DA+IDA1+IDA3",
+      "DA+IDA2+IDA3",
+      "DA+IDA1+IDA2+IDA3",
+      "sequential_all_auctions"
+    ],
+    "comparison": [
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 18298.095847512162,
+        "mean_daily_profit_eur": 590.2611563713601,
+        "std_daily_profit_eur": 122.42609468516412,
+        "final_energy_mwh": 0.19156181233331415,
+        "final_soc_percent": 19.156181233331417,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 14971.943056461336,
+        "mean_daily_profit_eur": 482.96590504713987,
+        "std_daily_profit_eur": 106.24418483892634,
+        "final_energy_mwh": 0.19156181233331415,
+        "final_soc_percent": 19.156181233331417,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 14690.331446419212,
+        "mean_daily_profit_eur": 473.88165956191006,
+        "std_daily_profit_eur": 96.51790317938459,
+        "final_energy_mwh": 0.07270163247410849,
+        "final_soc_percent": 7.270163247410849,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 14120.365591124191,
+        "mean_daily_profit_eur": 455.49566422981263,
+        "std_daily_profit_eur": 105.63612667821161,
+        "final_energy_mwh": 0.29165602530059626,
+        "final_soc_percent": 29.165602530059626,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 11952.038054786562,
+        "mean_daily_profit_eur": 385.54961467053425,
+        "std_daily_profit_eur": 83.67876034375485,
+        "final_energy_mwh": 0.07272078112760393,
+        "final_soc_percent": 7.272078112760393,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 10870.545109092278,
+        "mean_daily_profit_eur": 350.6627454545896,
+        "std_daily_profit_eur": 97.27214013343365,
+        "final_energy_mwh": 0.07261477324833268,
+        "final_soc_percent": 7.261477324833268,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 9700.074145098857,
+        "mean_daily_profit_eur": 312.9056175838341,
+        "std_daily_profit_eur": 95.16085946603766,
+        "final_energy_mwh": 0.24096867560576615,
+        "final_soc_percent": 24.096867560576616,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 5134.957380678141,
+        "mean_daily_profit_eur": 165.6437864734884,
+        "std_daily_profit_eur": 90.15641582859313,
+        "final_energy_mwh": 0.07272282302821848,
+        "final_soc_percent": 7.272282302821847,
+        "fallback_count": 0
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "kind": "baseline",
+        "delivery_days": 31,
+        "total_net_profit_eur": 5122.845807036501,
+        "mean_daily_profit_eur": 165.25309054956455,
+        "std_daily_profit_eur": 85.9960271247091,
+        "final_energy_mwh": 0.38145772851898174,
+        "final_soc_percent": 38.14577285189817,
+        "fallback_count": 0
+      }
+    ],
+    "comparison_scope": "Continuous realized cash profit; each profile carries its own physical and fee state. Final SOC may differ.",
+    "solver_audit": [
+      {
+        "profile": "DA",
+        "attempt_count": 31,
+        "active_attempt_count": 31,
+        "statuses": {
+          "optimal": 31
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.343229715280063e-05
+      },
+      {
+        "profile": "DA+IDA1",
+        "attempt_count": 61,
+        "active_attempt_count": 61,
+        "statuses": {
+          "optimal": 61
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA2",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.030575162483073e-05
+      },
+      {
+        "profile": "DA+IDA3",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 7.656971226873835e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 7.578486941242328e-05
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "attempt_count": 93,
+        "active_attempt_count": 93,
+        "statuses": {
+          "optimal": 93
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 4.9514100127970416e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 3.4526196291580335e-05
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.57884127781435e-05
+      }
+    ],
+    "pv_target_source_counts": {
+      "monthly_night_zero": 1581,
+      "metered_ac": 1346,
+      "pvlib_retained_exclusion": 49
+    }
+  },
+  {
+    "farm": 901,
+    "mode": "forecast",
+    "directory": "/home/rghetti/bess_pv_trading_realtime_mpc/outputs/continuous_optimization/december_2025_price_study/farm_901/december_2025_price_forecast_v1",
+    "config_fingerprint": "f78f0c97fe03b4a1d3d81905a6c319055ba0f4d7cded06d59b3d560791442408",
+    "input_fingerprint": "ac6a6913eed6bdee9e472ff9c58f5b0a2b64cec6e557e2cb2987eb4b58ac6fea",
+    "policy": "continuous-participation-v1",
+    "status": "complete",
+    "run_id": "december_2025_price_forecast_v1",
+    "code_revision": "8c15e592b79b893cdd3d3159ad6c49b6954f799e",
+    "delivery_days": [
+      "2025-12-01",
+      "2025-12-02",
+      "2025-12-03",
+      "2025-12-04",
+      "2025-12-05",
+      "2025-12-06",
+      "2025-12-07",
+      "2025-12-08",
+      "2025-12-09",
+      "2025-12-10",
+      "2025-12-11",
+      "2025-12-12",
+      "2025-12-13",
+      "2025-12-14",
+      "2025-12-15",
+      "2025-12-16",
+      "2025-12-17",
+      "2025-12-18",
+      "2025-12-19",
+      "2025-12-20",
+      "2025-12-21",
+      "2025-12-22",
+      "2025-12-23",
+      "2025-12-24",
+      "2025-12-25",
+      "2025-12-26",
+      "2025-12-27",
+      "2025-12-28",
+      "2025-12-29",
+      "2025-12-30",
+      "2025-12-31"
+    ],
+    "completed": [
+      "DA",
+      "DA+IDA1",
+      "DA+IDA2",
+      "DA+IDA3",
+      "DA+IDA1+IDA2",
+      "DA+IDA1+IDA3",
+      "DA+IDA2+IDA3",
+      "DA+IDA1+IDA2+IDA3",
+      "sequential_all_auctions"
+    ],
+    "comparison": [
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 17504.86036165373,
+        "mean_daily_profit_eur": 564.6729148920558,
+        "std_daily_profit_eur": 479.74582518170297,
+        "final_energy_mwh": 1.797660735241877,
+        "final_soc_percent": 89.88303676209385,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 16611.718570251287,
+        "mean_daily_profit_eur": 535.8618893629448,
+        "std_daily_profit_eur": 399.64880891377067,
+        "final_energy_mwh": 1.611489185502231,
+        "final_soc_percent": 80.57445927511155,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 15905.320971097855,
+        "mean_daily_profit_eur": 513.0748700354147,
+        "std_daily_profit_eur": 423.3856341154182,
+        "final_energy_mwh": 1.797660735241877,
+        "final_soc_percent": 89.88303676209385,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 15396.51396174464,
+        "mean_daily_profit_eur": 496.66174070144,
+        "std_daily_profit_eur": 392.94725282061796,
+        "final_energy_mwh": 1.3859804055314677,
+        "final_soc_percent": 69.29902027657339,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 15373.690398407041,
+        "mean_daily_profit_eur": 495.9254967228078,
+        "std_daily_profit_eur": 380.51930499838596,
+        "final_energy_mwh": 1.7215853366415936,
+        "final_soc_percent": 86.07926683207968,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 15321.052786825332,
+        "mean_daily_profit_eur": 494.2275092524301,
+        "std_daily_profit_eur": 350.3951972686155,
+        "final_energy_mwh": 1.3919394006368246,
+        "final_soc_percent": 69.59697003184124,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 14977.721636593087,
+        "mean_daily_profit_eur": 483.15231085784154,
+        "std_daily_profit_eur": 323.38330485038153,
+        "final_energy_mwh": 1.7976607352418776,
+        "final_soc_percent": 89.88303676209388,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 13747.73388717197,
+        "mean_daily_profit_eur": 443.4752866829668,
+        "std_daily_profit_eur": 261.7448897645385,
+        "final_energy_mwh": 0.7066248145664697,
+        "final_soc_percent": 35.331240728323486,
+        "fallback_count": 0
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "kind": "baseline",
+        "delivery_days": 31,
+        "total_net_profit_eur": 13566.227404919224,
+        "mean_daily_profit_eur": 437.62023886836204,
+        "std_daily_profit_eur": 279.3925993712995,
+        "final_energy_mwh": 1.7976607352418772,
+        "final_soc_percent": 89.88303676209387,
+        "fallback_count": 0
+      }
+    ],
+    "comparison_scope": "Continuous realized cash profit; each profile carries its own physical and fee state. Final SOC may differ.",
+    "solver_audit": [
+      {
+        "profile": "DA",
+        "attempt_count": 31,
+        "active_attempt_count": 31,
+        "statuses": {
+          "optimal": 31
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA1",
+        "attempt_count": 61,
+        "active_attempt_count": 61,
+        "statuses": {
+          "optimal": 61
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 8.806625601439667e-05
+      },
+      {
+        "profile": "DA+IDA2",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 4.190612250077997e-05
+      },
+      {
+        "profile": "DA+IDA3",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 5.839675363771887e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 7.679034031331202e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.553506718399512e-05
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "attempt_count": 93,
+        "active_attempt_count": 93,
+        "statuses": {
+          "optimal": 93
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.487652032835694e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 8.811117597065878e-05
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      }
+    ],
+    "pv_target_source_counts": {
+      "monthly_night_zero": 1581,
+      "metered_ac": 1395
+    }
+  },
+  {
+    "farm": 901,
+    "mode": "oracle",
+    "directory": "/home/rghetti/bess_pv_trading_realtime_mpc/outputs/continuous_optimization/december_2025_price_study/farm_901/december_2025_price_oracle_v1",
+    "config_fingerprint": "479772b96b27c55492e7833e07b1d27b201f768c2def3f2a4d277dd1ff97d5db",
+    "input_fingerprint": "dd1e103059a9b2da105123beda5be890594f56e921ecd829246ab72ba649cfbd",
+    "policy": "continuous-participation-v1",
+    "status": "complete",
+    "run_id": "december_2025_price_oracle_v1",
+    "code_revision": "264957a016c891c8329e9054c5bbb4ad6c311063",
+    "delivery_days": [
+      "2025-12-01",
+      "2025-12-02",
+      "2025-12-03",
+      "2025-12-04",
+      "2025-12-05",
+      "2025-12-06",
+      "2025-12-07",
+      "2025-12-08",
+      "2025-12-09",
+      "2025-12-10",
+      "2025-12-11",
+      "2025-12-12",
+      "2025-12-13",
+      "2025-12-14",
+      "2025-12-15",
+      "2025-12-16",
+      "2025-12-17",
+      "2025-12-18",
+      "2025-12-19",
+      "2025-12-20",
+      "2025-12-21",
+      "2025-12-22",
+      "2025-12-23",
+      "2025-12-24",
+      "2025-12-25",
+      "2025-12-26",
+      "2025-12-27",
+      "2025-12-28",
+      "2025-12-29",
+      "2025-12-30",
+      "2025-12-31"
+    ],
+    "completed": [
+      "DA",
+      "DA+IDA1",
+      "DA+IDA2",
+      "DA+IDA3",
+      "DA+IDA1+IDA2",
+      "DA+IDA1+IDA3",
+      "DA+IDA2+IDA3",
+      "DA+IDA1+IDA2+IDA3",
+      "sequential_all_auctions"
+    ],
+    "comparison": [
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 50347.79903774978,
+        "mean_daily_profit_eur": 1624.1225496048314,
+        "std_daily_profit_eur": 404.1715622691473,
+        "final_energy_mwh": 1.86,
+        "final_soc_percent": 93.0,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 41102.096190259515,
+        "mean_daily_profit_eur": 1325.8740706535327,
+        "std_daily_profit_eur": 354.5970774654053,
+        "final_energy_mwh": 1.86,
+        "final_soc_percent": 93.0,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 40469.4295347415,
+        "mean_daily_profit_eur": 1305.4654688626292,
+        "std_daily_profit_eur": 340.43255197174176,
+        "final_energy_mwh": 1.4837879766129232,
+        "final_soc_percent": 74.18939883064616,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 38664.94944626954,
+        "mean_daily_profit_eur": 1247.2564337506303,
+        "std_daily_profit_eur": 335.3733119565474,
+        "final_energy_mwh": 1.3743183609895575,
+        "final_soc_percent": 68.71591804947788,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 32944.41271975987,
+        "mean_daily_profit_eur": 1062.722990959996,
+        "std_daily_profit_eur": 311.8501666610208,
+        "final_energy_mwh": 1.4430253557786779,
+        "final_soc_percent": 72.1512677889339,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 29417.306907495185,
+        "mean_daily_profit_eur": 948.9453841127479,
+        "std_daily_profit_eur": 317.1469068873958,
+        "final_energy_mwh": 1.7215853366415936,
+        "final_soc_percent": 86.07926683207968,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 26708.137861573417,
+        "mean_daily_profit_eur": 861.5528342443038,
+        "std_daily_profit_eur": 300.40280753841324,
+        "final_energy_mwh": 1.8249783445309669,
+        "final_soc_percent": 91.24891722654834,
+        "fallback_count": 0
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "kind": "baseline",
+        "delivery_days": 31,
+        "total_net_profit_eur": 14429.125617692878,
+        "mean_daily_profit_eur": 465.45566508686704,
+        "std_daily_profit_eur": 284.9243311103639,
+        "final_energy_mwh": 1.86,
+        "final_soc_percent": 93.0,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 14023.060095702094,
+        "mean_daily_profit_eur": 452.3567772807127,
+        "std_daily_profit_eur": 261.9748603098276,
+        "final_energy_mwh": 0.7066248145664697,
+        "final_soc_percent": 35.331240728323486,
+        "fallback_count": 0
+      }
+    ],
+    "comparison_scope": "Continuous realized cash profit; each profile carries its own physical and fee state. Final SOC may differ.",
+    "solver_audit": [
+      {
+        "profile": "DA",
+        "attempt_count": 31,
+        "active_attempt_count": 31,
+        "statuses": {
+          "optimal": 31
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.152476842523443e-05
+      },
+      {
+        "profile": "DA+IDA1",
+        "attempt_count": 61,
+        "active_attempt_count": 61,
+        "statuses": {
+          "optimal": 61
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 7.801549417322765e-05
+      },
+      {
+        "profile": "DA+IDA2",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA3",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.78014837876523e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 8.409066916770384e-05
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "attempt_count": 93,
+        "active_attempt_count": 93,
+        "statuses": {
+          "optimal": 93
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.707208203628705e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.838887573422931e-05
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 3.5074351571444025e-05
+      }
+    ],
+    "pv_target_source_counts": {
+      "monthly_night_zero": 1581,
+      "metered_ac": 1395
+    }
+  },
+  {
+    "farm": 910,
+    "mode": "forecast",
+    "directory": "/home/rghetti/bess_pv_trading_realtime_mpc/outputs/continuous_optimization/december_2025_price_study/farm_910/december_2025_price_forecast_v1",
+    "config_fingerprint": "820dd5ee3b59a1d33103f3c9964aa206a2baf9ea5a7939e90fdfb261fe3f8b38",
+    "input_fingerprint": "bdb47894c1f98b7aea2eb6180635b67b90829e29334bb093e61ec16b164456f8",
+    "policy": "continuous-participation-v1",
+    "status": "complete",
+    "run_id": "december_2025_price_forecast_v1",
+    "code_revision": "8c15e592b79b893cdd3d3159ad6c49b6954f799e",
+    "delivery_days": [
+      "2025-12-01",
+      "2025-12-02",
+      "2025-12-03",
+      "2025-12-04",
+      "2025-12-05",
+      "2025-12-06",
+      "2025-12-07",
+      "2025-12-08",
+      "2025-12-09",
+      "2025-12-10",
+      "2025-12-11",
+      "2025-12-12",
+      "2025-12-13",
+      "2025-12-14",
+      "2025-12-15",
+      "2025-12-16",
+      "2025-12-17",
+      "2025-12-18",
+      "2025-12-19",
+      "2025-12-20",
+      "2025-12-21",
+      "2025-12-22",
+      "2025-12-23",
+      "2025-12-24",
+      "2025-12-25",
+      "2025-12-26",
+      "2025-12-27",
+      "2025-12-28",
+      "2025-12-29",
+      "2025-12-30",
+      "2025-12-31"
+    ],
+    "completed": [
+      "DA",
+      "DA+IDA1",
+      "DA+IDA2",
+      "DA+IDA3",
+      "DA+IDA1+IDA2",
+      "DA+IDA1+IDA3",
+      "DA+IDA2+IDA3",
+      "DA+IDA1+IDA2+IDA3",
+      "sequential_all_auctions"
+    ],
+    "comparison": [
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 33396.720878146814,
+        "mean_daily_profit_eur": 1077.3135767144133,
+        "std_daily_profit_eur": 858.0869274500502,
+        "final_energy_mwh": 4.395104014153675,
+        "final_soc_percent": 87.90208028307349,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 32177.921146492696,
+        "mean_daily_profit_eur": 1037.997456338474,
+        "std_daily_profit_eur": 750.4756649656672,
+        "final_energy_mwh": 4.540121110917977,
+        "final_soc_percent": 90.80242221835955,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 31130.74727832828,
+        "mean_daily_profit_eur": 1004.2176541396219,
+        "std_daily_profit_eur": 716.2722456036672,
+        "final_energy_mwh": 4.340260630622144,
+        "final_soc_percent": 86.80521261244287,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 30680.411583951693,
+        "mean_daily_profit_eur": 989.6906962565062,
+        "std_daily_profit_eur": 783.5249152729992,
+        "final_energy_mwh": 4.119783357825057,
+        "final_soc_percent": 82.39566715650113,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 30017.588879912415,
+        "mean_daily_profit_eur": 968.3093187068521,
+        "std_daily_profit_eur": 779.1450668888062,
+        "final_energy_mwh": 2.770953200904233,
+        "final_soc_percent": 55.419064018084654,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 29932.08746938721,
+        "mean_daily_profit_eur": 965.55120868991,
+        "std_daily_profit_eur": 708.8998158218698,
+        "final_energy_mwh": 2.7852911998292975,
+        "final_soc_percent": 55.70582399658595,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 29753.327478843123,
+        "mean_daily_profit_eur": 959.7847573820362,
+        "std_daily_profit_eur": 653.3692564498479,
+        "final_energy_mwh": 4.540121110917977,
+        "final_soc_percent": 90.80242221835955,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 27699.51389554407,
+        "mean_daily_profit_eur": 893.5327063078732,
+        "std_daily_profit_eur": 565.8290432291462,
+        "final_energy_mwh": 3.1151484393536837,
+        "final_soc_percent": 62.302968787073674,
+        "fallback_count": 0
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "kind": "baseline",
+        "delivery_days": 31,
+        "total_net_profit_eur": 26929.40108359365,
+        "mean_daily_profit_eur": 868.6903575352791,
+        "std_daily_profit_eur": 534.1846419507651,
+        "final_energy_mwh": 4.303150348679611,
+        "final_soc_percent": 86.06300697359221,
+        "fallback_count": 0
+      }
+    ],
+    "comparison_scope": "Continuous realized cash profit; each profile carries its own physical and fee state. Final SOC may differ.",
+    "solver_audit": [
+      {
+        "profile": "DA",
+        "attempt_count": 31,
+        "active_attempt_count": 31,
+        "statuses": {
+          "optimal": 31
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA1",
+        "attempt_count": 61,
+        "active_attempt_count": 61,
+        "statuses": {
+          "optimal": 61
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.823541060802222e-05
+      },
+      {
+        "profile": "DA+IDA2",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA3",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.064422001879979e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 6.062675646819095e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 4.153658583545258e-05
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "attempt_count": 93,
+        "active_attempt_count": 93,
+        "statuses": {
+          "optimal": 93
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 6.661361024940742e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 4.6960925748234904e-05
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      }
+    ],
+    "pv_target_source_counts": {
+      "monthly_night_zero": 1581,
+      "metered_ac": 1395
+    }
+  },
+  {
+    "farm": 910,
+    "mode": "oracle",
+    "directory": "/home/rghetti/bess_pv_trading_realtime_mpc/outputs/continuous_optimization/december_2025_price_study/farm_910/december_2025_price_oracle_v1",
+    "config_fingerprint": "38f1986daccbab631f821449f6cc5ecd70562c1f0b76e1b001b4b7a7ff1391b2",
+    "input_fingerprint": "e6223e2fae4a3a79f3f8c024f702dc4819c5aa0414760c1b461c3a047a734164",
+    "policy": "continuous-participation-v1",
+    "status": "complete",
+    "run_id": "december_2025_price_oracle_v1",
+    "code_revision": "264957a016c891c8329e9054c5bbb4ad6c311063",
+    "delivery_days": [
+      "2025-12-01",
+      "2025-12-02",
+      "2025-12-03",
+      "2025-12-04",
+      "2025-12-05",
+      "2025-12-06",
+      "2025-12-07",
+      "2025-12-08",
+      "2025-12-09",
+      "2025-12-10",
+      "2025-12-11",
+      "2025-12-12",
+      "2025-12-13",
+      "2025-12-14",
+      "2025-12-15",
+      "2025-12-16",
+      "2025-12-17",
+      "2025-12-18",
+      "2025-12-19",
+      "2025-12-20",
+      "2025-12-21",
+      "2025-12-22",
+      "2025-12-23",
+      "2025-12-24",
+      "2025-12-25",
+      "2025-12-26",
+      "2025-12-27",
+      "2025-12-28",
+      "2025-12-29",
+      "2025-12-30",
+      "2025-12-31"
+    ],
+    "completed": [
+      "DA",
+      "DA+IDA1",
+      "DA+IDA2",
+      "DA+IDA3",
+      "DA+IDA1+IDA2",
+      "DA+IDA1+IDA3",
+      "DA+IDA2+IDA3",
+      "DA+IDA1+IDA2+IDA3",
+      "sequential_all_auctions"
+    ],
+    "comparison": [
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 85266.21850551091,
+        "mean_daily_profit_eur": 2750.5231775971265,
+        "std_daily_profit_eur": 770.7710125464649,
+        "final_energy_mwh": 4.247164414907176,
+        "final_soc_percent": 84.94328829814351,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 70417.16588741336,
+        "mean_daily_profit_eur": 2271.5214802391406,
+        "std_daily_profit_eur": 696.2995241807236,
+        "final_energy_mwh": 4.201924584652191,
+        "final_soc_percent": 84.03849169304381,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 69584.05935078878,
+        "mean_daily_profit_eur": 2244.647075831896,
+        "std_daily_profit_eur": 729.3491182660232,
+        "final_energy_mwh": 2.9618482025915984,
+        "final_soc_percent": 59.23696405183196,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 66658.10678541794,
+        "mean_daily_profit_eur": 2150.2615092070305,
+        "std_daily_profit_eur": 676.3697340993083,
+        "final_energy_mwh": 4.65,
+        "final_soc_percent": 93.0,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA2",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 57944.41007069119,
+        "mean_daily_profit_eur": 1869.1745184093934,
+        "std_daily_profit_eur": 672.3949435270445,
+        "final_energy_mwh": 3.020741090467103,
+        "final_soc_percent": 60.41482180934206,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA1",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 52732.41015800796,
+        "mean_daily_profit_eur": 1701.0454889679986,
+        "std_daily_profit_eur": 640.233825477829,
+        "final_energy_mwh": 4.340227390943079,
+        "final_soc_percent": 86.8045478188616,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA+IDA3",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 47962.154587854835,
+        "mean_daily_profit_eur": 1547.1662770275752,
+        "std_daily_profit_eur": 626.3498445062723,
+        "final_energy_mwh": 4.65,
+        "final_soc_percent": 93.0,
+        "fallback_count": 0
+      },
+      {
+        "profile": "DA",
+        "kind": "participation",
+        "delivery_days": 31,
+        "total_net_profit_eur": 28385.127280281784,
+        "mean_daily_profit_eur": 915.6492671058639,
+        "std_daily_profit_eur": 574.0170576085827,
+        "final_energy_mwh": 3.1151484393536837,
+        "final_soc_percent": 62.302968787073674,
+        "fallback_count": 0
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "kind": "baseline",
+        "delivery_days": 31,
+        "total_net_profit_eur": 28221.998947665157,
+        "mean_daily_profit_eur": 910.3870628279083,
+        "std_daily_profit_eur": 549.3863854786701,
+        "final_energy_mwh": 4.247164414907176,
+        "final_soc_percent": 84.94328829814351,
+        "fallback_count": 0
+      }
+    ],
+    "comparison_scope": "Continuous realized cash profit; each profile carries its own physical and fee state. Final SOC may differ.",
+    "solver_audit": [
+      {
+        "profile": "DA",
+        "attempt_count": 31,
+        "active_attempt_count": 31,
+        "statuses": {
+          "optimal": 31
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA1",
+        "attempt_count": 61,
+        "active_attempt_count": 61,
+        "statuses": {
+          "optimal": 61
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 6.300853792920201e-05
+      },
+      {
+        "profile": "DA+IDA2",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 9.809992412872975e-05
+      },
+      {
+        "profile": "DA+IDA3",
+        "attempt_count": 62,
+        "active_attempt_count": 62,
+        "statuses": {
+          "optimal": 62
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      },
+      {
+        "profile": "DA+IDA1+IDA2",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 8.307562246800047e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA3",
+        "attempt_count": 92,
+        "active_attempt_count": 92,
+        "statuses": {
+          "optimal": 92
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 8.858873086550813e-05
+      },
+      {
+        "profile": "DA+IDA2+IDA3",
+        "attempt_count": 93,
+        "active_attempt_count": 93,
+        "statuses": {
+          "optimal": 93
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 8.251850413776853e-05
+      },
+      {
+        "profile": "DA+IDA1+IDA2+IDA3",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 7.140710800208104e-05
+      },
+      {
+        "profile": "sequential_all_auctions",
+        "attempt_count": 123,
+        "active_attempt_count": 123,
+        "statuses": {
+          "optimal": 123
+        },
+        "fallback_count": 0,
+        "maximum_mip_gap": 0.0
+      }
+    ],
+    "pv_target_source_counts": {
+      "monthly_night_zero": 1581,
+      "metered_ac": 1395
+    }
+  }
+]

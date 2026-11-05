@@ -1,8 +1,8 @@
 # December 2025 auction-price participation comparison
 
-Status: implementation audit complete; all eight 31-day input preflights passed
-on 5 November 2026. Historical optimization has not started. Explicit experiment
-approval is required before `--run`.
+Status: all eight 31-day input preflights passed, and the approved historical
+study completed on 5 November 2026. Results and limitations are in the single
+shared output summary. Explicit approval was obtained before `--run`.
 This supersedes the January plan for the requested study, while retaining the
 existing December configurations prepared in `b2a614e`.
 
@@ -208,9 +208,10 @@ PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python \
   scripts/run_december_price_comparison.py --check-only
 ```
 
-After explicit approval only, run with the same environment and `--run`, then
-validate actual output and review the report. `--report-only` can rebuild the
-shared summary without optimization. Existing output directories are protected
-from overwrite; inspect any interruption and use validated checkpoint identity
-before a separately controlled resume. Commit only task-related changes with
-a detailed message. No actual profit results exist at this preparation stage.
+The approved run used the same environment and `--run`. The additional
+`scripts/validate_december_price_ledgers.py` independently checked the saved
+actual price curves, PV execution inputs and cashflows. The completed results
+are in `outputs/continuous_optimization/december_2025_price_study/summary.md`.
+`--report-only` rebuilds the shared summary without optimization. Existing
+output directories are protected from overwrite; inspect any interruption and
+use validated checkpoint identity before a separately controlled resume.
