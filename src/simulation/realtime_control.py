@@ -26,6 +26,9 @@ class RealtimeControl:
         self.horizon_history_mode = validate_mpc_history_settings(replay.config)
         self.history_archives = []
         self.scenario_artifact_cache = {}
+        self.mpc_execution_policy = ("follow_battery_plan_recover_curtailment"
+            if replay.config.get("execution", {}).get("mpc_curtailment_recovery", False)
+            else "follow_battery_plan")
 
     def archive_completed(self, cutoff):
         """Spill finished delivery books while retaining the next midnight action."""
@@ -232,10 +235,10 @@ class RealtimeControl:
                   "expected_absolute_imbalance_mwh": None if planned is None else planned["expected_absolute_imbalance_mwh"],
                   "expected_shortfall_mwh": None if planned is None else planned["expected_shortfall_mwh"]}
         replay.pending[action.interval_id] = {"commands": [action.charge_mw, action.discharge_mw, 0.0],
-            "detail": detail, "policy": "follow_battery_plan", "target": replay._position(action.interval_id)
+            "detail": detail, "policy": self.mpc_execution_policy, "target": replay._position(action.interval_id)
                 / replay.grid.delta_hours[replay.index[action.interval_id]]}
         self.state.outstanding_action = asdict(action)
-        self.state.issued_actions.append({**asdict(action), "dispatch_policy": "follow_battery_plan",
+        self.state.issued_actions.append({**asdict(action), "dispatch_policy": self.mpc_execution_policy,
             "grid_target_mw": replay.pending[action.interval_id]["target"],
             "solve_id": detail["mpc_solve_id"], **provenance})
 
@@ -256,7 +259,7 @@ class RealtimeControl:
             return (row["charge_mw"], row["discharge_mw"], (1 - row["pv_utilization_fraction"]) * pv), {
                 "auction": "realtime_mpc", "mpc_solve_id": row["solve_id"],
                 "future_plan_role": row.get("future_plan_role", "common_open_loop_controls"),
-                "representative_scenario_id": row.get("representative_scenario_id")}, "follow_battery_plan", target
+                "representative_scenario_id": row.get("representative_scenario_id")}, self.mpc_execution_policy, target
         # Coverage gaps are explicit forecast-only tracking rollouts, not invented commands.
         commands, detail, _, _ = replay._commands(product)
         return commands, {**detail, "projection_fallback": "MPC plan does not cover interval"}, "track_committed_grid", target

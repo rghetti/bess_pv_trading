@@ -408,6 +408,9 @@ def validate_config(config: dict[str, Any]) -> None:
     if config.get("execution", {}).get("dispatch_policy", "follow_battery_plan") not in {
             "follow_battery_plan", "track_committed_grid", CAUSAL_TRACKER, *MPC_POLICIES}:
         raise ConfigurationError("Unknown execution.dispatch_policy")
+    recovery = config.get("execution", {}).get("mpc_curtailment_recovery", False)
+    if not isinstance(recovery, bool):
+        raise ConfigurationError("execution.mpc_curtailment_recovery must be a boolean")
     solver = config.get("solver", {})
     # Check common settings; specialized adapters validate their own inputs for each `key` in `('threads', 'time_limit_seconds', 'time_limit')`.
     for key in ("threads", "time_limit_seconds", "time_limit"):

@@ -340,3 +340,23 @@ generation is not an independently measured unconstrained PV potential. Physical
 protection is idealized interval-average feedback; intrainterval dynamics, ramps,
 forecast calibration, uncertain initial SOC, and coordinated next-day reserve
 targets remain outside this implementation.
+
+### Optional grid-neutral curtailment recovery
+
+`execution.mpc_curtailment_recovery: true` applies a physical feedback step
+only to issued MPC actions. After the normal power, SOC and POI protection, it
+reduces curtailment and decreases net battery discharge by the same AC power.
+It reduces discharge first, then charges if needed, while respecting available
+SOC headroom, the interval duration, charging efficiency and battery power.
+The protected grid exchange is unchanged by recovery. The simulator records
+`curtailment_recovered_mw`, executed controls, feedback adjustment and actual
+SOC; the next decision sees the resulting state. Fallback grid tracking retains
+its existing behavior. Auction boundary projections replay this rule with
+eligible deterministic forecast PV and preserve outstanding actions without
+additional MPC solves. The MPC optimizer itself is unchanged.
+
+Recovery can increase wear, consume charging headroom or cause the final
+executed SOC to differ from a planning terminal target, especially in the last
+interval; report those outcomes. As with the existing tracker, use of interval
+average PV for execution is an idealized retrospective physical-feedback
+assumption, not proof of real-time availability of the interval average.

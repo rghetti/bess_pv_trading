@@ -114,7 +114,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
     if not np.isfinite(numerical_tolerance) or numerical_tolerance < 0:
         raise ValueError("Execution numerical tolerance must be finite and nonnegative")
     # Enforce the input contract: Unknown execution dispatch_policy.
-    if dispatch_policy not in {"follow_battery_plan", "track_committed_grid"}:
+    if dispatch_policy not in {"follow_battery_plan", "follow_battery_plan_recover_curtailment", "track_committed_grid"}:
         raise ValueError("Unknown execution dispatch_policy")
     # Enforce the input contract: Execution grid target must be finite.
     if grid_target_mw is not None and not np.isfinite(grid_target_mw):
@@ -189,6 +189,18 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         curtailment += max(0.0, grid - plant.poi_export_mw)
         grid = min(grid, plant.poi_export_mw)
     safety_adjustment += sum(abs(a-b) for a,b in zip((charge,discharge,curtailment),before_poi))
+    # MPC recovery is a separate feedback step after safety protection. Release
+    # PV while changing battery power equally, preserving actual grid exchange.
+    if dispatch_policy == "follow_battery_plan_recover_curtailment":
+        before_recovery = (charge, discharge, curtailment)
+        charge_limit = min(battery.max_power_mw,
+            max(0.0, battery.maximum_energy - retained) / (duration * battery.eta_charge))
+        actual_battery = discharge - charge
+        recovered_curtailment = min(curtailment, max(0.0, actual_battery + charge_limit))
+        curtailment -= recovered_curtailment
+        actual_battery -= recovered_curtailment
+        charge, discharge = max(0.0, -actual_battery), max(0.0, actual_battery)
+        feedback_adjustment += sum(abs(a-b) for a,b in zip((charge,discharge,curtailment), before_recovery))
     energy = energy_transition(state.energy_mwh, charge, discharge, battery, duration)
     # Enforce the input contract: Execution would violate battery energy bounds.
     if energy < battery.energy_min_mwh-numerical_tolerance or energy > battery.maximum_energy+numerical_tolerance:

@@ -273,3 +273,50 @@ def test_mpc_runtime_failure_keeps_interval_and_uses_tracking(continuous_config,
     assert replay.pending[product]["policy"] == "track_committed_grid"
     assert replay.pending[product]["detail"]["mpc_fallback"]
     assert replay.submitted == {day: {} for day in replay.days}
+
+
+def test_recovery_policy_is_used_for_locked_and_future_projection(continuous_config, tmp_path):
+    """Auction projections replay recovery without changing the locked action."""
+    from bess_pv_trading.optimization.mpc import MpcAction
+
+    config = continuous_config
+    config['execution']['dispatch_policy'] = 'deterministic_mpc'
+    config['execution']['mpc_curtailment_recovery'] = True
+    prepared = mpc_prepared(config, one_day=True)
+    replay = ContinuousReplay(config, prepared, 'integrated', tmp_path / 'recovery_projection')
+    product = replay.grid.interval_ids[0]
+    action = MpcAction(product, replay.grid.starts[0], 0.0, 0.0, 0.5)
+    replay.realtime._pending(action, {}, None, None)
+    commands, _, policy, _ = replay.realtime.projection_commands(product, 1.0)
+    assert policy == 'follow_battery_plan_recover_curtailment'
+    assert commands == [0.0, 0.0, 0.5]
+    assert replay.pending[product]['commands'] == [0.0, 0.0, 0.0]
+
+
+def test_recovery_is_executed_and_carried_into_next_state(continuous_config, tmp_path):
+    """Recover actual curtailed PV while preserving the issued exchange."""
+    from types import SimpleNamespace
+    from bess_pv_trading.optimization.mpc import MpcAction
+    from bess_pv_trading.simulation.replay import execute_interval
+
+    config = continuous_config
+    config['execution']['dispatch_policy'] = 'deterministic_mpc'
+    config['execution']['mpc_curtailment_recovery'] = True
+    prepared = mpc_prepared(config, one_day=True)
+    replay = ContinuousReplay(config, prepared, 'integrated', tmp_path / 'recovery_actual')
+    product = replay.grid.interval_ids[0]
+    prepared['full_realized_pv'][0] = 0.8
+    action = MpcAction(product, replay.grid.starts[0], 0.0, 0.0, 0.5)
+    replay.realtime._pending(action, {}, None, None)
+    previous = replay.state
+    fixed_state, fixed = execute_interval(state=previous, start=replay.grid.starts[0],
+        end=replay.grid.ends[0], pv_ac_mw=0.8, requested_charge_mw=0.0,
+        requested_discharge_mw=0.0, requested_curtailment_mw=0.4,
+        plant=replay.plant, degradation_settings=replay.aging)
+    replay._observe(SimpleNamespace(payload=0))
+    record = replay.records[product]
+    assert record['curtailment_recovered_mw'] > 0
+    assert record['grid_mw'] == pytest.approx(fixed['grid_mw'])
+    assert replay.state.energy_mwh > fixed_state.energy_mwh
+    assert replay.state.energy_mwh <= replay.plant.battery.maximum_energy
+    assert replay.realtime.state.outstanding_action is None
