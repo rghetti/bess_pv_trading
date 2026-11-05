@@ -54,6 +54,11 @@ model scored 16.219 EUR/MWh and 10.938% WAPE, compared with 16.840 and
 11.357% for the plain weather model. Its comparison with the price-only
 interaction model has an uncertainty interval spanning zero.
 
+An early matched [prior-IDA and weather factorial](price_da_prior_ida_weather_factorial_2026.md)
+found 9.465% selection WAPE for their combined interaction model. Its later
+replays are separate; weather vintage and historical auction clocks remain
+assumptions.
+
 ## Separate historical product regimes
 
 The hourly DA regime was modeled separately: an early-selected Extra Trees
