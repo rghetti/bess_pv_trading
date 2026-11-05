@@ -51,6 +51,10 @@ def market_days(starts, features, targets, timezone, start_hour, interval_minute
 
 def run(settings, root):
     """Fit training-only spread PCA and ridge on each market's native window."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     source = root / settings["source_search"]
     manifest_path = source / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
@@ -127,8 +131,19 @@ def run(settings, root):
     output.mkdir(parents=True, exist_ok=False)
     pd.DataFrame(results).to_csv(output / "candidate_scores.csv", index=False)
     for group, best in selected_outputs.items():
-        pd.DataFrame({key: best[key] for key in ("starts", "actual", "point", "baseline")}).to_csv(
-            output / f"{group}_selected_predictions.csv", index=False)
+        frame = pd.DataFrame({key: best[key] for key in ("starts", "actual", "point", "baseline")})
+        frame.to_csv(output / f"{group}_selected_predictions.csv", index=False)
+        # Show one complete day for visual inspection, without treating it as a score.
+        count = (24 - settings["group_start_hours"][group]) * 60 // settings["interval_minutes"]
+        figure, axis = plt.subplots(figsize=(10, 4), constrained_layout=True)
+        axis.plot(frame.starts.iloc[:count], frame.actual.iloc[:count], label="Actual")
+        axis.plot(frame.starts.iloc[:count], frame.point.iloc[:count], label="Selected spread curve")
+        axis.plot(frame.starts.iloc[:count], frame.baseline.iloc[:count], label="Latest-cleared price", alpha=0.8)
+        axis.set(ylabel="Price (EUR/MWh)", title=f"{group}: first complete selection day (UTC)")
+        axis.legend()
+        figure.autofmt_xdate()
+        figure.savefig(output / f"{group}_first_selection_day.png", dpi=150)
+        plt.close(figure)
     evidence = {"status": "complete", "settings": settings, "source_manifest_sha256": checksum(manifest_path),
         "implementation_sha256": checksum(Path(__file__)), "provenance": provenance, "results": results,
         "selected": {group: best["row"] for group, best in selected_outputs.items()}}
