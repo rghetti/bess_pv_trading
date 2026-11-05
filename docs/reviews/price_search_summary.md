@@ -42,6 +42,12 @@ its IDA2 weather model scored worse. See [DA price and weather](price_da_price_w
 [October correction](price_online_bias_sep_oct_2026.md), and
 [IDA weather replay](price_ida_spread_weather_2026.md).
 
+A later, early-selected DA delivery-hour interaction model with weather scored
+16.272 EUR/MWh and 7.583% WAPE on the same 52 September–October days. Its
+paired MAE improvement over the plain weather Elastic Net was 0.358 EUR/MWh;
+the independent-day bootstrap interval narrowly includes zero and omits the
+uncertainty from model selection and repeated inspection.
+
 ## Separate historical product regimes
 
 The hourly DA regime was modeled separately: an early-selected Extra Trees
@@ -63,6 +69,6 @@ are tested configurations, not an exhaustive enumeration of every possible
 model or feature combination. The [XGBoost](price_xgboost_2026.md),
 [neural](price_da_regularized_mlp_2026.md), and
 [IDA weather](price_ida_spread_weather_2026.md) reports give examples of
-matched comparisons and their limitations. The longer IDA weather and later DA
-interaction replays are underway; their manifests, rather than partial scores, determine
+matched comparisons and their limitations. The longer IDA weather replay is
+underway; its manifest, rather than partial scores, determines
 completion.

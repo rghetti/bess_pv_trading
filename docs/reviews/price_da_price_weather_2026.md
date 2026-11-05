@@ -106,3 +106,22 @@ the later time-of-day inspection, so the comparison is exploratory. A matched
 September–October replay is configured, with the plain Elastic Net as a
 reference; that later period was also previously examined. Input weather
 vintages and historical release clocks retain the assumptions above.
+
+The subsequent weekly September–October replay completed all four selected and
+reference fits with no reported failures or convergence warnings. Each scored
+the same 4,992 products over 52 complete days.
+
+| Candidate | Feature arm | MAE EUR/MWh | WAPE |
+| --- | --- | ---: | ---: |
+| Interaction Elastic Net | Price and weather | 16.272 | 7.583% |
+| Plain Elastic Net | Price and weather | 16.630 | 7.749% |
+| Interaction Elastic Net | Price only | 16.657 | 7.762% |
+| Plain Elastic Net | Price only | 16.845 | 7.850% |
+
+On matched products the weather interaction model's MAE gain over the plain
+weather model was 0.358 EUR/MWh. A 5,000-resample independent-delivery-day
+bootstrap with seed 173 gives a 95% percentile interval of -0.001 to 0.740
+EUR/MWh. This does not account for serial dependence, selection or repeated
+inspection, and does not establish a reliable gain or the 4% target. The last
+nine October days lack DA targets. Full forecasts and refits are in
+`outputs/energy_price_forecasts/nord_da_2026_price_weather_interactions_sep_oct_v1/`.
