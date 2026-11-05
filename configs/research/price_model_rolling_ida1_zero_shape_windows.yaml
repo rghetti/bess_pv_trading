@@ -1,0 +1,209 @@
+# Later IDA1 selected model and explicit cleared-price baseline.
+include: ../standard.yaml
+price_model_search:
+  add_market_price_features_to:
+  - spread_cleared_only
+  candidates:
+  - family: ridge
+    id: ridge_20
+    parameters:
+      alpha: 20.0
+  - family: ridge
+    id: ridge_20_window180
+    parameters:
+      alpha: 20.0
+    train_window_days: 180
+  - family: ridge
+    id: ridge_20_window365
+    parameters:
+      alpha: 20.0
+    train_window_days: 365
+  - family: lasso
+    id: lasso_1
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+  - family: lasso
+    id: lasso_1_window180
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+    train_window_days: 180
+  - family: lasso
+    id: lasso_1_window365
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+    train_window_days: 365
+  - family: elastic_net
+    id: elastic_01
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - family: elastic_net
+    id: elastic_01_window180
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+    train_window_days: 180
+  - family: elastic_net
+    id: elastic_01_window365
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+    train_window_days: 365
+  - family: interaction_ridge
+    id: shape_ridge_1
+    parameters:
+      alpha: 1
+      lag_count: 11
+  - family: interaction_ridge
+    id: shape_ridge_1_window180
+    parameters:
+      alpha: 1
+      lag_count: 11
+    train_window_days: 180
+  - family: interaction_ridge
+    id: shape_ridge_1_window365
+    parameters:
+      alpha: 1
+      lag_count: 11
+    train_window_days: 365
+  - family: interaction_ridge
+    id: shape_ridge_20
+    parameters:
+      alpha: 20
+      lag_count: 11
+  - family: interaction_ridge
+    id: shape_ridge_20_window180
+    parameters:
+      alpha: 20
+      lag_count: 11
+    train_window_days: 180
+  - family: interaction_ridge
+    id: shape_ridge_20_window365
+    parameters:
+      alpha: 20
+      lag_count: 11
+    train_window_days: 365
+  - family: interaction_ridge
+    id: shape_ridge_200
+    parameters:
+      alpha: 200
+      lag_count: 11
+  - family: interaction_ridge
+    id: shape_ridge_200_window180
+    parameters:
+      alpha: 200
+      lag_count: 11
+    train_window_days: 180
+  - family: interaction_ridge
+    id: shape_ridge_200_window365
+    parameters:
+      alpha: 200
+      lag_count: 11
+    train_window_days: 365
+  - family: interaction_elastic_net
+    id: shape_elastic_0.01
+    parameters:
+      alpha: 0.01
+      l1_ratio: 0.5
+      lag_count: 11
+      max_iter: 5000
+  - family: interaction_elastic_net
+    id: shape_elastic_0.01_window180
+    parameters:
+      alpha: 0.01
+      l1_ratio: 0.5
+      lag_count: 11
+      max_iter: 5000
+    train_window_days: 180
+  - family: interaction_elastic_net
+    id: shape_elastic_0.01_window365
+    parameters:
+      alpha: 0.01
+      l1_ratio: 0.5
+      lag_count: 11
+      max_iter: 5000
+    train_window_days: 365
+  - family: interaction_elastic_net
+    id: shape_elastic_0.1
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      lag_count: 11
+      max_iter: 5000
+  - family: interaction_elastic_net
+    id: shape_elastic_0.1_window180
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      lag_count: 11
+      max_iter: 5000
+    train_window_days: 180
+  - family: interaction_elastic_net
+    id: shape_elastic_0.1_window365
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      lag_count: 11
+      max_iter: 5000
+    train_window_days: 365
+  - family: zero_spread
+    id: zero_spread
+    parameters: {}
+  common_training_rows: true
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  feature_set_aliases:
+    spread_cleared_only: price_only
+  feature_sets:
+  - spread_cleared_only
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  output_root: outputs/energy_price_forecasts
+  product_groups:
+    ida1_quarter_hourly:
+      cutoff: '2026-08-31T09:00:00Z'
+      feature_sets:
+      - spread_cleared_only
+      history_end: '2026-11-01T00:00:00+01:00'
+      history_start: '2025-01-01T00:00:00+01:00'
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      market_price_features:
+      - DA
+      native_minutes: 15
+      target: IDA1
+      validation_end: '2026-11-01'
+      validation_start: '2026-09-01'
+  residual_target_features:
+    spread_cleared_only: cleared_da
+  run_id: nord_ida1_2026_zero_shape_windows_sep_oct_v1
+  seed: 17
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  threads_per_worker: 1
+  timezone: Europe/Rome
+  workers: 3
+  selection:
+    source_manifest: outputs/energy_price_forecasts/nord_ida1_2026_zero_shape_windows_early_v1/manifest.json
+    top_n: 1
+    baseline_candidates:
+    - zero_spread
+    matched_window_baselines: true
+  rolling_refit:
+    frequency_days: 7
+    gap_days: 1
