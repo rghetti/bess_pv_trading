@@ -146,6 +146,28 @@ inspection, and does not establish a reliable gain or the 4% target. The last
 nine October days lack DA targets. Full forecasts and refits are in
 `outputs/energy_price_forecasts/nord_da_2026_price_weather_interactions_sep_oct_v1/`.
 
+The same selected interaction and plain models were also refitted weekly over
+3 May–31 August on 11,520 matched products across 120 complete days. All four
+fits completed without recorded failures or convergence warnings.
+
+| Candidate | Feature arm | MAE EUR/MWh | WAPE |
+| --- | --- | ---: | ---: |
+| Interaction Elastic Net | Price and weather | 16.219 | 10.938% |
+| Interaction Elastic Net | Price only | 16.352 | 11.028% |
+| Plain Elastic Net | Price and weather | 16.840 | 11.357% |
+| Plain Elastic Net | Price only | 16.564 | 11.171% |
+
+For the weather interaction model, the paired MAE gain was 0.621 EUR/MWh
+against the plain weather model and 0.133 against the price-only interaction
+model. Independent-day bootstrap 95% percentile intervals, 5,000 resamples
+with seed 173, are 0.372–0.871 and -0.411–0.681 EUR/MWh respectively. They
+omit serial dependence, selection and repeated inspection of these dates.
+The first comparison favors the interaction specification in this sample;
+the second does not establish an incremental weather gain. Historical
+publication clocks and weather vintage remain assumptions. Predictions and
+refits are in
+`outputs/energy_price_forecasts/nord_da_2026_price_weather_interactions_may_aug_v1/`.
+
 ### September-tuned interaction bias correction
 
 An exploratory online correction grid tuned on September MAE and evaluated

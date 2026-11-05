@@ -49,6 +49,10 @@ A later, early-selected DA delivery-hour interaction model with weather scored
 paired MAE improvement over the plain weather Elastic Net was 0.358 EUR/MWh;
 the independent-day bootstrap interval narrowly includes zero and omits the
 uncertainty from model selection and repeated inspection.
+Over the separate 120-day May–August sample, the same weather interaction
+model scored 16.219 EUR/MWh and 10.938% WAPE, compared with 16.840 and
+11.357% for the plain weather model. Its comparison with the price-only
+interaction model has an uncertainty interval spanning zero.
 
 ## Separate historical product regimes
 
