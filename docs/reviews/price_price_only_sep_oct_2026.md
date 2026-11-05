@@ -95,3 +95,26 @@ The DA fallbacks were all for the 23-hour lag. These are evaluation-only
 counts, unlike the aggregate matrix counts above. They are conditional on the
 selected complete days and the assumed or supplied publication clocks; they
 do not measure forecast accuracy with fallback disabled.
+
+## Same-product latest-cleared-price baseline
+
+A stronger IDA baseline is to forecast the latest cleared auction price for the
+same delivery product: DA for IDA1, IDA1 for IDA2 and IDA2 for IDA3. The
+feature values were checked against the corresponding catalog prices for every
+retained product; their use is conditional on the configured publication clocks.
+This is a different baseline from the seasonal-naive comparison above.
+
+| Market | Products | Latest-cleared baseline MAE EUR/MWh | Baseline WAPE | Selected model MAE EUR/MWh | Selected model WAPE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| IDA1 | 4,800 | 8.885 | 4.164% | 8.781 | 4.116% |
+| IDA2 | 4,704 | 9.939 | 4.640% | 10.319 | 4.817% |
+| IDA3 | 2,400 | 14.998 | 7.013% | 14.964 | 6.996% |
+
+A paired 5,000-resample independent-delivery-day bootstrap with seed 173 gives
+95% percentile intervals for MAE improvement of model over baseline of -0.123
+to +0.335 EUR/MWh for IDA1, -0.653 to -0.123 for IDA2, and -0.347 to +0.405
+for IDA3. Thus the selected IDA1 and IDA3 models do not show a clear gain over
+this stronger baseline here, while the selected IDA2 tree scores worse. The
+intervals ignore serial dependence, selection uncertainty and missing-day bias.
+Subsequent candidate and anchor comparisons are exploratory and are documented
+separately; historical publication times remain partly assumed.
