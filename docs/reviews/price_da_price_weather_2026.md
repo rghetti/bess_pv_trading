@@ -145,3 +145,22 @@ EUR/MWh. This does not account for serial dependence, selection or repeated
 inspection, and does not establish a reliable gain or the 4% target. The last
 nine October days lack DA targets. Full forecasts and refits are in
 `outputs/energy_price_forecasts/nord_da_2026_price_weather_interactions_sep_oct_v1/`.
+
+### September-tuned interaction bias correction
+
+An exploratory online correction grid tuned on September MAE and evaluated
+the fixed choice on available October products. It tested no correction and
+3/7/14/28-day residual windows, 1/4/24-hour local blocks and shrinkage
+0/24/96. Residuals contribute only when prior products have ended and their
+assumed publication clock precedes the decision. The selected correction used
+a seven-day window, one-hour blocks and shrinkage 24.
+
+On 2,112 products across 22 October days, uncorrected MAE was 16.298 EUR/MWh
+and WAPE was 7.192%; after correction they were 16.235 EUR/MWh and 7.164%.
+The paired MAE gain of 0.063 EUR/MWh has an independent-day bootstrap 95%
+percentile interval of -0.539 to 0.639 EUR/MWh, using 5,000 resamples and
+seed 173. The interval includes zero and omits selection effects; both
+months were inspected previously, the last nine October days lack targets,
+and historical weather and publication assumptions remain. The output at
+`outputs/energy_price_forecasts/nord_da_2026_interaction_weather_sep_oct_bias_v1/`
+contains the full grid, predictions and daily-error plot.
