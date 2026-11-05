@@ -107,3 +107,16 @@ did not beat the latest-cleared baseline on its matched ordinary selection days.
 The [latest-cleared neighbor search](price_ida_latest_bidirectional_2026.md)
 showed small early selection gains, with paired intervals spanning zero; its
 May–August rolling models did not establish gains over their matched baselines.
+In the later September–October replay, selected IDA1, IDA2 and IDA3 weather
+models scored 4.107%, 4.796% and 6.961% WAPE on 50 days per market, against
+4.164%, 4.627% and 7.013% for the latest-cleared-price references. Their
+paired day-bootstrap gain intervals all include zero. These are previously
+inspected periods, with partly assumed information clocks.
+
+The [failure-mode analysis](price_failure_modes_solar_2026.md) finds elevated
+DA midday errors and an association between higher regional radiation and
+larger evening-to-midday price differences. A training-only piecewise-solar
+pilot gave a small early-period gain; its rolling evaluation is running.
+Additional delivery-time harmonics did not improve the strongest matched
+recency-weighted early candidate. These observations are retrospective and do
+not establish causal attribution or a validated 4% model.
