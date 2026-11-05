@@ -59,6 +59,10 @@ found 9.465% selection WAPE for their combined interaction model. Its later
 replays are separate; weather vintage and historical auction clocks remain
 assumptions.
 
+A [two-model DA blend](price_da_cross_model_blend_2026.md) improved the
+stronger individual forecast slightly on a previously inspected 51-day
+July–August sample; its paired uncertainty interval includes no improvement.
+
 ## Separate historical product regimes
 
 The hourly DA regime was modeled separately: an early-selected Extra Trees
