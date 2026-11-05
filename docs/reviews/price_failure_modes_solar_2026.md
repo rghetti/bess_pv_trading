@@ -70,9 +70,12 @@ scored 16.049 EUR/MWh MAE and 11.049% WAPE for the baseline, and 15.981 and
 EUR/MWh with independent-day bootstrap 95% interval -0.150–0.288 (5,000
 resamples, seed 173). Midday bias changed from -4.373 to -5.329 EUR/MWh.
 Five solar-hinge refits emitted convergence warnings at the configured
-5,000-iteration limit; these numbers are diagnostic until convergence is
-resolved and re-evaluated. The interval also omits serial dependence and
-selection uncertainty. A higher-iteration audit is queued. The baseline's
+5,000-iteration limit. A rerun allowing 30,000 iterations completed all 18
+baseline and 18 hinge refits without warnings; the longest hinge fit used
+6,080 iterations. Its scores were unchanged at the displayed precision:
+16.049 EUR/MWh/11.049% versus 15.981/11.002%. The gain interval above also
+omits serial dependence and selection uncertainty. A later September–October
+replay of the same configuration is running. The baseline's
 mean midday signed error
 was -9.22 EUR/MWh in May (27 days), -13.68 in June (29), -0.84 in July (29)
 and +9.19 in August (22). Mean midday errors within a month are descriptive
@@ -90,8 +93,10 @@ completed without recorded failures or convergence warnings. At the best
 models did not improve on the matched one-harmonic model in early selection;
 they were not promoted to later replays. Prior experiments adding weekday
 terms and unweighted higher harmonics produced only small or uncertain gains.
-The piecewise solar response still requires its convergence audit and further
-later-period evaluation before it can be considered useful.
+The piecewise solar response still requires its later-period evaluation before
+it can be considered useful. The completed convergence-audit predictions and
+per-refit diagnostics are in
+`outputs/energy_price_forecasts/nord_da_2026_solar_hinge_may_aug_converged_v1/`.
 
 ## Intraday: different failure modes
 
