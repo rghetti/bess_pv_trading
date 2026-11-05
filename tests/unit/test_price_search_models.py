@@ -85,6 +85,22 @@ def test_weekday_interactions_decode_local_calendar_and_lags():
         WeekdayLagInteractions(lag_count=1, signal_count=1).fit_transform(values)
 
 
+@pytest.mark.parametrize("family,options", [
+    ("weekday_ridge", {"lag_count": 1, "signal_count": 1, "alpha": 1}),
+    ("weekday_elastic_net", {"lag_count": 1, "signal_count": 1, "alpha": 0.1, "max_iter": 1000}),
+])
+def test_weekday_candidate_pipeline_produces_finite_predictions(family, options):
+    """Both estimators accept the encoded weekday and retain prediction units."""
+    weekdays = np.arange(70) % 7
+    values = np.zeros((70, 8))
+    values[:, 0] = np.arange(70)
+    values[:, 3] = np.sin(2 * np.pi * weekdays / 7)
+    values[:, 4] = np.cos(2 * np.pi * weekdays / 7)
+    model = make_price_candidate(family, options, seed=4, threads=1)
+    model.fit(values[:56], 50 + weekdays[:56] + values[:56, 0])
+    assert np.isfinite(model.predict(values[56:])).all()
+
+
 def test_huber_candidate_resists_a_large_training_outlier():
     """Robust candidate stays closer to the central price than ordinary ridge."""
     features = np.zeros((40, 1))
