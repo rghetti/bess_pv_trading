@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.participation import participation_profiles
@@ -32,6 +33,7 @@ def test_december_configuration_information_and_profiles():
             assert config['execution']['dispatch_policy'] == 'track_committed_grid'
         for key in ('battery', 'plant', 'state', 'degradation', 'pv', 'policy', 'trading', 'settlement'):
             assert configs[0][key] == configs[1][key]
+        assert _runner().matched_settings(configs[0]) == _runner().matched_settings(configs[1])
         assert configs[0]['energy_price_forecast']['auction_enabled']
         assert not configs[1]['energy_price_forecast']['auction_enabled']
 
@@ -41,22 +43,93 @@ def test_report_pairs_profits_and_components(tmp_path, monkeypatch):
     runner = _runner()
     monkeypatch.setattr(runner, 'OUTPUT', tmp_path)
     monkeypatch.setattr(runner, 'FARMS', (1,))
-    profiles = [f'profile_{i}' for i in range(9)]
-    fields = ['auction_revenue_eur', 'imbalance_cashflow_eur', 'degradation_eur',
-              'import_fee_eur', 'transaction_fee_eur', 'absolute_imbalance_mwh',
-              'charge_mwh', 'discharge_mwh', 'curtailment_mwh']
+    profiles = runner.expected_profiles(load_config(runner.config_path(1, 'forecast')))
+    (tmp_path / 'preflight').mkdir()
     for mode in ('forecast', 'oracle'):
         root = tmp_path / 'farm_1' / f'december_2025_price_{mode}_v1'
         (root / 'json').mkdir(parents=True)
         (root / 'csv').mkdir()
-        (root / 'json/manifest.json').write_text(json.dumps({'status': 'complete'}))
-        profit = 100 if mode == 'forecast' else 110
+        config = load_config(runner.config_path(1, mode))
+        evidence = {'status': 'complete', 'completed': profiles,
+                    'delivery_days': [f'2025-12-{day:02}' for day in range(1, 32)],
+                    'input_fingerprint': mode, 'config_fingerprint': mode}
+        (root / 'json/manifest.json').write_text(json.dumps(evidence))
+        provenance = {'days': {day: {'pv_provenance': {'curated_realized_pv': {
+            'source_counts': {'metered_ac': 96}}}} for day in evidence['delivery_days']}}
+        (root / 'json/input_provenance.json').write_text(json.dumps(provenance))
+        (root / 'json/study_config.json').write_text(json.dumps(config))
+        (tmp_path / 'preflight' / f'farm_1_{mode}.json').write_text(json.dumps(
+            {**evidence, 'days': evidence['delivery_days']}))
+        for profile in profiles:
+            diagnostics = root / 'strategies' / profile / 'json'
+            diagnostics.mkdir(parents=True)
+            (diagnostics / 'optimization_attempts.json').write_text(json.dumps(
+                [{'status': 'optimal', 'mip_gap': 0.0, 'fallback_applied': False}]))
+        profit = 310 if mode == 'forecast' else 341
         pd.DataFrame({'profile': profiles, 'total_net_profit_eur': [profit]*9,
-                      'final_soc_percent': [50]*9}).to_csv(root / 'csv/monthly_participation.csv', index=False)
-        rows = [{'profile': profile, 'delivery_day': f'2025-12-{day:02}', **{key: 1 for key in fields}}
+                      'final_soc_percent': [50]*9, 'final_energy_mwh': [0.375]*9,
+                      'fallback_count': [0]*9}).to_csv(root / 'csv/monthly_participation.csv', index=False)
+        rows = [{'profile': profile, 'delivery_day': f'2025-12-{day:02}',
+                 **{key: 0 for key in runner.COMPONENTS}, 'auction_revenue_eur': profit / 31,
+                 'net_profit_eur': profit / 31, 'initial_energy_mwh': 0.375, 'final_energy_mwh': 0.375}
                 for profile in profiles for day in range(1, 32)]
         pd.DataFrame(rows).to_csv(root / 'csv/daily_participation.csv', index=False)
     runner.report()
     paired = pd.read_csv(tmp_path / 'paired_monthly.csv')
-    assert set(paired.profit_forecast_minus_oracle_eur) == {-10}
-    assert set(paired.auction_revenue_eur_difference) == {0}
+    assert set(paired.profit_forecast_minus_oracle_eur) == {-31}
+    assert set(paired.auction_revenue_eur_difference) == {-31}
+    summary = (tmp_path / 'summary.md').read_text()
+    assert 'Settlement | Degradation | Import fee | Trading fee' in summary
+    assert 'retrospective' in summary
+
+    # Corruptions must be rejected even when row counts are unchanged.
+    daily_path = root / 'csv/daily_participation.csv'
+    frame = pd.read_csv(daily_path)
+    frame.loc[0, 'delivery_day'] = '2026-01-01'
+    frame.to_csv(daily_path, index=False)
+    with pytest.raises(ValueError, match='Incomplete December dates'):
+        runner.report()
+
+
+@pytest.mark.parametrize('corruption,message', [
+    ('profit', 'cash components'), ('state', 'Discontinuous SOC'),
+    ('nonfinite', 'Nonfinite'), ('profile', 'participation profiles'),
+    ('monthly', 'Monthly profit')])
+def test_result_validation_rejects_invalid_accounting(corruption, message):
+    """Counts alone cannot establish a valid, continuous monthly cash comparison."""
+    runner = _runner()
+    daily = pd.DataFrame([{'profile': 'DA', 'delivery_day': f'2025-12-{day:02}',
+        **{key: 0.0 for key in runner.COMPONENTS}, 'auction_revenue_eur': 10.0,
+        'net_profit_eur': 10.0, 'initial_energy_mwh': 0.375, 'final_energy_mwh': 0.375}
+        for day in range(1, 32)])
+    monthly = pd.DataFrame([{'profile': 'DA', 'total_net_profit_eur': 310.0, 'final_energy_mwh': 0.375}])
+    if corruption == 'profit':
+        daily.loc[0, 'net_profit_eur'] = 100.0
+    elif corruption == 'state':
+        daily.loc[1, 'initial_energy_mwh'] = 0.4
+    elif corruption == 'nonfinite':
+        daily.loc[0, 'degradation_eur'] = float('nan')
+    elif corruption == 'profile':
+        monthly.loc[0, 'profile'] = 'wrong'
+    else:
+        monthly.loc[0, 'total_net_profit_eur'] = 0.0
+    with pytest.raises(ValueError, match=message):
+        runner.validate_tables(monthly, daily, ['DA'])
+
+
+def test_farm_runner_bounds_threads_and_runs_arms_serially(tmp_path, monkeypatch):
+    """Inherited parallelism must not multiply the two-farm concurrency budget."""
+    runner = _runner()
+    monkeypatch.setattr(runner, 'OUTPUT', tmp_path)
+    monkeypatch.setenv('BESS_PARTICIPATION_WORKERS', '48')
+    monkeypatch.setenv('OPENBLAS_NUM_THREADS', '48')
+    calls = []
+    monkeypatch.setattr(runner.subprocess, 'run', lambda command, **options: calls.append((command, options)))
+    runner.run_farm(1)
+    assert len(calls) == 2
+    for mode, (command, options) in zip(runner.MODES, calls):
+        assert command[-1] == str(runner.config_path(1, mode))
+        assert options['check']
+        assert options['env']['BESS_PARTICIPATION_WORKERS'] == '1'
+        assert all(options['env'][name] == '1' for name in runner.THREAD_VARIABLES)
+        assert options['env']['PYTHONPATH'] == str(runner.ROOT / 'src')

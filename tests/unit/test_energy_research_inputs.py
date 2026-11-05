@@ -414,7 +414,10 @@ def control_replay():
     daily = daily_for(grid)
     daily.update(ensemble_members=(0, 1), ensemble_pv=np.array([[0.1, 0.2], [0.6, 0.7]]))
     config = {"execution": {"dispatch_policy": "ensemble_mpc_adaptive"}, "solver": {"threads": 1},
-        "realtime_mpc": {"terminal_inventory_mode": "none", "current_pv_information": "realized_interval_average"},
+        # This price-information fixture supplies binding positions only; provisional
+        # IDA3 plans are covered by the dedicated commitment tests.
+        "realtime_mpc": {"terminal_inventory_mode": "none", "current_pv_information": "realized_interval_average",
+                         "provisional_ida3_mode": "submitted_only"},
         "realtime_scenarios": {"dependence": "independent_shuffle", "reduce_to": 2, "seed": 2},
         "energy_price_forecast": {"settlement_enabled": True}}
     replay = SimpleNamespace(config=config, grid=grid, starts=pd.DatetimeIndex(grid.starts), days=(day,),
