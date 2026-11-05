@@ -81,3 +81,15 @@ nearest added candidate was Huber at 11.411 and 9.079%. These are candidate
 comparisons on repeatedly inspected dates, not an untouched validation or a
 claim that other architectures cannot improve performance. An analogous
 16-pair CPU search for IDA1 and IDA2 is running.
+
+The analogous IDA1/IDA2 search completed all 16 pairs without process failures
+or holiday-model convergence warnings. On the previously examined early
+selection days, the best holiday-aware IDA1 candidate was Elastic Net at
+5.923 EUR/MWh and 4.651% WAPE; Extra Trees followed at 5.998 and 4.710%.
+For IDA2, Extra Trees scored 6.897 and 5.387%, followed by Elastic Net at
+6.925 and 5.409%. No tested additional family beat the existing early-selected
+holiday-aware model in either market. The reference latest-cleared baseline
+scored 4.701% and 5.390% WAPE respectively. Inputs and assumptions match the
+IDA1/IDA2 early tests above; candidate selection remains retrospective. The
+full grid and per-fit diagnostics are saved in
+`outputs/energy_price_forecasts/italian_holiday_broad_ida12_early_2026_v1/`.
