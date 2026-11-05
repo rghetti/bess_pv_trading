@@ -1,0 +1,235 @@
+# Matched later robust-boosting and interaction-reference DA replay.
+include: ../standard.yaml
+price_model_search:
+  add_daily_curve_features_to:
+  - curve_price
+  - curve_price_weather
+  - ida_curve_price
+  - ida_curve_price_weather
+  add_lagged_market_features_to:
+  - ida_curve_price
+  - ida_curve_price_weather
+  add_supplemental_features_to:
+  - curve_price_weather
+  - ida_curve_price_weather
+  candidates:
+  - family: interaction_elastic_net
+    id: interaction_elastic_net_0.1
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      lag_count: 11
+      max_iter: 5000
+  - family: lightgbm
+    id: lightgbm_l1_15
+    parameters:
+      learning_rate: 0.04
+      min_child_samples: 50
+      n_estimators: 500
+      num_leaves: 15
+      objective: regression_l1
+      reg_lambda: 10.0
+  - family: lightgbm
+    id: lightgbm_l1_31
+    parameters:
+      learning_rate: 0.04
+      min_child_samples: 50
+      n_estimators: 500
+      num_leaves: 31
+      objective: regression_l1
+      reg_lambda: 10.0
+  - family: catboost
+    id: catboost_mae_4
+    parameters:
+      depth: 4
+      iterations: 500
+      l2_leaf_reg: 10.0
+      learning_rate: 0.04
+      loss_function: MAE
+  - family: catboost
+    id: catboost_mae_6
+    parameters:
+      depth: 6
+      iterations: 500
+      l2_leaf_reg: 10.0
+      learning_rate: 0.04
+      loss_function: MAE
+  common_training_rows: true
+  daily_curve_lag_days:
+  - 1
+  - 2
+  - 7
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  feature_set_aliases:
+    curve_price: price_only
+    curve_price_weather: price_only
+    ida_curve_price: price_only
+    ida_curve_price_weather: price_only
+  feature_sets:
+  - curve_price
+  - curve_price_weather
+  - ida_curve_price
+  - ida_curve_price_weather
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  output_root: outputs/energy_price_forecasts
+  product_groups:
+    quarter_hourly:
+      cutoff: '2026-05-02T09:00:00Z'
+      feature_sets:
+      - curve_price
+      - curve_price_weather
+      - ida_curve_price
+      - ida_curve_price_weather
+      history_end: '2026-09-01T00:00:00+02:00'
+      history_start: '2025-10-01T00:00:00+02:00'
+      lagged_market_price_features:
+      - lag_hours: 24
+        market: IDA1
+      - lag_hours: 48
+        market: IDA1
+      - lag_hours: 24
+        market: IDA2
+      - lag_hours: 48
+        market: IDA2
+      native_minutes: 15
+      validation_end: '2026-09-01'
+      validation_start: '2026-05-03'
+  run_id: nord_da_2026_ida_weather_robust_boost_may_aug_rolling_v1
+  seed: 17
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  supplemental_features:
+  - allow_hindcasts: true
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    dataset: weather_forecast
+    expected_unit: °C
+    kind: weather
+    name: regional_milan_temperature_2m
+    provider: open_meteo
+    selectors:
+      location_id: milan
+      source_kind: provider_archive_operational_or_hindcast_unverified
+      variable: temperature_2m
+    zone: NORD
+  - allow_hindcasts: true
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    dataset: weather_forecast
+    expected_unit: W/m²
+    kind: weather
+    name: regional_milan_shortwave_radiation
+    provider: open_meteo
+    selectors:
+      location_id: milan
+      source_kind: provider_archive_operational_or_hindcast_unverified
+      variable: shortwave_radiation
+    weather_mean_interval_minutes: 60
+    zone: NORD
+  - allow_hindcasts: true
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    dataset: weather_forecast
+    expected_unit: °C
+    kind: weather
+    name: regional_turin_temperature_2m
+    provider: open_meteo
+    selectors:
+      location_id: turin
+      source_kind: provider_archive_operational_or_hindcast_unverified
+      variable: temperature_2m
+    zone: NORD
+  - allow_hindcasts: true
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    dataset: weather_forecast
+    expected_unit: W/m²
+    kind: weather
+    name: regional_turin_shortwave_radiation
+    provider: open_meteo
+    selectors:
+      location_id: turin
+      source_kind: provider_archive_operational_or_hindcast_unverified
+      variable: shortwave_radiation
+    weather_mean_interval_minutes: 60
+    zone: NORD
+  - allow_hindcasts: true
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    dataset: weather_forecast
+    expected_unit: °C
+    kind: weather
+    name: regional_verona_temperature_2m
+    provider: open_meteo
+    selectors:
+      location_id: verona
+      source_kind: provider_archive_operational_or_hindcast_unverified
+      variable: temperature_2m
+    zone: NORD
+  - allow_hindcasts: true
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    dataset: weather_forecast
+    expected_unit: W/m²
+    kind: weather
+    name: regional_verona_shortwave_radiation
+    provider: open_meteo
+    selectors:
+      location_id: verona
+      source_kind: provider_archive_operational_or_hindcast_unverified
+      variable: shortwave_radiation
+    weather_mean_interval_minutes: 60
+    zone: NORD
+  - allow_hindcasts: true
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    dataset: weather_forecast
+    expected_unit: °C
+    kind: weather
+    name: regional_venice_temperature_2m
+    provider: open_meteo
+    selectors:
+      location_id: venice
+      source_kind: provider_archive_operational_or_hindcast_unverified
+      variable: temperature_2m
+    zone: NORD
+  - allow_hindcasts: true
+    availability_column: scheduled_available_at
+    availability_kind: assumed_forecast_cycle_plus_six_hours
+    dataset: weather_forecast
+    expected_unit: W/m²
+    kind: weather
+    name: regional_venice_shortwave_radiation
+    provider: open_meteo
+    selectors:
+      location_id: venice
+      source_kind: provider_archive_operational_or_hindcast_unverified
+      variable: shortwave_radiation
+    weather_mean_interval_minutes: 60
+    zone: NORD
+  threads_per_worker: 1
+  timezone: Europe/Rome
+  workers: 4
+  selection:
+    source_manifest: outputs/energy_price_forecasts/nord_da_2026_price_ida_weather_robust_boost_early_v1/manifest.json
+    top_n: 2
+    baseline_candidates:
+    - interaction_elastic_net_0.1
+    matched_feature_pairs:
+    - - curve_price
+      - ida_curve_price
+    - - curve_price_weather
+      - ida_curve_price_weather
+  rolling_refit:
+    frequency_days: 7
+    gap_days: 1
