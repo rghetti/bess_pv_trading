@@ -1,0 +1,24 @@
+# Chronological correction of the latest-cleared-price IDA baseline.
+include: ../standard.yaml
+online_price_bias:
+  selected_evaluation: outputs/energy_price_forecasts/nord_ida_2026_spread_price_weather_may_aug_rolling_v1
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_ida_2026_latest_cleared_online_bias_v1
+  timezone: Europe/Rome
+  tune_start: '2026-05-03'
+  tune_end_exclusive: '2026-07-01'
+  test_start: '2026-07-01'
+  test_end_exclusive: '2026-09-01'
+  window_days:
+  - 3
+  - 7
+  - 14
+  - 28
+  block_hours:
+  - 1
+  - 4
+  - 24
+  shrinkage:
+  - 0
+  - 24
+  - 96
