@@ -65,7 +65,10 @@ rows. The exact saved-matrix columns and hashes are recorded by
 an untouched final holdout.
 
 The May–August rolling baseline has finished on 107 complete shared days;
-the solar-hinge predictions are still running. Its mean midday signed error
+the solar-hinge predictions are still running. Some solar-hinge refits have
+emitted convergence warnings at the configured 5,000-iteration limit; their
+results are diagnostic until convergence is resolved and re-evaluated. The
+baseline's mean midday signed error
 was -9.22 EUR/MWh in May (27 days), -13.68 in June (29), -0.84 in July (29)
 and +9.19 in August (22). Mean midday errors within a month are descriptive
 and do not establish why the bias changes. Across these summer days, the
