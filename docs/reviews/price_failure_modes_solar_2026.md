@@ -64,11 +64,17 @@ rows. The exact saved-matrix columns and hashes are recorded by
 `scripts/analyze_price_solar_response.py`; the 2026 delivery periods are not
 an untouched final holdout.
 
-A second queued search compares one, two and three delivery-time harmonics
-with recency weighting, motivated by the large midday shape error. Prior
-experiments adding weekday terms and unweighted higher harmonics produced only
-small or uncertain gains. Both targeted changes require later-period and
-matched-baseline evaluation before they are useful fixes.
+A second search compared one, two and three delivery-time harmonics with
+recency weighting, motivated by the large midday shape error. All 12 fits
+completed without recorded failures or convergence warnings. At the best
+2,880-observation half-life, one, two and three harmonics scored respectively
+11.711, 11.766 and 12.030 EUR/MWh MAE with prior IDAs and weather, and
+11.796, 11.837 and 12.168 with weather without prior IDAs. The more flexible
+models did not improve on the matched one-harmonic model in early selection;
+they were not promoted to later replays. Prior experiments adding weekday
+terms and unweighted higher harmonics produced only small or uncertain gains.
+The piecewise solar response still requires its later matched-baseline replay
+before it can be considered useful.
 
 ## Intraday: different failure modes
 
