@@ -75,3 +75,6 @@ matched comparisons and their limitations. A short-history
 [Swiss-border DA comparison](price_da_swiss_border_2026.md) did not beat its
 matched price-only reference; the [IDA border search](price_ida_swiss_border_2026.md)
 ranked the latest-cleared baseline first in all three auctions.
+The [per-slot search](price_per_slot_selection_2026.md) also trailed its
+matched quarter-hourly references on the early selection products; its older
+manifests do not record per-fit convergence warnings.
