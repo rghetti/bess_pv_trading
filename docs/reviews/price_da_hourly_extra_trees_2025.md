@@ -27,3 +27,18 @@ predictions confirms identical timestamps and actual values across all 2,112
 products. The Extra Trees run completed with no recorded failures or convergence
 warnings. This comparison supports further evaluation of Extra Trees; it does not
 establish a 4% error or performance in the quarter-hourly regime.
+
+## XGBoost follow-up
+
+A subsequent CPU XGBoost grid used 2024 hourly training data and January–June
+2025 validation to select two configurations, then evaluated weekly refits in
+July–September. The best selected XGBoost model, with depth 3 and an
+absolute-error objective, scored 7.718 EUR/MWh MAE and 7.084% WAPE. The other
+selected model scored 7.893 EUR/MWh and 7.244%. Both completed without
+recorded failures or convergence warnings. The best XGBoost and Extra Trees
+saved predictions have identical timestamps and actuals for all 2,112 products;
+the Extra Trees result was 7.242 EUR/MWh and 6.647% WAPE. These are historical
+hourly products and the period was previously examined; this is not an
+untouched evaluation or a quarter-hourly result. Exact settings and selection
+provenance are in the `price_model_*_da_hourly_xgboost.yaml` configurations and
+their manifests.
