@@ -327,3 +327,74 @@ def test_exhausted_oracle_budget_never_authorizes_uncertified_economics():
 def test_invalid_settings_fail(values):
     with pytest.raises(ValueError):
         MpcSettings(**values)
+
+
+def test_first_interval_weight_and_lexicographic_priority_change_dispatch():
+    """Both requested objectives prefer present tracking when wear is expensive."""
+    base = inputs_for([[0.0, 0.0]], [0.1, 0.0], energy=0.5,
+        settings=MpcSettings(terminal_inventory_mode='none'))
+    base = replace(base, degradation=DegradationSettings(600))
+    original = checked(base)
+    weighted = checked(replace(base, settings=replace(base.settings,
+        first_interval_priority='weighted', first_interval_weight=10.0)))
+    strict = checked(replace(base, settings=replace(base.settings,
+        first_interval_priority='lexicographic')))
+    assert original.plan.expected_absolute_imbalance_by_interval_mwh[0] == pytest.approx(0.1)
+    assert weighted.plan.expected_absolute_imbalance_by_interval_mwh[0] == pytest.approx(0, abs=1e-6)
+    assert strict.plan.expected_absolute_imbalance_by_interval_mwh[0] == pytest.approx(0, abs=1e-6)
+    assert weighted.diagnostics['planning_objective_value'] == pytest.approx(60, abs=1e-4)
+    assert strict.diagnostics['first_interval_minimum_certified']
+    assert strict.diagnostics['first_interval_refinement_used']
+    assert strict.diagnostics['first_interval_incumbent_mwh'] == pytest.approx(0, abs=1e-6)
+    assert [stage['stage'] for stage in strict.diagnostics['stages']] == [
+        'minimum_first_interval_imbalance', 'horizon_given_first_interval_priority']
+
+
+def test_strict_first_interval_priority_honors_final_study_constraint():
+    """The immediate best action must preserve hard terminal feasibility."""
+    settings = MpcSettings(terminal_inventory_mode='none', first_interval_priority='lexicographic')
+    base = inputs_for([[0.0]], [0.1], energy=0.5, settings=settings)
+    result = checked(replace(base, hard_terminal_target_mwh=0.5))
+    assert result.plan.expected_absolute_imbalance_by_interval_mwh[0] == pytest.approx(0.1, abs=1e-6)
+    assert result.plan.energy_mwh[-1] == pytest.approx(0.5)
+    assert result.diagnostics['first_interval_minimum_certified']
+
+
+def test_first_interval_priority_settings_reject_conflicting_policies():
+    """Avoid silently applying the new objective to oracle or ensemble research MPC."""
+    with pytest.raises(ValueError, match='at least one'):
+        MpcSettings(first_interval_priority='weighted', first_interval_weight=0.5)
+    with pytest.raises(ValueError, match='requires weighted'):
+        MpcSettings(first_interval_priority='lexicographic', first_interval_weight=10)
+    base = inputs_for([[0.0]], [0.1])
+    with pytest.raises(ValueError, match='deterministic price-blind'):
+        replace(base, policy='ensemble_mpc', settings=replace(base.settings, first_interval_priority='lexicographic'))
+    with pytest.raises(ValueError, match='deterministic price-blind'):
+        replace(base, settings=replace(base.settings, first_interval_priority='weighted',
+            first_interval_weight=10, planning_objective='imbalance_only'))
+
+
+def test_strict_priority_retains_valid_first_action_if_refinement_is_invalid(monkeypatch):
+    """A rejected second-stage plan cannot discard the certified first action."""
+    import bess_pv_trading.optimization.mpc as mpc
+
+    base = inputs_for([[0.0, 0.0]], [0.1, 0.0], energy=0.5,
+        settings=MpcSettings(terminal_inventory_mode='none', first_interval_priority='lexicographic'))
+    original = mpc._plan_from_solution
+    calls = []
+
+    def fail_refinement(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2:
+            raise ValueError('synthetic refinement rejection')
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(mpc, '_plan_from_solution', fail_refinement)
+    result = solve_mpc(base, SolverSettings(threads=1, feasibility_tolerance=1e-8, integrality_tolerance=1e-8))
+    assert result.status == 'first_interval_refinement_rejected'
+    assert result.plan is not None
+    assert result.diagnostics['first_interval_minimum_certified']
+    assert not result.diagnostics['first_interval_refinement_used']
+    assert result.diagnostics['accepted_action_source'] == 'first_interval_stage1'
+    assert result.plan.expected_absolute_imbalance_by_interval_mwh[0] == pytest.approx(0, abs=1e-6)
+    validate_mpc_plan(base, result.plan)

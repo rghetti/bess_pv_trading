@@ -320,3 +320,28 @@ def test_recovery_is_executed_and_carried_into_next_state(continuous_config, tmp
     assert replay.state.energy_mwh > fixed_state.energy_mwh
     assert replay.state.energy_mwh <= replay.plant.battery.maximum_energy
     assert replay.realtime.state.outstanding_action is None
+
+
+@pytest.mark.parametrize('priority,weight', [('weighted', 10.0), ('lexicographic', 1.0)])
+def test_first_interval_priorities_run_chronologically_with_realized_current_pv(continuous_config, tmp_path, priority, weight):
+    """Replanning issues validated priority actions and retains actual financial accounting."""
+    config = continuous_config
+    config['execution']['dispatch_policy'] = 'deterministic_mpc'
+    config['realtime_mpc'] = {'current_pv_information': 'realized_interval_average',
+        'first_interval_priority': priority, 'first_interval_weight': weight}
+    prepared = mpc_prepared(config, one_day=True)
+    replay = ContinuousReplay(config, prepared, 'integrated', tmp_path / priority)
+    summary = replay.run()
+    dispatch = pd.DataFrame(replay.records.values()).sort_values('start')
+    solves = replay.realtime.state.solves
+    assert len(solves) == len(dispatch)
+    assert all(not row['fallback_applied'] for row in solves)
+    assert all(row['first_interval_priority'] == priority for row in solves)
+    np.testing.assert_allclose(dispatch.energy_start_mwh.iloc[1:], dispatch.energy_end_mwh.iloc[:-1])
+    if priority == 'lexicographic':
+        assert all(row['first_interval_minimum_certified'] for row in solves)
+        assert all(row['first_interval_refinement_used'] for row in solves)
+        assert all(row['first_interval_expected_imbalance_mwh'] <= row['first_interval_cap_mwh'] + 1e-6 for row in solves)
+    assert summary['net_profit_eur'] == pytest.approx(replay.market.cashflow_eur
+        + dispatch.imbalance_cashflow_eur.sum() - dispatch.degradation_eur.sum()
+        - dispatch.import_fee_eur.sum() - replay.market.transaction_fee_state.cumulative_fees_eur)

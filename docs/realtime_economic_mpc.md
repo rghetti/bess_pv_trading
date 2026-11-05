@@ -360,3 +360,23 @@ executed SOC to differ from a planning terminal target, especially in the last
 interval; report those outcomes. As with the existing tracker, use of interval
 average PV for execution is an idealized retrospective physical-feedback
 assumption, not proof of real-time availability of the interval average.
+
+### Optional first-interval imbalance priority
+
+The deterministic price-blind `imbalance_and_costs` policy can set
+`realtime_mpc.first_interval_priority` to `weighted` or `lexicographic`.
+`weighted` multiplies only the first interval's imbalance penalty by
+`first_interval_weight`; the default mode `none` preserves previous behavior.
+`lexicographic` first minimizes current expected absolute imbalance and then
+minimizes the ordinary horizon objective with the first-stage incumbent plus
+`first_interval_priority_tolerance_mwh` as a cap. Both stages share the total
+MPC time budget. Only a first stage with solver status optimal is treated as
+certified within its reported relative MIP gap and tolerances. A validated
+uncertified incumbent can supply an action without horizon refinement; a failed
+refinement retains the validated first-stage action. The realized first-interval
+PV disclosure is controlled independently and remains a retrospective
+assumption when interval-average realized PV is selected.
+
+These options currently reject ensemble, oracle, economic and pure-imbalance
+policies rather than silently changing their objectives. Planning penalties
+are not realized settlement charges.
