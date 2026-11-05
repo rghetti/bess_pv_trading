@@ -1,5 +1,19 @@
 # Regional forecast weather in 2026 price searches
 
+## September–October coverage check
+
+The prepared later replay in
+`configs/research/price_model_rolling_da_regional_weather_sep_oct.yaml` did not
+pass preflight: there are no shared complete validation days. The existing
+`european_context_previous_day_v1/exogenous.parquet` ends on 31 August 2026,
+and the catalog's selected regional Open-Meteo forecast series extend only to
+1 September 06:00 UTC. Thus the required regional weather and the saved base
+fundamentals do not cover complete September–October delivery days. No models
+were fitted for this replay and no later-period weather score was produced.
+The configuration requires an extended, separately versioned feature source
+and weather acquisition before it can be evaluated. The underlying weather
+product's operational-or-hindcast classification remains unverified.
+
 The day-ahead study adds forecast temperature and shortwave radiation at Milan,
 Turin, Verona and Venice to the existing market fundamentals, with and without
 past IDA prices. These are individual regional weather points, not a

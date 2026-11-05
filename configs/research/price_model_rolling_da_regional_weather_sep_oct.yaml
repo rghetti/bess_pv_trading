@@ -1,4 +1,5 @@
-# Later paired September-October replay of early-selected DA weather models.
+# Prepared September-October replay; see the coverage limitation in
+# docs/reviews/price_regional_weather_2026.md before running this configuration.
 include: ../standard.yaml
 price_model_search:
   run_id: nord_da_2026_regional_weather_sep_oct_rolling_v1
