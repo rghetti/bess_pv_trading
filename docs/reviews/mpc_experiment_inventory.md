@@ -1,8 +1,8 @@
 # MPC and feedback-controller experiment inventory
 
-Snapshot: 2026-11-05T16:04:57.173982+00:00; repository revision `8c15e592b79b`. This is a record of completed or attempted controller experiments, not authorization to run new ones.
+Snapshot: 2026-11-05T16:49:01.114048+00:00; repository revision `ce8999ee0a8e`. This is a record of completed or attempted controller experiments, not authorization to run new ones.
 
-The machine-readable archive contains 195 research jobs across 11 completed batches, and 6 main-checkout comparison modes including unsuccessful modes. The accompanying CSV has one row per research job. The compressed JSON preserves exact resolved configuration snapshots, source and input fingerprints, controller metrics, provenance and original as well as preserved output paths.
+The machine-readable archive contains 207 research jobs across 12 completed batches, and 6 main-checkout comparison modes including unsuccessful modes. The accompanying CSV has one row per research job. The compressed JSON preserves exact resolved configuration snapshots, source and input fingerprints, controller metrics, provenance and original as well as preserved output paths.
 
 ## Completed continuous research batches
 
@@ -12,6 +12,7 @@ The machine-readable archive contains 195 research jobs across 11 completed batc
 | `economic_continuous_development_v1` | 2026-01-15 to 2026-01-16 | 1 | 5 / 5 | Economic, settlement forecast, adaptive recourse and reduced-scenario pilot. | [continuous_mpc_validation_economic_v1.md](../../docs/reviews/continuous_mpc_validation_economic_v1.md) |
 | `ensemble_oracle_corrected_v3` | 2026-01-15 to 2026-01-16<br>2026-08-02 to 2026-08-03 | 1, 345, 901, 910 | 8 / 1 | Corrected ensemble price-oracle validation in January and August. | [continuous_mpc_validation_ensemble_oracle_v3.md](../../docs/reviews/continuous_mpc_validation_ensemble_oracle_v3.md) |
 | `first_action_only_jan15_17_2026_v1` | 2026-01-15 to 2026-01-17 | 1, 345, 901, 910 | 16 / 4 | Ensemble common vs shared-first controls, cost and pure-imbalance objectives. | [first_action_only_targeted_results.md](../../docs/reviews/first_action_only_targeted_results.md) |
+| `first_interval_priority_jan15_21_2026_v1` | 2026-01-15 to 2026-01-21 | 1, 345, 901, 910 | 12 / 3 | Original MPC vs weight-10 and lexicographic current-imbalance priority. | [first_interval_priority_one_week_results.md](../../docs/reviews/first_interval_priority_one_week_results.md) |
 | `legacy_continuous_validation_v1` | 2026-01-15 to 2026-01-16<br>2026-08-02 to 2026-08-03 | 1, 345, 901, 910 | 32 / 4 | Earlier deterministic/ensemble MPC and price-oracle tests; legacy oracle-cap audit issues. | [continuous_mpc_validation_legacy_v1.md](../../docs/reviews/continuous_mpc_validation_legacy_v1.md) |
 | `new_research_pilot_v3` | 2026-01-15 to 2026-01-16 | 1 | 4 / 4 | Calibrated ECC/shuffle, forecast auction prices and continuation-value pilot. | [continuous_mpc_validation_pilot_v3.md](../../docs/reviews/continuous_mpc_validation_pilot_v3.md) |
 | `provisional_ida3_jan15_17_2026_v1` | 2026-01-15 to 2026-01-17 | 1, 345, 901, 910 | 8 / 2 | Deterministic MPC submitted-only vs planned IDA3 commitments. | [provisional_ida3_targeted_results.md](../../docs/reviews/provisional_ida3_targeted_results.md) |
@@ -75,6 +76,7 @@ The matrix includes deterministic and ensemble imbalance penalties; settlement-p
 - **Planned IDA3:** submitted-only vs `ida2_plan`, deterministic MPC, 15–17 January, four farms; current interval average PV disclosed; reference is each case’s grid tracker.
 - **Shared-first ensemble:** common vs scenario-specific later controls, under imbalance-and-cost and pure absolute-imbalance objectives; 15–17 January, four farms. The first command is shared; future path revelation is an optimistic assumption. Both variants use provisional IDA3.
 - **Curtailment recovery:** original MPC vs grid-neutral recovery after protection, 15–21 January, four farms. Recovery respects SOC and power headroom and the next solve uses the actual state.
+- **First-interval priority:** original, weight-10 and lexicographic deterministic MPC, 15–21 January, four farms, including the saved refinement rejection diagnostics.
 - **January month:** Farm 1 tracker vs deterministic MPC, 1–31 January; an older TCN and current realized interval-average PV. A completed frozen comparison also exists but is not part of the current continuous-only preference.
 - **October and August:** the seven-day October four-farm deterministic test and two-day August farm-910 ensemble/oracle test provide additional historical windows.
 
@@ -128,10 +130,12 @@ model adapter compatibility and retrospective options. A relocated three-day
 configuration passed a complete check-only preflight; no controller solve was
 started for that test.
 
-Portable preparation was checked against all 197 completed continuous
-configurations (195 research jobs and two main-checkout modes). Their original
+Portable preparation was checked against 209 completed continuous
+configurations (207 research jobs and two main-checkout modes). The earlier 197
+were checked on the previous code snapshot; the 12 first-priority configurations
+were checked separately on the current snapshot. Their original
 forecast, physical, solver, objective, price and execution settings survived
 YAML resolution in the sampled code snapshot; output identity was deliberately
-changed. This is a configuration check, not 197 data preflights or solver
+changed. This is a configuration check, not 209 data preflights or solver
 runs. The preparer has focused relocation, new-model and numeric-tolerance
 regression tests, and one relocated three-day data preflight passed.

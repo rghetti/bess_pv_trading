@@ -1,8 +1,6 @@
 # One-week current-interval MPC priority comparison
 
-Status: prepared for review; no historical optimization or training has been
-started for this study. Explicit approval of this concrete plan is required by
-the project instructions before the historical replay.
+Status: explicitly approved and completed. See [results](first_interval_priority_one_week_results.md) and the [independent audit](first_interval_priority_one_week_audit.md).
 
 ## Comparison and objectives
 
@@ -98,6 +96,4 @@ Configuration: `configs/research/first_interval_priority_one_week.yaml`.
 PYTHONPATH=src python scripts/run_energy_research_study.py --config configs/research/first_interval_priority_one_week.yaml --check-only --workers 2
 ```
 
-The `--run` action will only be started after the plan is presented and the
-user explicitly approves it. Check-only preflight and unit/integration software
-verification do not start a historical controller experiment.
+The user approved the run after the plan and preflight were presented. Check-only preflight and unit/integration software verification did not start historical controller experiments.
