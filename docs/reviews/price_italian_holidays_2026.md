@@ -39,6 +39,15 @@ be reported separately from full-period averages. In particular May 1 is
 outside the May–August replay's May 3 start. Later periods have been inspected
 in previous searches and are not untouched final holdouts.
 
+The matched DA holiday-flag May–August replays have now completed without
+warnings on 107 complete days. For weather without prior IDAs, WAPE changed
+from 11.171% to 11.141%; with prior IDAs it changed from 10.980% to 10.955%.
+Paired baseline-minus-holiday MAE gains were 0.044 and 0.036 EUR/MWh; 95%
+independent-day bootstrap intervals were -0.151–0.236 and -0.153–0.212
+(5,000 resamples, seed 173). Both include zero. The shared holiday dates were
+June 2 and August 15. This modest result does not establish a reliable gain;
+the September–October replay remains in progress.
+
 The IDA1 and IDA3 rolling replays have completed without warnings. In
 May–August, IDA1 baseline and holiday-feature WAPE were 4.557% and 4.558%
 over 115 days; IDA3 scored 9.073% and 9.100% over 113 days. The two shared
