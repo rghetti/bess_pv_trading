@@ -76,3 +76,22 @@ publication clocks; they do not prove that those clocks were historically
 observed. The exact implementation is `_features` in
 `src/forecasting/energy_prices.py`, and the count is collected by
 `prepare_search_matrix` in `src/forecasting/price_search.py`.
+
+For the selected later-period forecasts, a separate reconstruction compared
+each requested same-auction lag against the catalog's price timestamps and
+availability clocks. The stored validation lag columns were verified finite;
+therefore, on these retained products, an unavailable exact lag implies use of
+the configured fallback. This count excludes daily-curve features and any
+separately loaded earlier-auction features.
+
+| Market | Products | Products with at least one fallback | Fraction | Fallback lag entries |
+| --- | ---: | ---: | ---: | ---: |
+| DA | 4,992 | 208 | 4.2% | 208 |
+| IDA1 | 4,800 | 664 | 13.8% | 1,252 |
+| IDA2 | 4,704 | 384 | 8.2% | 580 |
+| IDA3 | 2,400 | 0 | 0.0% | 0 |
+
+The DA fallbacks were all for the 23-hour lag. These are evaluation-only
+counts, unlike the aggregate matrix counts above. They are conditional on the
+selected complete days and the assumed or supplied publication clocks; they
+do not measure forecast accuracy with fallback disabled.
