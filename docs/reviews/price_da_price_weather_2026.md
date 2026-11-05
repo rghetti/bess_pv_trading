@@ -64,3 +64,25 @@ replay and are not independent model-selection tests.
 Each block's WAPE uses its own sum of absolute realized prices as the
 denominator. The midday period has the largest observed error in this sample;
 these descriptive figures alone do not identify its cause.
+
+## Delivery-hour interaction search
+
+Following the time-of-day diagnostic, a CPU search compared the earlier plain
+Elastic Net with ridge, Lasso and Elastic Net models that interact input signals
+with delivery-hour sine and cosine features. The same price-only and weather
+arms were scored on the 8,252 shared February–April selection products.
+
+| Candidate | Feature arm | MAE EUR/MWh | WAPE |
+| --- | --- | ---: | ---: |
+| Interaction Elastic Net, alpha 0.1 | Price and weather | 12.594 | 9.903% |
+| Plain Elastic Net, alpha 0.1 | Price and weather | 12.797 | 10.062% |
+| Interaction Elastic Net, alpha 0.1 | Price only | 13.459 | 10.583% |
+| Plain Elastic Net, alpha 0.1 | Price only | 13.459 | 10.583% |
+
+All ten fits completed without reported failures. Both alpha 0.01 interaction
+Elastic Net fits reported convergence warnings; selection excludes warned fits.
+This early period was repeatedly examined and the interaction search followed
+the later time-of-day inspection, so the comparison is exploratory. A matched
+September–October replay is configured, with the plain Elastic Net as a
+reference; that later period was also previously examined. Input weather
+vintages and historical release clocks retain the assumptions above.
