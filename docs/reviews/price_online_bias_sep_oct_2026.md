@@ -49,3 +49,24 @@ above. These are exploratory comparisons on previously inspected dates, not a
 fresh holdout; the short coverage, publication-clock and selection limitations
 remain. The full outputs and daily plots are in
 `nord_ida_2026_train_windows_sep_oct_bias_v1`.
+
+## Latest-cleared-price benchmark for October
+
+The October corrected predictions were joined by product timestamp to the
+verified latest-cleared-auction feature in the source datasets. This uses the
+same October products and actual prices; source feature values were separately
+checked against the catalog in `price_price_only_sep_oct_2026.md`.
+
+| Market | October days | Latest-cleared MAE EUR/MWh | Latest-cleared WAPE | Corrected model MAE EUR/MWh | Corrected WAPE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| IDA1 | 20 | 8.846 | 3.896% | 8.773 | 3.864% |
+| IDA2 | 19 | 10.205 | 4.440% | 10.384 | 4.518% |
+| IDA3 | 20 | 14.795 | 6.365% | 15.077 | 6.486% |
+
+Paired independent-day bootstrap percentile intervals (5,000 resamples,
+seed 173) for MAE improvement of corrected model over latest-cleared baseline
+are -0.199 to +0.298 EUR/MWh for IDA1, -0.510 to +0.153 for IDA2 and -0.714
+to +0.120 for IDA3. They omit serial dependence and model-selection uncertainty.
+The IDA1 baseline itself is below 4% on this short, previously inspected
+subset; the corrected model does not demonstrate a clear gain over it. These
+comparisons depend on the configured, partly assumed publication clocks.
