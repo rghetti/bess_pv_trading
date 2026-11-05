@@ -1,8 +1,8 @@
 """Causal forecast economics and delayed-PV-observation recourse with fixed trades.
 
-Only the common first command is issued. Later commands form a conditional
-policy on modeled PV histories; the representative path is a shadow projection,
-never an executed promise or an observation of the future scenario identity.
+Only the common first command is issued. Later commands use either observable
+PV histories or an explicit two-stage approximation with independent schedules
+after the first action. The representative path is a shadow projection.
 """
 
 from __future__ import annotations
@@ -23,6 +23,12 @@ def control_history_nodes(inputs):
     """Partition future controls using disclosed PV prefixes, excluding price labels."""
     if inputs.policy != "ensemble_mpc_adaptive":
         return np.zeros(inputs.pv_ac_mw.shape, dtype=int)
+    if inputs.settings.recourse_mode == "first_action_only":
+        # Each forecast path owns every future command. This is an explicitly
+        # optimistic planning approximation; actual future PV is never supplied.
+        nodes = np.zeros(inputs.pv_ac_mw.shape, dtype=int)
+        nodes[:, 1:] = np.arange(1, len(nodes) + 1)[:, None]
+        return nodes
     from ..scenario_research import observable_history_nodes
 
     settings = inputs.settings
@@ -305,12 +311,18 @@ def solve_research_mpc(inputs, solver=None):
         "current_pv_information": settings.current_pv_information,
         "current_interval_pv_oracle_enabled": inputs.current_realized_pv_mw is not None,
         "current_realized_pv_mw": inputs.current_realized_pv_mw,
-        "recourse_observation_features": "pv_only_no_settlement_price_disclosure",
-        "recourse_observation_lag_intervals": settings.recourse_observation_lag_intervals,
+        "recourse_mode": settings.recourse_mode if inputs.policy == "ensemble_mpc_adaptive" else "common_controls",
+        "future_path_revelation_assumed_after_first_action": inputs.policy == "ensemble_mpc_adaptive" and settings.recourse_mode == "first_action_only",
+        "planning_objective": settings.planning_objective,
+        "recourse_observation_features": ("scenario_path_after_first_action" if settings.recourse_mode == "first_action_only"
+                                         else "pv_only_no_settlement_price_disclosure"),
+        "recourse_observation_lag_intervals": (None if settings.recourse_mode == "first_action_only"
+                                               else settings.recourse_observation_lag_intervals),
         "representative_path_index": 0, "representative_path_role": "shadow_projection_only",
         "monetary_cvar_alpha": settings.monetary_cvar_alpha, "monetary_cvar_weight": settings.monetary_cvar_weight,
         "monetary_loss_definition": "degradation_plus_import_cost_minus_settlement_excludes_terminal_and_penalty",
-        "absolute_mip_gap_configured": False, "planning_objective_units": "EUR", "stages": [],
+        "absolute_mip_gap_configured": False,
+        "planning_objective_units": "MWh" if settings.planning_objective == "imbalance_only" else "EUR", "stages": [],
         "fallback_applied": False}
     result = MpcResult("solver_error", diagnostics=diagnostics)
     model = None
@@ -332,7 +344,9 @@ def solve_research_mpc(inputs, solver=None):
                 model.setParam(name, value)
         penalty = (settings.economic_imbalance_penalty_eur_per_mwh if inputs.price_forecast is not None
                    else settings.planning_imbalance_penalty_eur_per_mwh)
-        objective = (penalty * expressions["absolute_imbalance_mwh"] + expressions["degradation_eur"]
+        imbalance_only = settings.planning_objective == "imbalance_only"
+        objective = expressions["absolute_imbalance_mwh"] if imbalance_only else (
+            penalty * expressions["absolute_imbalance_mwh"] + expressions["degradation_eur"]
             + expressions["import_cost_eur"] + expressions["terminal_cost_eur"] - expressions["settlement_eur"]
             + settings.monetary_cvar_weight * expressions["monetary_cvar_eur"])
         model.setObjective(objective, gp.GRB.MINIMIZE)
@@ -343,7 +357,8 @@ def solve_research_mpc(inputs, solver=None):
         model.setParam("TimeLimit", remaining)
         model.optimize()
         result.status = classify_status(model.Status, model.SolCount)
-        diagnostics["stages"].append({"stage": "causal_economics" if inputs.price_forecast is not None else "adaptive_price_blind",
+        diagnostics["stages"].append({"stage": "minimum_absolute_imbalance" if imbalance_only else (
+            "causal_economics" if inputs.price_forecast is not None else "adaptive_price_blind"),
             "status": result.status, "runtime_seconds": float(model.Runtime),
             "objective": float(model.ObjVal) if model.SolCount else None,
             "bound": float(model.ObjBound) if model.SolCount else None,
@@ -352,7 +367,8 @@ def solve_research_mpc(inputs, solver=None):
             return result
         plan = _extract_plan(inputs, variables, expressions)
         components, residuals = validate_research_plan(inputs, plan, max(1e-7, 2 * model.Params.FeasibilityTol))
-        recomputed = (penalty * components["absolute_imbalance_mwh"] + components["degradation_eur"]
+        recomputed = components["absolute_imbalance_mwh"] if imbalance_only else (
+            penalty * components["absolute_imbalance_mwh"] + components["degradation_eur"]
             + components["import_cost_eur"] + components["terminal_cost_eur"] - components["settlement_eur"]
             + settings.monetary_cvar_weight * components["monetary_cvar_eur"])
         # Check the complete monetary objective; inactive absolute-value and risk
@@ -365,7 +381,8 @@ def solve_research_mpc(inputs, solver=None):
         result.plan = plan
         diagnostics.update(physical_residuals=residuals, components=components,
             recomputed_components=components, planning_objective_value=float(recomputed),
-            accepted_action_source="causal_forecast_economics" if inputs.price_forecast is not None else "adaptive_price_blind")
+            accepted_action_source="minimum_expected_absolute_imbalance" if imbalance_only else (
+                "causal_forecast_economics" if inputs.price_forecast is not None else "adaptive_price_blind"))
     except Exception as error:
         result.status = "invalid_or_failed_solve"
         diagnostics["failure_reason"] = str(error)

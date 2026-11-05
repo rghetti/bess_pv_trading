@@ -112,8 +112,10 @@ def test_batch_report_uses_each_jobs_terminal_and_forecast_settings(tmp_path, mo
 
 
 @pytest.mark.parametrize("storage", ["csv", "daily_parquet"])
-def test_conditional_horizons_stream_and_check_every_scenario(tmp_path, storage):
+@pytest.mark.parametrize("recourse_mode", ["observed_history", "first_action_only"])
+def test_conditional_horizons_stream_and_check_every_scenario(tmp_path, storage, recourse_mode):
     config, frame = fixture_controller(tmp_path)
+    config["realtime_mpc"] = {"recourse_mode": recourse_mode}
     ledger = json.loads((tmp_path / "json/accepted_trades.json").read_text())
     solve_id = "ensemble_mpc_adaptive:2026-01-15T12:00:00+00:00"
     diagnostic = {"solve_id": solve_id, "scenario_ids": ["a", "b"], "horizon_intervals": 2,
@@ -123,7 +125,8 @@ def test_conditional_horizons_stream_and_check_every_scenario(tmp_path, storage)
         # History rows need not arrive in diagnostic scenario order.
         for scenario in ["b", "a"]:
             rows.append({"delivery_day": "2026-01-15", "solve_id": solve_id,
-                "scenario_id": scenario, "weight": 0.5, "control_node": index,
+                "scenario_id": scenario, "weight": 0.5,
+                "control_node": index if recourse_mode == "observed_history" or index == 0 else {"a": 1, "b": 2}[scenario],
                 "pv_utilization_fraction": 1.0, **{name: interval[name] for name in (
                     "interval_id", "pv_ac_mw", "charge_mw", "discharge_mw", "energy_start_mwh",
                     "energy_end_mwh", "grid_mw", "imbalance_mwh")}})
@@ -136,8 +139,10 @@ def test_conditional_horizons_stream_and_check_every_scenario(tmp_path, storage)
     assert result["violations"] == []
 
 
-def test_conditional_audit_detects_anticipative_root_commands_across_chunk_boundary(tmp_path, monkeypatch):
+@pytest.mark.parametrize("recourse_mode", ["observed_history", "first_action_only"])
+def test_conditional_audit_detects_anticipative_root_commands_across_chunk_boundary(tmp_path, monkeypatch, recourse_mode):
     config, frame = fixture_controller(tmp_path)
+    config["realtime_mpc"] = {"recourse_mode": recourse_mode}
     ledger = json.loads((tmp_path / "json/accepted_trades.json").read_text())
     solve_id = "ensemble_mpc_adaptive:2026-01-15T12:00:00+00:00"
     diagnostic = {"solve_id": solve_id, "scenario_ids": ["a", "b"], "horizon_intervals": 2,
@@ -146,7 +151,8 @@ def test_conditional_audit_detects_anticipative_root_commands_across_chunk_bound
     for index, interval in frame.iterrows():
         for scenario in ["a", "b"]:
             rows.append({"solve_id": solve_id, "scenario_id": scenario, "weight": 0.5,
-                "control_node": index, "pv_utilization_fraction": 0.5 if index == 0 and scenario == "b" else 1.0,
+                "control_node": index if recourse_mode == "observed_history" or index == 0 else {"a": 1, "b": 2}[scenario],
+                "pv_utilization_fraction": 0.5 if index == 0 and scenario == "b" else 1.0,
                 **{name: interval[name] for name in ("interval_id", "pv_ac_mw", "charge_mw", "discharge_mw",
                     "energy_start_mwh", "energy_end_mwh", "grid_mw", "imbalance_mwh")}})
     monkeypatch.setattr(audit, "_scenario_batches", lambda directory: iter([pd.DataFrame(rows[:1]), pd.DataFrame(rows[1:])]))

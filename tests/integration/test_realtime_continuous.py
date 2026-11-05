@@ -76,11 +76,15 @@ def test_all_controllers_reconcile_actual_cash_and_store_full_plans(continuous_c
 
 @pytest.mark.parametrize("auction", ["DA", "IDA3"])
 @pytest.mark.parametrize("known_current", [False, True])
-def test_noon_and_midnight_projection_preserve_locked_action_and_never_resolve(continuous_config, tmp_path, monkeypatch, auction, known_current):
+@pytest.mark.parametrize("recourse_mode", ["common_controls", "first_action_only"])
+def test_noon_and_midnight_projection_preserve_locked_action_and_never_resolve(continuous_config, tmp_path, monkeypatch, auction, known_current, recourse_mode):
     config = continuous_config
     config["continuous_optimization"]["end_date"] = "2025-01-02"
-    config["execution"]["dispatch_policy"] = "ensemble_mpc"
+    policy = "ensemble_mpc_adaptive" if recourse_mode == "first_action_only" else "ensemble_mpc"
+    config["execution"]["dispatch_policy"] = policy
     config["realtime_mpc"] = {"current_pv_information": "realized_interval_average" if known_current else "forecast"}
+    if recourse_mode == "first_action_only":
+        config["realtime_mpc"]["recourse_mode"] = recourse_mode
     prepared = mpc_prepared(config)
     replay = ContinuousReplay(config, prepared, "integrated", tmp_path / "projection")
     target_day = prepared["days"][1 if auction == "DA" else 0]
@@ -97,9 +101,11 @@ def test_noon_and_midnight_projection_preserve_locked_action_and_never_resolve(c
             break
         if event.kind == EventKind.PHYSICAL_CONTROL and event.at == target.at.floor("15min"):
             replay.realtime = controller
-            replay.dispatch_policy = "ensemble_mpc"
+            replay.dispatch_policy = policy
         replay._handle(event)
     assert replay.pending
+    if recourse_mode == "first_action_only":
+        assert {row["representative_scenario_id"] for row in replay.realtime.state.latest_plan.values()} == {"deterministic"}
     state_before, pending_before = asdict(replay.state), deepcopy(replay.pending)
     solve_count = len(replay.realtime.state.solves)
     import bess_pv_trading.simulation.realtime_control as control
@@ -145,26 +151,33 @@ def test_mpc_dst_grid_and_first_horizon(continuous_config, tmp_path, day, count)
     assert replay.realtime.state.solves[0]["horizon_intervals"] == count
 
 
-def test_price_blind_current_action_ignores_unseen_pv_and_settlement(continuous_config, tmp_path):
+@pytest.mark.parametrize("case", ["deterministic", "first_action_only"])
+def test_price_blind_current_action_ignores_unseen_pv_and_settlement(continuous_config, tmp_path, case):
     config = continuous_config
-    config["execution"]["dispatch_policy"] = "deterministic_mpc"
+    config["execution"]["dispatch_policy"] = "ensemble_mpc_adaptive" if case == "first_action_only" else "deterministic_mpc"
+    if case == "first_action_only":
+        config["realtime_mpc"] = {"recourse_mode": "first_action_only",
+                                  "current_pv_information": "realized_interval_average"}
     prepared = mpc_prepared(config, one_day=True)
     replay = ContinuousReplay(config, prepared, "integrated", tmp_path / "original")
     replay.realtime.issue(0, pd.Timestamp(replay.grid.starts[0]))
     issued = replay.pending[replay.grid.interval_ids[0]]
-    prepared["full_realized_pv"][:] = 999
+    prepared["full_realized_pv"][1 if case == "first_action_only" else 0:] = 999
     prepared["imbalance_prices_eur_per_mwh"][:] = -999999
     changed = ContinuousReplay(config, prepared, "integrated", tmp_path / "changed")
     changed.realtime.issue(0, pd.Timestamp(changed.grid.starts[0]))
     assert changed.pending[changed.grid.interval_ids[0]] == issued
 
 
-def test_current_pv_disclosure_replaces_every_members_first_step_only(continuous_config, tmp_path, monkeypatch):
+@pytest.mark.parametrize("recourse_mode", ["common_controls", "first_action_only"])
+def test_current_pv_disclosure_replaces_every_members_first_step_only(continuous_config, tmp_path, monkeypatch, recourse_mode):
     import bess_pv_trading.simulation.realtime_control as control
 
     config = continuous_config
-    config["execution"]["dispatch_policy"] = "ensemble_mpc"
+    config["execution"]["dispatch_policy"] = "ensemble_mpc_adaptive" if recourse_mode == "first_action_only" else "ensemble_mpc"
     config["realtime_mpc"] = {"current_pv_information": "realized_interval_average"}
+    if recourse_mode == "first_action_only":
+        config["realtime_mpc"]["recourse_mode"] = recourse_mode
     prepared = mpc_prepared(config, one_day=True)
     prepared["full_realized_pv"][0] = 0.123
     prepared["full_realized_pv"][1:] = 999

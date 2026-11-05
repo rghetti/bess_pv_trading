@@ -125,6 +125,8 @@ class RealtimeControl:
             replay.plant, values, ids, probabilities, planning_positions, prices,
             artifact_cache=self.scenario_artifact_cache)
         values, ids, probabilities = law.pv_ac_mw, law.scenario_ids, law.weights
+        if self.settings.recourse_mode == "first_action_only" and ids[0] != "deterministic":
+            raise ValueError("First-action-only MPC requires the deterministic member for its shadow projection")
         provenance["scenario_design"] = scenario_evidence
         forecast_values = values.copy()
         current_pv = None

@@ -76,6 +76,47 @@ results are preserved under the original run ID.
 
 ## Formulation
 
+### Optional shared-first-action scenario schedules
+
+`execution.dispatch_policy: ensemble_mpc_adaptive` with
+`realtime_mpc.recourse_mode: first_action_only` gives each forecast trajectory
+its own battery charge/discharge, operating mode, utilization and energy
+schedule after the current interval. Only the first physical command is
+shared across all members. The initial energy and energy immediately after
+the shared first command are therefore common. Future per-scenario states
+then follow their own schedules, with all physical and configured hard
+terminal constraints enforced separately. The default `observed_history`
+mode retains the existing delayed-observation scenario tree.
+
+First-action-only recourse assumes full scenario-path revelation after the
+first command inside the planning approximation, even when observed PV
+prefixes are identical. Its continuation values can be optimistic. Actual
+future PV is never supplied and only the common first command executes;
+the next interval replans from the observed physical state. The deterministic
+member must be retained first for this mode's auction shadow projection.
+If settlement-price forecasts are also enabled, scenario-owned future commands
+can similarly depend on the corresponding complete forecast price paths. The
+pure-imbalance comparison uses no settlement-price forecast or oracle.
+That path is rolled from actual observed state through the executor with
+eligible deterministic PV, retaining outstanding commands and protection.
+No scenario-dependent future command is treated as an executed promise, and
+no MPC is solved during that boundary rollout.
+
+`realtime_mpc.planning_objective: imbalance_only` minimizes the expected
+sum of absolute energy deviations in MWh, without the EUR 500 multiplier,
+degradation cost, import cost or inventory preferences in the objective.
+It supports ordinary price-blind and adaptive MPC; it rejects settlement
+price objectives and monetary CVaR. Physical efficiencies, power/SOC bounds,
+degradation memory and explicit hard terminal constraints still apply.
+Executed wear, imports and signed settlement remain measured in financial
+reporting. There is no implicit wear tie-break among equal-imbalance plans.
+The default `imbalance_and_costs` retains the existing EUR planning objective.
+The horizon remains the rest of the current local delivery day.
+
+The prepared comparison is `configs/research/first_action_only_targeted.yaml`.
+It includes the provisional IDA3 planning targets described below, while
+financial settlement continues to use actual submitted quantities.
+
 Let `Q_submitted[t]` be the sum of quantities actually submitted by the cutoff,
 including unpriced submissions. The default `realtime_mpc.provisional_ida3_mode:
 ida2_plan` adds the IDA3 order forecast saved in the completed IDA2 auction

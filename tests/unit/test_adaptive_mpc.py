@@ -38,6 +38,76 @@ def checked(inputs):
     return result
 
 
+def test_first_action_only_splits_future_schedules_even_when_observed_pv_is_identical():
+    """Scenario recourse is permitted from t=1, including before a PV-history split."""
+    settings = MpcSettings(terminal_inventory_mode="none", planning_objective="imbalance_only",
+                           recourse_mode="first_action_only")
+    inputs = case([[0, 0, 1], [0, 1, 0]], [0, 0.125, 0.25], settings=settings)
+    inputs = replace(inputs, provisional_ida3_mwh=np.array([0, 0.125, 0]))
+    result = checked(inputs)
+    history = checked(replace(inputs, settings=replace(settings, recourse_mode="observed_history")))
+    common = checked(replace(inputs, policy="ensemble_mpc",
+                             settings=replace(settings, recourse_mode="observed_history")))
+    nodes = control_history_nodes(inputs)
+    assert nodes[0, 0] == nodes[1, 0]
+    assert nodes[0, 1] != nodes[1, 1]
+    np.testing.assert_allclose(result.plan.scenario_actions[0, 0], result.plan.scenario_actions[1, 0])
+    np.testing.assert_allclose(result.plan.scenario_energy_mwh[:, 1], result.plan.scenario_energy_mwh[0, 1])
+    assert result.plan.components["absolute_imbalance_mwh"] < 1e-7
+    np.testing.assert_allclose(inputs.committed_mwh, [0, 0.125, 0.25])
+    np.testing.assert_allclose(inputs.planning_position_mwh, [0, 0.25, 0.25])
+    assert history.plan.components["absolute_imbalance_mwh"] > 0.1
+    assert common.plan.components["absolute_imbalance_mwh"] > 0.1
+    assert result.plan.scenario_actions[0, 1, 1] == pytest.approx(1)
+    assert result.plan.scenario_actions[1, 2, 1] == pytest.approx(1)
+    np.testing.assert_allclose(result.plan.energy_mwh, result.plan.scenario_energy_mwh[0])
+    assert result.diagnostics["future_path_revelation_assumed_after_first_action"]
+    assert result.diagnostics["planning_objective_units"] == "MWh"
+    result.plan.scenario_actions[1, 0, 2] = 0.5
+    with pytest.raises(ValueError, match="nonanticipativity"):
+        validate_mpc_plan(inputs, result.plan)
+
+
+@pytest.mark.parametrize("policy", ["ensemble_mpc", "ensemble_mpc_adaptive"])
+def test_pure_imbalance_does_not_trade_deviation_against_wear_or_soft_inventory(policy):
+    """Wear remains reportable even when excluded from the MWh planning objective."""
+    settings = MpcSettings(terminal_inventory_mode="none", planning_objective="imbalance_only",
+        recourse_mode="first_action_only" if policy == "ensemble_mpc_adaptive" else "observed_history")
+    inputs = case([[0, 0]], [0.25, 0], settings=settings, policy=policy)
+    inputs = replace(inputs, degradation=DegradationSettings(1000))
+    pure = checked(inputs)
+    costs = checked(replace(inputs, settings=replace(settings, planning_objective="imbalance_and_costs")))
+    assert pure.plan.components["absolute_imbalance_mwh"] < 1e-7
+    assert pure.plan.components["degradation_eur"] == pytest.approx(250)
+    assert costs.plan.components["absolute_imbalance_mwh"] == pytest.approx(0.25)
+    assert pure.diagnostics["planning_objective_value"] == pytest.approx(0, abs=1e-7)
+    assert pure.diagnostics["planning_objective_units"] == "MWh"
+    soft = checked(replace(inputs, settings=replace(settings, terminal_inventory_mode="soft_target",
+        terminal_soc_target_percent=100, terminal_inventory_penalty_eur_per_mwh=1e6)))
+    assert soft.plan.components["absolute_imbalance_mwh"] < 1e-7
+    assert soft.plan.energy_mwh[-1] == pytest.approx(0)
+
+
+def test_pure_first_action_only_keeps_hard_terminal_constraints_and_rejects_price_objectives():
+    settings = MpcSettings(terminal_inventory_mode="none", planning_objective="imbalance_only",
+                           recourse_mode="first_action_only")
+    inputs = case([[0, 1], [0, 1]], [0.25, 0], settings=settings)
+    plan = checked(replace(inputs, hard_terminal_target_mwh=0.25)).plan
+    np.testing.assert_allclose(plan.scenario_energy_mwh[:, -1], 0.25)
+    with pytest.raises(ValueError, match="imbalance_only"):
+        replace(inputs, price_forecast=ForecastPrices(np.full((2, 2), 100), inputs.cutoff))
+    with pytest.raises(ValueError, match="requires the ensemble_mpc_adaptive"):
+        replace(inputs, policy="ensemble_mpc")
+
+
+def test_first_action_only_single_interval_has_one_issued_command():
+    inputs = case([[0], [0]], [0.25], settings=MpcSettings(terminal_inventory_mode="none",
+        planning_objective="imbalance_only", recourse_mode="first_action_only"))
+    result = checked(inputs)
+    assert result.plan.scenario_actions.shape == (2, 1, 3)
+    np.testing.assert_allclose(result.plan.scenario_actions[0], result.plan.scenario_actions[1])
+
+
 def test_recourse_observes_only_finished_intervals_and_never_member_labels():
     inputs = case([[0, 0, 1], [0, 1, 0]], [0, 0, 0])
     nodes = control_history_nodes(inputs)
@@ -178,8 +248,12 @@ def test_exact_nonconcave_continuation_curve_and_coverage(policy):
         replace(inputs, terminal_value=replace(curve, available_at=base.cutoff + timedelta(seconds=1)))
 
 
-def test_adaptive_xu_memory_and_terminal_constraints_hold_on_all_paths():
-    inputs = case([[0, 0, 1], [1, 1, 0]], [0, 0.25, 0.25])
+@pytest.mark.parametrize("recourse_mode", ["observed_history", "first_action_only"])
+@pytest.mark.parametrize("objective", ["imbalance_and_costs", "imbalance_only"])
+def test_adaptive_xu_memory_and_terminal_constraints_hold_on_all_paths(recourse_mode, objective):
+    settings = MpcSettings(terminal_inventory_mode="none", recourse_mode=recourse_mode,
+                           planning_objective=objective)
+    inputs = case([[0, 0, 1], [1, 1, 0]], [0, 0.25, 0.25], settings=settings)
     aging = DegradationSettings(mode="xu_segmented", segment_count=3, replacement_cost_eur=1000)
     result = checked(replace(inputs, degradation=aging, hard_terminal_target_mwh=0.1))
     np.testing.assert_allclose(result.plan.scenario_energy_mwh[:, -1], 0.1, atol=1e-7)

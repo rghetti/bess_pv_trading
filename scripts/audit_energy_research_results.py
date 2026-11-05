@@ -119,11 +119,14 @@ def audit_conditional_horizons(directory, config, actual, ledger, solves, tolera
         expected_nodes = np.zeros(pv.shape, dtype=int)
         if diagnostic["controller"] == "ensemble_mpc_adaptive":
             settings = config.get("realtime_mpc", {})
-            stages = settings.get("recourse_stages")
-            stages = None if stages is None else [stage for stage in stages if stage < len(intervals)]
-            expected_nodes = observable_history_nodes(pv,
-                revelation_lag_intervals=settings.get("recourse_observation_lag_intervals", 1),
-                branch_intervals=stages, observation_quantum_mw=settings.get("recourse_pv_bin_width_mw", 0) or None)
+            if settings.get("recourse_mode", "observed_history") == "first_action_only":
+                expected_nodes[:, 1:] = np.arange(1, len(scenarios) + 1)[:, None]
+            else:
+                stages = settings.get("recourse_stages")
+                stages = None if stages is None else [stage for stage in stages if stage < len(intervals)]
+                expected_nodes = observable_history_nodes(pv,
+                    revelation_lag_intervals=settings.get("recourse_observation_lag_intervals", 1),
+                    branch_intervals=stages, observation_quantum_mw=settings.get("recourse_pv_bin_width_mw", 0) or None)
         residuals = {"energy_transition_mwh": _maximum(predicted_energy - end),
             "energy_continuity_mwh": _maximum(end[:, :-1] - start[:, 1:]) if len(intervals) > 1 else 0.0,
             "initial_energy_mwh": _maximum(start[:, 0] - actual.loc[intervals[0], "energy_start_mwh"]),
@@ -146,10 +149,15 @@ def audit_conditional_horizons(directory, config, actual, ledger, solves, tolera
                 provisional_ida3_mwh=_maximum(matrix("provisional_ida3_mwh") - provisional),
                 planning_position_mwh=_maximum(matrix("planning_position_mwh") - committed - provisional),
                 executable_provisional_mwh=_maximum(matrix("provisional_ida3_mwh")[:, 0]))
-        for t in range(len(intervals)):
-            for node in np.unique(expected_nodes[:, t]):
-                members = controls[expected_nodes[:, t] == node, t]
-                residuals["nonanticipativity_mw"] = max(residuals["nonanticipativity_mw"], _maximum(members - members[0]))
+        if (diagnostic["controller"] == "ensemble_mpc_adaptive"
+                and config.get("realtime_mpc", {}).get("recourse_mode") == "first_action_only"):
+            # Every future node has one owner, so only root equality can bind.
+            residuals["nonanticipativity_mw"] = _maximum(controls[:, 0] - controls[0, 0])
+        else:
+            for t in range(len(intervals)):
+                for node in np.unique(expected_nodes[:, t]):
+                    members = controls[expected_nodes[:, t] == node, t]
+                    residuals["nonanticipativity_mw"] = max(residuals["nonanticipativity_mw"], _maximum(members - members[0]))
         for name, value in residuals.items():
             if value is None or not np.isfinite(value) or value > tolerance:
                 failures.append({"solve_id": solve_id, "reason": name, "residual": value})
