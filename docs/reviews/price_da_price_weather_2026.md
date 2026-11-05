@@ -47,6 +47,26 @@ dependence and selection uncertainty. Source weather vintage and release timing
 remain unverified assumptions. Predictions and refits are in
 `outputs/energy_price_forecasts/nord_da_2026_price_weather_may_aug_rolling_v1/`.
 
+### Online bias correction
+
+An exploratory post-processing grid tuned a residual correction on May–June
+and held its settings fixed for July–August. It considers no correction and
+3/7/14/28-day windows, 1/4/24-hour local blocks and shrinkage 0/24/96. Each
+daily correction uses only earlier products whose configured publication and
+product-end clocks precede the decision. The chosen setting was a 28-day
+window, one-hour blocks and shrinkage 24.
+
+On the same 5,952 products across 62 July–August days, the corrected model
+scored 15.993 EUR/MWh and 9.596% WAPE, compared with 16.433 EUR/MWh and
+9.860% before correction. The paired MAE gain was 0.440 EUR/MWh; a 5,000-
+resample independent-day bootstrap with seed 173 gives a 95% percentile
+interval of -0.106 to 0.984 EUR/MWh. Both periods have been examined and the
+interval omits serial dependence and selection uncertainty. Historical clocks
+and weather vintage remain assumptions, so the result does not establish a
+reliable improvement or the 4% target. Scores, aligned predictions and the
+daily-error plot are in
+`outputs/energy_price_forecasts/nord_da_2026_price_weather_online_bias_v1/`.
+
 ## September–October rolling replay
 
 The earlier-selected Elastic Net was refitted weekly with a one-day gap. The
