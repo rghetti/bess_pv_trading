@@ -55,3 +55,29 @@ matched experiment is `scripts/evaluate_italian_holiday_feature.py`. It records
 the saved matrix hash, model parameters, dates and convergence warnings.
 The first saved comparisons are in
 `outputs/energy_price_forecasts/italian_holiday_early_2026_v1/`.
+
+## Expanded holiday-aware CPU model search
+
+An eight-worker CPU search fitted 20 candidate pairs, each with and without
+the holiday flag, using the same saved early-selection rows as above. It
+compared time-interaction ridge and Lasso, robust Huber, L1-loss LightGBM,
+MAE CatBoost and XGBoost, and a regularized two-layer MLP; IDA3 models fit
+spreads to the validated latest-cleared anchor. The linear and neural models
+use squared-error or Huber training losses where configured, while the
+boosting candidates above use absolute-error objectives. The MLP uses a random
+15% internal split of its historical training rows for early stopping; it does
+not split the February–April validation period. Candidate settings, source
+hashes, fitted scores and warnings are in
+`outputs/energy_price_forecasts/italian_holiday_broad_early_2026_v1/`.
+
+All 20 pairs completed without process failures. Two DA Huber candidates
+issued convergence warnings and are excluded from ranking. On the 7,868
+matched DA products, the best added model with weather and prior IDAs was
+holiday-aware Lasso at 12.718 EUR/MWh MAE and 9.921% WAPE; the existing
+holiday-aware interaction Elastic Net scored 12.055 and 9.404%. The best
+MLP in that feature arm scored 14.529 and 11.334%. On the 4,128 matched IDA3
+products, the existing holiday-aware ridge scored 11.373 and 9.049%; the
+nearest added candidate was Huber at 11.411 and 9.079%. These are candidate
+comparisons on repeatedly inspected dates, not an untouched validation or a
+claim that other architectures cannot improve performance. An analogous
+16-pair CPU search for IDA1 and IDA2 is running.
