@@ -24,3 +24,15 @@ input gaps and lag fallback behavior are described in
 prediction files and daily-error plots are saved in
 `nord_da_2026_price_only_sep_oct_bias_v1` and
 `nord_ida_2026_price_only_sep_oct_bias_v1` under `outputs/energy_price_forecasts`.
+
+For IDA1, a descriptive circular block bootstrap of the 20 available October
+delivery days (10,000 resamples, four five-observed-day blocks per resample,
+seed 173) gives a 95% percentile interval of 3.63–4.09% WAPE for the corrected
+forecast. The paired MAE improvement over the uncorrected forecast is
+0.30 EUR/MWh, with a percentile interval of -0.04 to +0.69 EUR/MWh. Blocks
+follow consecutive observed days, which may span a missing date, and the
+circular construction joins the end of the sample to its start. The intervals
+condition on the selected model and correction and do not capture selection,
+missing-day or historical availability uncertainty. They therefore do not
+establish that the correction reliably improves forecasts or that long-run
+WAPE is below 4%.
