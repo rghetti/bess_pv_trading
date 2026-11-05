@@ -1,0 +1,10 @@
+# Exploratory transfer between separately trained native DA resolutions.
+include: ../standard.yaml
+hourly_transfer_pilot:
+  hourly_source: outputs/energy_price_forecasts/nord_da_hourly_extra_trees_selected_rolling_v1/hourly__curve_fundamentals.npz
+  quarter_hourly_source: outputs/energy_price_forecasts/nord_da_2026_price_only_early_selection_v1/quarter_hourly__curve_price.npz
+  hourly_cutoff: '2025-09-30T22:00:00Z'
+  lag_count: 11
+  hourly_alphas: [20.0, 200.0]
+  quarter_alphas: [20.0, 200.0]
+  hourly_weights: [0.0, 0.5, 1.0]
