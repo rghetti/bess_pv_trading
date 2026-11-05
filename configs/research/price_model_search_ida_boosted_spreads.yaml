@@ -1,0 +1,134 @@
+# Baseline-inclusive CPU boosted IDA spread search.
+include: ../standard.yaml
+price_model_search:
+  run_id: nord_ida_2026_boosted_spread_early_v1
+  output_root: outputs/energy_price_forecasts
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  timezone: Europe/Rome
+  workers: 6
+  threads_per_worker: 1
+  seed: 17
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  feature_sets:
+  - spread_cleared_only
+  - spread_previous_only
+  product_groups:
+    ida2_quarter_hourly:
+      target: IDA2
+      native_minutes: 15
+      history_start: '2025-01-01T00:00:00+01:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      market_price_features:
+      - DA
+      - IDA1
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      feature_sets:
+      - spread_cleared_only
+      - spread_previous_only
+    ida3_quarter_hourly:
+      target: IDA3
+      native_minutes: 15
+      history_start: '2025-01-01T00:00:00+01:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-01-31T10:00:00Z'
+      validation_start: '2026-02-01'
+      validation_end: '2026-05-01'
+      market_price_features:
+      - DA
+      - IDA1
+      - IDA2
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      lag_hours:
+      - 24
+      - 48
+      - 72
+      - 168
+      - 336
+      feature_sets:
+      - spread_cleared_only
+      - spread_previous_only
+  candidates:
+  - id: elastic_05
+    family: elastic_net
+    parameters:
+      alpha: 0.5
+      l1_ratio: 0.8
+      max_iter: 5000
+  - id: zero_spread
+    family: zero_spread
+    parameters: {}
+  - id: xgb_l1
+    family: xgboost
+    parameters:
+      n_estimators: 400
+      max_depth: 3
+      min_child_weight: 40
+      reg_lambda: 20
+      learning_rate: 0.04
+      subsample: 0.9
+      colsample_bytree: 0.9
+      objective: reg:absoluteerror
+      tree_method: hist
+  - id: xgb_l2
+    family: xgboost
+    parameters:
+      n_estimators: 400
+      max_depth: 3
+      min_child_weight: 40
+      reg_lambda: 20
+      learning_rate: 0.04
+      subsample: 0.9
+      colsample_bytree: 0.9
+      objective: reg:squarederror
+      tree_method: hist
+  - id: lightgbm_l1
+    family: lightgbm
+    parameters:
+      n_estimators: 400
+      num_leaves: 15
+      learning_rate: 0.05
+      min_child_samples: 50
+      objective: regression_l1
+  - id: catboost_l1
+    family: catboost
+    parameters:
+      iterations: 400
+      depth: 4
+      learning_rate: 0.05
+      loss_function: MAE
+  - id: hist_l1
+    family: hist_gradient_boosting
+    parameters:
+      max_iter: 250
+      max_leaf_nodes: 15
+      learning_rate: 0.05
+      loss: absolute_error
+  feature_set_aliases:
+    spread_cleared_only: price_only
+    spread_previous_only: price_only
+  add_market_price_features_to:
+  - spread_cleared_only
+  - spread_previous_only
+  residual_target_features:
+    spread_cleared_only: cleared_da
+    spread_previous_only: latest_cleared_auction
+  common_training_rows: true

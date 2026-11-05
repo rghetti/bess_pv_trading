@@ -1,0 +1,145 @@
+# Later baseline-inclusive evaluation of selected IDA spread model.
+include: ../standard.yaml
+price_model_search:
+  add_market_price_features_to:
+  - spread_cleared_only
+  - spread_previous_only
+  candidates:
+  - family: elastic_net
+    id: elastic_05
+    parameters:
+      alpha: 0.5
+      l1_ratio: 0.8
+      max_iter: 5000
+  - family: zero_spread
+    id: zero_spread
+    parameters: {}
+  - family: xgboost
+    id: xgb_l1
+    parameters:
+      colsample_bytree: 0.9
+      learning_rate: 0.04
+      max_depth: 3
+      min_child_weight: 40
+      n_estimators: 400
+      objective: reg:absoluteerror
+      reg_lambda: 20
+      subsample: 0.9
+      tree_method: hist
+  - family: xgboost
+    id: xgb_l2
+    parameters:
+      colsample_bytree: 0.9
+      learning_rate: 0.04
+      max_depth: 3
+      min_child_weight: 40
+      n_estimators: 400
+      objective: reg:squarederror
+      reg_lambda: 20
+      subsample: 0.9
+      tree_method: hist
+  - family: lightgbm
+    id: lightgbm_l1
+    parameters:
+      learning_rate: 0.05
+      min_child_samples: 50
+      n_estimators: 400
+      num_leaves: 15
+      objective: regression_l1
+  - family: catboost
+    id: catboost_l1
+    parameters:
+      depth: 4
+      iterations: 400
+      learning_rate: 0.05
+      loss_function: MAE
+  - family: hist_gradient_boosting
+    id: hist_l1
+    parameters:
+      learning_rate: 0.05
+      loss: absolute_error
+      max_iter: 250
+      max_leaf_nodes: 15
+  common_training_rows: true
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  feature_set_aliases:
+    spread_cleared_only: price_only
+    spread_previous_only: price_only
+  feature_sets:
+  - spread_cleared_only
+  - spread_previous_only
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  output_root: outputs/energy_price_forecasts
+  product_groups:
+    ida2_quarter_hourly:
+      cutoff: '2026-08-31T09:00:00Z'
+      feature_sets:
+      - spread_cleared_only
+      - spread_previous_only
+      history_end: '2026-11-01T00:00:00+01:00'
+      history_start: '2025-01-01T00:00:00+01:00'
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      market_price_features:
+      - DA
+      - IDA1
+      native_minutes: 15
+      target: IDA2
+      validation_end: '2026-11-01'
+      validation_start: '2026-09-01'
+    ida3_quarter_hourly:
+      cutoff: '2026-08-31T09:00:00Z'
+      feature_sets:
+      - spread_cleared_only
+      - spread_previous_only
+      history_end: '2026-11-01T00:00:00+01:00'
+      history_start: '2025-01-01T00:00:00+01:00'
+      lag_hours:
+      - 24
+      - 48
+      - 72
+      - 168
+      - 336
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      market_price_features:
+      - DA
+      - IDA1
+      - IDA2
+      native_minutes: 15
+      target: IDA3
+      validation_end: '2026-11-01'
+      validation_start: '2026-09-01'
+  residual_target_features:
+    spread_cleared_only: cleared_da
+    spread_previous_only: latest_cleared_auction
+  run_id: nord_ida_2026_boosted_spread_sep_oct_v1
+  seed: 17
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  threads_per_worker: 1
+  timezone: Europe/Rome
+  workers: 4
+  selection:
+    source_manifest: outputs/energy_price_forecasts/nord_ida_2026_boosted_spread_early_v1/manifest.json
+    top_n: 1
+    baseline_candidates:
+    - zero_spread
+    matched_feature_pairs:
+    - - spread_cleared_only
+      - spread_previous_only
+  rolling_refit:
+    frequency_days: 7
+    gap_days: 1
