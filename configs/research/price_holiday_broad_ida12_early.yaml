@@ -1,0 +1,135 @@
+# CPU holiday-aware comparisons for IDA1 and IDA2 spread forecasts.
+include: ../standard.yaml
+holiday_broad_search:
+  workers: 8
+  output_root: /tmp/price_holiday_broad_ida12_early_v1
+  project_root: /home/rghetti/bess_pv_trading_realtime_mpc
+  studies:
+  - id: ida1_weather
+    matrix: outputs/energy_price_forecasts/nord_ida_2026_bidirectional_latest_spread_early_v1/ida1_quarter_hourly__spread_price_weather.npz
+    anchor_reference: outputs/energy_price_forecasts/nord_ida_2026_bidirectional_latest_spread_early_v1/ida1_quarter_hourly__spread_price_weather__zero_spread.csv
+    anchor_index: 18
+    candidates:
+    - id: ridge
+      family: ridge
+      parameters:
+        alpha: 20.0
+    - id: huber
+      family: huber
+      parameters:
+        epsilon: 1.35
+        alpha: 1.0
+        max_iter: 1000
+    - id: lightgbm_l1
+      family: lightgbm
+      parameters:
+        objective: regression_l1
+        n_estimators: 500
+        learning_rate: 0.04
+        num_leaves: 15
+        min_child_samples: 30
+    - id: catboost_mae
+      family: catboost
+      parameters:
+        loss_function: MAE
+        iterations: 600
+        depth: 5
+        learning_rate: 0.04
+        l2_leaf_reg: 10
+    - id: xgb_mae
+      family: xgboost
+      parameters:
+        objective: reg:absoluteerror
+        tree_method: hist
+        n_estimators: 600
+        max_depth: 4
+        min_child_weight: 40
+        learning_rate: 0.04
+        reg_lambda: 20
+    - id: mlp_regularized
+      family: mlp
+      parameters:
+        hidden_layer_sizes:
+        - 64
+        - 32
+        alpha: 1.0
+        max_iter: 400
+        early_stopping: true
+        validation_fraction: 0.15
+        n_iter_no_change: 15
+    - id: elastic
+      family: elastic_net
+      parameters:
+        alpha: 0.1
+        l1_ratio: 0.5
+        max_iter: 5000
+    - id: extra_trees
+      family: extra_trees
+      parameters:
+        n_estimators: 150
+        min_samples_leaf: 15
+        max_features: 0.6
+  - id: ida2_weather
+    matrix: outputs/energy_price_forecasts/nord_ida_2026_bidirectional_latest_spread_early_v1/ida2_quarter_hourly__spread_price_weather.npz
+    anchor_reference: outputs/energy_price_forecasts/nord_ida_2026_bidirectional_latest_spread_early_v1/ida2_quarter_hourly__spread_price_weather__zero_spread.csv
+    anchor_index: 19
+    candidates:
+    - id: ridge
+      family: ridge
+      parameters:
+        alpha: 20.0
+    - id: huber
+      family: huber
+      parameters:
+        epsilon: 1.35
+        alpha: 1.0
+        max_iter: 1000
+    - id: lightgbm_l1
+      family: lightgbm
+      parameters:
+        objective: regression_l1
+        n_estimators: 500
+        learning_rate: 0.04
+        num_leaves: 15
+        min_child_samples: 30
+    - id: catboost_mae
+      family: catboost
+      parameters:
+        loss_function: MAE
+        iterations: 600
+        depth: 5
+        learning_rate: 0.04
+        l2_leaf_reg: 10
+    - id: xgb_mae
+      family: xgboost
+      parameters:
+        objective: reg:absoluteerror
+        tree_method: hist
+        n_estimators: 600
+        max_depth: 4
+        min_child_weight: 40
+        learning_rate: 0.04
+        reg_lambda: 20
+    - id: mlp_regularized
+      family: mlp
+      parameters:
+        hidden_layer_sizes:
+        - 64
+        - 32
+        alpha: 1.0
+        max_iter: 400
+        early_stopping: true
+        validation_fraction: 0.15
+        n_iter_no_change: 15
+    - id: elastic
+      family: elastic_net
+      parameters:
+        alpha: 0.1
+        l1_ratio: 0.5
+        max_iter: 5000
+    - id: extra_trees
+      family: extra_trees
+      parameters:
+        n_estimators: 150
+        min_samples_leaf: 15
+        max_features: 0.6
