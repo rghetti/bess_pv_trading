@@ -713,3 +713,24 @@ def test_terna_load_study_is_lagged_matched_and_restricted_to_covered_2025():
     assert study["common_training_rows"] is True
     assert (item["dataset"], item["kind"], item["target_shift_hours"]) == ("total_load", "reference_interval", 24)
     assert all(group["validation_end"] == "2025-09-01" for group in study["product_groups"].values())
+
+
+def test_zero_spread_candidate_returns_anchor_and_requires_one(tmp_path):
+    """The no-spread reference returns the available anchor and rejects direct-price use."""
+    from scripts.search_energy_price_models import _fit_candidate_impl
+
+    features = np.arange(60, dtype=float).reshape(30, 2)
+    dataset = tmp_path / "zero_spread.npz"
+    output = tmp_path / "zero_spread.csv"
+    np.savez(dataset, train_x=features[:20], train_y=features[:20, 0] + 5,
+             validation_x=features[20:], validation_y=features[20:, 0] + 2,
+             reference=features[20:, 0],
+             starts=np.array([f"2025-01-01T{hour:02}:00:00Z" for hour in range(10)]))
+    job = {"dataset": str(dataset), "output": str(output), "threads": 1, "seed": 4,
+           "group": "ida", "feature_set": "spread", "residual_feature_index": 0,
+           "candidate": {"id": "zero", "family": "zero_spread", "parameters": {}}}
+    _fit_candidate_impl(job)
+    assert np.array_equal(pd.read_csv(output).point.to_numpy(), features[20:, 0])
+    job["residual_feature_index"] = None
+    with pytest.raises(ValueError, match="requires a cleared-price anchor"):
+        _fit_candidate_impl(job)

@@ -134,6 +134,8 @@ def _fit_candidate_impl(job):
     # A spread model fits the residual to an already-cleared price, then adds
     # that price back so every score remains in actual EUR/MWh.
     residual_index = job.get("residual_feature_index")
+    if spec["family"] == "zero_spread" and residual_index is None:
+        raise ValueError("Zero-spread candidate requires a cleared-price anchor")
     train_anchor = 0 if residual_index is None else data["train_x"][:, residual_index]
     validation_anchor = 0 if residual_index is None else data["validation_x"][:, residual_index]
     rolling = job.get("rolling_refit")
@@ -540,6 +542,13 @@ def run_search(config, *, check_only=False, resume=False, allow_legacy_resume=Fa
     study = config["price_model_search"]
     if not isinstance(study.get("common_training_rows", False), bool):
         raise ValueError("common_training_rows must be a boolean")
+    # Reject a zero-spread baseline on any direct-price feature set before loading data.
+    if any(candidate["family"] == "zero_spread" for candidate in study["candidates"]):
+        anchors = study.get("residual_target_features", {})
+        for split in study["product_groups"].values():
+            for feature_set in split.get("feature_sets", study["feature_sets"]):
+                if feature_set not in anchors:
+                    raise ValueError("Zero-spread candidate requires a cleared-price anchor for every feature set")
     root = Path(config.get("_project_root", ROOT))
     source = root / study["source_study"]
     source_manifest = json.loads((source / "manifest.json").read_text())

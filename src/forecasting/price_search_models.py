@@ -9,6 +9,7 @@ from __future__ import annotations
 import numpy as np
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import TransformedTargetRegressor
+from sklearn.dummy import DummyRegressor
 from sklearn.ensemble import ExtraTreesRegressor, HistGradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import ElasticNet, HuberRegressor, Lasso, Ridge, SGDRegressor
 from sklearn.neural_network import MLPRegressor
@@ -58,6 +59,11 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
     if isinstance(threads, bool) or not isinstance(threads, int) or threads < 1:
         raise ValueError("Candidate thread count must be a positive integer")
     options = dict(parameters)
+    if family == "zero_spread":
+        # The search worker adds the configured cleared-price anchor back.
+        if options:
+            raise ValueError("Zero-spread candidate accepts no estimator parameters")
+        return DummyRegressor(strategy="constant", constant=0.0)
     if family == "ridge":
         return make_pipeline(StandardScaler(), Ridge(**options))
     if family == "lasso":
