@@ -1,7 +1,7 @@
 # One-week deterministic MPC curtailment-recovery comparison
 
-This is a prepared plan, not an executed experiment. Historical optimization
-requires approval of the concrete plan under the project instructions.
+This plan was explicitly approved and the one-week comparison completed. See
+`curtailment_recovery_one_week_results.md` and the associated audit reports.
 
 Run 15–21 January 2026 in the Europe/Rome timezone for farms 1, 345, 901 and
 910. Each farm has two independent continuous closed-loop trajectories:

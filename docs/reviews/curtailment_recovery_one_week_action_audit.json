@@ -1,0 +1,65 @@
+{
+  "recovery_audit": [
+    {
+      "farm": "1",
+      "intervals_checked": 672,
+      "recoveries": 0,
+      "recovered_mwh": 0.0,
+      "maximum_residuals": {
+        "grid_neutrality_mw": 2.220446049250313e-16,
+        "maximal_recovery_mw": 0.0,
+        "charge_mw": 0.0,
+        "discharge_mw": 2.220446049250313e-16,
+        "curtailment_mw": 0.0,
+        "soc_upper_mwh": 0.0,
+        "soc_lower_mwh": 0.0
+      }
+    },
+    {
+      "farm": "345",
+      "intervals_checked": 672,
+      "recoveries": 27,
+      "recovered_mwh": 0.42168082127831386,
+      "maximum_residuals": {
+        "grid_neutrality_mw": 3.3306690738754696e-16,
+        "maximal_recovery_mw": 4.718447854656915e-16,
+        "charge_mw": 3.885780586188048e-16,
+        "discharge_mw": 3.191891195797325e-16,
+        "curtailment_mw": 4.85722573273506e-16,
+        "soc_upper_mwh": 0.0,
+        "soc_lower_mwh": 0.0
+      }
+    },
+    {
+      "farm": "901",
+      "intervals_checked": 672,
+      "recoveries": 18,
+      "recovered_mwh": 2.193706955346065,
+      "maximum_residuals": {
+        "grid_neutrality_mw": 3.3306690738754696e-16,
+        "maximal_recovery_mw": 0.0,
+        "charge_mw": 1.1102230246251565e-16,
+        "discharge_mw": 2.706168622523819e-16,
+        "curtailment_mw": 1.3877787807814457e-17,
+        "soc_upper_mwh": 0.0,
+        "soc_lower_mwh": 0.0
+      }
+    },
+    {
+      "farm": "910",
+      "intervals_checked": 672,
+      "recoveries": 0,
+      "recovered_mwh": 0.0,
+      "maximum_residuals": {
+        "grid_neutrality_mw": 4.440892098500626e-16,
+        "maximal_recovery_mw": 0.0,
+        "charge_mw": 0.0,
+        "discharge_mw": 2.220446049250313e-16,
+        "curtailment_mw": 0.0,
+        "soc_upper_mwh": 0.0,
+        "soc_lower_mwh": 0.0
+      }
+    }
+  ],
+  "violations": []
+}

@@ -1,0 +1,3114 @@
+{
+  "schema": "continuous-mpc-independent-audit-v1",
+  "batch": "/home/rghetti/bess_pv_trading_realtime_mpc/outputs/energy_research/curtailment_recovery_jan15_21_2026_v1",
+  "batch_status": "complete",
+  "provisional": false,
+  "manifest_sha256": "95dd495dadb3a075b174f25bd168eb0e0fee00ecbf0a3a1402f43f06c3ca4c1d",
+  "expected_jobs": 8,
+  "completed_jobs_audited": 8,
+  "jobs": [
+    {
+      "job_id": "january_one_week__farm_1__mpc_original",
+      "case_id": "mpc_original",
+      "farm_id": "1",
+      "window_id": "january_one_week",
+      "controller": "deterministic_mpc",
+      "profit_difference_eur": -3.926017555220369,
+      "imbalance_difference_mwh": 0.20808557677624046,
+      "auction_revenue_difference_eur": 16.290318692359506,
+      "wear_difference_eur": -5.143035354588591,
+      "final_inventory_difference_mwh": 0.11548516427495531,
+      "position_change_mwh": 0.13997417655088645,
+      "oracle_relative_imbalance_budget": 0,
+      "oracle_absolute_imbalance_budget_mwh": 0,
+      "comparison_configuration": {
+        "terminal_soc_percent": 50.0,
+        "terminal_soc_min_percent": null,
+        "mpc_terminal_inventory_mode": "soft_target",
+        "mpc_terminal_soc_target_percent": 50.0,
+        "mpc_current_pv_information": "realized_interval_average",
+        "auction_price_forecasts_enabled": false
+      },
+      "controllers": [
+        {
+          "controller": "track_committed_grid",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 0.4344277727039532,
+            "signed_net_imbalance_mwh": -0.43442777270395316,
+            "positive_imbalance_mwh": 2.7755575615628914e-17,
+            "negative_imbalance_mwh": 0.4344277727039532,
+            "nonzero_imbalance_intervals": 68,
+            "nonzero_imbalance_fraction": 0.10119047619047619,
+            "max_positive_deviation_mwh": 2.7755575615628914e-17,
+            "max_negative_deviation_mwh": -0.12808098853565753,
+            "maximum_cumulative_shortage_mwh": 0.18799540735911574,
+            "imbalance_cashflow_eur": -95.50600679766231,
+            "positive_deviation_cashflow_eur": 4.519717933249012e-15,
+            "negative_deviation_cashflow_eur": -95.50600679766231,
+            "absolute_settlement_exposure_eur": 95.50600679766231,
+            "volume_weighted_absolute_price_eur_per_mwh": 219.84323470669585,
+            "positive_volume_weighted_price_eur_per_mwh": 162.84,
+            "negative_volume_weighted_price_eur_per_mwh": 219.84323470669585,
+            "settlement_eur_per_absolute_imbalance_mwh": -219.84323470669585,
+            "charge_mwh": 2.3829248754973555,
+            "discharge_mwh": 2.2541912344678896,
+            "throughput_mwh": 4.637116109965245,
+            "degradation_eur": 128.14737742201388,
+            "pv_curtailment_mwh": 0.006295951284468179,
+            "soc_min_percent": 7.0,
+            "soc_max_percent": 93.0,
+            "soc_mean_percent": 24.29070889608791,
+            "soc_final_percent": 34.6019780966726,
+            "final_energy_mwh": 0.2595148357250445,
+            "soc_boundary_events": 178,
+            "power_boundary_events": 21,
+            "physical_safety_overrides": 5,
+            "auction_revenue_eur": 2726.715347550583,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 2503.061963330907,
+            "expected_absolute_imbalance_first_actions_mwh": null,
+            "expected_first_action_intervals": 0,
+            "expected_cumulative_shortfall_first_actions_mwh": null,
+            "realized_minus_expected_absolute_imbalance_mwh": null,
+            "mpc_solves": 0,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": null,
+            "solver_runtime_median_seconds": null,
+            "solver_runtime_p95_seconds": null,
+            "solver_runtime_max_seconds": null,
+            "solver_runtime_total_seconds": 0.0,
+            "controller": "track_committed_grid",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [],
+              "plan_records": 0,
+              "scenario_records": 0,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 1.1102230246251565e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 1.1102230246251565e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 3.552713678800501e-15,
+            "imbalance_mwh": 9.6710833785707e-17,
+            "settlement_eur": 2.1871393585115584e-14,
+            "profit_eur": 2.220446049250313e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 3.608224830031759e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 0.0
+          },
+          "violations": [],
+          "solve_statuses": {},
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 0.0,
+          "solver_runtime_seconds": 0.0,
+          "first_action_prediction_error_mwh": null
+        },
+        {
+          "controller": "deterministic_mpc",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 0.6425133494801937,
+            "signed_net_imbalance_mwh": -0.642513349480193,
+            "positive_imbalance_mwh": 3.5388358909926865e-16,
+            "negative_imbalance_mwh": 0.6425133494801933,
+            "nonzero_imbalance_intervals": 147,
+            "nonzero_imbalance_fraction": 0.21875,
+            "max_positive_deviation_mwh": 2.0816681711721685e-16,
+            "max_negative_deviation_mwh": -0.08782524326182897,
+            "maximum_cumulative_shortage_mwh": 0.1980260373877361,
+            "imbalance_cashflow_eur": -120.86537839983063,
+            "positive_deviation_cashflow_eur": 4.0206220297545067e-14,
+            "negative_deviation_cashflow_eur": -120.86537839983067,
+            "absolute_settlement_exposure_eur": 120.86537839983072,
+            "volume_weighted_absolute_price_eur_per_mwh": 188.11341195885387,
+            "positive_volume_weighted_price_eur_per_mwh": 113.6142549019608,
+            "negative_volume_weighted_price_eur_per_mwh": 188.1134119588539,
+            "settlement_eur_per_absolute_imbalance_mwh": -188.11341195885373,
+            "charge_mwh": 2.3426374902790945,
+            "discharge_mwh": 2.1083737412511847,
+            "throughput_mwh": 4.45101123153028,
+            "degradation_eur": 123.00434206742528,
+            "pv_curtailment_mwh": 0.006295951284468175,
+            "soc_min_percent": 7.0,
+            "soc_max_percent": 93.00000000000001,
+            "soc_mean_percent": 26.42770633867057,
+            "soc_final_percent": 49.99999999999998,
+            "final_energy_mwh": 0.37499999999999983,
+            "soc_boundary_events": 160,
+            "power_boundary_events": 21,
+            "physical_safety_overrides": 0,
+            "auction_revenue_eur": 2743.0056662429424,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 2499.1359457756867,
+            "expected_absolute_imbalance_first_actions_mwh": 0.6425133494801936,
+            "expected_first_action_intervals": 672,
+            "expected_cumulative_shortfall_first_actions_mwh": 0.6425133494801931,
+            "realized_minus_expected_absolute_imbalance_mwh": 1.1102230246251565e-16,
+            "mpc_solves": 672,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": 0.007547356897876376,
+            "solver_runtime_median_seconds": 0.0064465999603271484,
+            "solver_runtime_p95_seconds": 0.01739336252212524,
+            "solver_runtime_max_seconds": 0.021227121353149414,
+            "solver_runtime_total_seconds": 5.071823835372925,
+            "controller": "deterministic_mpc",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [
+                {
+                  "delivery_day": "2026-01-15",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/plans-85ddf9d648b439ca3597d1c31a5798725f00c8d0e421e006655b335a06f33fd4.parquet",
+                    "sha256": "85ddf9d648b439ca3597d1c31a5798725f00c8d0e421e006655b335a06f33fd4",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/scenarios-07f969928e7d7d2cff34c693fa102998a277dfc118d403b5ae79765d0a91c9c0.parquet",
+                    "sha256": "07f969928e7d7d2cff34c693fa102998a277dfc118d403b5ae79765d0a91c9c0",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-16",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/plans-187112458932edce659b8fea6437a959673b54dee27ae9eb376e9e5002423cf0.parquet",
+                    "sha256": "187112458932edce659b8fea6437a959673b54dee27ae9eb376e9e5002423cf0",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/scenarios-74761936263ac078cc21611e2d7c0476d77095eb2d8b5105c6d35ee22a30b117.parquet",
+                    "sha256": "74761936263ac078cc21611e2d7c0476d77095eb2d8b5105c6d35ee22a30b117",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-17",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/plans-097bfc7d0195ec0af009129664c9a421219ed6140d5b1bb1f1cf6149b596138e.parquet",
+                    "sha256": "097bfc7d0195ec0af009129664c9a421219ed6140d5b1bb1f1cf6149b596138e",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/scenarios-e68c3decddda79bb3defe19fbdf1675de9a9d90529282b4d55c91c6c00ad6028.parquet",
+                    "sha256": "e68c3decddda79bb3defe19fbdf1675de9a9d90529282b4d55c91c6c00ad6028",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-18",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/plans-57523ae9bcc13cb721e6a407940ac2f5691c0f02631ce47711d61ca22998b925.parquet",
+                    "sha256": "57523ae9bcc13cb721e6a407940ac2f5691c0f02631ce47711d61ca22998b925",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/scenarios-1d18b9f1fdd3df5e8f5455caf466f287480f8f47322aef2c5f7e73455c0d16eb.parquet",
+                    "sha256": "1d18b9f1fdd3df5e8f5455caf466f287480f8f47322aef2c5f7e73455c0d16eb",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-19",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/plans-1393f92e284c0713ea4ad8874084cfbf32f6c0e7c465597b24403b2773008383.parquet",
+                    "sha256": "1393f92e284c0713ea4ad8874084cfbf32f6c0e7c465597b24403b2773008383",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/scenarios-c6ce965f7974e211a2afe71ecf1c6881e1aeb00734ddbe0933efb4f99dbe5a36.parquet",
+                    "sha256": "c6ce965f7974e211a2afe71ecf1c6881e1aeb00734ddbe0933efb4f99dbe5a36",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-20",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/plans-769f5d9678a721620cc2fa15d77453fb5e6b176c80ddaf2c710c256b126c5542.parquet",
+                    "sha256": "769f5d9678a721620cc2fa15d77453fb5e6b176c80ddaf2c710c256b126c5542",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/scenarios-16516c5b97540fb79a47033adf5629f2586a89f489ca83111c40cf9fff3ab828.parquet",
+                    "sha256": "16516c5b97540fb79a47033adf5629f2586a89f489ca83111c40cf9fff3ab828",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-21",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/plans-85f41309ef3d1d5543962b8de0054467c73ea087dc2c31bd28865c57a77bef3b.parquet",
+                    "sha256": "85f41309ef3d1d5543962b8de0054467c73ea087dc2c31bd28865c57a77bef3b",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/scenarios-db1234749e0587db04ae0cfea5e9f3c71c400433ddb7fcaf44f9fdda7209019b.parquet",
+                    "sha256": "db1234749e0587db04ae0cfea5e9f3c71c400433ddb7fcaf44f9fdda7209019b",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                }
+              ],
+              "plan_records": 32592,
+              "scenario_records": 32592,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 1.1102230246251565e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 1.1102230246251565e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 3.552713678800501e-15,
+            "imbalance_mwh": 9.6710833785707e-17,
+            "settlement_eur": 2.1871393585115584e-14,
+            "profit_eur": 2.220446049250313e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 7.327471962526033e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 4.547473508864641e-13
+          },
+          "violations": [],
+          "solve_statuses": {
+            "optimal": 672
+          },
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 21.40382203180343,
+          "solver_runtime_seconds": 5.071823835372925,
+          "first_action_prediction_error_mwh": 1.1102230246251565e-16
+        }
+      ]
+    },
+    {
+      "job_id": "january_one_week__farm_1__mpc_recovery",
+      "case_id": "mpc_recovery",
+      "farm_id": "1",
+      "window_id": "january_one_week",
+      "controller": "deterministic_mpc",
+      "profit_difference_eur": -3.926017555220369,
+      "imbalance_difference_mwh": 0.20808557677624046,
+      "auction_revenue_difference_eur": 16.290318692359506,
+      "wear_difference_eur": -5.143035354588591,
+      "final_inventory_difference_mwh": 0.11548516427495531,
+      "position_change_mwh": 0.13997417655088645,
+      "oracle_relative_imbalance_budget": 0,
+      "oracle_absolute_imbalance_budget_mwh": 0,
+      "comparison_configuration": {
+        "terminal_soc_percent": 50.0,
+        "terminal_soc_min_percent": null,
+        "mpc_terminal_inventory_mode": "soft_target",
+        "mpc_terminal_soc_target_percent": 50.0,
+        "mpc_current_pv_information": "realized_interval_average",
+        "auction_price_forecasts_enabled": false
+      },
+      "controllers": [
+        {
+          "controller": "track_committed_grid",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 0.4344277727039532,
+            "signed_net_imbalance_mwh": -0.43442777270395316,
+            "positive_imbalance_mwh": 2.7755575615628914e-17,
+            "negative_imbalance_mwh": 0.4344277727039532,
+            "nonzero_imbalance_intervals": 68,
+            "nonzero_imbalance_fraction": 0.10119047619047619,
+            "max_positive_deviation_mwh": 2.7755575615628914e-17,
+            "max_negative_deviation_mwh": -0.12808098853565753,
+            "maximum_cumulative_shortage_mwh": 0.18799540735911574,
+            "imbalance_cashflow_eur": -95.50600679766231,
+            "positive_deviation_cashflow_eur": 4.519717933249012e-15,
+            "negative_deviation_cashflow_eur": -95.50600679766231,
+            "absolute_settlement_exposure_eur": 95.50600679766231,
+            "volume_weighted_absolute_price_eur_per_mwh": 219.84323470669585,
+            "positive_volume_weighted_price_eur_per_mwh": 162.84,
+            "negative_volume_weighted_price_eur_per_mwh": 219.84323470669585,
+            "settlement_eur_per_absolute_imbalance_mwh": -219.84323470669585,
+            "charge_mwh": 2.3829248754973555,
+            "discharge_mwh": 2.2541912344678896,
+            "throughput_mwh": 4.637116109965245,
+            "degradation_eur": 128.14737742201388,
+            "pv_curtailment_mwh": 0.006295951284468179,
+            "soc_min_percent": 7.0,
+            "soc_max_percent": 93.0,
+            "soc_mean_percent": 24.29070889608791,
+            "soc_final_percent": 34.6019780966726,
+            "final_energy_mwh": 0.2595148357250445,
+            "soc_boundary_events": 178,
+            "power_boundary_events": 21,
+            "physical_safety_overrides": 5,
+            "auction_revenue_eur": 2726.715347550583,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 2503.061963330907,
+            "expected_absolute_imbalance_first_actions_mwh": null,
+            "expected_first_action_intervals": 0,
+            "expected_cumulative_shortfall_first_actions_mwh": null,
+            "realized_minus_expected_absolute_imbalance_mwh": null,
+            "mpc_solves": 0,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": null,
+            "solver_runtime_median_seconds": null,
+            "solver_runtime_p95_seconds": null,
+            "solver_runtime_max_seconds": null,
+            "solver_runtime_total_seconds": 0.0,
+            "controller": "track_committed_grid",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [],
+              "plan_records": 0,
+              "scenario_records": 0,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 1.1102230246251565e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 1.1102230246251565e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 3.552713678800501e-15,
+            "imbalance_mwh": 9.6710833785707e-17,
+            "settlement_eur": 2.1871393585115584e-14,
+            "profit_eur": 2.220446049250313e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 3.608224830031759e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 0.0
+          },
+          "violations": [],
+          "solve_statuses": {},
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 0.0,
+          "solver_runtime_seconds": 0.0,
+          "first_action_prediction_error_mwh": null
+        },
+        {
+          "controller": "deterministic_mpc",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 0.6425133494801937,
+            "signed_net_imbalance_mwh": -0.642513349480193,
+            "positive_imbalance_mwh": 3.5388358909926865e-16,
+            "negative_imbalance_mwh": 0.6425133494801933,
+            "nonzero_imbalance_intervals": 147,
+            "nonzero_imbalance_fraction": 0.21875,
+            "max_positive_deviation_mwh": 2.0816681711721685e-16,
+            "max_negative_deviation_mwh": -0.08782524326182897,
+            "maximum_cumulative_shortage_mwh": 0.1980260373877361,
+            "imbalance_cashflow_eur": -120.86537839983063,
+            "positive_deviation_cashflow_eur": 4.0206220297545067e-14,
+            "negative_deviation_cashflow_eur": -120.86537839983067,
+            "absolute_settlement_exposure_eur": 120.86537839983072,
+            "volume_weighted_absolute_price_eur_per_mwh": 188.11341195885387,
+            "positive_volume_weighted_price_eur_per_mwh": 113.6142549019608,
+            "negative_volume_weighted_price_eur_per_mwh": 188.1134119588539,
+            "settlement_eur_per_absolute_imbalance_mwh": -188.11341195885373,
+            "charge_mwh": 2.3426374902790945,
+            "discharge_mwh": 2.1083737412511847,
+            "throughput_mwh": 4.45101123153028,
+            "degradation_eur": 123.00434206742528,
+            "pv_curtailment_mwh": 0.006295951284468175,
+            "soc_min_percent": 7.0,
+            "soc_max_percent": 93.00000000000001,
+            "soc_mean_percent": 26.42770633867057,
+            "soc_final_percent": 49.99999999999998,
+            "final_energy_mwh": 0.37499999999999983,
+            "soc_boundary_events": 160,
+            "power_boundary_events": 21,
+            "physical_safety_overrides": 0,
+            "auction_revenue_eur": 2743.0056662429424,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 2499.1359457756867,
+            "expected_absolute_imbalance_first_actions_mwh": 0.6425133494801936,
+            "expected_first_action_intervals": 672,
+            "expected_cumulative_shortfall_first_actions_mwh": 0.6425133494801931,
+            "realized_minus_expected_absolute_imbalance_mwh": 1.1102230246251565e-16,
+            "mpc_solves": 672,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": 0.008319921791553497,
+            "solver_runtime_median_seconds": 0.007065534591674805,
+            "solver_runtime_p95_seconds": 0.017717993259429927,
+            "solver_runtime_max_seconds": 0.02661609649658203,
+            "solver_runtime_total_seconds": 5.59098744392395,
+            "controller": "deterministic_mpc",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [
+                {
+                  "delivery_day": "2026-01-15",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/plans-85ddf9d648b439ca3597d1c31a5798725f00c8d0e421e006655b335a06f33fd4.parquet",
+                    "sha256": "85ddf9d648b439ca3597d1c31a5798725f00c8d0e421e006655b335a06f33fd4",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/scenarios-07f969928e7d7d2cff34c693fa102998a277dfc118d403b5ae79765d0a91c9c0.parquet",
+                    "sha256": "07f969928e7d7d2cff34c693fa102998a277dfc118d403b5ae79765d0a91c9c0",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-16",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/plans-187112458932edce659b8fea6437a959673b54dee27ae9eb376e9e5002423cf0.parquet",
+                    "sha256": "187112458932edce659b8fea6437a959673b54dee27ae9eb376e9e5002423cf0",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/scenarios-74761936263ac078cc21611e2d7c0476d77095eb2d8b5105c6d35ee22a30b117.parquet",
+                    "sha256": "74761936263ac078cc21611e2d7c0476d77095eb2d8b5105c6d35ee22a30b117",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-17",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/plans-097bfc7d0195ec0af009129664c9a421219ed6140d5b1bb1f1cf6149b596138e.parquet",
+                    "sha256": "097bfc7d0195ec0af009129664c9a421219ed6140d5b1bb1f1cf6149b596138e",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/scenarios-e68c3decddda79bb3defe19fbdf1675de9a9d90529282b4d55c91c6c00ad6028.parquet",
+                    "sha256": "e68c3decddda79bb3defe19fbdf1675de9a9d90529282b4d55c91c6c00ad6028",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-18",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/plans-57523ae9bcc13cb721e6a407940ac2f5691c0f02631ce47711d61ca22998b925.parquet",
+                    "sha256": "57523ae9bcc13cb721e6a407940ac2f5691c0f02631ce47711d61ca22998b925",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/scenarios-1d18b9f1fdd3df5e8f5455caf466f287480f8f47322aef2c5f7e73455c0d16eb.parquet",
+                    "sha256": "1d18b9f1fdd3df5e8f5455caf466f287480f8f47322aef2c5f7e73455c0d16eb",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-19",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/plans-1393f92e284c0713ea4ad8874084cfbf32f6c0e7c465597b24403b2773008383.parquet",
+                    "sha256": "1393f92e284c0713ea4ad8874084cfbf32f6c0e7c465597b24403b2773008383",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/scenarios-c6ce965f7974e211a2afe71ecf1c6881e1aeb00734ddbe0933efb4f99dbe5a36.parquet",
+                    "sha256": "c6ce965f7974e211a2afe71ecf1c6881e1aeb00734ddbe0933efb4f99dbe5a36",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-20",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/plans-769f5d9678a721620cc2fa15d77453fb5e6b176c80ddaf2c710c256b126c5542.parquet",
+                    "sha256": "769f5d9678a721620cc2fa15d77453fb5e6b176c80ddaf2c710c256b126c5542",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/scenarios-16516c5b97540fb79a47033adf5629f2586a89f489ca83111c40cf9fff3ab828.parquet",
+                    "sha256": "16516c5b97540fb79a47033adf5629f2586a89f489ca83111c40cf9fff3ab828",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-21",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/plans-85f41309ef3d1d5543962b8de0054467c73ea087dc2c31bd28865c57a77bef3b.parquet",
+                    "sha256": "85f41309ef3d1d5543962b8de0054467c73ea087dc2c31bd28865c57a77bef3b",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/scenarios-db1234749e0587db04ae0cfea5e9f3c71c400433ddb7fcaf44f9fdda7209019b.parquet",
+                    "sha256": "db1234749e0587db04ae0cfea5e9f3c71c400433ddb7fcaf44f9fdda7209019b",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                }
+              ],
+              "plan_records": 32592,
+              "scenario_records": 32592,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 1.1102230246251565e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 1.1102230246251565e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 3.552713678800501e-15,
+            "imbalance_mwh": 9.6710833785707e-17,
+            "settlement_eur": 2.1871393585115584e-14,
+            "profit_eur": 2.220446049250313e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 7.327471962526033e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 4.547473508864641e-13
+          },
+          "violations": [],
+          "solve_statuses": {
+            "optimal": 672
+          },
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 24.225774218328297,
+          "solver_runtime_seconds": 5.59098744392395,
+          "first_action_prediction_error_mwh": 1.1102230246251565e-16
+        }
+      ]
+    },
+    {
+      "job_id": "january_one_week__farm_345__mpc_recovery",
+      "case_id": "mpc_recovery",
+      "farm_id": "345",
+      "window_id": "january_one_week",
+      "controller": "deterministic_mpc",
+      "profit_difference_eur": 7.3974112187934224,
+      "imbalance_difference_mwh": 0.1978401733729993,
+      "auction_revenue_difference_eur": 25.824976904123105,
+      "wear_difference_eur": -3.2099477048461154,
+      "final_inventory_difference_mwh": 0.07532260380831562,
+      "position_change_mwh": 0.2092281889784782,
+      "oracle_relative_imbalance_budget": 0,
+      "oracle_absolute_imbalance_budget_mwh": 0,
+      "comparison_configuration": {
+        "terminal_soc_percent": 50.0,
+        "terminal_soc_min_percent": null,
+        "mpc_terminal_inventory_mode": "soft_target",
+        "mpc_terminal_soc_target_percent": 50.0,
+        "mpc_current_pv_information": "realized_interval_average",
+        "auction_price_forecasts_enabled": false
+      },
+      "controllers": [
+        {
+          "controller": "track_committed_grid",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 1.030827350390143,
+            "signed_net_imbalance_mwh": -1.030827350390143,
+            "positive_imbalance_mwh": 0.0,
+            "negative_imbalance_mwh": 1.030827350390143,
+            "nonzero_imbalance_intervals": 80,
+            "nonzero_imbalance_fraction": 0.11904761904761904,
+            "max_positive_deviation_mwh": 0.0,
+            "max_negative_deviation_mwh": -0.13223737804219127,
+            "maximum_cumulative_shortage_mwh": 0.4504659030288457,
+            "imbalance_cashflow_eur": -149.20329508168757,
+            "positive_deviation_cashflow_eur": 0.0,
+            "negative_deviation_cashflow_eur": -149.20329508168757,
+            "absolute_settlement_exposure_eur": 149.20329508168757,
+            "volume_weighted_absolute_price_eur_per_mwh": 144.74130418175048,
+            "positive_volume_weighted_price_eur_per_mwh": null,
+            "negative_volume_weighted_price_eur_per_mwh": 144.74130418175048,
+            "settlement_eur_per_absolute_imbalance_mwh": -144.74130418175048,
+            "charge_mwh": 4.353521320236204,
+            "discharge_mwh": 3.989626484411209,
+            "throughput_mwh": 8.343147804647414,
+            "degradation_eur": 230.56410175112296,
+            "pv_curtailment_mwh": 0.7362617707200294,
+            "soc_min_percent": 7.000000000000001,
+            "soc_max_percent": 93.0,
+            "soc_mean_percent": 32.91871758773623,
+            "soc_final_percent": 42.46773961916844,
+            "final_energy_mwh": 0.4246773961916844,
+            "soc_boundary_events": 237,
+            "power_boundary_events": 31,
+            "physical_safety_overrides": 11,
+            "auction_revenue_eur": 5677.191316109049,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 5297.423919276238,
+            "expected_absolute_imbalance_first_actions_mwh": null,
+            "expected_first_action_intervals": 0,
+            "expected_cumulative_shortfall_first_actions_mwh": null,
+            "realized_minus_expected_absolute_imbalance_mwh": null,
+            "mpc_solves": 0,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": null,
+            "solver_runtime_median_seconds": null,
+            "solver_runtime_p95_seconds": null,
+            "solver_runtime_max_seconds": null,
+            "solver_runtime_total_seconds": 0.0,
+            "controller": "track_committed_grid",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [],
+              "plan_records": 0,
+              "scenario_records": 0,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 1.1102230246251565e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 1.942890293094024e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 7.105427357601002e-15,
+            "imbalance_mwh": 1.0755285551056204e-16,
+            "settlement_eur": 2.2648549702353193e-14,
+            "profit_eur": 2.842170943040401e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 3.9968028886505635e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 9.094947017729282e-13
+          },
+          "violations": [],
+          "solve_statuses": {},
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 0.0,
+          "solver_runtime_seconds": 0.0,
+          "first_action_prediction_error_mwh": null
+        },
+        {
+          "controller": "deterministic_mpc",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 1.2286675237631424,
+            "signed_net_imbalance_mwh": -1.2286675237631417,
+            "positive_imbalance_mwh": 2.8449465006019636e-16,
+            "negative_imbalance_mwh": 1.228667523763142,
+            "nonzero_imbalance_intervals": 129,
+            "nonzero_imbalance_fraction": 0.19196428571428573,
+            "max_positive_deviation_mwh": 6.245004513516506e-17,
+            "max_negative_deviation_mwh": -0.125,
+            "maximum_cumulative_shortage_mwh": 0.4503218309134243,
+            "imbalance_cashflow_eur": -170.84080847186422,
+            "positive_deviation_cashflow_eur": 3.260516856506968e-14,
+            "negative_deviation_cashflow_eur": -170.84080847186425,
+            "absolute_settlement_exposure_eur": 170.84080847186428,
+            "volume_weighted_absolute_price_eur_per_mwh": 139.0455962802825,
+            "positive_volume_weighted_price_eur_per_mwh": 114.60731707317075,
+            "negative_volume_weighted_price_eur_per_mwh": 139.04559628028252,
+            "settlement_eur_per_absolute_imbalance_mwh": -139.04559628028244,
+            "charge_mwh": 4.329996452869489,
+            "discharge_mwh": 3.896996807582539,
+            "throughput_mwh": 8.226993260452028,
+            "degradation_eur": 227.35415404627685,
+            "pv_curtailment_mwh": 0.7167151224841879,
+            "soc_min_percent": 7.000000000000001,
+            "soc_max_percent": 93.0,
+            "soc_mean_percent": 33.8043644601844,
+            "soc_final_percent": 50.0,
+            "final_energy_mwh": 0.5,
+            "soc_boundary_events": 270,
+            "power_boundary_events": 32,
+            "physical_safety_overrides": 0,
+            "auction_revenue_eur": 5703.016293013172,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 5304.821330495031,
+            "expected_absolute_imbalance_first_actions_mwh": 1.228667523763142,
+            "expected_first_action_intervals": 672,
+            "expected_cumulative_shortfall_first_actions_mwh": 1.228667523763142,
+            "realized_minus_expected_absolute_imbalance_mwh": 4.440892098500626e-16,
+            "mpc_solves": 672,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": 0.007400169259025937,
+            "solver_runtime_median_seconds": 0.006253957748413086,
+            "solver_runtime_p95_seconds": 0.01801044940948486,
+            "solver_runtime_max_seconds": 0.021809101104736328,
+            "solver_runtime_total_seconds": 4.97291374206543,
+            "controller": "deterministic_mpc",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [
+                {
+                  "delivery_day": "2026-01-15",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/plans-2152725e8eeaea4370c0bb55b6e69321b1203cf326ef5917083bdc013b8aadfe.parquet",
+                    "sha256": "2152725e8eeaea4370c0bb55b6e69321b1203cf326ef5917083bdc013b8aadfe",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/scenarios-184d89a176d9597d20c5cb1c5303c3e7fd9c0dd19266df015b22b9d09bbc98a1.parquet",
+                    "sha256": "184d89a176d9597d20c5cb1c5303c3e7fd9c0dd19266df015b22b9d09bbc98a1",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-16",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/plans-5f71716b7243108b27075e878da2e0b8a92d8b82768f3f7194d2130b4842ac5d.parquet",
+                    "sha256": "5f71716b7243108b27075e878da2e0b8a92d8b82768f3f7194d2130b4842ac5d",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/scenarios-8cee27472a28aa71b04e6c24a2b135b4586efcdfb955c05d8c698b73a5723fed.parquet",
+                    "sha256": "8cee27472a28aa71b04e6c24a2b135b4586efcdfb955c05d8c698b73a5723fed",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-17",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/plans-7f7d7865008c79d09a906bc408ef0ada63586632aea2bab93d4b198ad617d9d6.parquet",
+                    "sha256": "7f7d7865008c79d09a906bc408ef0ada63586632aea2bab93d4b198ad617d9d6",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/scenarios-8d1f5ed482477c30b9825ebba65bb108fee67b7dce48931135a8795d48e04818.parquet",
+                    "sha256": "8d1f5ed482477c30b9825ebba65bb108fee67b7dce48931135a8795d48e04818",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-18",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/plans-ee6221d676ce5e83b78902bcec0bdb4554426601c0b90d57c008ef59ef1c6448.parquet",
+                    "sha256": "ee6221d676ce5e83b78902bcec0bdb4554426601c0b90d57c008ef59ef1c6448",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/scenarios-c59b3a38a0a785a6f07c14a6b2c7096423b8c72d9fa8507d0662465d67efc547.parquet",
+                    "sha256": "c59b3a38a0a785a6f07c14a6b2c7096423b8c72d9fa8507d0662465d67efc547",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-19",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/plans-1238a7689efdae37039c284c0d56a483020f78c99f8ee3f00a852f6bb95cb1de.parquet",
+                    "sha256": "1238a7689efdae37039c284c0d56a483020f78c99f8ee3f00a852f6bb95cb1de",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/scenarios-0d5d0eecfe9353eb3fccc057358c8707267be4d498bcccfe06089463193d20a7.parquet",
+                    "sha256": "0d5d0eecfe9353eb3fccc057358c8707267be4d498bcccfe06089463193d20a7",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-20",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/plans-6faaf347e2ccc87698570129c99a18910effc8507a55f920acd351f569700caf.parquet",
+                    "sha256": "6faaf347e2ccc87698570129c99a18910effc8507a55f920acd351f569700caf",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/scenarios-e78fca7f86a3c230abddc41b2e0d70c72cf3f42dd4f3a8c5387f28a5581d4433.parquet",
+                    "sha256": "e78fca7f86a3c230abddc41b2e0d70c72cf3f42dd4f3a8c5387f28a5581d4433",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-21",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/plans-e13c79dbf8a7fb54e67fb2bf3a4563f77786ef486830a545c56bde3fe2250a89.parquet",
+                    "sha256": "e13c79dbf8a7fb54e67fb2bf3a4563f77786ef486830a545c56bde3fe2250a89",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/scenarios-f84e2281e9fbb432c730df673f253b63ffd5bb62b799a7ad218e5ba560c65fb6.parquet",
+                    "sha256": "f84e2281e9fbb432c730df673f253b63ffd5bb62b799a7ad218e5ba560c65fb6",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                }
+              ],
+              "plan_records": 32592,
+              "scenario_records": 32592,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 1.249000902703301e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 1.3877787807814457e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 7.105427357601002e-15,
+            "imbalance_mwh": 1.0234868508263162e-16,
+            "settlement_eur": 2.3314683517128287e-14,
+            "profit_eur": 2.3092638912203256e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 5.551115123125783e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 0.0
+          },
+          "violations": [],
+          "solve_statuses": {
+            "optimal": 672
+          },
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 21.227090185508132,
+          "solver_runtime_seconds": 4.97291374206543,
+          "first_action_prediction_error_mwh": 4.440892098500626e-16
+        }
+      ]
+    },
+    {
+      "job_id": "january_one_week__farm_345__mpc_original",
+      "case_id": "mpc_original",
+      "farm_id": "345",
+      "window_id": "january_one_week",
+      "controller": "deterministic_mpc",
+      "profit_difference_eur": 2.56598544651024,
+      "imbalance_difference_mwh": 0.20945288581792254,
+      "auction_revenue_difference_eur": 22.73614007890137,
+      "wear_difference_eur": -4.348531289423391,
+      "final_inventory_difference_mwh": 0.07532260380831562,
+      "position_change_mwh": 0.2816631086929604,
+      "oracle_relative_imbalance_budget": 0,
+      "oracle_absolute_imbalance_budget_mwh": 0,
+      "comparison_configuration": {
+        "terminal_soc_percent": 50.0,
+        "terminal_soc_min_percent": null,
+        "mpc_terminal_inventory_mode": "soft_target",
+        "mpc_terminal_soc_target_percent": 50.0,
+        "mpc_current_pv_information": "realized_interval_average",
+        "auction_price_forecasts_enabled": false
+      },
+      "controllers": [
+        {
+          "controller": "track_committed_grid",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 1.030827350390143,
+            "signed_net_imbalance_mwh": -1.030827350390143,
+            "positive_imbalance_mwh": 0.0,
+            "negative_imbalance_mwh": 1.030827350390143,
+            "nonzero_imbalance_intervals": 80,
+            "nonzero_imbalance_fraction": 0.11904761904761904,
+            "max_positive_deviation_mwh": 0.0,
+            "max_negative_deviation_mwh": -0.13223737804219127,
+            "maximum_cumulative_shortage_mwh": 0.4504659030288457,
+            "imbalance_cashflow_eur": -149.20329508168757,
+            "positive_deviation_cashflow_eur": 0.0,
+            "negative_deviation_cashflow_eur": -149.20329508168757,
+            "absolute_settlement_exposure_eur": 149.20329508168757,
+            "volume_weighted_absolute_price_eur_per_mwh": 144.74130418175048,
+            "positive_volume_weighted_price_eur_per_mwh": null,
+            "negative_volume_weighted_price_eur_per_mwh": 144.74130418175048,
+            "settlement_eur_per_absolute_imbalance_mwh": -144.74130418175048,
+            "charge_mwh": 4.353521320236204,
+            "discharge_mwh": 3.989626484411209,
+            "throughput_mwh": 8.343147804647414,
+            "degradation_eur": 230.56410175112296,
+            "pv_curtailment_mwh": 0.7362617707200294,
+            "soc_min_percent": 7.000000000000001,
+            "soc_max_percent": 93.0,
+            "soc_mean_percent": 32.91871758773623,
+            "soc_final_percent": 42.46773961916844,
+            "final_energy_mwh": 0.4246773961916844,
+            "soc_boundary_events": 237,
+            "power_boundary_events": 31,
+            "physical_safety_overrides": 11,
+            "auction_revenue_eur": 5677.191316109049,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 5297.423919276238,
+            "expected_absolute_imbalance_first_actions_mwh": null,
+            "expected_first_action_intervals": 0,
+            "expected_cumulative_shortfall_first_actions_mwh": null,
+            "realized_minus_expected_absolute_imbalance_mwh": null,
+            "mpc_solves": 0,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": null,
+            "solver_runtime_median_seconds": null,
+            "solver_runtime_p95_seconds": null,
+            "solver_runtime_max_seconds": null,
+            "solver_runtime_total_seconds": 0.0,
+            "controller": "track_committed_grid",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [],
+              "plan_records": 0,
+              "scenario_records": 0,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 1.1102230246251565e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 1.942890293094024e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 7.105427357601002e-15,
+            "imbalance_mwh": 1.0755285551056204e-16,
+            "settlement_eur": 2.2648549702353193e-14,
+            "profit_eur": 2.842170943040401e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 3.9968028886505635e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 9.094947017729282e-13
+          },
+          "violations": [],
+          "solve_statuses": {},
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 0.0,
+          "solver_runtime_seconds": 0.0,
+          "first_action_prediction_error_mwh": null
+        },
+        {
+          "controller": "deterministic_mpc",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 1.2402802362080656,
+            "signed_net_imbalance_mwh": -1.2402802362080652,
+            "positive_imbalance_mwh": 1.249000902703301e-16,
+            "negative_imbalance_mwh": 1.2402802362080654,
+            "nonzero_imbalance_intervals": 127,
+            "nonzero_imbalance_fraction": 0.18898809523809523,
+            "max_positive_deviation_mwh": 1.1102230246251565e-16,
+            "max_negative_deviation_mwh": -0.125,
+            "maximum_cumulative_shortage_mwh": 0.4503218309134243,
+            "imbalance_cashflow_eur": -173.72198100350207,
+            "positive_deviation_cashflow_eur": 2.110309149649936e-14,
+            "negative_deviation_cashflow_eur": -173.7219810035021,
+            "absolute_settlement_exposure_eur": 173.7219810035021,
+            "volume_weighted_absolute_price_eur_per_mwh": 140.0667171272727,
+            "positive_volume_weighted_price_eur_per_mwh": 168.95977777777776,
+            "negative_volume_weighted_price_eur_per_mwh": 140.06671712727274,
+            "settlement_eur_per_absolute_imbalance_mwh": -140.06671712727268,
+            "charge_mwh": 4.30831194526418,
+            "discharge_mwh": 3.8774807507377616,
+            "throughput_mwh": 8.185792696001942,
+            "degradation_eur": 226.21557046169957,
+            "pv_curtailment_mwh": 0.7395105688378423,
+            "soc_min_percent": 7.000000000000001,
+            "soc_max_percent": 93.0,
+            "soc_mean_percent": 33.199130433745744,
+            "soc_final_percent": 50.0,
+            "final_energy_mwh": 0.5,
+            "soc_boundary_events": 196,
+            "power_boundary_events": 32,
+            "physical_safety_overrides": 0,
+            "auction_revenue_eur": 5699.92745618795,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 5299.989904722748,
+            "expected_absolute_imbalance_first_actions_mwh": 1.2402802362080654,
+            "expected_first_action_intervals": 672,
+            "expected_cumulative_shortfall_first_actions_mwh": 1.2402802362080654,
+            "realized_minus_expected_absolute_imbalance_mwh": 2.220446049250313e-16,
+            "mpc_solves": 672,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": 0.00870860545408158,
+            "solver_runtime_median_seconds": 0.007883429527282715,
+            "solver_runtime_p95_seconds": 0.019501209259033203,
+            "solver_runtime_max_seconds": 0.02298116683959961,
+            "solver_runtime_total_seconds": 5.852182865142822,
+            "controller": "deterministic_mpc",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [
+                {
+                  "delivery_day": "2026-01-15",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/plans-c8d34b146d772de9b02e9b8fee4bf2c8f8890f4e959a023ada00218949e62d63.parquet",
+                    "sha256": "c8d34b146d772de9b02e9b8fee4bf2c8f8890f4e959a023ada00218949e62d63",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/scenarios-184d89a176d9597d20c5cb1c5303c3e7fd9c0dd19266df015b22b9d09bbc98a1.parquet",
+                    "sha256": "184d89a176d9597d20c5cb1c5303c3e7fd9c0dd19266df015b22b9d09bbc98a1",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-16",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/plans-88dd5eacf0aacb4fc307205136798f614901f94d7e9fb1d373d7be912094f1ed.parquet",
+                    "sha256": "88dd5eacf0aacb4fc307205136798f614901f94d7e9fb1d373d7be912094f1ed",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/scenarios-d33e0cc6350ac0326a0b783d415bd4a2d3d478262f247a2eec046b76c4ae1cb6.parquet",
+                    "sha256": "d33e0cc6350ac0326a0b783d415bd4a2d3d478262f247a2eec046b76c4ae1cb6",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-17",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/plans-90f86094ab0b869e976759507565fd1b152b46a0b41f804d1898eb4cb45de0db.parquet",
+                    "sha256": "90f86094ab0b869e976759507565fd1b152b46a0b41f804d1898eb4cb45de0db",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/scenarios-15a75e6c9020c14930c45fbb5cfcf1c5389d541227e74ff5a50bee2eb51f0ef5.parquet",
+                    "sha256": "15a75e6c9020c14930c45fbb5cfcf1c5389d541227e74ff5a50bee2eb51f0ef5",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-18",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/plans-ee6221d676ce5e83b78902bcec0bdb4554426601c0b90d57c008ef59ef1c6448.parquet",
+                    "sha256": "ee6221d676ce5e83b78902bcec0bdb4554426601c0b90d57c008ef59ef1c6448",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/scenarios-c59b3a38a0a785a6f07c14a6b2c7096423b8c72d9fa8507d0662465d67efc547.parquet",
+                    "sha256": "c59b3a38a0a785a6f07c14a6b2c7096423b8c72d9fa8507d0662465d67efc547",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-19",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/plans-1238a7689efdae37039c284c0d56a483020f78c99f8ee3f00a852f6bb95cb1de.parquet",
+                    "sha256": "1238a7689efdae37039c284c0d56a483020f78c99f8ee3f00a852f6bb95cb1de",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/scenarios-0d5d0eecfe9353eb3fccc057358c8707267be4d498bcccfe06089463193d20a7.parquet",
+                    "sha256": "0d5d0eecfe9353eb3fccc057358c8707267be4d498bcccfe06089463193d20a7",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-20",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/plans-6faaf347e2ccc87698570129c99a18910effc8507a55f920acd351f569700caf.parquet",
+                    "sha256": "6faaf347e2ccc87698570129c99a18910effc8507a55f920acd351f569700caf",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/scenarios-e78fca7f86a3c230abddc41b2e0d70c72cf3f42dd4f3a8c5387f28a5581d4433.parquet",
+                    "sha256": "e78fca7f86a3c230abddc41b2e0d70c72cf3f42dd4f3a8c5387f28a5581d4433",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-21",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/plans-dd14673afeb2f4a6f10eb351426a383b2c35e412f1878986da5541121ead9cef.parquet",
+                    "sha256": "dd14673afeb2f4a6f10eb351426a383b2c35e412f1878986da5541121ead9cef",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/scenarios-894aba14d25e21427b987e2b747cf272ad73c6ba4e19cf3b2494e4424c2ecd6e.parquet",
+                    "sha256": "894aba14d25e21427b987e2b747cf272ad73c6ba4e19cf3b2494e4424c2ecd6e",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                }
+              ],
+              "plan_records": 32592,
+              "scenario_records": 32592,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 2.220446049250313e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 2.0122792321330962e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 7.105427357601002e-15,
+            "imbalance_mwh": 1.0755285551056204e-16,
+            "settlement_eur": 2.3314683517128287e-14,
+            "profit_eur": 2.3092638912203256e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 5.551115123125783e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 0.0
+          },
+          "violations": [],
+          "solve_statuses": {
+            "optimal": 672
+          },
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 26.47872481867671,
+          "solver_runtime_seconds": 5.852182865142822,
+          "first_action_prediction_error_mwh": 2.220446049250313e-16
+        }
+      ]
+    },
+    {
+      "job_id": "january_one_week__farm_901__mpc_original",
+      "case_id": "mpc_original",
+      "farm_id": "901",
+      "window_id": "january_one_week",
+      "controller": "deterministic_mpc",
+      "profit_difference_eur": 31.338682504754615,
+      "imbalance_difference_mwh": 0.5747015379604612,
+      "auction_revenue_difference_eur": 99.73945571551667,
+      "wear_difference_eur": -37.29902169288255,
+      "final_inventory_difference_mwh": -0.7623885935765342,
+      "position_change_mwh": 1.0490512452103884,
+      "oracle_relative_imbalance_budget": 0,
+      "oracle_absolute_imbalance_budget_mwh": 0,
+      "comparison_configuration": {
+        "terminal_soc_percent": 50.0,
+        "terminal_soc_min_percent": null,
+        "mpc_terminal_inventory_mode": "soft_target",
+        "mpc_terminal_soc_target_percent": 50.0,
+        "mpc_current_pv_information": "realized_interval_average",
+        "auction_price_forecasts_enabled": false
+      },
+      "controllers": [
+        {
+          "controller": "track_committed_grid",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 3.6073463044106955,
+            "signed_net_imbalance_mwh": -3.6073463044106955,
+            "positive_imbalance_mwh": 0.0,
+            "negative_imbalance_mwh": 3.6073463044106955,
+            "nonzero_imbalance_intervals": 109,
+            "nonzero_imbalance_fraction": 0.16220238095238096,
+            "max_positive_deviation_mwh": 0.0,
+            "max_negative_deviation_mwh": -0.2692185364961624,
+            "maximum_cumulative_shortage_mwh": 1.1184245357472447,
+            "imbalance_cashflow_eur": -543.2833430377176,
+            "positive_deviation_cashflow_eur": 0.0,
+            "negative_deviation_cashflow_eur": -543.2833430377176,
+            "absolute_settlement_exposure_eur": 543.2833430377176,
+            "volume_weighted_absolute_price_eur_per_mwh": 150.60470972067364,
+            "positive_volume_weighted_price_eur_per_mwh": null,
+            "negative_volume_weighted_price_eur_per_mwh": 150.60470972067364,
+            "settlement_eur_per_absolute_imbalance_mwh": -150.60470972067364,
+            "charge_mwh": 7.270265669567579,
+            "discharge_mwh": 5.819973777260541,
+            "throughput_mwh": 13.090239446828122,
+            "degradation_eur": 361.7506689841738,
+            "pv_curtailment_mwh": 0.0,
+            "soc_min_percent": 7.000000000000001,
+            "soc_max_percent": 93.0,
+            "soc_mean_percent": 21.67829272248133,
+            "soc_final_percent": 88.1194296788267,
+            "final_energy_mwh": 1.7623885935765342,
+            "soc_boundary_events": 255,
+            "power_boundary_events": 20,
+            "physical_safety_overrides": 9,
+            "auction_revenue_eur": 12840.506599606633,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 11935.472587584742,
+            "expected_absolute_imbalance_first_actions_mwh": null,
+            "expected_first_action_intervals": 0,
+            "expected_cumulative_shortfall_first_actions_mwh": null,
+            "realized_minus_expected_absolute_imbalance_mwh": null,
+            "mpc_solves": 0,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": null,
+            "solver_runtime_median_seconds": null,
+            "solver_runtime_p95_seconds": null,
+            "solver_runtime_max_seconds": null,
+            "solver_runtime_total_seconds": 0.0,
+            "controller": "track_committed_grid",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [],
+              "plan_records": 0,
+              "scenario_records": 0,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 4.440892098500626e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 2.220446049250313e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 1.4210854715202004e-14,
+            "imbalance_mwh": 1.43982048506075e-16,
+            "settlement_eur": 2.1316282072803006e-14,
+            "profit_eur": 2.842170943040401e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 4.440892098500626e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 1.8189894035458565e-12
+          },
+          "violations": [],
+          "solve_statuses": {},
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 0.0,
+          "solver_runtime_seconds": 0.0,
+          "first_action_prediction_error_mwh": null
+        },
+        {
+          "controller": "deterministic_mpc",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 4.182047842371157,
+            "signed_net_imbalance_mwh": -4.182047842371157,
+            "positive_imbalance_mwh": 1.3183898417423734e-16,
+            "negative_imbalance_mwh": 4.182047842371157,
+            "nonzero_imbalance_intervals": 168,
+            "nonzero_imbalance_fraction": 0.25,
+            "max_positive_deviation_mwh": 5.551115123125783e-17,
+            "max_negative_deviation_mwh": -0.2585558006539941,
+            "maximum_cumulative_shortage_mwh": 1.1184245357472444,
+            "imbalance_cashflow_eur": -648.983137941362,
+            "positive_deviation_cashflow_eur": 1.3337567161819663e-14,
+            "negative_deviation_cashflow_eur": -648.983137941362,
+            "absolute_settlement_exposure_eur": 648.983137941362,
+            "volume_weighted_absolute_price_eur_per_mwh": 155.18309746867902,
+            "positive_volume_weighted_price_eur_per_mwh": 101.16557894736842,
+            "negative_volume_weighted_price_eur_per_mwh": 155.18309746867902,
+            "settlement_eur_per_absolute_imbalance_mwh": -155.18309746867902,
+            "charge_mwh": 6.179233838027864,
+            "discharge_mwh": 5.561310454225078,
+            "throughput_mwh": 11.74054429225294,
+            "degradation_eur": 324.45164729129124,
+            "pv_curtailment_mwh": 0.7940270918729824,
+            "soc_min_percent": 7.000000000000001,
+            "soc_max_percent": 93.0,
+            "soc_mean_percent": 21.164825400219666,
+            "soc_final_percent": 50.0,
+            "final_energy_mwh": 1.0,
+            "soc_boundary_events": 262,
+            "power_boundary_events": 21,
+            "physical_safety_overrides": 0,
+            "auction_revenue_eur": 12940.24605532215,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 11966.811270089496,
+            "expected_absolute_imbalance_first_actions_mwh": 4.182047842371157,
+            "expected_first_action_intervals": 672,
+            "expected_cumulative_shortfall_first_actions_mwh": 4.182047842371157,
+            "realized_minus_expected_absolute_imbalance_mwh": 0.0,
+            "mpc_solves": 672,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": 0.0076323871811230974,
+            "solver_runtime_median_seconds": 0.006492495536804199,
+            "solver_runtime_p95_seconds": 0.017585897445678705,
+            "solver_runtime_max_seconds": 0.021625995635986328,
+            "solver_runtime_total_seconds": 5.128964185714722,
+            "controller": "deterministic_mpc",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [
+                {
+                  "delivery_day": "2026-01-15",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/plans-3b77df56035c1f9406e48306c68d792bf109522538dba100af55b34ee573db8c.parquet",
+                    "sha256": "3b77df56035c1f9406e48306c68d792bf109522538dba100af55b34ee573db8c",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/scenarios-779d978606283a8b591e422714f209ac972449c740be56001f8c690efd9be9ee.parquet",
+                    "sha256": "779d978606283a8b591e422714f209ac972449c740be56001f8c690efd9be9ee",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-16",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/plans-8e7f1ef9ecccaf0e5bfc6c911ca337d40e5ae041839fa7a946d2b7789bbfc244.parquet",
+                    "sha256": "8e7f1ef9ecccaf0e5bfc6c911ca337d40e5ae041839fa7a946d2b7789bbfc244",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/scenarios-29d49c22ca2c743a02115af327fd4af7037b8236fd9b811702015e3b19294f10.parquet",
+                    "sha256": "29d49c22ca2c743a02115af327fd4af7037b8236fd9b811702015e3b19294f10",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-17",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/plans-561a9038d697d437ef414a767dcb75eddb740da0d72cb80df4305aa4deceb34e.parquet",
+                    "sha256": "561a9038d697d437ef414a767dcb75eddb740da0d72cb80df4305aa4deceb34e",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/scenarios-03c94f28bb54cbdf5a74a9b818552b3689e45473b23a99297279d290ea379899.parquet",
+                    "sha256": "03c94f28bb54cbdf5a74a9b818552b3689e45473b23a99297279d290ea379899",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-18",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/plans-6e6a7bf3141aa6b1bc7fccadaafa5124f76c33e64dd0a0bae1ad1e633c0c12ba.parquet",
+                    "sha256": "6e6a7bf3141aa6b1bc7fccadaafa5124f76c33e64dd0a0bae1ad1e633c0c12ba",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/scenarios-f9624b6dd74b0386dae3f65e7945783114f78b50531ae3c0739b10fe14035566.parquet",
+                    "sha256": "f9624b6dd74b0386dae3f65e7945783114f78b50531ae3c0739b10fe14035566",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-19",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/plans-a9c1d0a1bf45cb781b6ae7856f6ad80aebdfc3e8bf99eefb48e79b02fabf5745.parquet",
+                    "sha256": "a9c1d0a1bf45cb781b6ae7856f6ad80aebdfc3e8bf99eefb48e79b02fabf5745",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/scenarios-9c762f2a8ce894284029c4e5f7f140f8fdd2c39daebfa634feb375a54e85a5da.parquet",
+                    "sha256": "9c762f2a8ce894284029c4e5f7f140f8fdd2c39daebfa634feb375a54e85a5da",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-20",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/plans-94333af803bf890aaaed46671b1cd555138e5fbc2bbea5d05ab15babee3f2aff.parquet",
+                    "sha256": "94333af803bf890aaaed46671b1cd555138e5fbc2bbea5d05ab15babee3f2aff",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/scenarios-0e95de425aa8486e33a4fe6c8669621ad039c8bc000e41d35fd3f81d41955507.parquet",
+                    "sha256": "0e95de425aa8486e33a4fe6c8669621ad039c8bc000e41d35fd3f81d41955507",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-21",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/plans-d1a9a51a4a9a064f2fd4d340534500719aa9da2ec81c0e6a80abb5cfa2759d0a.parquet",
+                    "sha256": "d1a9a51a4a9a064f2fd4d340534500719aa9da2ec81c0e6a80abb5cfa2759d0a",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/scenarios-7ef04cfb52bddfb5c842c4dcdfee23d845d9b8691d2fd287a62e215d4a148ae9.parquet",
+                    "sha256": "7ef04cfb52bddfb5c842c4dcdfee23d845d9b8691d2fd287a62e215d4a148ae9",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                }
+              ],
+              "plan_records": 32592,
+              "scenario_records": 32592,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 4.440892098500626e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 2.220446049250313e-16,
+            "commitment_mwh": 1.1102230246251565e-16,
+            "auction_revenue_eur": 1.4210854715202004e-14,
+            "imbalance_mwh": 1.1102230246251565e-16,
+            "settlement_eur": 2.5757174171303632e-14,
+            "profit_eur": 2.842170943040401e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 8.881784197001252e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 0.0
+          },
+          "violations": [],
+          "solve_statuses": {
+            "optimal": 672
+          },
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 21.697850089520216,
+          "solver_runtime_seconds": 5.128964185714722,
+          "first_action_prediction_error_mwh": 0.0
+        }
+      ]
+    },
+    {
+      "job_id": "january_one_week__farm_901__mpc_recovery",
+      "case_id": "mpc_recovery",
+      "farm_id": "901",
+      "window_id": "january_one_week",
+      "controller": "deterministic_mpc",
+      "profit_difference_eur": 113.6919478478394,
+      "imbalance_difference_mwh": 0.6676932637938329,
+      "auction_revenue_difference_eur": 99.73945571551667,
+      "wear_difference_eur": -4.503243203910699,
+      "final_inventory_difference_mwh": -0.7623885935765342,
+      "position_change_mwh": 1.0490512452103884,
+      "oracle_relative_imbalance_budget": 0,
+      "oracle_absolute_imbalance_budget_mwh": 0,
+      "comparison_configuration": {
+        "terminal_soc_percent": 50.0,
+        "terminal_soc_min_percent": null,
+        "mpc_terminal_inventory_mode": "soft_target",
+        "mpc_terminal_soc_target_percent": 50.0,
+        "mpc_current_pv_information": "realized_interval_average",
+        "auction_price_forecasts_enabled": false
+      },
+      "controllers": [
+        {
+          "controller": "track_committed_grid",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 3.6073463044106955,
+            "signed_net_imbalance_mwh": -3.6073463044106955,
+            "positive_imbalance_mwh": 0.0,
+            "negative_imbalance_mwh": 3.6073463044106955,
+            "nonzero_imbalance_intervals": 109,
+            "nonzero_imbalance_fraction": 0.16220238095238096,
+            "max_positive_deviation_mwh": 0.0,
+            "max_negative_deviation_mwh": -0.2692185364961624,
+            "maximum_cumulative_shortage_mwh": 1.1184245357472447,
+            "imbalance_cashflow_eur": -543.2833430377176,
+            "positive_deviation_cashflow_eur": 0.0,
+            "negative_deviation_cashflow_eur": -543.2833430377176,
+            "absolute_settlement_exposure_eur": 543.2833430377176,
+            "volume_weighted_absolute_price_eur_per_mwh": 150.60470972067364,
+            "positive_volume_weighted_price_eur_per_mwh": null,
+            "negative_volume_weighted_price_eur_per_mwh": 150.60470972067364,
+            "settlement_eur_per_absolute_imbalance_mwh": -150.60470972067364,
+            "charge_mwh": 7.270265669567579,
+            "discharge_mwh": 5.819973777260541,
+            "throughput_mwh": 13.090239446828122,
+            "degradation_eur": 361.7506689841738,
+            "pv_curtailment_mwh": 0.0,
+            "soc_min_percent": 7.000000000000001,
+            "soc_max_percent": 93.0,
+            "soc_mean_percent": 21.67829272248133,
+            "soc_final_percent": 88.1194296788267,
+            "final_energy_mwh": 1.7623885935765342,
+            "soc_boundary_events": 255,
+            "power_boundary_events": 20,
+            "physical_safety_overrides": 9,
+            "auction_revenue_eur": 12840.506599606633,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 11935.472587584742,
+            "expected_absolute_imbalance_first_actions_mwh": null,
+            "expected_first_action_intervals": 0,
+            "expected_cumulative_shortfall_first_actions_mwh": null,
+            "realized_minus_expected_absolute_imbalance_mwh": null,
+            "mpc_solves": 0,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": null,
+            "solver_runtime_median_seconds": null,
+            "solver_runtime_p95_seconds": null,
+            "solver_runtime_max_seconds": null,
+            "solver_runtime_total_seconds": 0.0,
+            "controller": "track_committed_grid",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [],
+              "plan_records": 0,
+              "scenario_records": 0,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 4.440892098500626e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 2.220446049250313e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 1.4210854715202004e-14,
+            "imbalance_mwh": 1.43982048506075e-16,
+            "settlement_eur": 2.1316282072803006e-14,
+            "profit_eur": 2.842170943040401e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 4.440892098500626e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 1.8189894035458565e-12
+          },
+          "violations": [],
+          "solve_statuses": {},
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 0.0,
+          "solver_runtime_seconds": 0.0,
+          "first_action_prediction_error_mwh": null
+        },
+        {
+          "controller": "deterministic_mpc",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 4.275039568204528,
+            "signed_net_imbalance_mwh": -3.5631640599116214,
+            "positive_imbalance_mwh": 0.35593775414645307,
+            "negative_imbalance_mwh": 3.9191018140580742,
+            "nonzero_imbalance_intervals": 157,
+            "nonzero_imbalance_fraction": 0.23363095238095238,
+            "max_positive_deviation_mwh": 0.1583999979496003,
+            "max_negative_deviation_mwh": -0.2585558006539941,
+            "maximum_cumulative_shortage_mwh": 1.1184245357472444,
+            "imbalance_cashflow_eur": -533.8340941093052,
+            "positive_deviation_cashflow_eur": 61.203718785737394,
+            "negative_deviation_cashflow_eur": -595.0378128950426,
+            "absolute_settlement_exposure_eur": 656.24153168078,
+            "volume_weighted_absolute_price_eur_per_mwh": 153.5053702336595,
+            "positive_volume_weighted_price_eur_per_mwh": 171.95062359289568,
+            "negative_volume_weighted_price_eur_per_mwh": 151.83014913279445,
+            "settlement_eur_per_absolute_imbalance_mwh": -124.87231652302809,
+            "charge_mwh": 6.8038347173126,
+            "discharge_mwh": 6.1234512455813395,
+            "throughput_mwh": 12.927285962893938,
+            "degradation_eur": 357.2474257802631,
+            "pv_curtailment_mwh": 0.11268322148497353,
+            "soc_min_percent": 7.000000000000001,
+            "soc_max_percent": 93.0,
+            "soc_mean_percent": 22.188898058197758,
+            "soc_final_percent": 50.0,
+            "final_energy_mwh": 1.0,
+            "soc_boundary_events": 264,
+            "power_boundary_events": 21,
+            "physical_safety_overrides": 0,
+            "auction_revenue_eur": 12940.24605532215,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 12049.164535432581,
+            "expected_absolute_imbalance_first_actions_mwh": 4.275039568204528,
+            "expected_first_action_intervals": 672,
+            "expected_cumulative_shortfall_first_actions_mwh": 3.9191018140580742,
+            "realized_minus_expected_absolute_imbalance_mwh": 0.0,
+            "mpc_solves": 672,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": 0.007309072074436006,
+            "solver_runtime_median_seconds": 0.0064239501953125,
+            "solver_runtime_p95_seconds": 0.017243123054504383,
+            "solver_runtime_max_seconds": 0.022832870483398438,
+            "solver_runtime_total_seconds": 4.911696434020996,
+            "controller": "deterministic_mpc",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [
+                {
+                  "delivery_day": "2026-01-15",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/plans-3b77df56035c1f9406e48306c68d792bf109522538dba100af55b34ee573db8c.parquet",
+                    "sha256": "3b77df56035c1f9406e48306c68d792bf109522538dba100af55b34ee573db8c",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/scenarios-779d978606283a8b591e422714f209ac972449c740be56001f8c690efd9be9ee.parquet",
+                    "sha256": "779d978606283a8b591e422714f209ac972449c740be56001f8c690efd9be9ee",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-16",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/plans-8e7f1ef9ecccaf0e5bfc6c911ca337d40e5ae041839fa7a946d2b7789bbfc244.parquet",
+                    "sha256": "8e7f1ef9ecccaf0e5bfc6c911ca337d40e5ae041839fa7a946d2b7789bbfc244",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/scenarios-29d49c22ca2c743a02115af327fd4af7037b8236fd9b811702015e3b19294f10.parquet",
+                    "sha256": "29d49c22ca2c743a02115af327fd4af7037b8236fd9b811702015e3b19294f10",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-17",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/plans-561a9038d697d437ef414a767dcb75eddb740da0d72cb80df4305aa4deceb34e.parquet",
+                    "sha256": "561a9038d697d437ef414a767dcb75eddb740da0d72cb80df4305aa4deceb34e",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/scenarios-03c94f28bb54cbdf5a74a9b818552b3689e45473b23a99297279d290ea379899.parquet",
+                    "sha256": "03c94f28bb54cbdf5a74a9b818552b3689e45473b23a99297279d290ea379899",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-18",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/plans-6e6a7bf3141aa6b1bc7fccadaafa5124f76c33e64dd0a0bae1ad1e633c0c12ba.parquet",
+                    "sha256": "6e6a7bf3141aa6b1bc7fccadaafa5124f76c33e64dd0a0bae1ad1e633c0c12ba",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/scenarios-f9624b6dd74b0386dae3f65e7945783114f78b50531ae3c0739b10fe14035566.parquet",
+                    "sha256": "f9624b6dd74b0386dae3f65e7945783114f78b50531ae3c0739b10fe14035566",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-19",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/plans-a9c1d0a1bf45cb781b6ae7856f6ad80aebdfc3e8bf99eefb48e79b02fabf5745.parquet",
+                    "sha256": "a9c1d0a1bf45cb781b6ae7856f6ad80aebdfc3e8bf99eefb48e79b02fabf5745",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/scenarios-9c762f2a8ce894284029c4e5f7f140f8fdd2c39daebfa634feb375a54e85a5da.parquet",
+                    "sha256": "9c762f2a8ce894284029c4e5f7f140f8fdd2c39daebfa634feb375a54e85a5da",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-20",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/plans-94333af803bf890aaaed46671b1cd555138e5fbc2bbea5d05ab15babee3f2aff.parquet",
+                    "sha256": "94333af803bf890aaaed46671b1cd555138e5fbc2bbea5d05ab15babee3f2aff",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/scenarios-0e95de425aa8486e33a4fe6c8669621ad039c8bc000e41d35fd3f81d41955507.parquet",
+                    "sha256": "0e95de425aa8486e33a4fe6c8669621ad039c8bc000e41d35fd3f81d41955507",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-21",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/plans-e64a87c6e91fbd3f57f811bf7ff2dfc8cf2266d63306bf574365b7b66b0be22d.parquet",
+                    "sha256": "e64a87c6e91fbd3f57f811bf7ff2dfc8cf2266d63306bf574365b7b66b0be22d",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/scenarios-1ed3e0f948780f3a409662cdd4699bf07ee8a5dc0025f750e704a34676e6ae4b.parquet",
+                    "sha256": "1ed3e0f948780f3a409662cdd4699bf07ee8a5dc0025f750e704a34676e6ae4b",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                }
+              ],
+              "plan_records": 32592,
+              "scenario_records": 32592,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 4.440892098500626e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 2.220446049250313e-16,
+            "commitment_mwh": 1.1102230246251565e-16,
+            "auction_revenue_eur": 1.4210854715202004e-14,
+            "imbalance_mwh": 1.1102230246251565e-16,
+            "settlement_eur": 2.5757174171303632e-14,
+            "profit_eur": 2.842170943040401e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 8.881784197001252e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 0.0
+          },
+          "violations": [],
+          "solve_statuses": {
+            "optimal": 672
+          },
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 19.95586903207004,
+          "solver_runtime_seconds": 4.911696434020996,
+          "first_action_prediction_error_mwh": 0.0
+        }
+      ]
+    },
+    {
+      "job_id": "january_one_week__farm_910__mpc_original",
+      "case_id": "mpc_original",
+      "farm_id": "910",
+      "window_id": "january_one_week",
+      "controller": "deterministic_mpc",
+      "profit_difference_eur": -175.2537181526568,
+      "imbalance_difference_mwh": 2.7205492191212866,
+      "auction_revenue_difference_eur": 255.76009629671898,
+      "wear_difference_eur": -55.77695913710022,
+      "final_inventory_difference_mwh": 1.2618664466464047,
+      "position_change_mwh": 1.8269700470754702,
+      "oracle_relative_imbalance_budget": 0,
+      "oracle_absolute_imbalance_budget_mwh": 0,
+      "comparison_configuration": {
+        "terminal_soc_percent": 50.0,
+        "terminal_soc_min_percent": null,
+        "mpc_terminal_inventory_mode": "soft_target",
+        "mpc_terminal_soc_target_percent": 50.0,
+        "mpc_current_pv_information": "realized_interval_average",
+        "auction_price_forecasts_enabled": false
+      },
+      "controllers": [
+        {
+          "controller": "track_committed_grid",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 5.859900259962306,
+            "signed_net_imbalance_mwh": -5.859900259962305,
+            "positive_imbalance_mwh": 2.220446049250313e-16,
+            "negative_imbalance_mwh": 5.859900259962306,
+            "nonzero_imbalance_intervals": 108,
+            "nonzero_imbalance_fraction": 0.16071428571428573,
+            "max_positive_deviation_mwh": 2.220446049250313e-16,
+            "max_negative_deviation_mwh": -0.5964234061539173,
+            "maximum_cumulative_shortage_mwh": 1.9142013790402557,
+            "imbalance_cashflow_eur": -907.0266255043014,
+            "positive_deviation_cashflow_eur": 3.619748945027368e-14,
+            "negative_deviation_cashflow_eur": -907.0266255043016,
+            "absolute_settlement_exposure_eur": 907.0266255043016,
+            "volume_weighted_absolute_price_eur_per_mwh": 154.78533511936195,
+            "positive_volume_weighted_price_eur_per_mwh": 163.019,
+            "negative_volume_weighted_price_eur_per_mwh": 154.78533511936195,
+            "settlement_eur_per_absolute_imbalance_mwh": -154.7853351193619,
+            "charge_mwh": 14.638992222178812,
+            "discharge_mwh": 14.37220462226473,
+            "throughput_mwh": 29.011196844443543,
+            "degradation_eur": 801.7286398112444,
+            "pv_curtailment_mwh": 0.0,
+            "soc_min_percent": 7.0,
+            "soc_max_percent": 92.94140516254734,
+            "soc_mean_percent": 20.986910798019657,
+            "soc_final_percent": 24.762671067071878,
+            "final_energy_mwh": 1.238133553353594,
+            "soc_boundary_events": 293,
+            "power_boundary_events": 25,
+            "physical_safety_overrides": 6,
+            "auction_revenue_eur": 18607.98741513004,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 16899.232149814496,
+            "expected_absolute_imbalance_first_actions_mwh": null,
+            "expected_first_action_intervals": 0,
+            "expected_cumulative_shortfall_first_actions_mwh": null,
+            "realized_minus_expected_absolute_imbalance_mwh": null,
+            "mpc_solves": 0,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": null,
+            "solver_runtime_median_seconds": null,
+            "solver_runtime_p95_seconds": null,
+            "solver_runtime_max_seconds": null,
+            "solver_runtime_total_seconds": 0.0,
+            "controller": "track_committed_grid",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [],
+              "plan_records": 0,
+              "scenario_records": 0,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 8.881784197001252e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 4.440892098500626e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 2.842170943040401e-14,
+            "imbalance_mwh": 1.1102230246251565e-16,
+            "settlement_eur": 1.9984014443252818e-14,
+            "profit_eur": 2.842170943040401e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 5.329070518200751e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 0.0
+          },
+          "violations": [],
+          "solve_statuses": {},
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 0.0,
+          "solver_runtime_seconds": 0.0,
+          "first_action_prediction_error_mwh": null
+        },
+        {
+          "controller": "deterministic_mpc",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 8.580449479083592,
+            "signed_net_imbalance_mwh": -8.580449479083589,
+            "positive_imbalance_mwh": 1.7416623698807143e-15,
+            "negative_imbalance_mwh": 8.58044947908359,
+            "nonzero_imbalance_intervals": 164,
+            "nonzero_imbalance_fraction": 0.24404761904761904,
+            "max_positive_deviation_mwh": 1.4432899320127035e-15,
+            "max_negative_deviation_mwh": -0.645047447681427,
+            "maximum_cumulative_shortage_mwh": 1.8629917162167513,
+            "imbalance_cashflow_eur": -1393.8173990907815,
+            "positive_deviation_cashflow_eur": 1.6323684765007231e-13,
+            "negative_deviation_cashflow_eur": -1393.8173990907817,
+            "absolute_settlement_exposure_eur": 1393.8173990907817,
+            "volume_weighted_absolute_price_eur_per_mwh": 162.44107053930745,
+            "positive_volume_weighted_price_eur_per_mwh": 93.72473705179284,
+            "negative_volume_weighted_price_eur_per_mwh": 162.44107053930747,
+            "settlement_eur_per_absolute_imbalance_mwh": -162.44107053930742,
+            "charge_mwh": 14.20676980757357,
+            "discharge_mwh": 12.786092826816217,
+            "throughput_mwh": 26.99286263438979,
+            "degradation_eur": 745.9516806741442,
+            "pv_curtailment_mwh": 0.0,
+            "soc_min_percent": 7.0,
+            "soc_max_percent": 92.94140516254735,
+            "soc_mean_percent": 24.927297876271574,
+            "soc_final_percent": 49.99999999999997,
+            "final_energy_mwh": 2.4999999999999987,
+            "soc_boundary_events": 281,
+            "power_boundary_events": 23,
+            "physical_safety_overrides": 0,
+            "auction_revenue_eur": 18863.747511426758,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 16723.97843166184,
+            "expected_absolute_imbalance_first_actions_mwh": 8.580449479083592,
+            "expected_first_action_intervals": 672,
+            "expected_cumulative_shortfall_first_actions_mwh": 8.58044947908359,
+            "realized_minus_expected_absolute_imbalance_mwh": 0.0,
+            "mpc_solves": 672,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": 0.005827023159889947,
+            "solver_runtime_median_seconds": 0.004784584045410156,
+            "solver_runtime_p95_seconds": 0.014776217937469473,
+            "solver_runtime_max_seconds": 0.01947808265686035,
+            "solver_runtime_total_seconds": 3.915759563446045,
+            "controller": "deterministic_mpc",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [
+                {
+                  "delivery_day": "2026-01-15",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/plans-07d9ef077fa9af811a5acf3ddb846847122c497c938355245930b05b056acc1c.parquet",
+                    "sha256": "07d9ef077fa9af811a5acf3ddb846847122c497c938355245930b05b056acc1c",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/scenarios-05897fe8bb9aebac6cef8b3a5a068ebeee18994469eb6552c46c2a6cabdb342e.parquet",
+                    "sha256": "05897fe8bb9aebac6cef8b3a5a068ebeee18994469eb6552c46c2a6cabdb342e",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-16",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/plans-db5170e7f217b769f39f5dea51913a73fa43bc7763f8adc9a3f93473d192e564.parquet",
+                    "sha256": "db5170e7f217b769f39f5dea51913a73fa43bc7763f8adc9a3f93473d192e564",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/scenarios-13ed5652044aef23b277a5c8a05258f47d011e2bbf2220e04c14b9f6c64aff72.parquet",
+                    "sha256": "13ed5652044aef23b277a5c8a05258f47d011e2bbf2220e04c14b9f6c64aff72",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-17",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/plans-a5339db7047469ea6d84a6937e3b1ac9f403a94fd9b7404d71a72c8c1236c744.parquet",
+                    "sha256": "a5339db7047469ea6d84a6937e3b1ac9f403a94fd9b7404d71a72c8c1236c744",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/scenarios-095640560ec068f64431a2aeb58d690f787068f949a207daaece13f80d0fcd87.parquet",
+                    "sha256": "095640560ec068f64431a2aeb58d690f787068f949a207daaece13f80d0fcd87",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-18",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/plans-a2a53addd068541513ff2b3332da790cac2ca725e8642dc1f4e7732c53186466.parquet",
+                    "sha256": "a2a53addd068541513ff2b3332da790cac2ca725e8642dc1f4e7732c53186466",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/scenarios-408794042dd98cc93969d0ff257261a16126bd38101c90ba0f90b20a1f7b7c14.parquet",
+                    "sha256": "408794042dd98cc93969d0ff257261a16126bd38101c90ba0f90b20a1f7b7c14",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-19",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/plans-f82eca6dfac49c22a018e6dcf284f3f976806464b91f11f7b05c0a7e4a6ed50b.parquet",
+                    "sha256": "f82eca6dfac49c22a018e6dcf284f3f976806464b91f11f7b05c0a7e4a6ed50b",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/scenarios-9adc919abcbf0efd28ff3496b549588b98657b709777344fda4908c934919ab8.parquet",
+                    "sha256": "9adc919abcbf0efd28ff3496b549588b98657b709777344fda4908c934919ab8",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-20",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/plans-de44ea45acb2f9555cd9af8bb063bef239f4af91c38f146f29a21d008229c436.parquet",
+                    "sha256": "de44ea45acb2f9555cd9af8bb063bef239f4af91c38f146f29a21d008229c436",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/scenarios-cab14b4a308257ef318e0caf909112e0d14c54372349288f928d5fd7c114306b.parquet",
+                    "sha256": "cab14b4a308257ef318e0caf909112e0d14c54372349288f928d5fd7c114306b",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-21",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/plans-38508400e6a201a88db27b75a9ee8f88a3cadfaac68df9d6a477d630d5c12c1b.parquet",
+                    "sha256": "38508400e6a201a88db27b75a9ee8f88a3cadfaac68df9d6a477d630d5c12c1b",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/scenarios-03a178d7f2710a4e7bed0b774e8392dc88168d3269dbc1767c193d470173d64e.parquet",
+                    "sha256": "03a178d7f2710a4e7bed0b774e8392dc88168d3269dbc1767c193d470173d64e",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                }
+              ],
+              "plan_records": 32592,
+              "scenario_records": 32592,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 4.440892098500626e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 4.440892098500626e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 2.842170943040401e-14,
+            "imbalance_mwh": 1.1102230246251565e-16,
+            "settlement_eur": 2.220446049250313e-14,
+            "profit_eur": 2.842170943040401e-14,
+            "summary_profit_eur": 3.637978807091713e-12,
+            "summary_absolute_imbalance_mwh": 5.329070518200751e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 0.0
+          },
+          "violations": [],
+          "solve_statuses": {
+            "optimal": 672
+          },
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 15.74405068717897,
+          "solver_runtime_seconds": 3.915759563446045,
+          "first_action_prediction_error_mwh": 0.0
+        }
+      ]
+    },
+    {
+      "job_id": "january_one_week__farm_910__mpc_recovery",
+      "case_id": "mpc_recovery",
+      "farm_id": "910",
+      "window_id": "january_one_week",
+      "controller": "deterministic_mpc",
+      "profit_difference_eur": -175.2537181526568,
+      "imbalance_difference_mwh": 2.7205492191212866,
+      "auction_revenue_difference_eur": 255.76009629671898,
+      "wear_difference_eur": -55.77695913710022,
+      "final_inventory_difference_mwh": 1.2618664466464047,
+      "position_change_mwh": 1.8269700470754702,
+      "oracle_relative_imbalance_budget": 0,
+      "oracle_absolute_imbalance_budget_mwh": 0,
+      "comparison_configuration": {
+        "terminal_soc_percent": 50.0,
+        "terminal_soc_min_percent": null,
+        "mpc_terminal_inventory_mode": "soft_target",
+        "mpc_terminal_soc_target_percent": 50.0,
+        "mpc_current_pv_information": "realized_interval_average",
+        "auction_price_forecasts_enabled": false
+      },
+      "controllers": [
+        {
+          "controller": "track_committed_grid",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 5.859900259962306,
+            "signed_net_imbalance_mwh": -5.859900259962305,
+            "positive_imbalance_mwh": 2.220446049250313e-16,
+            "negative_imbalance_mwh": 5.859900259962306,
+            "nonzero_imbalance_intervals": 108,
+            "nonzero_imbalance_fraction": 0.16071428571428573,
+            "max_positive_deviation_mwh": 2.220446049250313e-16,
+            "max_negative_deviation_mwh": -0.5964234061539173,
+            "maximum_cumulative_shortage_mwh": 1.9142013790402557,
+            "imbalance_cashflow_eur": -907.0266255043014,
+            "positive_deviation_cashflow_eur": 3.619748945027368e-14,
+            "negative_deviation_cashflow_eur": -907.0266255043016,
+            "absolute_settlement_exposure_eur": 907.0266255043016,
+            "volume_weighted_absolute_price_eur_per_mwh": 154.78533511936195,
+            "positive_volume_weighted_price_eur_per_mwh": 163.019,
+            "negative_volume_weighted_price_eur_per_mwh": 154.78533511936195,
+            "settlement_eur_per_absolute_imbalance_mwh": -154.7853351193619,
+            "charge_mwh": 14.638992222178812,
+            "discharge_mwh": 14.37220462226473,
+            "throughput_mwh": 29.011196844443543,
+            "degradation_eur": 801.7286398112444,
+            "pv_curtailment_mwh": 0.0,
+            "soc_min_percent": 7.0,
+            "soc_max_percent": 92.94140516254734,
+            "soc_mean_percent": 20.986910798019657,
+            "soc_final_percent": 24.762671067071878,
+            "final_energy_mwh": 1.238133553353594,
+            "soc_boundary_events": 293,
+            "power_boundary_events": 25,
+            "physical_safety_overrides": 6,
+            "auction_revenue_eur": 18607.98741513004,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 16899.232149814496,
+            "expected_absolute_imbalance_first_actions_mwh": null,
+            "expected_first_action_intervals": 0,
+            "expected_cumulative_shortfall_first_actions_mwh": null,
+            "realized_minus_expected_absolute_imbalance_mwh": null,
+            "mpc_solves": 0,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": null,
+            "solver_runtime_median_seconds": null,
+            "solver_runtime_p95_seconds": null,
+            "solver_runtime_max_seconds": null,
+            "solver_runtime_total_seconds": 0.0,
+            "controller": "track_committed_grid",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [],
+              "plan_records": 0,
+              "scenario_records": 0,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 8.881784197001252e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 4.440892098500626e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 2.842170943040401e-14,
+            "imbalance_mwh": 1.1102230246251565e-16,
+            "settlement_eur": 1.9984014443252818e-14,
+            "profit_eur": 2.842170943040401e-14,
+            "summary_profit_eur": 0.0,
+            "summary_absolute_imbalance_mwh": 5.329070518200751e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 0.0
+          },
+          "violations": [],
+          "solve_statuses": {},
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 0.0,
+          "solver_runtime_seconds": 0.0,
+          "first_action_prediction_error_mwh": null
+        },
+        {
+          "controller": "deterministic_mpc",
+          "summary": {
+            "interval_count": 672,
+            "absolute_imbalance_mwh": 8.580449479083592,
+            "signed_net_imbalance_mwh": -8.580449479083589,
+            "positive_imbalance_mwh": 1.7416623698807143e-15,
+            "negative_imbalance_mwh": 8.58044947908359,
+            "nonzero_imbalance_intervals": 164,
+            "nonzero_imbalance_fraction": 0.24404761904761904,
+            "max_positive_deviation_mwh": 1.4432899320127035e-15,
+            "max_negative_deviation_mwh": -0.645047447681427,
+            "maximum_cumulative_shortage_mwh": 1.8629917162167513,
+            "imbalance_cashflow_eur": -1393.8173990907815,
+            "positive_deviation_cashflow_eur": 1.6323684765007231e-13,
+            "negative_deviation_cashflow_eur": -1393.8173990907817,
+            "absolute_settlement_exposure_eur": 1393.8173990907817,
+            "volume_weighted_absolute_price_eur_per_mwh": 162.44107053930745,
+            "positive_volume_weighted_price_eur_per_mwh": 93.72473705179284,
+            "negative_volume_weighted_price_eur_per_mwh": 162.44107053930747,
+            "settlement_eur_per_absolute_imbalance_mwh": -162.44107053930742,
+            "charge_mwh": 14.20676980757357,
+            "discharge_mwh": 12.786092826816217,
+            "throughput_mwh": 26.99286263438979,
+            "degradation_eur": 745.9516806741442,
+            "pv_curtailment_mwh": 0.0,
+            "soc_min_percent": 7.0,
+            "soc_max_percent": 92.94140516254735,
+            "soc_mean_percent": 24.927297876271574,
+            "soc_final_percent": 49.99999999999997,
+            "final_energy_mwh": 2.4999999999999987,
+            "soc_boundary_events": 281,
+            "power_boundary_events": 23,
+            "physical_safety_overrides": 0,
+            "auction_revenue_eur": 18863.747511426758,
+            "import_cost_eur": 0.0,
+            "trading_fees_eur": 0.0,
+            "realized_operating_profit_eur": 16723.97843166184,
+            "expected_absolute_imbalance_first_actions_mwh": 8.580449479083592,
+            "expected_first_action_intervals": 672,
+            "expected_cumulative_shortfall_first_actions_mwh": 8.58044947908359,
+            "realized_minus_expected_absolute_imbalance_mwh": 0.0,
+            "mpc_solves": 672,
+            "mpc_fallbacks": 0,
+            "mpc_timeouts": 0,
+            "mpc_infeasibilities": 0,
+            "price_oracle_enabled": false,
+            "auction_price_oracle_enabled": true,
+            "settlement_forecast_enabled": false,
+            "solver_runtime_mean_seconds": 0.005677838765439533,
+            "solver_runtime_median_seconds": 0.004832029342651367,
+            "solver_runtime_p95_seconds": 0.013704586029052727,
+            "solver_runtime_max_seconds": 0.017394065856933594,
+            "solver_runtime_total_seconds": 3.815507650375366,
+            "controller": "deterministic_mpc",
+            "inventory_adjustment_in_realized_profit": false,
+            "mpc_current_pv_information": "realized_interval_average",
+            "current_interval_pv_access_is_retrospective": true,
+            "tracking_information_advantage": false,
+            "fallback_information_advantage": false,
+            "horizon_history": {
+              "schema_version": "mpc-horizon-history-v1",
+              "storage": "daily_parquet",
+              "partitions": [
+                {
+                  "delivery_day": "2026-01-15",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/plans-07d9ef077fa9af811a5acf3ddb846847122c497c938355245930b05b056acc1c.parquet",
+                    "sha256": "07d9ef077fa9af811a5acf3ddb846847122c497c938355245930b05b056acc1c",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-15/scenarios-05897fe8bb9aebac6cef8b3a5a068ebeee18994469eb6552c46c2a6cabdb342e.parquet",
+                    "sha256": "05897fe8bb9aebac6cef8b3a5a068ebeee18994469eb6552c46c2a6cabdb342e",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-16",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/plans-db5170e7f217b769f39f5dea51913a73fa43bc7763f8adc9a3f93473d192e564.parquet",
+                    "sha256": "db5170e7f217b769f39f5dea51913a73fa43bc7763f8adc9a3f93473d192e564",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-16/scenarios-13ed5652044aef23b277a5c8a05258f47d011e2bbf2220e04c14b9f6c64aff72.parquet",
+                    "sha256": "13ed5652044aef23b277a5c8a05258f47d011e2bbf2220e04c14b9f6c64aff72",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-17",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/plans-a5339db7047469ea6d84a6937e3b1ac9f403a94fd9b7404d71a72c8c1236c744.parquet",
+                    "sha256": "a5339db7047469ea6d84a6937e3b1ac9f403a94fd9b7404d71a72c8c1236c744",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-17/scenarios-095640560ec068f64431a2aeb58d690f787068f949a207daaece13f80d0fcd87.parquet",
+                    "sha256": "095640560ec068f64431a2aeb58d690f787068f949a207daaece13f80d0fcd87",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-18",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/plans-a2a53addd068541513ff2b3332da790cac2ca725e8642dc1f4e7732c53186466.parquet",
+                    "sha256": "a2a53addd068541513ff2b3332da790cac2ca725e8642dc1f4e7732c53186466",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-18/scenarios-408794042dd98cc93969d0ff257261a16126bd38101c90ba0f90b20a1f7b7c14.parquet",
+                    "sha256": "408794042dd98cc93969d0ff257261a16126bd38101c90ba0f90b20a1f7b7c14",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-19",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/plans-f82eca6dfac49c22a018e6dcf284f3f976806464b91f11f7b05c0a7e4a6ed50b.parquet",
+                    "sha256": "f82eca6dfac49c22a018e6dcf284f3f976806464b91f11f7b05c0a7e4a6ed50b",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-19/scenarios-9adc919abcbf0efd28ff3496b549588b98657b709777344fda4908c934919ab8.parquet",
+                    "sha256": "9adc919abcbf0efd28ff3496b549588b98657b709777344fda4908c934919ab8",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-20",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/plans-de44ea45acb2f9555cd9af8bb063bef239f4af91c38f146f29a21d008229c436.parquet",
+                    "sha256": "de44ea45acb2f9555cd9af8bb063bef239f4af91c38f146f29a21d008229c436",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-20/scenarios-cab14b4a308257ef318e0caf909112e0d14c54372349288f928d5fd7c114306b.parquet",
+                    "sha256": "cab14b4a308257ef318e0caf909112e0d14c54372349288f928d5fd7c114306b",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                },
+                {
+                  "delivery_day": "2026-01-21",
+                  "plans": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/plans-38508400e6a201a88db27b75a9ee8f88a3cadfaac68df9d6a477d630d5c12c1b.parquet",
+                    "sha256": "38508400e6a201a88db27b75a9ee8f88a3cadfaac68df9d6a477d630d5c12c1b",
+                    "records": 4656,
+                    "json_columns": [
+                      "planning_commitments",
+                      "scenario_design"
+                    ]
+                  },
+                  "scenarios": {
+                    "path": "diagnostics/mpc_horizon/2026-01-21/scenarios-03a178d7f2710a4e7bed0b774e8392dc88168d3269dbc1767c193d470173d64e.parquet",
+                    "sha256": "03a178d7f2710a4e7bed0b774e8392dc88168d3269dbc1767c193d470173d64e",
+                    "records": 4656,
+                    "json_columns": []
+                  }
+                }
+              ],
+              "plan_records": 32592,
+              "scenario_records": 32592,
+              "reader": "bess_pv_trading.reporting.mpc_history.iter_mpc_history",
+              "legacy_horizon_csv_json_written": false
+            }
+          },
+          "interval_count": 672,
+          "ledger_trades": 2352,
+          "price_publications": 28,
+          "residuals": {
+            "quarter_hour_duration": 0.0,
+            "energy_transition_mwh": 4.440892098500626e-16,
+            "energy_continuity_mwh": 0.0,
+            "grid_balance_mw": 4.440892098500626e-16,
+            "commitment_mwh": 9.8879238130678e-17,
+            "auction_revenue_eur": 2.842170943040401e-14,
+            "imbalance_mwh": 1.1102230246251565e-16,
+            "settlement_eur": 2.220446049250313e-14,
+            "profit_eur": 2.842170943040401e-14,
+            "summary_profit_eur": 3.637978807091713e-12,
+            "summary_absolute_imbalance_mwh": 5.329070518200751e-15,
+            "soc_lower_mwh": 0.0,
+            "soc_upper_mwh": 0.0,
+            "power_lower_mw": 0.0,
+            "power_upper_mw": 0.0,
+            "simultaneous_charge_discharge_mw": 0.0,
+            "poi_import_mw": 0.0,
+            "poi_export_mw": 0.0,
+            "curtailment_lower_mw": 0.0,
+            "curtailment_upper_mw": 0.0,
+            "publication_cash_eur": 0.0
+          },
+          "violations": [],
+          "solve_statuses": {
+            "optimal": 672
+          },
+          "oracle_refinement_rejections": [],
+          "oracle_nested_provenance_conflicts": 0,
+          "oracle_cap_violations": 0,
+          "oracle_cap_details": [],
+          "oracle_stage2_solves": 0,
+          "conditional_horizon_audit": {
+            "status": "no_conditional_scenario_controls_in_history",
+            "horizons_checked": 0,
+            "maximum_residuals": {},
+            "violations": [],
+            "input_formats": "checksummed daily Parquet partitions or bounded legacy CSV batches"
+          },
+          "solver_wall_seconds": 15.029827329330146,
+          "solver_runtime_seconds": 3.815507650375366,
+          "first_action_prediction_error_mwh": 0.0
+        }
+      ]
+    }
+  ],
+  "violations": [],
+  "tracking_baseline_comparisons": [
+    {
+      "farm_id": "1",
+      "window_id": "january_one_week",
+      "case_id": "mpc_recovery",
+      "reference_case": "mpc_original",
+      "max_interval_differences": {
+        "net_profit_eur": 0.0,
+        "net_position_mwh": 0.0,
+        "energy_end_mwh": 0.0
+      }
+    },
+    {
+      "farm_id": "345",
+      "window_id": "january_one_week",
+      "case_id": "mpc_original",
+      "reference_case": "mpc_recovery",
+      "max_interval_differences": {
+        "net_profit_eur": 0.0,
+        "net_position_mwh": 0.0,
+        "energy_end_mwh": 0.0
+      }
+    },
+    {
+      "farm_id": "901",
+      "window_id": "january_one_week",
+      "case_id": "mpc_recovery",
+      "reference_case": "mpc_original",
+      "max_interval_differences": {
+        "net_profit_eur": 0.0,
+        "net_position_mwh": 0.0,
+        "energy_end_mwh": 0.0
+      }
+    },
+    {
+      "farm_id": "910",
+      "window_id": "january_one_week",
+      "case_id": "mpc_recovery",
+      "reference_case": "mpc_original",
+      "max_interval_differences": {
+        "net_profit_eur": 0.0,
+        "net_position_mwh": 0.0,
+        "energy_end_mwh": 0.0
+      }
+    }
+  ]
+}
