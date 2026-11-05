@@ -52,3 +52,30 @@ model; it does not prove a universal benefit. All 42 early fits and 13 later
 fits completed without recorded failures. Historical publication clocks and
 missing-day limitations remain; details are in the price-only latest-spread
 configs and manifests.
+
+## Joint training-window and anchor follow-up
+
+A subsequent price-only early search compared 180-day, 365-day and full-history
+ridge, Lasso and Elastic Net candidates for both spread anchors. Early
+February–April MAE selected a 180-day `elastic_05` model for IDA2 and a
+full-history `ridge_20` model for IDA3. Weekly refits on the available
+September–October products gave the following results:
+
+| Auction | Anchor | Training window | Products | MAE EUR/MWh | WAPE |
+| --- | --- | --- | ---: | ---: | ---: |
+| IDA2 | IDA1 | 180 days | 4,704 | 9.972 | 4.656% |
+| IDA2 | IDA1 | Full history | 4,704 | 9.927 | 4.635% |
+| IDA2 | DA | 180 days | 4,704 | 11.696 | 5.460% |
+| IDA2 | DA | Full history | 4,704 | 11.559 | 5.396% |
+| IDA3 | IDA2 | Full history | 2,400 | 14.964 | 6.997% |
+| IDA3 | DA | Full history | 2,400 | 14.964 | 6.996% |
+
+The IDA2 180-day and full-history latest-anchor predictions have identical
+product timestamps and actual values. A 5,000-resample independent-day
+bootstrap with seed 173 gives a 95% interval of -0.031 to +0.124 EUR/MWh for
+the full-history MAE improvement. It omits temporal dependence and selection
+uncertainty. All early and later fits completed without recorded failures; the
+later fits had no recorded convergence warnings. Both periods have been
+inspected, and publication-clock and missing-day caveats remain. Configurations
+are `price_model_search_ida_latest_spread_windows.yaml` and
+`price_model_rolling_ida_latest_spread_windows.yaml`.
