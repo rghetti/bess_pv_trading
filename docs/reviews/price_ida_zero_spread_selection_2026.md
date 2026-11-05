@@ -45,3 +45,16 @@ clocks are partly assumed, and the missing-day coverage is documented in
 `price_price_only_sep_oct_2026.md`. The search and rolling configs are
 `price_model_search_ida1_zero_shape_windows.yaml` and
 `price_model_rolling_ida1_zero_shape_windows.yaml`.
+
+## Earlier IDA1 rolling benchmark
+
+For the existing May–August IDA1 rolling evaluation, the early-selected
+`spread_cleared_combined/elastic_01` model covers 11,136 products across 116
+complete days. On those exact products it scored 6.638 EUR/MWh MAE and 4.540%
+WAPE; the same-product cleared DA price scored 6.685 EUR/MWh and 4.573%.
+The DA feature values were verified against catalog prices for every product.
+A paired 5,000-resample independent-day bootstrap with seed 173 gives a 95%
+interval of -0.090 to +0.184 EUR/MWh for the model's MAE gain over that
+baseline. The interval omits serial dependence and selection uncertainty, and
+the publication clock is partly assumed. This period, like the later period,
+does not show a clear model gain over the cleared-price reference.
