@@ -54,3 +54,25 @@ the selected IDA2 tree performs worse on this sample. This previously examined
 period is exploratory and its availability assumptions remain as above.
 Predictions and refits are in
 `outputs/energy_price_forecasts/nord_ida_2026_spread_price_weather_sep_oct_rolling_v1/`.
+
+## May–August rolling replay
+
+The same early-selected candidates and latest-cleared references were refitted
+weekly with a one-day gap from 3 May to 31 August 2026. All 12 fits completed
+without recorded failures or convergence warnings. Comparisons use identical
+products within each auction; missing days are excluded.
+
+| Auction | Days | Products | Weather model MAE EUR/MWh | Model WAPE | Latest-cleared MAE EUR/MWh | Baseline WAPE |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| IDA1 | 115 | 11,040 | 6.674 | 4.554% | 6.677 | 4.557% |
+| IDA2 | 109 | 10,464 | 7.922 | 5.420% | 7.859 | 5.376% |
+| IDA3 | 113 | 5,424 | 13.183 | 9.081% | 13.053 | 8.992% |
+
+The models are respectively Elastic Net, Extra Trees and ridge. Their paired
+MAE gains over the baseline are 0.004, -0.063 and -0.130 EUR/MWh. The 95%
+percentile intervals from 5,000 independent-day bootstrap resamples with seed
+173 are -0.135 to 0.138, -0.245 to 0.123 and -0.539 to 0.285 EUR/MWh.
+All include zero and omit serial dependence and selection uncertainty. These
+previously examined dates and the assumed historical clocks do not establish
+an operational gain or the 4% target. Saved predictions and refits are in
+`outputs/energy_price_forecasts/nord_ida_2026_spread_price_weather_may_aug_rolling_v1/`.

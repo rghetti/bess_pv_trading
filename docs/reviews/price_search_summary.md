@@ -37,7 +37,9 @@ block: 10.660% with weather. In a separate 120-day May–August comparison,
 the weather model scored 11.357% versus 11.171% for the paired price-only
 model; the paired gain interval also includes zero. The later IDA weather
 replay did not establish an improvement on the latest-cleared benchmark and
-its IDA2 weather model scored worse. See [DA price and weather](price_da_price_weather_2026.md),
+its IDA2 weather model scored worse. In May–August the selected IDA weather
+models also did not demonstrate a gain over latest-cleared prices across
+109–115 days per market. See [DA price and weather](price_da_price_weather_2026.md),
 [price-only comparison](price_price_only_sep_oct_2026.md),
 [October correction](price_online_bias_sep_oct_2026.md), and
 [IDA weather replay](price_ida_spread_weather_2026.md).
@@ -69,6 +71,5 @@ are tested configurations, not an exhaustive enumeration of every possible
 model or feature combination. The [XGBoost](price_xgboost_2026.md),
 [neural](price_da_regularized_mlp_2026.md), and
 [IDA weather](price_ida_spread_weather_2026.md) reports give examples of
-matched comparisons and their limitations. The longer IDA weather replay is
-underway; its manifest, rather than partial scores, determines
-completion.
+matched comparisons and their limitations. Swiss-border studies are underway;
+their manifests, rather than partial scores, determine completion.
