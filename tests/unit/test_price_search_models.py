@@ -17,6 +17,7 @@ from bess_pv_trading.forecasting.price_search_models import make_price_candidate
     ("random_forest", {"n_estimators": 10, "min_samples_leaf": 2}),
     ("extra_trees", {"n_estimators": 10, "min_samples_leaf": 2}),
     ("knn", {"n_neighbors": 5, "weights": "distance"}),
+    ("svr", {"C": 1.0, "epsilon": 0.1}),
     ("mlp", {"hidden_layer_sizes": (8,), "max_iter": 50}),
     ("lightgbm", {"n_estimators": 10, "min_child_samples": 4}),
     ("catboost", {"iterations": 10, "depth": 3}),

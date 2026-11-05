@@ -16,6 +16,7 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVR
 
 
 class IntradayShapeInteractions(BaseEstimator, TransformerMixin):
@@ -112,6 +113,10 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
     if family == "knn":
         # Scale each training feature before searching for comparable products.
         return make_pipeline(StandardScaler(), KNeighborsRegressor(n_jobs=threads, **options))
+    if family == "svr":
+        # Scale targets as well as inputs so epsilon has a consistent meaning.
+        estimator = make_pipeline(StandardScaler(), SVR(**options))
+        return TransformedTargetRegressor(regressor=estimator, transformer=StandardScaler())
     if family == "mlp":
         # Scale targets as well as predictors; inverse transformation returns EUR/MWh.
         estimator = make_pipeline(StandardScaler(), MLPRegressor(random_state=seed, **options))
