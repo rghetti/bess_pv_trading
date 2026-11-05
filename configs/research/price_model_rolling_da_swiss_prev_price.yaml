@@ -39,7 +39,7 @@ price_model_search:
   - 1
   - 2
   - 7
-  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  database: data/api/market_price_features.duckdb
   feature_set_aliases:
     curve_price: price_only
     curve_price_swiss: price_only

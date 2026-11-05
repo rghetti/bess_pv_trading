@@ -54,7 +54,7 @@ price_model_search:
   - 1
   - 2
   - 7
-  database: /home/rghetti/bess_pv_trading_realtime_mpc/data/api/market_with_regional_weather_sep_oct_2026.duckdb
+  database: data/api/market_with_regional_weather_sep_oct_2026.duckdb
   feature_set_aliases:
     curve_price: price_only
     curve_price_weather: price_only

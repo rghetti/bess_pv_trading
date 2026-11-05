@@ -183,7 +183,7 @@ price_model_search:
       - 64
       - 32
       max_iter: 300
-  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  database: data/api/market_price_features.duckdb
   feature_set_aliases:
     cleared_combined: combined
     cleared_fundamentals: fundamentals

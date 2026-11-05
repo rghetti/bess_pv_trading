@@ -2,8 +2,8 @@
 include: ../standard.yaml
 holiday_broad_search:
   workers: 8
-  output_root: /tmp/price_holiday_broad_ida12_early_v1
-  project_root: /home/rghetti/bess_pv_trading_realtime_mpc
+  output_root: outputs/energy_price_forecasts/price_holiday_broad_ida12_early_v1
+  project_root: .
   studies:
   - id: ida1_weather
     matrix: outputs/energy_price_forecasts/nord_ida_2026_bidirectional_latest_spread_early_v1/ida1_quarter_hourly__spread_price_weather.npz

@@ -156,7 +156,7 @@ price_model_search:
     family: zero_spread
     parameters: {}
   common_training_rows: true
-  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  database: data/api/market_price_features.duckdb
   feature_set_aliases:
     spread_cleared_only: price_only
   feature_sets:
