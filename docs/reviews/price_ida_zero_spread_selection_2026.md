@@ -27,3 +27,21 @@ candidates, feature selection, coverage and lineage are preserved in
 `price_model_search_ida_zero_spread_rank.yaml`,
 `price_model_rolling_ida_zero_spread_rank.yaml` and their manifests. This does
 not claim an exhaustive model search or an untouched prospective evaluation.
+
+## IDA1 baseline-inclusive search
+
+A separate IDA1 grid ranked the DA-price baseline against ridge, Lasso, Elastic
+Net and time-of-day interaction candidates with full, 180-day and 365-day
+histories. February–April MAE selected a full-history interaction Elastic Net.
+On the later 4,800 September–October products it scored 8.782 EUR/MWh MAE and
+4.116% WAPE, versus 8.885 EUR/MWh and 4.164% for the DA-price baseline. The
+paired predictions have identical product timestamps and targets. A 5,000-
+resample independent-day bootstrap with seed 173 gives a 95% interval of
+-0.121 to +0.332 EUR/MWh for the model's MAE gain; it omits serial dependence
+and model-selection uncertainty. The small observed improvement is not
+conclusive. All 25 early and two later fits completed without recorded failures
+or convergence warnings. Both periods were previously examined, publication
+clocks are partly assumed, and the missing-day coverage is documented in
+`price_price_only_sep_oct_2026.md`. The search and rolling configs are
+`price_model_search_ida1_zero_shape_windows.yaml` and
+`price_model_rolling_ida1_zero_shape_windows.yaml`.
