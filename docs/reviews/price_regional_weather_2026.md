@@ -72,3 +72,22 @@ improvement over its no-weather counterpart. This excludes serial dependence,
 selection and repeated-inspection uncertainty. The daypart blend did not improve
 on the weather model on this period. Weather source vintage remains unverified
 and its configured availability is assumed, as described above.
+
+## Online bias-correction follow-up
+
+The earlier-selected weather model was passed through the existing online
+residual-correction grid. Settings were selected on May–June MAE and held fixed
+for July–August; the selected setting used a seven-day window, four-hour local
+blocks and shrinkage 96. Only earlier completed products whose configured
+publication clocks precede each decision contribute residuals. On the same
+4,896 products across 51 days, MAE fell from 14.896 to 14.392 EUR/MWh and WAPE
+from 9.106% to approximately 8.80%.
+
+A paired 5,000-resample independent-day bootstrap with seed 173 gives a 95%
+percentile interval of +0.079 to +0.926 EUR/MWh for MAE improvement. It omits
+serial dependence, model and correction selection, and repeated-inspection
+uncertainty. The weather vintage is unverified, publication clocks are partly
+assumed, and both periods have been examined; this is exploratory and does not
+establish 4% DA accuracy. Settings, aligned predictions and a daily-error plot
+are saved in `nord_da_2026_regional_weather_online_bias_v1` under
+`outputs/energy_price_forecasts`.
