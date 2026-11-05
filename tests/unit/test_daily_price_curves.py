@@ -36,5 +36,8 @@ def test_residual_curve_uses_only_first_lag_per_product():
     residual, anchor = curve_target_and_anchor(features, targets, "first_lag_residual")
     np.testing.assert_array_equal(anchor, [[10, 20]])
     np.testing.assert_array_equal(residual, [[3, -5]])
+    absolute, zero = curve_target_and_anchor(features, targets, "absolute")
+    np.testing.assert_array_equal(absolute, targets)
+    np.testing.assert_array_equal(zero, [[0, 0]])
     with pytest.raises(ValueError, match="Unknown"):
         curve_target_and_anchor(features, targets, "invalid")

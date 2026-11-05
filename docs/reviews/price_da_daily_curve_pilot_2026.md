@@ -34,3 +34,31 @@ The source manifest, dataset and baseline hashes, excluded days, full grid,
 selected predictions and a first-day plot are retained in
 `outputs/energy_price_forecasts/nord_da_2026_daily_curves_early_v1/`. The
 configuration is `configs/research/price_da_daily_curves_early.yaml`.
+
+## Prior-price residual curve
+
+A second grid used the same complete-day inputs, ranks and penalties, but fit
+PCA and ridge to each day's price change from the source's first configured
+24-hour price-lag feature. That feature uses the source study's recorded lag
+fallback when the exact eligible lag is unavailable. The known lag is added
+back to every forecast product. Source lag ordering and common decision times
+are checked; no validation target enters PCA or regression fitting.
+
+| Feature arm | Best selection rank / penalty | Residual-curve MAE EUR/MWh | WAPE | Matched interaction MAE EUR/MWh | Interaction WAPE |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Price curves | 8 / 10,000 | 13.376 | 10.427% | 13.039 | 10.164% |
+| Price, prior IDAs and weather | 8 / 10,000 | 13.214 | 10.300% | 11.950 | 9.316% |
+
+The best combined residual-curve model trailed the matched interaction by
+1.263 EUR/MWh on the same 81 days. A 5,000-resample independent-day bootstrap
+with seed 173 gives a 95% percentile interval of 0.637–1.829 EUR/MWh for the
+interaction model's MAE gain; it excludes serial dependence and selection
+uncertainty. The price-only residual curve improved on its absolute-target
+counterpart but still trailed its interaction reference; the combined
+residual curve also trailed its absolute-target counterpart. No later replay
+was started. The same previously inspected selection dates, excluded DST and
+partial days, and historical availability assumptions apply.
+
+The configuration is `configs/research/price_da_daily_curve_residual_early.yaml`;
+scores, source and code hashes, selected predictions and a first-day plot are
+in `outputs/energy_price_forecasts/nord_da_2026_daily_curve_residual_early_v1/`.
