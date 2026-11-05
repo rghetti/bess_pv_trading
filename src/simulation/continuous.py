@@ -150,7 +150,7 @@ class ContinuousReplay:
         self.dispatch_policy = config["execution"].get("dispatch_policy", "track_committed_grid")
         self.realtime = RealtimeControl(self) if self.dispatch_policy in MPC_POLICIES | {CAUSAL_TRACKER} else None
         self.config_fingerprint = config_fingerprint or _configuration_fingerprint(config)
-        self.identity = {"policy_version": CONTINUOUS_POLICY_VERSION + ("-mpc-v1" if self.realtime else ""), "strategy": strategy,
+        self.identity = {"policy_version": CONTINUOUS_POLICY_VERSION + ("-mpc-v2-provisional-ida3" if self.realtime else ""), "strategy": strategy,
             "config_fingerprint": self.config_fingerprint, "input_fingerprint": prepared["input_fingerprint"]}
         # Enforce the input contract: Continuous strategy output exists: `self.destination`.
         if self.destination.exists() and not resume:

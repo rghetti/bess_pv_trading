@@ -76,9 +76,22 @@ results are preserved under the original run ID.
 
 ## Formulation
 
-Let `Q[t]` be the sum of quantities **actually submitted** by the cutoff,
-including unpriced submissions. Auction plans and unsubmitted future trades
-are excluded. There are no trade variables or auction revenues in the MPC.
+Let `Q_submitted[t]` be the sum of quantities actually submitted by the cutoff,
+including unpriced submissions. The default `realtime_mpc.provisional_ida3_mode:
+ida2_plan` adds the IDA3 order forecast saved in the completed IDA2 auction
+snapshot for IDA3-eligible afternoon products, until IDA3 is submitted. Thus
+`Q[t] = Q_submitted[t] + Q_provisional_IDA3[t]` is the planning target. The
+provisional component is zero on the executable current interval and stops
+immediately at actual IDA3 submission, before price publication. Submission
+uses the configured decision buffer; no 10:00 timestamp is hard coded. Signed
+planned purchases and sales are both supported. Missing IDA2 plans, unavailable
+IDA3 products and excluded auctions do not generate provisional quantities.
+`submitted_only` reproduces the earlier planning behavior. Other unsubmitted
+auction orders remain excluded. There are no trade variables or auction revenues in the MPC.
+The submitted ledger, trading fees and realized imbalance settlement retain
+only actual submitted quantities. Full MPC plans and scenarios record the
+submitted, provisional and total planning positions separately. Revised plans
+can change later actual auction submissions in closed-loop comparisons.
 Positive grid power denotes export; positive imbalance denotes excess export.
 
 For every represented PV scenario `s`, with nonnegative weights `w[s]`:

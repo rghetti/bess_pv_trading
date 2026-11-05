@@ -138,12 +138,12 @@ def build_research_model(inputs):
                 name=f"grid[s{s},t{t}]")
             model.addConstr(grid[s, t] == inputs.pv_ac_mw[s, t] * utilization[t, owner]
                 + discharge[t, owner] - charge[t, owner])
-            upper = max(0.0, inputs.plant.poi_export_mw * duration - inputs.committed_mwh[t])
-            lower = max(0.0, inputs.plant.poi_import_mw * duration + inputs.committed_mwh[t])
+            upper = max(0.0, inputs.plant.poi_export_mw * duration - inputs.planning_position_mwh[t])
+            lower = max(0.0, inputs.plant.poi_import_mw * duration + inputs.planning_position_mwh[t])
             positive[s, t] = model.addVar(ub=upper, name=f"excess[s{s},t{t}]")
             negative[s, t] = model.addVar(ub=lower, name=f"shortfall[s{s},t{t}]")
             model.addConstr(positive[s, t] - negative[s, t]
-                == grid[s, t] * duration - inputs.committed_mwh[t])
+                == grid[s, t] * duration - inputs.planning_position_mwh[t])
             # Equal directional prices cancel any split slack algebraically. Distinct
             # prices need a binary to prevent artificial simultaneous cash receipts.
             if forecasts is not None and price_positive[s, t] != price_negative[s, t]:
@@ -192,7 +192,7 @@ def _extract_plan(inputs, variables, expressions):
                 float(np.clip(variables["utilization"][key].X, 0, 1)))
     energy = np.array([[variables["energy"][s, t].X for t in range(length + 1)] for s in range(count)])
     grid = np.array([[variables["grid"][s, t].X for t in range(length)] for s in range(count)])
-    imbalance = grid * inputs.grid.delta_hours - inputs.committed_mwh
+    imbalance = grid * inputs.grid.delta_hours - inputs.planning_position_mwh
     actions = [MpcAction(product, inputs.cutoff.isoformat(), *commands[0, t])
         for t, product in enumerate(inputs.grid.interval_ids)]
     return MpcPlan(inputs.cutoff.isoformat(), actions, energy[0].copy(), grid, imbalance,
@@ -224,7 +224,7 @@ def validate_research_plan(inputs, plan, tolerance=1e-6):
     charge, discharge, utilization = commands[:, :, 0], commands[:, :, 1], commands[:, :, 2]
     predicted = energy_transition(energy[:, :-1], charge, discharge, battery, inputs.grid.delta_hours)
     grid = inputs.pv_ac_mw * utilization + discharge - charge
-    imbalance = grid * inputs.grid.delta_hours - inputs.committed_mwh
+    imbalance = grid * inputs.grid.delta_hours - inputs.planning_position_mwh
     residuals = {
         "initial_energy": np.max(np.abs(energy[:, 0] - inputs.state.energy_mwh)),
         "energy_transition": np.max(np.abs(predicted - energy[:, 1:])),

@@ -66,6 +66,7 @@ class MpcSettings:
     projection_mode: str = "deterministic_open_loop"
     fallback_controller: str = "track_committed_grid"
     current_pv_information: str = "forecast"
+    provisional_ida3_mode: str = "ida2_plan"
     economic_imbalance_penalty_eur_per_mwh: float = 0.0
     monetary_cvar_alpha: float = 0.95
     monetary_cvar_weight: float = 0.0
@@ -110,6 +111,8 @@ class MpcSettings:
             raise ValueError("Unknown MPC terminal_inventory_mode")
         if self.current_pv_information not in {"forecast", "realized_interval_average"}:
             raise ValueError("MPC current_pv_information must be forecast or realized_interval_average")
+        if self.provisional_ida3_mode not in {"ida2_plan", "submitted_only"}:
+            raise ValueError("MPC provisional_ida3_mode must be ida2_plan or submitted_only")
         value = self.terminal_inventory_value_eur_per_mwh
         if value is not None and (isinstance(value, bool) or not isinstance(value, (float, int)) or not np.isfinite(value)):
             raise ValueError("MPC terminal energy value must be finite")
@@ -231,7 +234,7 @@ class TerminalValueCurve:
 
 @dataclass(frozen=True)
 class MpcInput:
-    """Physical inputs with separately disclosed current-PV and price oracles."""
+    """Submitted positions plus separately identified provisional planning quantities."""
     cutoff: Any
     grid: DeliveryGrid
     plant: PlantParameters
@@ -251,6 +254,8 @@ class MpcInput:
     current_realized_pv_mw: float | None = None
     price_forecast: ForecastPrices | None = None
     terminal_value: TerminalValueCurve | None = None
+    provisional_ida3_mwh: np.ndarray | None = None
+    planning_position_mwh: np.ndarray = field(init=False, repr=False)
 
     def __post_init__(self):
         count, length = len(self.scenario_ids), len(self.grid.interval_ids)
@@ -267,6 +272,19 @@ class MpcInput:
                 raise ValueError(f"Invalid MPC {name} shape or values")
             values.setflags(write=False)
             object.__setattr__(self, name, values)
+        # Forecast IDA3 orders affect planning, while submitted positions retain
+        # their binding-ledger meaning. The executable interval has no forecast order.
+        provisional = (np.zeros(length) if self.provisional_ida3_mwh is None
+                       else np.array(self.provisional_ida3_mwh, dtype=float, copy=True))
+        if provisional.shape != (length,) or not np.isfinite(provisional).all():
+            raise ValueError("Invalid MPC provisional_ida3_mwh shape or values")
+        if provisional[0] != 0 or (self.settings.provisional_ida3_mode == "submitted_only" and np.any(provisional)):
+            raise ValueError("Provisional IDA3 cannot change current or submitted-only commitments")
+        provisional.setflags(write=False)
+        planned = self.committed_mwh + provisional
+        planned.setflags(write=False)
+        object.__setattr__(self, "provisional_ida3_mwh", provisional)
+        object.__setattr__(self, "planning_position_mwh", planned)
         if not count or len(set(self.scenario_ids)) != count or np.any(self.pv_ac_mw < 0):
             raise ValueError("MPC needs unique scenarios and nonnegative PV")
         if np.any(self.weights < 0) or not np.isclose(self.weights.sum(), 1, rtol=0, atol=1e-10):
@@ -456,8 +474,8 @@ def build_mpc_model(inputs: MpcInput):
                                          name=f"grid[s{s},t{t}]")
                 model.addConstr(grid[s, t] == float(inputs.pv_ac_mw[s, t]) * utilization[t]
                     + discharge[t, "mpc"] - charge[t, "mpc"], name=f"poi_balance[s{s},t{t}]")
-                upper = max(0.0, inputs.plant.poi_export_mw * duration - inputs.committed_mwh[t])
-                lower = max(0.0, inputs.plant.poi_import_mw * duration + inputs.committed_mwh[t])
+                upper = max(0.0, inputs.plant.poi_export_mw * duration - inputs.planning_position_mwh[t])
+                lower = max(0.0, inputs.plant.poi_import_mw * duration + inputs.planning_position_mwh[t])
                 positive[s, t] = model.addVar(ub=upper, name=f"excess[s{s},t{t}]")
                 negative[s, t] = model.addVar(ub=lower, name=f"shortfall[s{s},t{t}]")
                 if directional:
@@ -465,7 +483,7 @@ def build_mpc_model(inputs: MpcInput):
                     model.addConstr(positive[s, t] <= upper * direction)
                     model.addConstr(negative[s, t] <= lower * (1 - direction))
                 model.addConstr(positive[s, t] - negative[s, t] == grid[s, t] * duration
-                                - float(inputs.committed_mwh[t]), name=f"fixed_commitment[s{s},t{t}]")
+                                - float(inputs.planning_position_mwh[t]), name=f"fixed_commitment[s{s},t{t}]")
                 if inputs.import_fee_eur_per_mwh:
                     imported_power[s, t] = model.addVar(ub=inputs.plant.poi_import_mw,
                         name=f"import[s{s},t{t}]")
@@ -512,7 +530,7 @@ def _plan_from_solution(inputs, variables, expressions):
         max(0.0, variables["discharge"][t, "mpc"].X), float(np.clip(variables["utilization"][t].X, 0, 1)))
         for t, product in enumerate(inputs.grid.interval_ids)]
     grid = np.array([[variables["grid"][s, t].X for t in range(length)] for s in range(count)])
-    imbalance = grid * inputs.grid.delta_hours - inputs.committed_mwh
+    imbalance = grid * inputs.grid.delta_hours - inputs.planning_position_mwh
     return MpcPlan(cutoff, actions, np.array([variables["energy"][0, t].X for t in range(length + 1)]),
         grid, imbalance, inputs.weights @ np.abs(imbalance), inputs.weights @ np.maximum(-imbalance, 0),
         {name: float(expression.getValue()) for name, expression in expressions.items()})
@@ -537,7 +555,7 @@ def validate_mpc_plan(inputs: MpcInput, plan: MpcPlan, tolerance=1e-6):
         raise ValueError("MPC action product identity mismatch")
     predicted = energy_transition(plan.energy_mwh[:-1], charge, discharge, battery, inputs.grid.delta_hours)
     grid = inputs.pv_ac_mw * utilization + discharge - charge
-    imbalance = grid * inputs.grid.delta_hours - inputs.committed_mwh
+    imbalance = grid * inputs.grid.delta_hours - inputs.planning_position_mwh
     residuals = {
         "initial_energy": abs(plan.energy_mwh[0] - inputs.state.energy_mwh),
         "energy_transition": np.max(np.abs(predicted - plan.energy_mwh[1:])),
@@ -638,8 +656,8 @@ def _component_validation_allowances(inputs, physical_residuals, feasibility_tol
         if not np.array_equal(positive, negative):
             # Near-integral sign indicators can leave a tiny split overlap. Its
             # effect depends on the directional spread and that interval's MWh M.
-            upper = np.maximum(0, inputs.plant.poi_export_mw * duration - inputs.committed_mwh)
-            lower = np.maximum(0, inputs.plant.poi_import_mw * duration + inputs.committed_mwh)
+            upper = np.maximum(0, inputs.plant.poi_export_mw * duration - inputs.planning_position_mwh)
+            lower = np.maximum(0, inputs.plant.poi_import_mw * duration + inputs.planning_position_mwh)
             overlap = row_tolerance + np.maximum(upper, lower) * integrality_tolerance
             error += np.abs(positive - negative) * overlap
         allowances["settlement_eur"] = float(np.sum(inputs.weights) * np.sum(error))

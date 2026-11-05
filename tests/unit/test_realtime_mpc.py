@@ -37,6 +37,40 @@ def checked(inputs):
     return result
 
 
+@pytest.mark.parametrize("policy", ["deterministic_mpc", "ensemble_mpc",
+    "ensemble_mpc_adaptive", "deterministic_mpc_price_oracle"])
+def test_provisional_target_preserves_energy_without_changing_binding_orders(policy):
+    """A forecast afternoon sale gives otherwise curtailed PV a future use."""
+    inputs = inputs_for([[0.5, 0]], [0, 0], energy=0, policy=policy,
+                        prices=[20, 30] if policy.endswith("price_oracle") else None)
+    inputs = replace(inputs, degradation=DegradationSettings(10))
+    planned = replace(inputs, provisional_ida3_mwh=np.array([0, 0.125]))
+    baseline, revised = checked(inputs), checked(planned)
+    if not policy.endswith("price_oracle"):
+        assert baseline.plan.actions[0].charge_mw == pytest.approx(0)
+    assert revised.plan.actions[0].charge_mw == pytest.approx(0.5)
+    assert revised.plan.actions[1].discharge_mw == pytest.approx(0.5)
+    np.testing.assert_array_equal(planned.committed_mwh, [0, 0])
+    np.testing.assert_array_equal(planned.planning_position_mwh, [0, 0.125])
+    assert revised.plan.components["absolute_imbalance_mwh"] == pytest.approx(0, abs=1e-7)
+
+
+def test_provisional_targets_are_copied_and_cannot_change_current_commitments():
+    """Planning forecasts are immutable and separately typed from submitted trades."""
+    inputs = inputs_for([[0, 0]], [0.1, 0.2])
+    provisional = np.array([0, -0.15])
+    planned = replace(inputs, provisional_ida3_mwh=provisional)
+    provisional[1] = 99
+    np.testing.assert_allclose(planned.planning_position_mwh, [0.1, 0.05])
+    assert not planned.planning_position_mwh.flags.writeable
+    with pytest.raises(ValueError, match="current or submitted-only"):
+        replace(inputs, provisional_ida3_mwh=np.array([0.1, 0]))
+    with pytest.raises(ValueError, match="current or submitted-only"):
+        replace(planned, settings=replace(planned.settings, provisional_ida3_mode="submitted_only"))
+    with pytest.raises(ValueError, match="shape or values"):
+        replace(inputs, provisional_ida3_mwh=np.array([0, np.nan]))
+
+
 def test_oracle_saves_energy_for_later_expensive_shortfall():
     inputs = inputs_for([[0, 0]], [0.25, 0.25], prices=[10, 100],
                         policy="deterministic_mpc_price_oracle")

@@ -39,6 +39,46 @@ class RealtimeControl:
         """Always request eligible forecasts, including under an upper PV oracle."""
         return self.replay._forecast(cutoff, starts, context, causal=True)
 
+    def planning_commitments(self, day, grid, cutoff):
+        """Supplement binding positions with the eligible IDA2 forecast of IDA3 orders."""
+        replay = self.replay
+        submitted = np.array([replay._position(key) for key in grid.interval_ids])
+        provisional = np.zeros(len(grid.interval_ids))
+        evidence = {"mode": self.settings.provisional_ida3_mode,
+                    "provisional_ida3_active": False, "provisional_orders_are_binding": False}
+        # The order forecast stops immediately when IDA3 becomes binding, even
+        # when publication has not happened. Other auction plans never enter here.
+        if self.settings.provisional_ida3_mode == "submitted_only" or "IDA3" in replay.submitted[day]:
+            return submitted, provisional, evidence
+        participating = replay.config.get("gme_oracle_experiment", {}).get("participating_auctions")
+        if participating is None:
+            participating = ["DA", "IDA1", "IDA2", "IDA3"]
+        ida3 = next((event for event in replay.daily[day]["schedule"] if event.auction == "IDA3"), None)
+        snapshot = replay.plan_snapshots[day].get("IDA2")
+        if ("IDA3" not in participating or "IDA2" not in replay.submitted[day]
+                or ida3 is None or not ida3.available or not snapshot
+                or pd.Timestamp(cutoff) >= pd.Timestamp(ida3.submission_at)):
+            return submitted, provisional, evidence
+        eligible = {replay.daily[day]["grid"].interval_ids[t] for t in ida3.eligible_intervals}
+        rows = {row["interval_id"]: row for row in snapshot}
+        source_cutoffs = []
+        # Only IDA3-eligible delivery products receive the forecast signed trade.
+        for t, product in enumerate(grid.interval_ids):
+            if product not in eligible:
+                continue
+            row = rows.get(product, {})
+            if "planned_trade_IDA3_mwh" not in row:
+                raise ValueError("IDA2 snapshot lacks the eligible provisional IDA3 order")
+            source_cutoff = pd.Timestamp(row["optimizer_cutoff_utc"])
+            if source_cutoff > pd.Timestamp(cutoff):
+                raise ValueError("Provisional IDA3 plan is unavailable at the MPC cutoff")
+            provisional[t] = float(row["planned_trade_IDA3_mwh"])
+            source_cutoffs.append(source_cutoff)
+        evidence.update(provisional_ida3_active=bool(source_cutoffs), source_auction="IDA2",
+            source_cutoff_utc=max(source_cutoffs).isoformat() if source_cutoffs else None,
+            provisional_ida3_total_mwh=float(provisional.sum()))
+        return submitted, provisional, evidence
+
     def issue(self, index, cutoff):
         """Solve with the selected current-PV information and issue only its first action."""
         replay = self.replay
@@ -76,11 +116,13 @@ class RealtimeControl:
         if weights is not None and set(weights) != set(ids):
             raise ValueError("MPC scenario_weights must identify every represented scenario exactly")
         probabilities = np.full(len(ids), 1 / len(ids)) if weights is None else np.array([weights[key] for key in ids])
-        commitments = np.array([replay._position(key) for key in grid.interval_ids])
+        commitments, provisional_ida3, commitment_evidence = self.planning_commitments(day, grid, cutoff)
+        planning_positions = commitments + provisional_ida3
+        provenance["planning_commitments"] = commitment_evidence
         prices = (settlement_forecasts(replay, daily, cutoff, pd.DatetimeIndex(grid.starts), len(ids))
             if replay.dispatch_policy in RESEARCH_MPC_POLICIES else None)
         law, prices, _, scenario_evidence = transform_mpc_scenarios(replay.config, grid, cutoff,
-            replay.plant, values, ids, probabilities, commitments, prices,
+            replay.plant, values, ids, probabilities, planning_positions, prices,
             artifact_cache=self.scenario_artifact_cache)
         values, ids, probabilities = law.pv_ac_mw, law.scenario_ids, law.weights
         provenance["scenario_design"] = scenario_evidence
@@ -110,7 +152,8 @@ class RealtimeControl:
             hard_terminal_minimum_mwh=replay.prepared["terminal_minimum_energy_mwh"],
             forecast_provenance=provenance, oracle=oracle, current_realized_pv_mw=current_pv,
             price_forecast=prices,
-            terminal_value=conditional_terminal_value(replay, daily, cutoff, grid.ends[-1]))
+            terminal_value=conditional_terminal_value(replay, daily, cutoff, grid.ends[-1]),
+            provisional_ida3_mwh=provisional_ida3)
         result = solve_mpc(inputs, SolverSettings(**replay.config["solver"]))
         diagnostic = {**result.diagnostics, "delivery_day": day, "interval_id": product,
                       "current_pv_observation_source": ("initial_frozen_forecast_fallback"
@@ -142,6 +185,9 @@ class RealtimeControl:
             row = {**asdict(action), "solve_id": diagnostic["solve_id"], "delivery_day": day,
                 "interval_start_utc": str(grid.starts[t]), "interval_end_utc": str(grid.ends[t]),
                 "energy_start_mwh": float(plan.energy_mwh[t]), "energy_end_mwh": float(plan.energy_mwh[t + 1]),
+                "submitted_commitment_mwh": float(commitments[t]),
+                "provisional_ida3_mwh": float(provisional_ida3[t]),
+                "planning_position_mwh": float(planning_positions[t]),
                 "expected_absolute_imbalance_mwh": float(plan.expected_absolute_imbalance_by_interval_mwh[t]),
                 "expected_shortfall_mwh": float(plan.expected_shortfall_by_interval_mwh[t]),
                 "future_plan_role": ("representative_shadow_path" if plan.scenario_actions is not None
@@ -156,6 +202,9 @@ class RealtimeControl:
                     "weather_forecast_pv_ac_mw": float(forecast_values[s, t]),
                     "pv_input_role": "realized_current_interval" if t == 0 and current_pv is not None else "forecast",
                     "grid_mw": float(plan.grid_mw[s, t]), "imbalance_mwh": float(plan.imbalance_mwh[s, t]),
+                    "submitted_commitment_mwh": float(commitments[t]),
+                    "provisional_ida3_mwh": float(provisional_ida3[t]),
+                    "planning_position_mwh": float(planning_positions[t]),
                     **({"charge_mw": float(plan.scenario_actions[s, t, 0]),
                         "discharge_mw": float(plan.scenario_actions[s, t, 1]),
                         "pv_utilization_fraction": float(plan.scenario_actions[s, t, 2]),

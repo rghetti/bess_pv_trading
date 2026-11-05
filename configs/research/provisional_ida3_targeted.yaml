@@ -1,0 +1,195 @@
+# Paired three-day continuous MPC comparison; no fitting or full-year replay.
+include: ../standard.yaml
+farm_id: 1
+forecast:
+  curated_realized:
+    enabled: true
+    dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
+continuous_optimization:
+  start_date: '2026-01-15'
+  end_date: '2026-01-17'
+  planning_modes:
+  - integrated
+  perfect_pv_reference: false
+  resume: false
+  output_root: outputs/energy_research
+  run_id: provisional_ida3_jan15_17_2026_v1
+  pv_ensemble:
+    enabled: false
+    zarr: null
+    member_count: null
+    planning_policy: deterministic
+state:
+  initial_soc_percent: 50.0
+  terminal_soc_percent: 50.0
+  terminal_soc_min_percent: null
+solver:
+  threads: 1
+  time_limit_seconds: 120.0
+  mip_gap: 0.0001
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+pv:
+  direct_exceeds_ghi: clip_and_flag
+  forecast_replacement:
+    enabled: true
+    allow_retrospective_artifacts: true
+    models_by_farm:
+      '1':
+        name: reviewed_ghi_bigru_1
+        kind: reviewed_hpo
+        artifact_path: models/pv/reviewed_ghi_2026_selected/farm_1/result.json
+        available_at_utc: '2026-11-04T03:09:00Z'
+      '345':
+        name: reviewed_ghi_transformer_345
+        kind: reviewed_hpo
+        artifact_path: models/pv/reviewed_ghi_2026_selected/farm_345/result.json
+        available_at_utc: '2026-11-04T03:09:00Z'
+      '901':
+        name: reviewed_ghi_bilstm_901
+        kind: reviewed_hpo
+        artifact_path: models/pv/reviewed_ghi_2026_selected/farm_901/result.json
+        available_at_utc: '2026-11-04T03:09:00Z'
+      '910':
+        name: reviewed_ghi_tcn_910
+        kind: reviewed_hpo
+        artifact_path: models/pv/reviewed_ghi_2026_selected/farm_910/result.json
+        available_at_utc: '2026-11-04T03:09:00Z'
+trading:
+  optimize_imbalances: false
+execution:
+  dispatch_policy: deterministic_mpc
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+settlement:
+  enabled: true
+experiment_outputs:
+  overwrite_existing: false
+  plots: true
+  save_model_files: false
+realtime_mpc_outputs:
+  horizon_history: daily_parquet
+realtime_mpc:
+  current_pv_information: realized_interval_average
+  planning_imbalance_penalty_eur_per_mwh: 500.0
+  economic_imbalance_penalty_eur_per_mwh: 0.0
+  terminal_inventory_mode: soft_target
+  terminal_soc_target_percent: 50.0
+  terminal_inventory_penalty_eur_per_mwh: 50.0
+  solver_time_limit_seconds: 10.0
+  oracle_stage2_time_limit_seconds: 10.0
+  ensemble_include_deterministic_member: true
+  recourse_stages:
+  - 4
+  - 8
+  - 12
+  - 16
+  - 20
+  - 24
+  - 28
+  - 32
+  - 36
+  - 40
+  - 44
+  - 48
+  - 52
+  - 56
+  - 60
+  - 64
+  - 68
+  - 72
+  - 76
+  - 80
+  - 84
+  - 88
+  - 92
+  recourse_observation_lag_intervals: 1
+  recourse_pv_bin_width_mw: 0.1
+  recourse_observation_features: pv
+  monetary_cvar_alpha: 0.9
+  monetary_cvar_weight: 0.0
+  provisional_ida3_mode: ida2_plan
+gme_oracle_experiment:
+  study_id: null
+  delivery_day: null
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA:
+      dataset: day_ahead_prices
+      native_interval_minutes: null
+    IDA1:
+      dataset: ida1_prices
+      native_interval_minutes: 15
+    IDA2:
+      dataset: ida2_prices
+      native_interval_minutes: 15
+    IDA3:
+      dataset: ida3_prices
+      native_interval_minutes: 15
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions:
+  - DA
+  - IDA1
+  - IDA2
+  - IDA3
+realtime_mpc_comparison:
+  mode: continuous
+  controllers:
+  - track_committed_grid
+  - deterministic_mpc
+  frozen_source: null
+  check_only: false
+  representative_days: 2
+energy_price_forecast:
+  auction_enabled: false
+  settlement_enabled: false
+  artifacts: {}
+  seed: 17
+research_information:
+  pv_updates: latest
+  price_updates: latest
+energy_research_study:
+  run_id: provisional_ida3_jan15_17_2026_v1
+  output_root: outputs/energy_research
+  mode: continuous
+  farms:
+  - 1
+  - 345
+  - 901
+  - 910
+  workers: 4
+  native_threads: 1
+  solver_threads: 1
+  reporting:
+    plots: true
+    block_days: 7
+    samples: 2000
+    seed: 17
+    confidence: 0.95
+    cvar_alpha: 0.9
+  windows:
+  - id: january_three_days
+    start_date: '2026-01-15'
+    end_date: '2026-01-17'
+    role: targeted_retrospective_development
+    overrides: {}
+  cases:
+  - id: submitted_only
+    family: controller
+    baseline_case: null
+    overrides:
+      realtime_mpc:
+        provisional_ida3_mode: submitted_only
+  - id: ida2_plan
+    family: controller
+    baseline_case: submitted_only
+    overrides:
+      realtime_mpc:
+        provisional_ida3_mode: ida2_plan

@@ -68,6 +68,8 @@ def audit_conditional_horizons(directory, config, actual, ledger, solves, tolera
     diagnostics = {row["solve_id"]: row for row in solves if "solve_id" in row}
     actual = actual.set_index("interval_id")
     ledger_frame = pd.DataFrame(ledger)
+    plan_path = directory / "csv/expected_dispatch_plans.csv"
+    auction_plans = pd.read_csv(plan_path) if plan_path.is_file() else pd.DataFrame()
     if not ledger_frame.empty:
         ledger_frame["submission_time"] = pd.to_datetime(ledger_frame.submission_time, utc=True)
     maxima = defaultdict(float)
@@ -99,6 +101,19 @@ def audit_conditional_horizons(directory, config, actual, ledger, solves, tolera
         if not ledger_frame.empty:
             eligible = ledger_frame[ledger_frame.submission_time <= cutoff]
             committed = eligible.groupby("interval_id").quantity_mwh.sum().reindex(intervals, fill_value=0).to_numpy()
+        # Independently recover forecast IDA3 orders from the saved IDA2 auction
+        # snapshot. They never enter the reconstructed submitted ledger.
+        provisional = np.zeros(len(intervals))
+        if "provisional_ida3_mwh" in aligned and not ledger_frame.empty:
+            ida3 = ledger_frame[(ledger_frame.auction == "IDA3") & ledger_frame.interval_id.isin(intervals)]
+            if not ida3.empty and cutoff < ida3.submission_time.min() and not auction_plans.empty:
+                prior = auction_plans[(auction_plans.auction == "IDA2")
+                    & (pd.to_datetime(auction_plans.optimizer_cutoff_utc, utc=True) <= cutoff)]
+                if not prior.empty:
+                    provisional = prior.drop_duplicates("interval_id", keep="last").set_index(
+                        "interval_id").planned_trade_IDA3_mwh.reindex(intervals, fill_value=0).to_numpy()
+                if config.get("realtime_mpc", {}).get("provisional_ida3_mode") == "submitted_only":
+                    provisional[:] = 0
         predicted_energy = (start * (1 - battery.self_discharge_per_hour) ** 0.25
             + battery.eta_charge * charge * 0.25 - discharge * 0.25 / battery.eta_discharge)
         expected_nodes = np.zeros(pv.shape, dtype=int)
@@ -121,11 +136,16 @@ def audit_conditional_horizons(directory, config, actual, ledger, solves, tolera
             "grid_balance_mw": _maximum(grid - pv * utilization - discharge + charge),
             "poi_import_mw": float(np.maximum(-config["plant"]["poi_import_mw"] - grid, 0).max()),
             "poi_export_mw": float(np.maximum(grid - config["plant"]["poi_export_mw"], 0).max()),
-            "committed_deviation_mwh": _maximum(grid * 0.25 - committed[None, :] - imbalance),
+            "committed_deviation_mwh": _maximum(grid * 0.25 - (committed + provisional)[None, :] - imbalance),
             "weights_constant": _maximum(weights - weights[:, :1]),
             "probability_mass": _maximum(weights.sum(axis=0) - 1),
             "nonanticipativity_mw": 0.0, "history_node_identity": _maximum(nodes - expected_nodes)}
         controls = np.stack([charge, discharge, utilization], axis=2)
+        if "provisional_ida3_mwh" in aligned:
+            residuals.update(submitted_commitment_mwh=_maximum(matrix("submitted_commitment_mwh") - committed),
+                provisional_ida3_mwh=_maximum(matrix("provisional_ida3_mwh") - provisional),
+                planning_position_mwh=_maximum(matrix("planning_position_mwh") - committed - provisional),
+                executable_provisional_mwh=_maximum(matrix("provisional_ida3_mwh")[:, 0]))
         for t in range(len(intervals)):
             for node in np.unique(expected_nodes[:, t]):
                 members = controls[expected_nodes[:, t] == node, t]

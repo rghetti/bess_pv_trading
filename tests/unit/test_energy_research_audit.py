@@ -153,3 +153,37 @@ def test_conditional_audit_detects_anticipative_root_commands_across_chunk_bound
     result = audit.audit_conditional_horizons(tmp_path, config, frame, ledger, [diagnostic])
     assert result["horizons_checked"] == 1
     assert any(row["reason"] == "nonanticipativity_mw" for row in result["violations"])
+
+
+def test_conditional_audit_recovers_provisional_orders_from_independent_auction_snapshot(tmp_path):
+    """A horizon forecast is checked against its source without changing actual positions."""
+    config, frame = fixture_controller(tmp_path)
+    ledger = json.loads((tmp_path / "json/accepted_trades.json").read_text())
+    for row in ledger:
+        row["auction"] = "DA"
+    ledger.append({"auction": "IDA3", "interval_id": frame.interval_id.iloc[1],
+                   "quantity_mwh": 0.2, "submission_time": "2026-01-15T12:10:00Z"})
+    source = pd.DataFrame({"auction": ["IDA2", "IDA2"], "interval_id": frame.interval_id,
+        "optimizer_cutoff_utc": ["2026-01-14T20:55Z"] * 2, "planned_trade_IDA3_mwh": [0, 0.125]})
+    source.to_csv(tmp_path / "csv/expected_dispatch_plans.csv", index=False)
+    solve_id = "ensemble_mpc_economic:2026-01-15T12:00:00+00:00"
+    diagnostic = {"solve_id": solve_id, "scenario_ids": ["a"], "horizon_intervals": 2,
+        "cutoff_utc": "2026-01-15T12:00:00Z", "controller": "ensemble_mpc_economic"}
+    rows = []
+    for index, interval in frame.iterrows():
+        provisional = 0 if index == 0 else 0.125
+        rows.append({"solve_id": solve_id, "scenario_id": "a", "weight": 1,
+            "control_node": 0, "pv_utilization_fraction": 1,
+            **{name: interval[name] for name in ("interval_id", "pv_ac_mw", "charge_mw",
+                "discharge_mw", "energy_start_mwh", "energy_end_mwh", "grid_mw")},
+            "imbalance_mwh": interval.imbalance_mwh - provisional,
+            "submitted_commitment_mwh": interval.net_position_mwh,
+            "provisional_ida3_mwh": provisional,
+            "planning_position_mwh": interval.net_position_mwh + provisional})
+    pd.DataFrame(rows).to_csv(tmp_path / "csv/mpc_scenarios.csv", index=False)
+    checked = audit.audit_conditional_horizons(tmp_path, config, frame, ledger, [diagnostic])
+    assert checked["violations"] == []
+    source.loc[1, "planned_trade_IDA3_mwh"] = 0.25
+    source.to_csv(tmp_path / "csv/expected_dispatch_plans.csv", index=False)
+    corrupted = audit.audit_conditional_horizons(tmp_path, config, frame, ledger, [diagnostic])
+    assert any(row["reason"] == "provisional_ida3_mwh" for row in corrupted["violations"])
