@@ -39,6 +39,17 @@ be reported separately from full-period averages. In particular May 1 is
 outside the May–August replay's May 3 start. Later periods have been inspected
 in previous searches and are not untouched final holdouts.
 
+The IDA1 and IDA3 rolling replays have completed without warnings. In
+May–August, IDA1 baseline and holiday-feature WAPE were 4.557% and 4.558%
+over 115 days; IDA3 scored 9.073% and 9.100% over 113 days. The two shared
+holiday dates were June 2 and August 15. Their respective baseline-minus-
+holiday MAE differences were -0.285 and +0.353 EUR/MWh for IDA1, and +0.657
+and -1.104 for IDA3. In September–October, IDA1 scored 4.107% with or
+without the flag and IDA3 scored 6.961% versus 6.946%, on 50 days each. No
+national holiday fell in that later evaluation sample, though training-period
+holidays can still affect the fitted coefficients. These few holiday dates do
+not establish an effect or rule one out.
+
 The reusable implementation is `src/forecasting/italian_holidays.py`; the
 matched experiment is `scripts/evaluate_italian_holiday_feature.py`. It records
 the saved matrix hash, model parameters, dates and convergence warnings.
