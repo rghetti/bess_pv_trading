@@ -22,3 +22,16 @@ exploratory. The selected IDA3 model and cleared-price baseline are configured
 for a later weekly replay in `price_model_rolling_ida3_median_spreads.yaml`;
 that replay's manifest is authoritative for completion and later scores.
 Historical publication clocks remain partly assumed.
+
+## Later IDA3 replay
+
+The selected latest-anchor median model completed the later weekly replay
+without recorded failures or convergence warnings. On 2,400 matched products
+across 50 complete September–October days, it scored 14.944 EUR/MWh MAE and
+6.987% WAPE; the explicit IDA2 clearing-price baseline scored 14.998 and
+7.013%. Predictions and actuals align by product timestamp. A paired
+5,000-resample independent-day bootstrap with seed 173 gives a 95% percentile
+interval of -0.163 to +0.265 EUR/MWh for the model's MAE gain. The interval
+excludes serial dependence and model-selection uncertainty, and the periods
+were already inspected. The small observed gain does not establish an
+improvement over the cleared-price baseline or the 4% target.
