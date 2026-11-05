@@ -64,6 +64,15 @@ rows. The exact saved-matrix columns and hashes are recorded by
 `scripts/analyze_price_solar_response.py`; the 2026 delivery periods are not
 an untouched final holdout.
 
+The May–August rolling baseline has finished on 107 complete shared days;
+the solar-hinge predictions are still running. Its mean midday signed error
+was -9.22 EUR/MWh in May (27 days), -13.68 in June (29), -0.84 in July (29)
+and +9.19 in August (22). Mean midday errors within a month are descriptive
+and do not establish why the bias changes. Across these summer days, the
+correlation between midday radiation and midday bias was only 0.18. This
+variation cautions against extrapolating the early-period radiation pattern
+or applying a fixed directional adjustment.
+
 A second search compared one, two and three delivery-time harmonics with
 recency weighting, motivated by the large midday shape error. All 12 fits
 completed without recorded failures or convergence warnings. At the best
