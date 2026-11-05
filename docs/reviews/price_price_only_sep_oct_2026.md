@@ -56,3 +56,23 @@ products, and do not account for serial dependence, selection uncertainty,
 missing-day bias or historical availability assumptions. The IDA1 interval
 includes 4%, but its observed WAPE is above 4%; an interval including the target
 does not establish that the target has been achieved.
+
+## Interpretation of lag fallback counts
+
+For a lagged same-auction price, the feature builder first looks for the exact
+elapsed-hour lag and checks that its recorded or assumed availability precedes
+the decision. If unavailable, it searches earlier prices at the required local
+clock slot, no later than the requested lag time, subject to the same
+availability check and a configured maximum age. For whole-day lags the local
+clock slot is based on the target product; other lags use the requested
+elapsed-hour timestamp. If no eligible value exists the feature remains missing
+and the row can be excluded.
+
+The manifest's `fallback_count` is accumulated over all lag features and all
+rows used to build the historical matrix, including training and evaluation
+rows. It is not a count of affected validation products or a percentage of test
+forecasts. Availability checks enforce the catalog's supplied or assumed
+publication clocks; they do not prove that those clocks were historically
+observed. The exact implementation is `_features` in
+`src/forecasting/energy_prices.py`, and the count is collected by
+`prepare_search_matrix` in `src/forecasting/price_search.py`.
