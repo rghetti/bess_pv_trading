@@ -27,3 +27,28 @@ intervals omit serial dependence and model-selection uncertainty. The early
 and later periods have been examined in other analyses, and historical
 publication clocks are partly assumed. This is exploratory evidence for the
 anchor, not an untouched prospective result or evidence that 4% is met.
+
+## Later price-only follow-up
+
+A separate price-only study selected models on February–April and evaluated
+weekly refits on available September–October 2026 products. It included the
+same DA and latest-auction anchors plus direct-price models. Because the later
+period had already been examined, this is exploratory. For IDA2, the
+validation-selected `elastic_05` had 10.643 EUR/MWh MAE (4.969% WAPE) as a
+direct-price model, 11.559 (5.396%) with a DA spread anchor and 9.927 (4.635%)
+with the IDA1 anchor. These variants have identical timestamps and actuals
+across 4,704 products. The earlier baseline-candidate `lasso_01` scored 9.834
+(4.591%) with a DA anchor and 9.882 (4.614%) with an IDA1 anchor on the same
+products; choosing this lower later-period score after inspection is not a
+fresh model selection. IDA3's early-selected latest-anchor ridge scored
+14.964 EUR/MWh and 6.997% WAPE over 2,400 products.
+
+A paired independent-day bootstrap with 5,000 resamples and seed 173 gives a
+95% percentile interval of +1.106 to +2.152 EUR/MWh for the IDA2 Elastic Net
+MAE improvement from the latest anchor, but -0.149 to +0.045 for the same
+comparison with the Lasso reference. Intervals exclude serial dependence and
+model-selection uncertainty. This indicates that anchor effects depend on the
+model; it does not prove a universal benefit. All 42 early fits and 13 later
+fits completed without recorded failures. Historical publication clocks and
+missing-day limitations remain; details are in the price-only latest-spread
+configs and manifests.
