@@ -77,6 +77,13 @@ def _candidate_predict(spec, train_x, train_y, test_x, *, train_starts=None, tes
     family = spec["family"]
     options = dict(spec["parameters"])
     if not family.startswith("slot_"):
+        if family.startswith("recency_"):
+            # Observation-based decay requires strictly ordered native products.
+            if train_starts is None or len(train_starts) != len(train_y):
+                raise ValueError("Recency-weighted models require aligned training timestamps")
+            times = pd.DatetimeIndex(pd.to_datetime(train_starts, utc=True))
+            if times.hasnans or not times.is_monotonic_increasing or times.has_duplicates:
+                raise ValueError("Recency-weighted training timestamps must be unique and chronological")
         estimator = make_price_candidate(family, options, seed=seed, threads=threads)
         estimator.fit(train_x, train_y)
         return estimator.predict(test_x)
@@ -140,8 +147,9 @@ def _fit_candidate_impl(job):
     validation_anchor = 0 if residual_index is None else data["validation_x"][:, residual_index]
     rolling = job.get("rolling_refit")
     slot_model = spec["family"].startswith("slot_")
+    recency_model = spec["family"].startswith("recency_")
     window_days = spec.get("train_window_days")
-    initial_starts = data["train_starts"] if slot_model or window_days is not None else None
+    initial_starts = data["train_starts"] if slot_model or recency_model or window_days is not None else None
     initial_mask = (_training_window(initial_starts, window_days) if window_days is not None
                     else np.ones(len(data["train_y"]), dtype=bool))
     if window_days is not None and initial_mask.sum() < 100:
@@ -150,7 +158,7 @@ def _fit_candidate_impl(job):
     if rolling is None:
         target = (data["train_y"] - train_anchor)[initial_mask]
         prediction = _candidate_predict(spec, data["train_x"][initial_mask], target, data["validation_x"],
-            train_starts=initial_starts[initial_mask] if slot_model else None,
+            train_starts=initial_starts[initial_mask] if slot_model or recency_model else None,
             test_starts=data["starts"] if slot_model else None,
             timezone=job.get("timezone"), seed=job["seed"], threads=job["threads"]) + validation_anchor
     else:
@@ -166,13 +174,13 @@ def _fit_candidate_impl(job):
             train_y = np.concatenate([initial_target, data["validation_y"][past] - past_anchor])
             test_anchor = 0 if residual_index is None else data["validation_x"][test, residual_index]
             train_starts = (np.concatenate([initial_starts, data["starts"][past]])
-                            if slot_model or window_days is not None else None)
+                            if slot_model or recency_model or window_days is not None else None)
             mask = (_training_window(train_starts, window_days) if window_days is not None
                     else np.ones(len(train_y), dtype=bool))
             if window_days is not None and mask.sum() < 100:
                 raise ValueError("Training window leaves fewer than 100 observations")
             prediction[test] = _candidate_predict(spec, train_x[mask], train_y[mask], data["validation_x"][test],
-                train_starts=train_starts[mask] if slot_model else None,
+                train_starts=train_starts[mask] if slot_model or recency_model else None,
                 test_starts=data["starts"][test] if slot_model else None,
                 timezone=job.get("timezone"), seed=job["seed"], threads=job["threads"]) + test_anchor
             refits.append({"start_day": begin.isoformat(), "end_day_exclusive": end.isoformat(),

@@ -7,7 +7,7 @@ Their inputs must already be built with the same decision-time feature rules.
 from __future__ import annotations
 
 import numpy as np
-from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.base import BaseEstimator, RegressorMixin, TransformerMixin
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.dummy import DummyRegressor
 from sklearn.ensemble import ExtraTreesRegressor, HistGradientBoostingRegressor, RandomForestRegressor
@@ -87,6 +87,45 @@ class WeekdayLagInteractions(BaseEstimator, TransformerMixin):
         return np.column_stack([values, one_hot, interactions])
 
 
+class RecencyWeightedLinear(RegressorMixin, BaseEstimator):
+    """Fit a linear model with a half-life measured in ordered observations."""
+
+    def __init__(self, family, half_life_observations, parameters, seed, lag_count=None, harmonics=1):
+        self.family = family
+        self.half_life_observations = half_life_observations
+        self.parameters = parameters
+        self.seed = seed
+        self.lag_count = lag_count
+        self.harmonics = harmonics
+
+    def fit(self, features, target):
+        """Weight recent rows more heavily in scaling and regression."""
+        count = len(target)
+        if (isinstance(self.half_life_observations, bool) or not isinstance(self.half_life_observations, int)
+                or self.half_life_observations < 1 or not count):
+            raise ValueError("Recency half-life must be a positive observation count")
+        weights = np.exp2(-np.arange(count - 1, -1, -1, dtype=float) / self.half_life_observations)
+        self.interactions_ = None
+        if self.lag_count is not None:
+            self.interactions_ = IntradayShapeInteractions(self.lag_count, self.harmonics)
+            features = self.interactions_.fit_transform(features)
+        self.scaler_ = StandardScaler().fit(features, sample_weight=weights)
+        if self.family == "ridge":
+            self.estimator_ = Ridge(**self.parameters)
+        elif self.family == "elastic_net":
+            self.estimator_ = ElasticNet(random_state=self.seed, **self.parameters)
+        else:
+            raise ValueError("Unsupported recency-weighted linear family")
+        self.estimator_.fit(self.scaler_.transform(features), target, sample_weight=weights)
+        return self
+
+    def predict(self, features):
+        """Return predictions in the original target units."""
+        if self.interactions_ is not None:
+            features = self.interactions_.transform(features)
+        return self.estimator_.predict(self.scaler_.transform(features))
+
+
 def make_price_candidate(family, parameters, *, seed, threads=1):
     """Create an unfitted, isolated estimator from explicit study parameters."""
     if isinstance(threads, bool) or not isinstance(threads, int) or threads < 1:
@@ -103,6 +142,14 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
         return make_pipeline(StandardScaler(), Lasso(random_state=seed, **options))
     if family == "elastic_net":
         return make_pipeline(StandardScaler(), ElasticNet(random_state=seed, **options))
+    if family in {"recency_ridge", "recency_elastic_net"}:
+        half_life = options.pop("half_life_observations")
+        return RecencyWeightedLinear(family.removeprefix("recency_"), half_life, options, seed)
+    if family == "recency_interaction_elastic_net":
+        half_life = options.pop("half_life_observations")
+        lag_count = options.pop("lag_count")
+        harmonics = options.pop("harmonics", 1)
+        return RecencyWeightedLinear("elastic_net", half_life, options, seed, lag_count, harmonics)
     if family == "median_regression":
         # HiGHS receives the explicit worker limit through its solver options.
         solver_options = dict(options.pop("solver_options", {}))

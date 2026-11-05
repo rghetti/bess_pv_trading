@@ -620,6 +620,17 @@ def test_catalog_comparison_accepts_relocation_but_not_changed_snapshots():
     assert original != _comparable_catalog_evidence(evidence("/copy.duckdb", "new"), "/copy.duckdb")
 
 
+def test_recency_candidate_rejects_unordered_training_timestamps():
+    """Observation-based decay cannot silently use an arbitrary row order."""
+    from scripts.search_energy_price_models import _candidate_predict
+
+    spec = {"family": "recency_ridge", "parameters": {"half_life_observations": 2, "alpha": 1.0}}
+    starts = np.array(["2026-01-02T00:00:00Z", "2026-01-01T00:00:00Z"])
+    with pytest.raises(ValueError, match="unique and chronological"):
+        _candidate_predict(spec, np.array([[1.], [2.]]), np.array([1., 2.]), np.array([[3.]]),
+                           train_starts=starts, seed=1, threads=1)
+
+
 def test_price_holdout_rechecks_selection_period_snapshots(monkeypatch):
     """Holdout preparation rejects a revised target or lagged auction snapshot."""
     from scripts import search_energy_price_models as search

@@ -34,6 +34,8 @@ def test_candidate_fits_and_returns_finite_predictions(family, options):
     ("interaction_ridge", {"lag_count": 1, "alpha": 1}),
     ("interaction_lasso", {"lag_count": 1, "alpha": 0.01, "max_iter": 1000}),
     ("interaction_elastic_net", {"lag_count": 1, "alpha": 0.01, "l1_ratio": 0.5, "max_iter": 1000}),
+    ("recency_interaction_elastic_net", {"half_life_observations": 20, "lag_count": 1,
+                                         "alpha": 0.01, "l1_ratio": 0.5, "max_iter": 1000}),
     ("interaction_huber", {"lag_count": 1, "epsilon": 1.35, "alpha": 0.01, "max_iter": 500}),
     ("interaction_sgd_mae", {"lag_count": 1, "alpha": 0.001, "max_iter": 500, "tol": 1e-3}),
 ])
@@ -50,6 +52,17 @@ def test_interaction_candidates_fit_with_declared_calendar_layout(family, option
 def test_unknown_candidate_is_rejected():
     with pytest.raises(ValueError, match="Unknown price candidate"):
         make_price_candidate("unknown", {}, seed=1)
+
+
+def test_recency_weighted_linear_adapts_to_recent_level():
+    """A recent price-level shift receives more weight than older rows."""
+    features = np.zeros((100, 1))
+    targets = np.r_[np.zeros(80), np.full(20, 100.0)]
+    weighted = make_price_candidate("recency_ridge", {"half_life_observations": 10, "alpha": 1}, seed=1)
+    ordinary = make_price_candidate("ridge", {"alpha": 1}, seed=1)
+    weighted.fit(features, targets)
+    ordinary.fit(features, targets)
+    assert weighted.predict([[0]])[0] > ordinary.predict([[0]])[0]
 
 
 def test_interactions_generate_configured_daily_harmonics():
