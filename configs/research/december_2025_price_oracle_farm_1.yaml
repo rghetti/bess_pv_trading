@@ -1,0 +1,111 @@
+include: ../standard.yaml
+farm_id: 1
+farms:
+  '1':
+    pv:
+      location:
+        latitude: 45.4642
+        longitude: 9.19
+        location_status: proxy
+        acknowledged: true
+      output:
+        method: explicit_efficiency
+        calibrated_coefficient: null
+        assumption_status: unfitted_before_study
+forecast:
+  curated_realized:
+    enabled: true
+    dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
+continuous_optimization:
+  start_date: '2025-12-01'
+  end_date: '2025-12-31'
+  planning_modes:
+  - integrated
+  perfect_pv_reference: false
+  run_id: december_2025_price_oracle_v1
+  resume: false
+  output_root: outputs/continuous_optimization/december_2025_price_study
+  pv_ensemble:
+    enabled: false
+state:
+  initial_soc_percent: 50.0
+  terminal_soc_percent: 50.0
+  terminal_soc_min_percent: null
+solver:
+  threads: 1
+  time_limit_seconds: 120.0
+  mip_gap: 0.0001
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+pv:
+  forecast_replacement:
+    enabled: false
+  direct_exceeds_ghi: clip_and_flag
+trading:
+  optimize_imbalances: false
+execution:
+  dispatch_policy: track_committed_grid
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+settlement:
+  enabled: true
+experiment_outputs:
+  overwrite_existing: false
+  plots: false
+  save_model_files: false
+gme_oracle_experiment:
+  study_id: null
+  delivery_day: null
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA:
+      dataset: day_ahead_prices
+      native_interval_minutes: null
+    IDA1:
+      dataset: ida1_prices
+      native_interval_minutes: 15
+    IDA2:
+      dataset: ida2_prices
+      native_interval_minutes: 15
+    IDA3:
+      dataset: ida3_prices
+      native_interval_minutes: 15
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions: null
+continuous_participation_study:
+  enabled: true
+  candidate_auctions:
+  - DA
+  - IDA1
+  - IDA2
+  - IDA3
+  required_auctions:
+  - DA
+  profiles: null
+  plots: true
+  sequential_all_auctions_baseline: true
+  perfect_pv_baseline: false
+energy_price_forecast:
+  auction_enabled: false
+  settlement_enabled: false
+  seed: 17
+  artifacts:
+    DA: outputs/energy_price_forecasts/extended_2024_training_v2/october_2025/ridge_price_only/DA/model.json
+    IDA1: outputs/energy_price_forecasts/extended_2024_training_v2/october_2025/ridge_price_only/IDA1/model.json
+    IDA2: outputs/energy_price_forecasts/extended_2024_training_v2/october_2025/ridge_price_only/IDA2/model.json
+    IDA3: outputs/energy_price_forecasts/extended_2024_training_v2/october_2025/ridge_price_only/IDA3/model.json
+  history_paths:
+    DA: outputs/energy_price_forecasts/extended_2024_training_v2/history/DA.parquet
+    IDA1: outputs/energy_price_forecasts/extended_2024_training_v2/history/IDA1.parquet
+    IDA2: outputs/energy_price_forecasts/extended_2024_training_v2/history/IDA2.parquet
+    IDA3: outputs/energy_price_forecasts/extended_2024_training_v2/history/IDA3.parquet
+research_information:
+  pv_updates: latest
+  price_updates: latest
