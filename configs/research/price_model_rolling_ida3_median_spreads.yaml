@@ -1,0 +1,85 @@
+# Later IDA3 median-regression and cleared-price baseline replay.
+include: ../standard.yaml
+price_model_search:
+  run_id: nord_ida3_2026_median_spreads_sep_oct_v1
+  output_root: outputs/energy_price_forecasts
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  timezone: Europe/Rome
+  workers: 2
+  threads_per_worker: 1
+  seed: 17
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  feature_sets:
+  - spread_cleared_only
+  - spread_previous_only
+  product_groups:
+    ida3_quarter_hourly:
+      target: IDA3
+      native_minutes: 15
+      history_start: '2025-01-01T00:00:00+01:00'
+      history_end: '2026-11-01T00:00:00+01:00'
+      cutoff: '2026-08-31T09:00:00Z'
+      validation_start: '2026-09-01'
+      validation_end: '2026-11-01'
+      market_price_features:
+      - DA
+      - IDA1
+      - IDA2
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      lag_hours:
+      - 24
+      - 48
+      - 72
+      - 168
+      - 336
+      feature_sets:
+      - spread_cleared_only
+      - spread_previous_only
+  candidates:
+  - id: zero_spread
+    family: zero_spread
+    parameters: {}
+  - id: median_0.001
+    family: median_regression
+    parameters:
+      alpha: 0.001
+  - id: median_0.01
+    family: median_regression
+    parameters:
+      alpha: 0.01
+  - id: median_0.1
+    family: median_regression
+    parameters:
+      alpha: 0.1
+  feature_set_aliases:
+    spread_cleared_only: price_only
+    spread_previous_only: price_only
+  add_market_price_features_to:
+  - spread_cleared_only
+  - spread_previous_only
+  residual_target_features:
+    spread_cleared_only: cleared_da
+    spread_previous_only: latest_cleared_auction
+  common_training_rows: true
+  selection:
+    source_manifest: outputs/energy_price_forecasts/nord_ida_2026_median_spreads_early_v1/manifest.json
+    top_n: 1
+    baseline_candidates:
+    - zero_spread
+  rolling_refit:
+    frequency_days: 7
+    gap_days: 1
