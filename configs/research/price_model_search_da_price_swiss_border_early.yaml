@@ -1,0 +1,119 @@
+# Matched DA price-curves and previous-day Swiss border context.
+include: ../standard.yaml
+price_model_search:
+  run_id: nord_da_2026_swiss_border_price_early_v1
+  output_root: outputs/energy_price_forecasts
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  timezone: Europe/Rome
+  workers: 4
+  threads_per_worker: 1
+  seed: 17
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  feature_sets:
+  - curve_price
+  - curve_price_border
+  product_groups:
+    quarter_hourly:
+      native_minutes: 15
+      history_start: '2026-01-01T00:00:00+01:00'
+      history_end: '2026-05-01T00:00:00+02:00'
+      cutoff: '2026-02-28T10:00:00Z'
+      validation_start: '2026-03-01'
+      validation_end: '2026-05-01'
+      feature_sets:
+      - curve_price
+      - curve_price_border
+  candidates:
+  - id: ridge_20
+    family: ridge
+    parameters:
+      alpha: 20.0
+  - id: lasso_1
+    family: lasso
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+  - id: elastic_01
+    family: elastic_net
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - id: extra_leaf15_features06
+    family: extra_trees
+    parameters:
+      n_estimators: 150
+      min_samples_leaf: 15
+      max_features: 0.6
+  - id: extra_leaf15_features10
+    family: extra_trees
+    parameters:
+      n_estimators: 150
+      min_samples_leaf: 15
+      max_features: 1.0
+  feature_set_aliases:
+    curve_price: price_only
+    curve_price_border: price_only
+  daily_curve_lag_days:
+  - 1
+  - 2
+  - 7
+  add_daily_curve_features_to:
+  - curve_price
+  - curve_price_border
+  common_training_rows: true
+  add_supplemental_features_to:
+  - curve_price_border
+  supplemental_features:
+  - name: swiss_italy_schedule_prev_24h
+    provider: swissgrid
+    dataset: border_context
+    zone: CH
+    expected_unit: MW
+    target_shift_hours: 24
+    publication_local_time: 00:00
+    publication_day_offset: 0
+    selectors:
+      source_field: M:Kommerzielle Lastflüsse Italien Netto (Total) [MW]
+  - name: swiss_to_italy_ntc_prev_24h
+    provider: swissgrid
+    dataset: border_context
+    zone: CH
+    expected_unit: MW
+    target_shift_hours: 24
+    publication_local_time: 00:00
+    publication_day_offset: 0
+    selectors:
+      source_field: H:Intraday NTC Schweiz > Italien [MW]
+  - name: italy_to_swiss_ntc_prev_24h
+    provider: swissgrid
+    dataset: border_context
+    zone: CH
+    expected_unit: MW
+    target_shift_hours: 24
+    publication_local_time: 00:00
+    publication_day_offset: 0
+    selectors:
+      source_field: I:Intraday NTC Italien > Schweiz [MW]
+  - name: italy_swiss_spread_prev_24h
+    provider: swissgrid
+    dataset: border_context
+    zone: CH
+    expected_unit: EUR/MWh
+    target_shift_hours: 24
+    publication_local_time: 00:00
+    publication_day_offset: 0
+    selectors:
+      source_field: R:Preisdifferenz Spot Italien Nord-Schweiz [EUR/MWh]

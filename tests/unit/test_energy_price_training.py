@@ -82,6 +82,22 @@ def test_projected_interval_features_retain_hashes_and_explicit_assumptions(tmp_
     assert evidence["features"][0]["availability"].startswith("assumed")
 
 
+def test_catalog_selector_isolates_border_source_field(tmp_path):
+    """Different border columns at the same time must never be mixed."""
+    path = tmp_path / "border.duckdb"
+    frame = pd.DataFrame({"product_start": pd.to_datetime(["2026-01-02T00:00Z"] * 2),
+        "product_end": pd.to_datetime(["2026-01-02T01:00Z"] * 2),
+        "value": [120.0, 5.0], "unit": ["MW", "EUR/MWh"],
+        "source_field": ["commercial schedule", "spot spread"]})
+    write_snapshot(path, frame, "swissgrid", "border_context")
+    selection = {"name": "schedule", "provider": "swissgrid", "dataset": "border_context", "zone": "NORD",
+                 "expected_unit": "MW", "publication_local_time": "00:00", "publication_day_offset": -1,
+                 "selectors": {"source_field": "commercial schedule"}}
+    values, evidence = load_catalog_features(path, [selection], start="2026-01-02T00:00Z", end="2026-01-02T01:00Z")
+    assert values.value.tolist() == [120.0] * 4
+    assert evidence["features"][0]["source_rows"] == 1
+
+
 def test_weather_interpolation_never_crosses_missing_bracket(tmp_path):
     path = tmp_path / "market.duckdb"
     times = pd.date_range("2026-01-02T00:00:00Z", periods=4, freq="h")

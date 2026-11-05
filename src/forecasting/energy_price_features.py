@@ -190,7 +190,7 @@ def load_catalog_features(database, selections, *, start, end, timezone="Europe/
                           end - shift + pd.Timedelta(hours=1 if weather else 0)]
             # Restrict weather variables/locations before rows leave DuckDB.
             for name, value in spec.get("selectors", {}).items():
-                if name not in {"location_id", "variable", "model", "source_kind", "gas_product"} or name not in columns:
+                if name not in {"location_id", "variable", "model", "source_kind", "gas_product", "source_field"} or name not in columns:
                     raise ValueError(f"Unsupported feature selector {name}")
                 conditions.append(f'"{name}"=?')
                 parameters.append(value)
