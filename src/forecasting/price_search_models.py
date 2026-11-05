@@ -55,6 +55,38 @@ class IntradayShapeInteractions(BaseEstimator, TransformerMixin):
         return np.column_stack(columns)
 
 
+class WeekdayLagInteractions(BaseEstimator, TransformerMixin):
+    """Allow selected recent-price lag effects to vary by local weekday."""
+
+    def __init__(self, lag_count, signal_count):
+        self.lag_count = lag_count
+        self.signal_count = signal_count
+
+    def fit(self, features, target=None):
+        """Validate the declared lag and deterministic calendar layout."""
+        values = np.asarray(features)
+        if (isinstance(self.lag_count, bool) or not isinstance(self.lag_count, int) or self.lag_count < 1
+                or isinstance(self.signal_count, bool) or not isinstance(self.signal_count, int)
+                or not 1 <= self.signal_count <= self.lag_count):
+            raise ValueError("Weekday interactions require valid lag and signal counts")
+        if values.ndim != 2 or values.shape[1] < self.lag_count + 7:
+            raise ValueError("Weekday interaction input lacks the declared calendar columns")
+        return self
+
+    def transform(self, features):
+        """Decode weekday phase and append one-hot terms and lag interactions."""
+        values = np.asarray(features, dtype=float)
+        sine = values[:, self.lag_count + 2]
+        cosine = values[:, self.lag_count + 3]
+        if not np.isfinite(sine).all() or not np.isfinite(cosine).all() or not np.allclose(sine**2 + cosine**2, 1):
+            raise ValueError("Weekday sine and cosine must encode a valid phase")
+        phase = np.mod(np.arctan2(sine, cosine), 2 * np.pi)
+        weekdays = np.rint(phase * 7 / (2 * np.pi)).astype(int) % 7
+        one_hot = np.eye(7)[weekdays]
+        interactions = (one_hot[:, :, None] * values[:, None, :self.signal_count]).reshape(len(values), -1)
+        return np.column_stack([values, one_hot, interactions])
+
+
 def make_price_candidate(family, parameters, *, seed, threads=1):
     """Create an unfitted, isolated estimator from explicit study parameters."""
     if isinstance(threads, bool) or not isinstance(threads, int) or threads < 1:
@@ -86,6 +118,11 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
         estimator = make_pipeline(StandardScaler(), SGDRegressor(loss="epsilon_insensitive", epsilon=0,
                                                                    random_state=seed, **options))
         return TransformedTargetRegressor(regressor=estimator, transformer=StandardScaler())
+    if family in {"weekday_ridge", "weekday_elastic_net"}:
+        lag_count = options.pop("lag_count")
+        signal_count = options.pop("signal_count")
+        estimator = Ridge(**options) if family == "weekday_ridge" else ElasticNet(random_state=seed, **options)
+        return make_pipeline(WeekdayLagInteractions(lag_count, signal_count), StandardScaler(), estimator)
     if family in {"interaction_ridge", "interaction_lasso", "interaction_elastic_net", "interaction_huber",
                   "interaction_sgd_mae"}:
         lag_count = options.pop("lag_count")

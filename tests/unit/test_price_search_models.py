@@ -66,6 +66,25 @@ def test_interactions_generate_configured_daily_harmonics():
         IntradayShapeInteractions(lag_count=1, harmonics=0).fit(values)
 
 
+def test_weekday_interactions_decode_local_calendar_and_lags():
+    """Monday and Sunday phases select distinct lag coefficients."""
+    from bess_pv_trading.forecasting.price_search_models import WeekdayLagInteractions
+
+    values = np.zeros((2, 9))
+    values[:, 0] = [2, 3]
+    values[:, 3] = np.sin(2 * np.pi * np.array([0, 6]) / 7)
+    values[:, 4] = np.cos(2 * np.pi * np.array([0, 6]) / 7)
+    transformed = WeekdayLagInteractions(lag_count=1, signal_count=1).fit_transform(values)
+    assert transformed.shape == (2, 23)
+    assert transformed[0, 9:16] == pytest.approx([1, 0, 0, 0, 0, 0, 0])
+    assert transformed[1, 9:16] == pytest.approx([0, 0, 0, 0, 0, 0, 1])
+    assert transformed[0, 16:23] == pytest.approx([2, 0, 0, 0, 0, 0, 0])
+    assert transformed[1, 16:23] == pytest.approx([0, 0, 0, 0, 0, 0, 3])
+    values[0, 3:5] = 0
+    with pytest.raises(ValueError, match="valid phase"):
+        WeekdayLagInteractions(lag_count=1, signal_count=1).fit_transform(values)
+
+
 def test_huber_candidate_resists_a_large_training_outlier():
     """Robust candidate stays closer to the central price than ordinary ridge."""
     features = np.zeros((40, 1))
