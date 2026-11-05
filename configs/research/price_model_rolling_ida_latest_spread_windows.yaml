@@ -1,0 +1,178 @@
+# Later matched evaluation of IDA spread anchors and training windows.
+include: ../standard.yaml
+price_model_search:
+  add_market_price_features_to:
+  - spread_cleared_only
+  - spread_previous_only
+  candidates:
+  - family: ridge
+    id: ridge_20
+    parameters:
+      alpha: 20.0
+  - family: ridge
+    id: ridge_20_window180
+    parameters:
+      alpha: 20.0
+    train_window_days: 180
+  - family: ridge
+    id: ridge_20_window365
+    parameters:
+      alpha: 20.0
+    train_window_days: 365
+  - family: lasso
+    id: lasso_1
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+  - family: lasso
+    id: lasso_1_window180
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+    train_window_days: 180
+  - family: lasso
+    id: lasso_1_window365
+    parameters:
+      alpha: 1.0
+      max_iter: 5000
+    train_window_days: 365
+  - family: elastic_net
+    id: elastic_01
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+  - family: elastic_net
+    id: elastic_01_window180
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+    train_window_days: 180
+  - family: elastic_net
+    id: elastic_01_window365
+    parameters:
+      alpha: 0.1
+      l1_ratio: 0.5
+      max_iter: 5000
+    train_window_days: 365
+  - family: elastic_net
+    id: elastic_05
+    parameters:
+      alpha: 0.5
+      l1_ratio: 0.8
+      max_iter: 5000
+  - family: elastic_net
+    id: elastic_05_window180
+    parameters:
+      alpha: 0.5
+      l1_ratio: 0.8
+      max_iter: 5000
+    train_window_days: 180
+  - family: elastic_net
+    id: elastic_05_window365
+    parameters:
+      alpha: 0.5
+      l1_ratio: 0.8
+      max_iter: 5000
+    train_window_days: 365
+  - family: lasso
+    id: lasso_01
+    parameters:
+      alpha: 0.1
+      max_iter: 5000
+  - family: lasso
+    id: lasso_01_window180
+    parameters:
+      alpha: 0.1
+      max_iter: 5000
+    train_window_days: 180
+  - family: lasso
+    id: lasso_01_window365
+    parameters:
+      alpha: 0.1
+      max_iter: 5000
+    train_window_days: 365
+  common_training_rows: true
+  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  feature_set_aliases:
+    spread_cleared_only: price_only
+    spread_previous_only: price_only
+  feature_sets:
+  - spread_cleared_only
+  - spread_previous_only
+  lag_hours:
+  - 24
+  - 23
+  - 25
+  - 48
+  - 47
+  - 49
+  - 72
+  - 168
+  - 167
+  - 169
+  - 336
+  output_root: outputs/energy_price_forecasts
+  product_groups:
+    ida2_quarter_hourly:
+      cutoff: '2026-08-31T09:00:00Z'
+      feature_sets:
+      - spread_cleared_only
+      - spread_previous_only
+      history_end: '2026-11-01T00:00:00+01:00'
+      history_start: '2025-01-01T00:00:00+01:00'
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      market_price_features:
+      - DA
+      - IDA1
+      native_minutes: 15
+      target: IDA2
+      validation_end: '2026-11-01'
+      validation_start: '2026-09-01'
+    ida3_quarter_hourly:
+      cutoff: '2026-08-31T09:00:00Z'
+      feature_sets:
+      - spread_cleared_only
+      - spread_previous_only
+      history_end: '2026-11-01T00:00:00+01:00'
+      history_start: '2025-01-01T00:00:00+01:00'
+      lag_hours:
+      - 24
+      - 48
+      - 72
+      - 168
+      - 336
+      market_neighbor_offsets_minutes:
+      - -60
+      - -15
+      market_price_features:
+      - DA
+      - IDA1
+      - IDA2
+      native_minutes: 15
+      target: IDA3
+      validation_end: '2026-11-01'
+      validation_start: '2026-09-01'
+  residual_target_features:
+    spread_cleared_only: cleared_da
+    spread_previous_only: latest_cleared_auction
+  run_id: nord_ida_2026_latest_spread_windows_sep_oct_v1
+  seed: 17
+  source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
+  threads_per_worker: 1
+  timezone: Europe/Rome
+  workers: 4
+  selection:
+    source_manifest: outputs/energy_price_forecasts/nord_ida_2026_latest_spread_windows_early_v1/manifest.json
+    top_n: 1
+    baseline_candidates: []
+    matched_feature_pairs:
+    - - spread_cleared_only
+      - spread_previous_only
+    matched_window_baselines: true
+  rolling_refit:
+    frequency_days: 7
+    gap_days: 1
