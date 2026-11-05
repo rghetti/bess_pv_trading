@@ -1,0 +1,175 @@
+# CPU model comparison using the existing native-resolution saved matrices.
+include: ../standard.yaml
+holiday_broad_search:
+  workers: 8
+  output_root: /tmp/price_holiday_broad_early_v1
+  project_root: /home/rghetti/bess_pv_trading_realtime_mpc
+  studies:
+  - id: da_weather
+    matrix: outputs/energy_price_forecasts/nord_da_2026_recency_weighted_early_v1/quarter_hourly__curve_price_weather.npz
+    candidates:
+    - id: ridge
+      family: interaction_ridge
+      parameters:
+        lag_count: 11
+        alpha: 200.0
+    - id: lasso
+      family: interaction_lasso
+      parameters:
+        lag_count: 11
+        alpha: 0.1
+        max_iter: 5000
+    - id: huber
+      family: interaction_huber
+      parameters:
+        lag_count: 11
+        epsilon: 1.35
+        alpha: 1.0
+        max_iter: 1000
+    - id: lightgbm_l1
+      family: lightgbm
+      parameters:
+        objective: regression_l1
+        n_estimators: 500
+        learning_rate: 0.04
+        num_leaves: 15
+        min_child_samples: 30
+    - id: catboost_mae
+      family: catboost
+      parameters:
+        loss_function: MAE
+        iterations: 600
+        depth: 5
+        learning_rate: 0.04
+        l2_leaf_reg: 10
+    - id: xgb_mae
+      family: xgboost
+      parameters:
+        objective: reg:absoluteerror
+        tree_method: hist
+        n_estimators: 600
+        max_depth: 4
+        min_child_weight: 40
+        learning_rate: 0.04
+        reg_lambda: 20
+    - id: mlp_regularized
+      family: mlp
+      parameters:
+        hidden_layer_sizes:
+        - 64
+        - 32
+        alpha: 1.0
+        max_iter: 400
+        early_stopping: true
+        validation_fraction: 0.15
+        n_iter_no_change: 15
+  - id: da_weather_ida
+    matrix: outputs/energy_price_forecasts/nord_da_2026_recency_weighted_early_v1/quarter_hourly__ida_curve_price_weather.npz
+    candidates:
+    - id: ridge
+      family: interaction_ridge
+      parameters:
+        lag_count: 11
+        alpha: 200.0
+    - id: lasso
+      family: interaction_lasso
+      parameters:
+        lag_count: 11
+        alpha: 0.1
+        max_iter: 5000
+    - id: huber
+      family: interaction_huber
+      parameters:
+        lag_count: 11
+        epsilon: 1.35
+        alpha: 1.0
+        max_iter: 1000
+    - id: lightgbm_l1
+      family: lightgbm
+      parameters:
+        objective: regression_l1
+        n_estimators: 500
+        learning_rate: 0.04
+        num_leaves: 15
+        min_child_samples: 30
+    - id: catboost_mae
+      family: catboost
+      parameters:
+        loss_function: MAE
+        iterations: 600
+        depth: 5
+        learning_rate: 0.04
+        l2_leaf_reg: 10
+    - id: xgb_mae
+      family: xgboost
+      parameters:
+        objective: reg:absoluteerror
+        tree_method: hist
+        n_estimators: 600
+        max_depth: 4
+        min_child_weight: 40
+        learning_rate: 0.04
+        reg_lambda: 20
+    - id: mlp_regularized
+      family: mlp
+      parameters:
+        hidden_layer_sizes:
+        - 64
+        - 32
+        alpha: 1.0
+        max_iter: 400
+        early_stopping: true
+        validation_fraction: 0.15
+        n_iter_no_change: 15
+  - id: ida3_weather
+    matrix: outputs/energy_price_forecasts/nord_ida_2026_bidirectional_latest_spread_early_v1/ida3_quarter_hourly__spread_price_weather.npz
+    anchor_reference: outputs/energy_price_forecasts/nord_ida_2026_bidirectional_latest_spread_early_v1/ida3_quarter_hourly__spread_price_weather__zero_spread.csv
+    anchor_index: 14
+    candidates:
+    - id: ridge
+      family: ridge
+      parameters:
+        alpha: 20.0
+    - id: huber
+      family: huber
+      parameters:
+        epsilon: 1.35
+        alpha: 1.0
+        max_iter: 1000
+    - id: lightgbm_l1
+      family: lightgbm
+      parameters:
+        objective: regression_l1
+        n_estimators: 500
+        learning_rate: 0.04
+        num_leaves: 15
+        min_child_samples: 30
+    - id: catboost_mae
+      family: catboost
+      parameters:
+        loss_function: MAE
+        iterations: 600
+        depth: 5
+        learning_rate: 0.04
+        l2_leaf_reg: 10
+    - id: xgb_mae
+      family: xgboost
+      parameters:
+        objective: reg:absoluteerror
+        tree_method: hist
+        n_estimators: 600
+        max_depth: 4
+        min_child_weight: 40
+        learning_rate: 0.04
+        reg_lambda: 20
+    - id: mlp_regularized
+      family: mlp
+      parameters:
+        hidden_layer_sizes:
+        - 64
+        - 32
+        alpha: 1.0
+        max_iter: 400
+        early_stopping: true
+        validation_fraction: 0.15
+        n_iter_no_change: 15
