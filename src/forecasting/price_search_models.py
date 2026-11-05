@@ -11,7 +11,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import TransformedTargetRegressor
 from sklearn.dummy import DummyRegressor
 from sklearn.ensemble import ExtraTreesRegressor, HistGradientBoostingRegressor, RandomForestRegressor
-from sklearn.linear_model import ElasticNet, HuberRegressor, Lasso, Ridge, SGDRegressor
+from sklearn.linear_model import ElasticNet, HuberRegressor, Lasso, QuantileRegressor, Ridge, SGDRegressor
 from sklearn.neural_network import MLPRegressor
 from sklearn.neighbors import KNeighborsRegressor
 from sklearn.pipeline import make_pipeline
@@ -70,6 +70,14 @@ def make_price_candidate(family, parameters, *, seed, threads=1):
         return make_pipeline(StandardScaler(), Lasso(random_state=seed, **options))
     if family == "elastic_net":
         return make_pipeline(StandardScaler(), ElasticNet(random_state=seed, **options))
+    if family == "median_regression":
+        # HiGHS receives the explicit worker limit through its solver options.
+        solver_options = dict(options.pop("solver_options", {}))
+        if "threads" in solver_options and solver_options["threads"] != threads:
+            raise ValueError("Median-regression solver threads must match the worker limit")
+        solver_options["threads"] = threads
+        return make_pipeline(StandardScaler(), QuantileRegressor(quantile=0.5, solver="highs",
+                                                                   solver_options=solver_options, **options))
     if family == "huber":
         estimator = make_pipeline(StandardScaler(), HuberRegressor(**options))
         return TransformedTargetRegressor(regressor=estimator, transformer=StandardScaler())

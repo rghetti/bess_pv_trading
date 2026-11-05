@@ -9,6 +9,7 @@ from bess_pv_trading.forecasting.price_search_models import make_price_candidate
 @pytest.mark.parametrize("family,options", [
     ("ridge", {"alpha": 1}),
     ("lasso", {"alpha": 0.01, "max_iter": 1000}),
+    ("median_regression", {"alpha": 0.01}),
     ("elastic_net", {"alpha": 0.01, "l1_ratio": 0.5, "max_iter": 1000}),
     ("huber", {"epsilon": 1.35, "alpha": 0.01, "max_iter": 500}),
     ("sgd_mae", {"alpha": 0.001, "max_iter": 500, "tol": 1e-3}),
