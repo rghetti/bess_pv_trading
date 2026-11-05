@@ -1,0 +1,15 @@
+# Early validation of nonlinear hourly-to-quarter-hourly transfer.
+include: ../standard.yaml
+hourly_transfer_pilot:
+  method: trees
+  hourly_source: outputs/energy_price_forecasts/nord_da_hourly_extra_trees_selected_rolling_v1/hourly__curve_fundamentals.npz
+  quarter_hourly_source: outputs/energy_price_forecasts/nord_da_2026_price_only_early_selection_v1/quarter_hourly__curve_price.npz
+  hourly_cutoff: '2025-09-30T22:00:00Z'
+  lag_count: 11
+  seed: 17
+  tree_threads: 1
+  tree_specs:
+    - {n_estimators: 150, min_samples_leaf: 3, max_features: 0.6}
+    - {n_estimators: 150, min_samples_leaf: 15, max_features: 0.6}
+  quarter_alphas: [20.0, 200.0]
+  hourly_weights: [0.0, 0.5, 1.0]

@@ -27,5 +27,34 @@ products ended by the boundary. It emits source-array checksums with results.
 The unit test verifies that a post-boundary hourly label cannot affect scores
 and that overlapping training dates are rejected. Source availability clocks
 remain assumptions, and the saved hourly sample has lag warm-up exclusions.
-A more expressive transfer model and an untouched later period would be needed
-to assess whether 2024 hourly history can materially improve quarter-hourly DA.
+
+## Nonlinear transfer and later replay
+
+A follow-up replaces the hourly ridge with Extra Trees and fits a separate
+quarter-hourly ridge to the residual. The hourly model still uses only hourly
+labels available by the resolution boundary. The February–April selection
+grid considered two minimum leaf sizes, two residual penalties, and three
+hourly prediction weights. The selected model used 150 trees, minimum leaf
+size 3, maximum feature fraction 0.6, ridge penalty 200 and hourly weight 1.
+Its matched reference has weight 0 and the same quarter-hourly penalty.
+
+| Price-only evaluation | Products | Transfer MAE, EUR/MWh | Transfer WAPE | Reference MAE, EUR/MWh | Reference WAPE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| February–April 2026 selection | 8,252 | 14.670 | 11.535% | 16.968 | 13.342% |
+| September–October 2026 rolling replay | 4,992 | 24.024 | 11.195% | 17.410 | 8.113% |
+
+The later replay uses eight weekly refits and a one-day gap; each refit only
+adds previously completed and published quarter-hourly labels. The final nine
+to ten October days are absent from the available source. Both models are
+scored on the same products within each period, but the later period had
+already been inspected in other searches and is not an untouched test set.
+The average hourly training price was about 111 EUR/MWh, versus 215 EUR/MWh
+in the later evaluation; the shift may contribute to the poor transfer but
+does not establish its cause. These results do not establish that every
+hourly-to-quarter-hourly transfer approach will fail.
+
+The configurations are `configs/research/price_hourly_tree_transfer_early.yaml`
+and `configs/research/price_hourly_tree_transfer_later.yaml`. The same script
+emits input checksums and scores for both; the test also checks that a future
+target cannot affect earlier rolling predictions. Weather and other external
+features are absent, and historical publication times remain assumptions.

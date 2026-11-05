@@ -9,6 +9,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.linear_model import Ridge
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
@@ -21,8 +22,8 @@ def digest(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 
 
-def evaluate(hourly_path, quarter_path, hourly_cutoff, lag_count, hourly_alphas, quarter_alphas, hourly_weights):
-    """Fit the hourly component before the resolution change and score later products."""
+def prepare_inputs(hourly_path, quarter_path, hourly_cutoff, lag_count):
+    """Load strictly separated hourly and quarter-hourly source matrices."""
     cutoff = pd.Timestamp(hourly_cutoff)
     if cutoff.tzinfo is None:
         raise ValueError("Hourly cutoff must be timezone-aware")
@@ -52,8 +53,17 @@ def evaluate(hourly_path, quarter_path, hourly_cutoff, lag_count, hourly_alphas,
         quarter_y = data["train_y"]
         evaluation_x = data["validation_x"][:, :columns]
         evaluation_y = data["validation_y"]
+        rolling_keys = ("decisions_ns", "available_ns", "product_end_ns", "starts")
+        rolling_data = {key: data[key] for key in rolling_keys if key in data.files}
     if min(hourly_x.shape[1], quarter_x.shape[1], evaluation_x.shape[1]) != columns:
         raise ValueError("A source matrix lacks the required lag and calendar columns")
+    return hourly_x, hourly_y, quarter_x, quarter_y, evaluation_x, evaluation_y, rolling_data
+
+
+def evaluate(hourly_path, quarter_path, hourly_cutoff, lag_count, hourly_alphas, quarter_alphas, hourly_weights):
+    """Fit the hourly component before the resolution change and score later products."""
+    hourly_x, hourly_y, quarter_x, quarter_y, evaluation_x, evaluation_y, _ = prepare_inputs(
+        hourly_path, quarter_path, hourly_cutoff, lag_count)
     results = []
     # A zero weight is the matched quarter-hourly-only reference.
     for hourly_alpha in hourly_alphas:
@@ -70,6 +80,62 @@ def evaluate(hourly_path, quarter_path, hourly_cutoff, lag_count, hourly_alphas,
                 results.append({"hourly_alpha": hourly_alpha, "quarter_alpha": quarter_alpha,
                                 "hourly_weight": weight, "mae": float(error.mean()),
                                 "wape_percent": float(100 * error.sum() / np.abs(evaluation_y).sum())})
+    return {"hourly_sha256": digest(hourly_path), "quarter_sha256": digest(quarter_path),
+            "hourly_rows": len(hourly_y), "quarter_rows": len(quarter_y),
+            "evaluation_rows": len(evaluation_y), "results": results}
+
+
+def evaluate_trees(hourly_path, quarter_path, hourly_cutoff, lag_count, tree_specs, quarter_alphas,
+                   hourly_weights, seed, tree_threads, rolling, return_predictions=False):
+    """Fit hourly trees and quarter-hour residuals, optionally refitting on released labels."""
+    if isinstance(tree_threads, bool) or not isinstance(tree_threads, int) or tree_threads < 1:
+        raise ValueError("Tree thread count must be a positive integer")
+    hourly_x, hourly_y, quarter_x, quarter_y, evaluation_x, evaluation_y, clocks = prepare_inputs(
+        hourly_path, quarter_path, hourly_cutoff, lag_count)
+    if rolling is not None:
+        required = {"starts", "decisions_ns", "available_ns", "product_end_ns"}
+        if set(clocks) != required:
+            raise ValueError("Rolling evaluation requires product and publication clocks")
+        from scripts.search_energy_price_models import _rolling_blocks
+
+        blocks = list(_rolling_blocks(clocks["starts"], clocks["decisions_ns"], clocks["available_ns"],
+                                      clocks["product_end_ns"], rolling["timezone"],
+                                      rolling["frequency_days"], rolling["gap_days"]))
+    else:
+        blocks = None
+    results = []
+    # Each tree is trained only on hourly labels available before the boundary.
+    for specification in tree_specs:
+        tree = ExtraTreesRegressor(random_state=seed, n_jobs=tree_threads, **specification)
+        tree.fit(hourly_x, hourly_y)
+        hourly_on_train = tree.predict(quarter_x)
+        hourly_on_test = tree.predict(evaluation_x)
+        for quarter_alpha in quarter_alphas:
+            for weight in hourly_weights:
+                if blocks is None:
+                    residual = make_pipeline(StandardScaler(), Ridge(alpha=quarter_alpha))
+                    residual.fit(quarter_x, quarter_y - weight * hourly_on_train)
+                    prediction = weight * hourly_on_test + residual.predict(evaluation_x)
+                else:
+                    prediction = np.full(len(evaluation_y), np.nan)
+                    # Append only completed, released labels before each refit.
+                    for _, _, past, test in blocks:
+                        train_x = np.concatenate([quarter_x, evaluation_x[past]])
+                        train_y = np.concatenate([quarter_y, evaluation_y[past]])
+                        train_hourly = np.concatenate([hourly_on_train, hourly_on_test[past]])
+                        residual = make_pipeline(StandardScaler(), Ridge(alpha=quarter_alpha))
+                        residual.fit(train_x, train_y - weight * train_hourly)
+                        prediction[test] = weight * hourly_on_test[test] + residual.predict(evaluation_x[test])
+                if not np.isfinite(prediction).all():
+                    raise ValueError("Rolling transfer produced incomplete predictions")
+                error = np.abs(evaluation_y - prediction)
+                result = {"tree_parameters": specification, "quarter_alpha": quarter_alpha,
+                          "hourly_weight": weight, "mae": float(error.mean()),
+                          "wape_percent": float(100 * error.sum() / np.abs(evaluation_y).sum()),
+                          "rolling_refits": None if blocks is None else len(blocks)}
+                if return_predictions:
+                    result["predictions"] = prediction.tolist()
+                results.append(result)
     return {"hourly_sha256": digest(hourly_path), "quarter_sha256": digest(quarter_path),
             "hourly_rows": len(hourly_y), "quarter_rows": len(quarter_y),
             "evaluation_rows": len(evaluation_y), "results": results}
@@ -103,8 +169,15 @@ def main():
             or hourly_config["timezone"] != quarter_config["timezone"]
             or hourly_group["native_minutes"] != 60 or quarter_group["native_minutes"] != 15):
         raise ValueError("Source lag layouts, timezones or native resolutions do not match")
-    result = evaluate(hourly_path, quarter_path, settings["hourly_cutoff"], settings["lag_count"],
-                      settings["hourly_alphas"], settings["quarter_alphas"], settings["hourly_weights"])
+    if settings.get("method", "ridge") == "trees":
+        result = evaluate_trees(hourly_path, quarter_path, settings["hourly_cutoff"], settings["lag_count"],
+                                settings["tree_specs"], settings["quarter_alphas"], settings["hourly_weights"],
+                                settings["seed"], settings["tree_threads"], settings.get("rolling"))
+    elif settings.get("method", "ridge") == "ridge":
+        result = evaluate(hourly_path, quarter_path, settings["hourly_cutoff"], settings["lag_count"],
+                          settings["hourly_alphas"], settings["quarter_alphas"], settings["hourly_weights"])
+    else:
+        raise ValueError("Unknown transfer pilot method")
     print(json.dumps(result, indent=2))
 
 
