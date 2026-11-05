@@ -1,0 +1,15 @@
+# Joint native-window IDA spread curves from the existing matched early split.
+include: ../standard.yaml
+daily_ida_spreads:
+  source_search: outputs/energy_price_forecasts/nord_ida_2026_spread_price_weather_early_v1
+  output_root: outputs/energy_price_forecasts
+  run_id: nord_ida_2026_daily_spread_curves_early_v1
+  timezone: Europe/Rome
+  interval_minutes: 15
+  feature_set: spread_price
+  group_start_hours:
+    ida1_quarter_hourly: 0
+    ida2_quarter_hourly: 0
+    ida3_quarter_hourly: 12
+  target_ranks: [4, 8, 16]
+  ridge_alphas: [100.0, 1000.0, 10000.0]
