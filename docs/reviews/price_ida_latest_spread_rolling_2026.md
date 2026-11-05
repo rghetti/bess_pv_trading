@@ -79,3 +79,24 @@ later fits had no recorded convergence warnings. Both periods have been
 inspected, and publication-clock and missing-day caveats remain. Configurations
 are `price_model_search_ida_latest_spread_windows.yaml` and
 `price_model_rolling_ida_latest_spread_windows.yaml`.
+
+## Latest-cleared-price baseline
+
+A stronger reference than the DA-anchor model is to use the latest cleared
+auction price itself, without predicting a spread. On the same May–August
+products, the baseline values were verified against the catalog's IDA1 prices
+for IDA2 and IDA2 prices for IDA3. Their use remains subject to the configured
+publication-clock assumptions.
+
+| Market | Products | Latest-cleared baseline MAE EUR/MWh | Baseline WAPE | Selected model MAE EUR/MWh | Model WAPE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| IDA2 | 10,560 | 7.847 | 5.379% | 7.799 | 5.347% |
+| IDA3 | 5,472 | 12.990 | 8.975% | 13.001 | 8.983% |
+
+A paired independent-day bootstrap (5,000 resamples, seed 173) gives 95%
+percentile intervals for model MAE gain over this baseline of -0.002 to +0.098
+EUR/MWh for IDA2 and -0.328 to +0.288 for IDA3. The comparison does not show
+a clear improvement over the simpler cleared-price baseline; the intervals
+omit serial dependence and selection uncertainty. The large IDA2 improvement
+against the same Elastic Net with a DA anchor above should therefore not be
+interpreted as a large improvement over the latest cleared price itself.
