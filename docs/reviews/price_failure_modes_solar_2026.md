@@ -58,17 +58,22 @@ radiation quantiles and are interacted with delivery time by the existing
 model. On the already-examined February–April days, baseline MAE/WAPE were
 11.711 EUR/MWh/9.136%, versus 11.682 EUR/MWh/9.113% with the added terms;
 midday bias fell from +5.407 to +5.321 EUR/MWh. This is a small exploratory
-change, not evidence of general improvement. The queued weekly May–August
-replay estimates each threshold again at every refit using only its training
+change, not evidence of general improvement. The weekly May–August
+replay estimated each threshold again at every refit using only its training
 rows. The exact saved-matrix columns and hashes are recorded by
 `scripts/analyze_price_solar_response.py`; the 2026 delivery periods are not
 an untouched final holdout.
 
-The May–August rolling baseline has finished on 107 complete shared days;
-the solar-hinge predictions are still running. Some solar-hinge refits have
-emitted convergence warnings at the configured 5,000-iteration limit; their
-results are diagnostic until convergence is resolved and re-evaluated. The
-baseline's mean midday signed error
+The May–August rolling replay has finished on 107 complete shared days. It
+scored 16.049 EUR/MWh MAE and 11.049% WAPE for the baseline, and 15.981 and
+11.002% with solar hinges. The baseline-minus-hinge MAE difference was +0.068
+EUR/MWh with independent-day bootstrap 95% interval -0.150–0.288 (5,000
+resamples, seed 173). Midday bias changed from -4.373 to -5.329 EUR/MWh.
+Five solar-hinge refits emitted convergence warnings at the configured
+5,000-iteration limit; these numbers are diagnostic until convergence is
+resolved and re-evaluated. The interval also omits serial dependence and
+selection uncertainty. A higher-iteration audit is queued. The baseline's
+mean midday signed error
 was -9.22 EUR/MWh in May (27 days), -13.68 in June (29), -0.84 in July (29)
 and +9.19 in August (22). Mean midday errors within a month are descriptive
 and do not establish why the bias changes. Across these summer days, the
@@ -85,8 +90,8 @@ completed without recorded failures or convergence warnings. At the best
 models did not improve on the matched one-harmonic model in early selection;
 they were not promoted to later replays. Prior experiments adding weekday
 terms and unweighted higher harmonics produced only small or uncertain gains.
-The piecewise solar response still requires its later matched-baseline replay
-before it can be considered useful.
+The piecewise solar response still requires its convergence audit and further
+later-period evaluation before it can be considered useful.
 
 ## Intraday: different failure modes
 
