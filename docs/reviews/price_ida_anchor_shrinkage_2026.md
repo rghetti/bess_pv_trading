@@ -24,3 +24,23 @@ IDA3. These intervals do not account for serial dependence, model or weight
 selection, or missing-day bias. None establishes a reliable improvement over
 the baseline, and this diagnostic does not demonstrate the 4% target across
 markets or periods.
+
+## Six-hour block diagnostic
+
+A follow-up allowed a separate model weight of 0, 0.5 or 1 in each six-hour
+local delivery block. Weights were chosen by February–April MAE and then fixed
+for the same later products above. The IDA3 delivery horizon covers only the
+12:00–17:59 and 18:00–23:59 blocks in this dataset.
+
+| Market | Weights for 00–05, 06–11, 12–17, 18–23 | Later MAE EUR/MWh | Later WAPE | Latest-cleared baseline MAE EUR/MWh |
+| --- | --- | ---: | ---: | ---: |
+| IDA1 | 1, 0, 0.5, 1 | 8.851 | 4.149% | 8.885 |
+| IDA2 | 1, 0, 0, 0.5 | 9.942 | 4.642% | 9.939 |
+| IDA3 | not applicable, not applicable, 1, 0.5 | 14.927 | 6.979% | 14.998 |
+
+A paired independent-day bootstrap with 5,000 resamples and seed 173 gives 95%
+percentile intervals for MAE gain over the cleared-price baseline of -0.143 to
++0.225 EUR/MWh for IDA1, -0.180 to +0.168 for IDA2 and -0.270 to +0.407 for
+IDA3. These intervals omit serial dependence and selection uncertainty. The
+blockwise method does not show a clear improvement, and uses periods already
+inspected in other studies. Configured publication clocks remain partly assumed.
