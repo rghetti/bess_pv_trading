@@ -27,8 +27,25 @@ out-of-sample performance or the 4% target. Full candidate results, source
 snapshots and forecasts are in
 `outputs/energy_price_forecasts/nord_da_2026_price_weather_early_v1/`.
 
-The later weekly replay is configured in
-`configs/research/price_model_rolling_da_price_weather_sep_oct.yaml`; its
-September–October period has already been examined in other studies. Its
-separately assembled catalog must pass source-lineage and shared-day preflight
-before results can be reported.
+## September–October rolling replay
+
+The earlier-selected Elastic Net was refitted weekly with a one-day gap. The
+source-lineage and shared-day checks passed against the separately assembled
+catalog, which retains the original snapshots and adds the later weather runs.
+Both fits completed without reported failures or convergence warnings. The
+models scored the same 4,992 products over 52 complete days; 23–31 October
+were excluded because DA targets are missing.
+
+| Features | MAE EUR/MWh | WAPE |
+| --- | ---: | ---: |
+| Price only | 16.845 | 7.850% |
+| Price and regional weather | 16.630 | 7.749% |
+
+The paired MAE improvement was 0.216 EUR/MWh. A 5,000-resample independent-
+delivery-day bootstrap with seed 173 gives a 95% percentile interval of
+-0.089 to 0.525 EUR/MWh. It does not account for serial dependence or earlier
+model selection and does not establish a reliable improvement. September and
+October have already been examined in other studies; weather vintage and
+publication timing remain unverified assumptions. Full results and refit
+records are in
+`outputs/energy_price_forecasts/nord_da_2026_price_weather_sep_oct_rolling_v1/`.
