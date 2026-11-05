@@ -11,7 +11,7 @@ api:
     terna_minimum_request_interval_seconds: null
     max_retry_delay_seconds: 10
 country_balances:
-  database_path: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  database_path: data/api/market_price_features.duckdb
   start: '2024-01-01'
   end_exclusive: '2026-11-01'
   timezone: Europe/Rome
@@ -53,7 +53,7 @@ country_balances:
     timestamp_format: '%d.%m.%Y %H:%M'
     native_interval_minutes: 15
 swiss_border:
-  database_path: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  database_path: data/api/market_price_features.duckdb
   page_url: https://www.swissgrid.ch/en/home/operation/grid-data/cross-border-load-flows.html
   year: 2026
   timezone: Europe/Zurich
@@ -67,7 +67,7 @@ swiss_border:
     schedule_ch_fr: "L:Kommerzielle Lastfl\xFCsse Frankreich Netto (Total) [MW]"
     spread_fr_ch: Q:Preisdifferenz Spot Frankreich-Schweiz [EUR/MWh]
 swiss_reservoir:
-  database_path: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  database_path: data/api/market_price_features.duckdb
   url: https://www.bfe-ogd.ch/ogd17/ogd17_fuellungsgrad_speicherseen.csv
   timezone: Europe/Zurich
   # The official series reports Sunday midnight; assume Friday 00:00 availability.

@@ -3,7 +3,7 @@ include: ../standard.yaml
 price_model_search:
   run_id: nord_ida_2026_spread_price_weather_sep_oct_rolling_v1
   output_root: outputs/energy_price_forecasts
-  database: /home/rghetti/bess_pv_trading_realtime_mpc/data/api/market_with_regional_weather_sep_oct_2026.duckdb
+  database: data/api/market_with_regional_weather_sep_oct_2026.duckdb
   source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
   timezone: Europe/Rome
   workers: 6

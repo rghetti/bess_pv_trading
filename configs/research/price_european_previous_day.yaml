@@ -1,7 +1,7 @@
 # Retrospective prior-day realized data; publication clock is a deliberate placeholder.
 include: ../standard.yaml
 energy_price_training:
-  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  database: data/api/market_price_features.duckdb
   output_root: outputs/energy_price_forecasts
   run_id: european_context_previous_day_v1
   timezone: Europe/Rome

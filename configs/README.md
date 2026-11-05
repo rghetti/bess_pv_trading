@@ -22,6 +22,7 @@ should define its own parameters there rather than extending the standard.
 
 - `api_experiments/`: downloads, provider diagnostics, workbook imports and DuckDB acquisition.
 - `price_experiments/`: the retained market-import example; earlier price-model research is archived outside this repository.
+- `research/`: price-model training/searches and continuous-control comparisons, including retained historical studies.
 - `full_experiments/`: historical/synthetic optimization and replay, participation studies and prepared-input templates.
 - Root files: data preparation, PV generation, audit and reporting entry points.
 
@@ -31,6 +32,16 @@ files into a separate database while API acquisition continues. Its generated
 after the downloader stops. Its settings are in `manual_market_import` in that workflow configuration; the audit includes preexisting January–March IDA history.
 
 Mappings merge recursively. Scalars and lists replace inherited values; explicit `null` is retained (including a free terminal SOC). Includes are relative to the including file. Data/output paths remain repository-relative: run commands from the repository root. Use the shared `load_config()` loader when reading experiment YAML from Python; a raw `yaml.safe_load()` does not apply inheritance.
+
+Historical research configs use these local catalog paths in place of their original Linux checkout paths:
+
+| Catalog | Repository-relative path |
+| --- | --- |
+| Auction/replay market data | `data/api/market.duckdb` |
+| Price-research feature data | `data/api/market_price_features.duckdb` |
+| Separately assembled September–October 2026 weather-extended data | `data/api/market_with_regional_weather_sep_oct_2026.duckdb` |
+
+The weather-extended catalog must be supplied separately; do not substitute another catalog for it. Retained research studies can also require saved matrices, fitted models, history sidecars and upstream reports under `outputs/`. Relative paths make the configurations portable but do not establish input coverage or model availability. The holiday-search configs use `project_root: .` and save their results under `outputs/energy_price_forecasts/`; run their launcher from the repository root as well.
 
 ## Change farms
 

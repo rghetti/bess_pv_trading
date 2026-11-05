@@ -50,7 +50,7 @@ price_model_search:
       lag_count: 5
       max_iter: 5000
   common_training_rows: true
-  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  database: data/api/market_price_features.duckdb
   feature_set_aliases:
     cleared_only: price_only
     spread_cleared_only: price_only

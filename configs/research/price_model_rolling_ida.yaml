@@ -3,7 +3,7 @@ include: ../standard.yaml
 price_model_search:
   run_id: nord_ida_cleared_rolling_v1
   output_root: outputs/energy_price_forecasts
-  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  database: data/api/market_price_features.duckdb
   source_study: outputs/energy_price_forecasts/european_context_previous_day_v1
   timezone: Europe/Rome
   workers: 3

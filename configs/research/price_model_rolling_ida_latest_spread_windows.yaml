@@ -94,7 +94,7 @@ price_model_search:
       max_iter: 5000
     train_window_days: 365
   common_training_rows: true
-  database: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  database: data/api/market_price_features.duckdb
   feature_set_aliases:
     spread_cleared_only: price_only
     spread_previous_only: price_only
