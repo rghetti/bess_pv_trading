@@ -71,5 +71,6 @@ are tested configurations, not an exhaustive enumeration of every possible
 model or feature combination. The [XGBoost](price_xgboost_2026.md),
 [neural](price_da_regularized_mlp_2026.md), and
 [IDA weather](price_ida_spread_weather_2026.md) reports give examples of
-matched comparisons and their limitations. Swiss-border studies are underway;
-their manifests, rather than partial scores, determine completion.
+matched comparisons and their limitations. A short-history
+[Swiss-border DA comparison](price_da_swiss_border_2026.md) did not beat its
+matched price-only reference; an IDA border study remains underway.
