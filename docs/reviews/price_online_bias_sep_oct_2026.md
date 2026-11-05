@@ -70,3 +70,15 @@ to +0.120 for IDA3. They omit serial dependence and model-selection uncertainty.
 The IDA1 baseline itself is below 4% on this short, previously inspected
 subset; the corrected model does not demonstrate a clear gain over it. These
 comparisons depend on the configured, partly assumed publication clocks.
+
+## Baseline-inclusive selection follow-up
+
+The September correction grid was also applied to the baseline-inclusive
+selection in `price_ida_zero_spread_selection_2026.md`. Early validation had
+selected the IDA1 cleared-price baseline for IDA2 and a ridge spread model for
+IDA3. September selected no correction for either model. On the available
+October products their unchanged scores were 10.205 EUR/MWh and 4.44% WAPE
+for IDA2, and 15.091 EUR/MWh and 6.49% WAPE for IDA3. As above, this is a
+short, previously inspected retrospective period with assumed publication
+clocks; it does not establish long-run performance. Full settings and daily
+plots are in `nord_ida_2026_zero_spread_sep_oct_bias_v1`.
