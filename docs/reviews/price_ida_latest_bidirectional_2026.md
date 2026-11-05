@@ -56,3 +56,25 @@ all span zero. These previously inspected dates and assumed information clocks
 do not establish prospective improvement or the 4% target. Predictions and
 refits are in
 `outputs/energy_price_forecasts/nord_ida_2026_bidirectional_latest_spread_may_aug_v1/`.
+
+## September–October rolling replay
+
+The same early-selected models were evaluated with weekly refits and a
+one-day gap. All 12 fits completed without recorded failures or convergence
+warnings. Each auction has 50 shared days; IDA3 covers 48 products per day.
+
+| Auction | Products | Weather model MAE EUR/MWh | Model WAPE | Latest-cleared MAE EUR/MWh | Baseline WAPE |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| IDA1 | 4,800 | 8.762 | 4.107% | 8.885 | 4.164% |
+| IDA2 | 4,800 | 10.296 | 4.796% | 9.933 | 4.627% |
+| IDA3 | 2,400 | 14.889 | 6.961% | 14.998 | 7.013% |
+
+The paired baseline-minus-model MAE gains were +0.122, -0.363 and +0.110
+EUR/MWh, respectively. Independent-day bootstrap 95% percentile intervals
+from 5,000 resamples with seed 173 were -0.084–0.332, -0.763–0.016 and
+-0.544–0.787 EUR/MWh. All include zero and omit serial dependence and model
+selection uncertainty. The selection and later periods have been repeatedly
+inspected; clocks and forecast vintage retain the caveats above. This does not
+establish robust improvement over the latest-cleared reference or a 4% result
+across auctions. Predictions and refits are in
+`outputs/energy_price_forecasts/nord_ida_2026_bidirectional_latest_spread_sep_oct_v1/`.
