@@ -76,3 +76,27 @@ All include zero and omit serial dependence and selection uncertainty. These
 previously examined dates and the assumed historical clocks do not establish
 an operational gain or the 4% target. Saved predictions and refits are in
 `outputs/energy_price_forecasts/nord_ida_2026_spread_price_weather_may_aug_rolling_v1/`.
+
+### Online bias correction
+
+A residual-correction grid was tuned on May–June and evaluated on July–August
+using only earlier completed products with assumed publication by the decision.
+It included no correction and 3/7/14/28-day windows, 1/4/24-hour local blocks
+and shrinkage 0/24/96. IDA1 selected a three-day, 24-hour-block correction with
+shrinkage 96; IDA2 selected three days, four-hour blocks and shrinkage 96;
+IDA3 selected no correction.
+
+| Auction | Test days | Products | Corrected MAE EUR/MWh | Corrected WAPE | Latest-cleared MAE EUR/MWh | Baseline WAPE |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| IDA1 | 57 | 5,472 | 7.408 | 4.505% | 7.438 | 4.523% |
+| IDA2 | 52 | 4,992 | 8.625 | 5.247% | 8.425 | 5.125% |
+| IDA3 | 55 | 2,640 | 13.668 | 8.332% | 13.610 | 8.296% |
+
+The paired MAE gains over the baseline are 0.030, -0.200 and -0.059 EUR/MWh.
+Independent-day bootstrap 95% percentile intervals, using 5,000 resamples and
+seed 173, are -0.238 to 0.277, -0.486 to 0.085 and -0.662 to 0.560 EUR/MWh.
+These omit serial dependence and selection uncertainty. Both periods were
+previously examined, and publication and weather-vintage assumptions remain;
+the results do not demonstrate a reliable gain or the 4% target. The full grid,
+aligned predictions and daily-error plots are in
+`outputs/energy_price_forecasts/nord_ida_2026_spread_price_weather_online_bias_v1/`.
