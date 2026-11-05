@@ -59,3 +59,22 @@ examined in other studies, and the feature clocks and weather vintage remain
 assumptions. The paired sample does not establish prospective performance or
 the 4% target. Predictions and refits are in
 `outputs/energy_price_forecasts/nord_da_2026_price_ida_weather_may_aug_rolling_v1/`.
+
+## Robust boosting selection
+
+A follow-up CPU grid fitted 500-iteration LightGBM L1 and CatBoost MAE models
+on the same four feature arms, alongside the interaction Elastic Net. Each
+boosting family used two complexity settings. All 20 fits completed without
+reported failures or convergence warnings on the same 7,868 early products.
+
+The best boosting model was depth-four CatBoost with prior IDAs and weather:
+14.197 EUR/MWh MAE and 11.075% WAPE. The matched interaction Elastic Net
+scored 12.133 EUR/MWh and 9.465%. Its paired MAE gain was 2.063 EUR/MWh;
+a 5,000-resample independent-delivery-day bootstrap with seed 173 gave a 95%
+percentile interval of 0.807–3.320 EUR/MWh. This does not include dependence,
+model selection or repeated inspection. The two tested LightGBM and CatBoost
+settings in each arm all trailed the interaction reference, so the predeclared
+later boosting replay was skipped. These selection results do not rule out
+other boosting designs and retain the source-vintage limitations above. Full
+scores and forecasts are in
+`outputs/energy_price_forecasts/nord_da_2026_price_ida_weather_robust_boost_early_v1/`.
