@@ -66,6 +66,8 @@ comparisons remain exploratory and have selection and missing-data limitations.
 A [two-model DA blend](price_da_cross_model_blend_2026.md) improved the
 stronger individual forecast slightly on a previously inspected 51-day
 July–August sample; its paired uncertainty interval includes no improvement.
+The tested [online-ranking rules](price_da_online_ranking_2026.md) trailed the
+fixed early-selected DA reference on those matched July–August products.
 The [weekday-lag search](price_da_weekday_lags_2026.md), motivated by observed
 Sunday/Monday biases, did not place a weekday candidate in the top two on its
 early matched sample.
