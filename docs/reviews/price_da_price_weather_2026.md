@@ -49,3 +49,18 @@ October have already been examined in other studies; weather vintage and
 publication timing remain unverified assumptions. Full results and refit
 records are in
 `outputs/energy_price_forecasts/nord_da_2026_price_weather_sep_oct_rolling_v1/`.
+
+The following descriptive local-time breakdown uses the same 52 days, with
+1,248 quarter-hour products per block. These blocks were inspected after the
+replay and are not independent model-selection tests.
+
+| Local time | Price-only MAE EUR/MWh | Price-only WAPE | With-weather MAE EUR/MWh | With-weather WAPE |
+| --- | ---: | ---: | ---: | ---: |
+| 00:00–05:59 | 11.985 | 5.950% | 11.969 | 5.942% |
+| 06:00–11:59 | 19.427 | 8.634% | 19.139 | 8.506% |
+| 12:00–17:59 | 20.884 | 10.998% | 20.243 | 10.660% |
+| 18:00–23:59 | 15.085 | 6.233% | 15.168 | 6.267% |
+
+Each block's WAPE uses its own sum of absolute realized prices as the
+denominator. The midday period has the largest observed error in this sample;
+these descriptive figures alone do not identify its cause.
