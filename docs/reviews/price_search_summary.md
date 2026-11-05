@@ -56,8 +56,10 @@ interaction model has an uncertainty interval spanning zero.
 
 An early matched [prior-IDA and weather factorial](price_da_prior_ida_weather_factorial_2026.md)
 found 9.465% selection WAPE for their combined interaction model. Its later
-replays are separate; weather vintage and historical auction clocks remain
-assumptions.
+May–August replay scored 10.980% on 107 shared days; prior IDA prices gave
+a small paired improvement in both weather arms, while the weather gain with
+prior IDAs had an interval spanning zero. Weather vintage and historical
+auction clocks remain assumptions.
 
 A [two-model DA blend](price_da_cross_model_blend_2026.md) improved the
 stronger individual forecast slightly on a previously inspected 51-day

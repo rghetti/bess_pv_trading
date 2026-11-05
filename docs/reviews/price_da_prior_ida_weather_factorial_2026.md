@@ -35,3 +35,27 @@ and forecasts are in
 Matched weekly May–August and September–October replays are configured as
 separate later evaluations. Their manifests determine completion; those dates
 have also been examined in related studies.
+
+## May–August rolling evaluation
+
+The earlier-selected interaction Elastic Net was refitted weekly with a one-day
+gap from 3 May through 31 August. All four matched feature arms completed
+without reported failures or convergence warnings on 10,272 products across
+107 shared complete days. Missing input days are excluded.
+
+| Feature arm | MAE EUR/MWh | WAPE |
+| --- | ---: | ---: |
+| DA curves | 16.417 | 11.302% |
+| DA curves and weather | 16.226 | 11.171% |
+| DA curves and prior IDAs | 16.070 | 11.063% |
+| DA curves, prior IDAs and weather | 15.949 | 10.980% |
+
+The paired MAE gains from prior IDAs were 0.347 EUR/MWh without weather and
+0.276 with weather; the weather gain with prior IDAs was 0.121 EUR/MWh.
+Independent-day bootstrap 95% percentile intervals, 5,000 resamples with seed
+173, were respectively 0.203–0.484, 0.160–0.387 and -0.430–0.697 EUR/MWh.
+These omit serial dependence and selection uncertainty. Some later days were
+examined in other studies, and the feature clocks and weather vintage remain
+assumptions. The paired sample does not establish prospective performance or
+the 4% target. Predictions and refits are in
+`outputs/energy_price_forecasts/nord_da_2026_price_ida_weather_may_aug_rolling_v1/`.
