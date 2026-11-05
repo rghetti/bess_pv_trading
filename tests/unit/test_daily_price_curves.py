@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from scripts.evaluate_daily_price_curves import full_local_days
+from scripts.evaluate_daily_price_curves import check_joint_cutoffs, full_local_days
 
 
 def test_excludes_partial_and_dst_local_days():
@@ -19,3 +19,11 @@ def test_excludes_partial_and_dst_local_days():
     assert excluded == [{"date": "2026-03-29", "rows": 92, "expected_local_rows": 92}]
     with pytest.raises(ValueError, match="chronologically unique"):
         full_local_days(starts[::-1], features, targets, "Europe/Rome", 15)
+
+
+def test_joint_curve_requires_one_decision_time_per_day():
+    """A curve cannot combine forecasts from earlier and later decision times."""
+    rows = np.array([[0, 1], [2, 3]])
+    check_joint_cutoffs(np.array([1, 1, 2, 2]), rows)
+    with pytest.raises(ValueError, match="share one"):
+        check_joint_cutoffs(np.array([1, 2, 2, 2]), rows)

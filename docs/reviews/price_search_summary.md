@@ -98,5 +98,7 @@ ranked the latest-cleared baseline first in all three auctions.
 The [per-slot search](price_per_slot_selection_2026.md) also trailed its
 matched quarter-hourly references on the early selection products; its older
 manifests do not record per-fit convergence warnings.
+The [joint daily-curve pilot](price_da_daily_curve_pilot_2026.md) also trailed
+its matched reference on 81 ordinary selection days, excluding DST days.
 The [latest-cleared neighbor search](price_ida_latest_bidirectional_2026.md)
 showed small early selection gains, with paired intervals spanning zero.

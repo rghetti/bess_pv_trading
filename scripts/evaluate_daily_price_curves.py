@@ -56,6 +56,12 @@ def full_local_days(starts, features, targets, timezone, interval_minutes):
     return features[rows].reshape(len(rows), -1), targets[rows], rows, excluded
 
 
+def check_joint_cutoffs(decisions, rows):
+    """Reject a daily feature curve assembled from different decision times."""
+    if np.any(np.ptp(np.asarray(decisions, dtype=np.int64)[rows], axis=1) != 0):
+        raise ValueError("Daily curve products must share one forecast decision time")
+
+
 def run(settings, root):
     """Fit target-curve PCA and ridge only on the saved early training days."""
     import matplotlib
@@ -87,6 +93,8 @@ def run(settings, root):
                 data["train_starts"], data["train_x"], data["train_y"], settings["timezone"], settings["interval_minutes"])
             valid_x, valid_y, valid_rows, valid_excluded = full_local_days(
                 data["starts"], data["validation_x"], data["validation_y"], settings["timezone"], settings["interval_minutes"])
+            # A joint input is valid only when every delivery product shares one decision cutoff.
+            check_joint_cutoffs(data["decisions_ns"], valid_rows)
             starts = pd.DatetimeIndex(pd.to_datetime(data["starts"], utc=True))
             if (not starts.equals(pd.DatetimeIndex(baseline.product_start))
                     or not np.allclose(data["validation_y"], baseline.actual, rtol=0, atol=1e-10)):
@@ -129,7 +137,8 @@ def run(settings, root):
     prediction = pd.DataFrame({name: best_predictions[name] for name in ("starts", "actual", "point", "baseline")})
     prediction.to_csv(output / "selected_predictions.csv", index=False)
     (output / "manifest.json").write_text(json.dumps({"status": "complete", "settings": settings,
-        "source_manifest_sha256": checksum(manifest_path), "provenance": provenance, "results": results,
+        "source_manifest_sha256": checksum(manifest_path), "implementation_sha256": checksum(Path(__file__)),
+        "provenance": provenance, "results": results,
         "selected": best_predictions["row"]}, indent=2, allow_nan=False) + "\n")
     # Display the first selected day as an example, not as a separate score.
     count = 1440 // settings["interval_minutes"]
