@@ -1,7 +1,7 @@
 # Farm 1: 2026 continuous grid tracking
 
-This is a proposed retrospective replay, pending a successful data preflight and
-explicit approval to run. The first study covers farm 1 from 1 January through
+This is a proposed retrospective replay, pending explicit approval to run.
+The first study covers farm 1 from 1 January through
 31 August 2026, the period indicated by the local farm-data store. It is one
 continuous trajectory, not separate monthly runs. The endpoint does not prove
 that every required interval exists. Later months require additional data.
@@ -17,6 +17,14 @@ After PyTorch is installed, add `--check-only` to validate data, model and
 forecast inputs without running the optimization. Review the preflight output,
 including snapshot IDs, coverage and forecast provenance, before requesting
 approval. The corresponding `--run` is for the approved experiment only.
+
+On 6 November 2026, the offline preflight passed for 243 days and 23,324
+intervals, with 959 forecast cutoffs and no solves. Input fingerprint:
+`d529c041d02e5e98856035d756a8c175a6ca3824ed3447b5c266355e459597ef`.
+The farm 1 GRU loaded under PyTorch 2.2.2 with matching model and preprocessing
+checksums. Some days have fewer than four available auctions under the catalog
+and calendar policy; the configuration skips auctions without products and
+fails on partial products. This preflight does not validate solve performance.
 
 ## Forecast and data assumptions
 

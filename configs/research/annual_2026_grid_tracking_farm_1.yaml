@@ -50,9 +50,15 @@ experiment_outputs:
   plots: true
   save_model_files: false
 gme_oracle_experiment:
+  timezone: Europe/Rome
   price_database: data/api/market.duckdb
   provider: gme
   zone: NORD
+  auction_datasets:
+    DA: {dataset: day_ahead_prices, native_interval_minutes: null}
+    IDA1: {dataset: ida1_prices, native_interval_minutes: 15}
+    IDA2: {dataset: ida2_prices, native_interval_minutes: 15}
+    IDA3: {dataset: ida3_prices, native_interval_minutes: 15}
   missing_auction_policy: skip_if_no_products_fail_if_partial
   price_information: perfect_foresight_actual_clearing_curves
   auction_planning_mode: integrated
