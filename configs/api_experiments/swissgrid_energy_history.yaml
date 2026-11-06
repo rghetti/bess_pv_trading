@@ -1,0 +1,66 @@
+# Public, realized Swiss energy data; using delivery-day values is retrospective.
+include: ../standard.yaml
+swissgrid_energy:
+  database_path: data/api/market.duckdb
+  database_threads: 2
+  dataset: energy_statistics
+  raw_directory: data/api/swissgrid_raw
+  report_path: outputs/data_imports/swissgrid_energy_history/manifest.json
+  plots: true
+  plot_borders: [it, fr]
+  plot_cache_directory: outputs/data_imports/swissgrid_energy_history/matplotlib_cache
+  source_page: https://www.swissgrid.ch/en/home/customers/topics/energy-data-ch.html
+  timezone: Europe/Zurich
+  interval_minutes: 15
+  sheet_name: Zeitreihen0h15
+  header_row: 1
+  unit_row: 2
+  first_data_row: 3
+  timestamp_column: A
+  timestamp_format: '%d.%m.%Y %H:%M'
+  http:
+    attempts: 3
+    connect_timeout: 10
+    read_timeout: 60
+    minimum_request_interval_seconds: 0.5
+  fields:
+    end_user_consumption: {column: B, expected_header: Total energy consumed by end users, native_unit: kWh}
+    generation: {column: C, expected_header: Total energy production, native_unit: kWh}
+    consumption: {column: D, expected_header: Total energy consumption, native_unit: kWh}
+    physical_ch_to_at: {column: K, expected_header: Cross Border Exchange CH->AT, native_unit: kWh}
+    physical_at_to_ch: {column: L, expected_header: Cross Border Exchange AT->CH, native_unit: kWh}
+    physical_ch_to_de: {column: M, expected_header: Cross Border Exchange CH->DE, native_unit: kWh}
+    physical_de_to_ch: {column: N, expected_header: Cross Border Exchange DE->CH, native_unit: kWh}
+    physical_ch_to_fr: {column: O, expected_header: Cross Border Exchange CH->FR, native_unit: kWh}
+    physical_fr_to_ch: {column: P, expected_header: Cross Border Exchange FR->CH, native_unit: kWh}
+    physical_ch_to_it: {column: Q, expected_header: Cross Border Exchange CH->IT, native_unit: kWh}
+    physical_it_to_ch: {column: R, expected_header: Cross Border Exchange IT->CH, native_unit: kWh}
+    physical_transit: {column: S, expected_header: Transit, native_unit: kWh}
+    physical_import: {column: T, expected_header: Import, native_unit: kWh}
+    physical_export: {column: U, expected_header: Export, native_unit: kWh}
+    afrr_positive_price: {column: V, expected_header: Average positive secondary control energy prices, native_unit: Euro/MWh}
+    afrr_negative_price: {column: W, expected_header: Average negative secondary control energy prices, native_unit: Euro/MWh}
+    mfrr_positive_price: {column: X, expected_header: Average positive tertiary control energy prices, native_unit: Euro/MWh}
+    mfrr_negative_price: {column: Y, expected_header: Average negative tertiary control energy prices, native_unit: Euro/MWh}
+  net_borders:
+    at: {export: physical_ch_to_at, import: physical_at_to_ch}
+    de: {export: physical_ch_to_de, import: physical_de_to_ch}
+    fr: {export: physical_ch_to_fr, import: physical_fr_to_ch}
+    it: {export: physical_ch_to_it, import: physical_it_to_ch}
+  sources:
+    # 2024 labels interval ends, while the later workbooks label interval starts.
+    - year: 2024
+      filename: EnergieUebersichtCH-2024.xlsx
+      timestamp_label: interval_end
+      require_complete_year: true
+      url: https://www.swissgrid.ch/dam/jcr%3A4d4ca899-395d-4d3d-9958-5ace16ecbfbf/EnergieUebersichtCH-2024.xlsx
+    - year: 2025
+      filename: EnergieUebersichtCH-2025.xlsx
+      timestamp_label: interval_start
+      require_complete_year: true
+      url: https://www.swissgrid.ch/dam/jcr%3Abbbbadc6-3656-4dfe-b81e-bbb9ad01be79/EnergieUebersichtCH-2025.xlsx
+    - year: 2026
+      filename: EnergieUebersichtCH-2026.xlsx
+      timestamp_label: interval_start
+      require_complete_year: false
+      url: https://www.swissgrid.ch/dam/jcr%3A805e525c-44fe-4701-a227-6144193257ac/EnergieUebersichtCH-2026.xlsx
