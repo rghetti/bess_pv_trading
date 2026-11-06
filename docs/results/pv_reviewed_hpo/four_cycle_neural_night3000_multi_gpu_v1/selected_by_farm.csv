@@ -1,0 +1,5 @@
+farm_id,feature,family,name,validation_nrmse_percent,model_directory
+1,extended,bigru,bigru_extended_037,4.696373357644959,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_1/models/extended/bigru/bigru_extended_037
+345,core,bigru,bigru_core_025,8.166573930689779,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_345/models/core/bigru/bigru_core_025
+910,core,tcn,tcn_core_029,8.731071942752164,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_910/models/core/tcn/tcn_core_029
+901,extended,tcn,tcn_extended_021,9.854317883943294,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_901/models/extended/tcn/tcn_extended_021

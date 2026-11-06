@@ -1,0 +1,2 @@
+farm_id,trial,original_gpu,refit_gpu,replay_difference_percentage_points,accepted_limit_percentage_points
+901,transformer_core_002,NVIDIA GeForce RTX 2080 SUPER,NVIDIA TITAN V,0.0007724511050586358,0.0008

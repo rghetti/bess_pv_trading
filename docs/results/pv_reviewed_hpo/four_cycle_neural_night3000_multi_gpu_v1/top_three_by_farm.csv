@@ -1,0 +1,13 @@
+farm_id,rank,feature,family,name,validation_nrmse_percent,model_directory
+1,1,extended,bigru,bigru_extended_037,4.696373357644959,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_1/models/extended/bigru/bigru_extended_037
+1,2,extended,bigru,bigru_extended_046,4.73297996111734,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_1/models/extended/bigru/bigru_extended_046
+1,3,extended,bigru,bigru_extended_053,4.7543198350105005,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_1/models/extended/bigru/bigru_extended_053
+345,1,core,bigru,bigru_core_025,8.166573930689779,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_345/models/core/bigru/bigru_core_025
+345,2,extended,transformer,transformer_extended_019,9.309170910939876,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_345/models/extended/transformer/transformer_extended_019
+345,3,core,bilstm,bilstm_core_001,9.485034366984689,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_345/models/core/bilstm/bilstm_core_001
+910,1,core,tcn,tcn_core_029,8.731071942752164,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_910/models/core/tcn/tcn_core_029
+910,2,core,tcn,tcn_core_013,8.751500652407946,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_910/models/core/tcn/tcn_core_013
+910,3,core,tcn,tcn_core_063,8.754433769098103,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_910/models/core/tcn/tcn_core_063
+901,1,extended,tcn,tcn_extended_021,9.854317883943294,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_901/models/extended/tcn/tcn_extended_021
+901,2,extended,tcn,tcn_extended_046,9.873394970041772,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_901/models/extended/tcn/tcn_extended_046
+901,3,extended,tcn,tcn_extended_038,9.892986740460438,outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_901/models/extended/tcn/tcn_extended_038

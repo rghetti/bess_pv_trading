@@ -1,0 +1,9 @@
+farm_id,split,previous_model,previous_nrmse_percent,four_cycle_model,four_cycle_nrmse_percent,change_percentage_points,comparison_note
+1,validation,bigru_extended_021,4.708074903901587,bigru_extended_037,4.696373357788901,-0.011701546112686145,"Stored run scores; previous uses one D-1 00 UTC cycle, current uses four cycles"
+1,test,bigru_extended_021,6.068859433437019,bigru_extended_037,5.783426395991,-0.285433037446019,"Stored run scores; previous uses one D-1 00 UTC cycle, current uses four cycles"
+345,validation,transformer_extended_001,7.6452928449331825,bigru_core_025,8.166573930735014,0.5212810858018315,"Stored run scores; previous uses one D-1 00 UTC cycle, current uses four cycles"
+345,test,transformer_extended_001,10.366364914853843,bigru_core_025,13.150710237674764,2.7843453228209203,"Stored run scores; previous uses one D-1 00 UTC cycle, current uses four cycles"
+901,validation,bilstm_extended_021,10.241122891918868,tcn_extended_021,9.854317883943294,-0.3868050079755747,"Stored run scores; previous uses one D-1 00 UTC cycle, current uses four cycles"
+901,test,bilstm_extended_021,11.230761471052004,tcn_extended_021,10.960754240285436,-0.2700072307665682,"Stored run scores; previous uses one D-1 00 UTC cycle, current uses four cycles"
+910,validation,tcn_extended_003,8.976680666366228,tcn_core_029,8.731071942271884,-0.2456087240943443,"Stored run scores; previous uses one D-1 00 UTC cycle, current uses four cycles"
+910,test,tcn_extended_003,10.99201692016652,tcn_core_029,12.867498766863456,1.8754818466969354,"Stored run scores; previous uses one D-1 00 UTC cycle, current uses four cycles"
