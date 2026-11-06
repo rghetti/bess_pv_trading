@@ -1,6 +1,6 @@
 # Shared-first ensemble MPC: one-week first-interval weighting
 
-Status: prepared for review; all eight input preflights passed, along with 43 MPC unit tests and 68 recourse, execution and audit regression tests. Historical optimization has not started.
+Status: approved and started, then interrupted at user request while PV HPO was running. All eight input preflights passed, along with 43 MPC unit tests and 68 recourse, execution and audit regression tests. No study job completed; the two Farm 1 ensemble controllers have first-midnight checkpoints. The batch runner creates a new directory and disables checkpoint resume, so continuing needs a reviewed resume workflow or a fresh run ID.
 
 Compare continuous closed-loop grid tracking, original shared-first ensemble MPC, and the same MPC with the first interval absolute imbalance weighted by 10, on farms 1, 345, 901 and 910 for 15–21 January 2026. The existing auction optimizer runs separately for each actual controller trajectory, includes the provisional IDA3 plan, uses all four auctions and the historical auction-price oracle. Later auction quantities can change. Initial and final-study SOC are 50%; curtailment recovery is disabled. The objective is EUR 500/MWh times expected absolute imbalance (weight 10 in the first interval for the weighted case), plus the existing degradation, import and soft terminal costs. Final-study constraints apply to every scenario.
 
