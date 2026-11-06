@@ -113,3 +113,29 @@ Avoid overlapping farm runs or opening the catalog during an active downloader;
 each run uses nine solver threads. No previous-model full preflight or solve has
 been run yet. Unlike the user's existing new-model configuration, this new
 configuration disables overwriting an existing output directory.
+
+## Selected-farm parallel launcher
+
+`scripts/run_annual_grid_tracking_farms.py` prepares the same continuous greedy
+tracker for any selection of farms 1, 345, 901 and 910, each with its own
+four-cycle model. Without an action flag it prints a plan and does not run a
+preflight or solve. Example:
+
+```bash
+/opt/anaconda3/envs/bess/bin/python scripts/run_annual_grid_tracking_farms.py --farms 1 345 901 910 --workers 2 --run-id annual_2026_example
+```
+
+Add `--check-only` for input preflight, or, after reviewing and approving the
+plan, `--run` to preflight every selected farm before starting any solve. The
+run creates a new batch directory with per-farm configurations, logs and run
+outputs; it refuses an existing batch ID. Check-only uses temporary files and
+does not reserve the batch ID. Choose a new batch ID for every execution.
+
+Two workers each request nine Gurobi threads, for up to 18 solver threads on
+this ten-core machine. Inference may also use the configured solver thread
+count. Use `--workers 1` to avoid this oversubscription, particularly while
+another experiment is running. Full input preflights for farms 345, 901 and 910
+and concurrent license, memory and runtime behavior remain unverified. As in
+the single-farm study, confirm that no market downloader is using the DuckDB
+catalog before preflight or launch. The selected models and synthetic curated
+labels make all these retrospective counterfactual replays.
