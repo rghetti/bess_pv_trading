@@ -131,6 +131,10 @@ run creates a new batch directory with per-farm configurations, logs and run
 outputs; it refuses an existing batch ID. Each farm gets a Markdown report at
 `reports/farm_<id>.md`, including realized financial and physical metrics,
 auction solver statuses, curated PV source counts and links to detailed outputs.
+The report divides total absolute imbalance and curtailment by gross available PV
+production before curtailment over the full replay period; if that production is
+zero, the percentages are unavailable. Curated production can include synthetic
+values and is not necessarily metered production.
 Failed runs and preflights are marked without presenting incomplete metrics as
 completed results. Check-only uses temporary files and
 does not reserve the batch ID. Choose a new batch ID for every execution.

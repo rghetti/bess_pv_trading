@@ -18,7 +18,11 @@ def test_completed_report_uses_realized_metrics_and_auction_statuses(tmp_path):
     (replay / "manifest.json").write_text(json.dumps({"status": "complete"}))
     (controller / "controller_kpis.json").write_text(json.dumps({
         "realized_operating_profit_eur": 123.5, "absolute_imbalance_mwh": 2.0,
-        "soc_final_percent": 47.0, "mpc_solves": 0}))
+        "pv_curtailment_mwh": 1.0, "soc_final_percent": 47.0, "mpc_solves": 0}))
+    csv_dir = controller.parent / "csv"
+    csv_dir.mkdir()
+    (csv_dir / "controller_intervals.csv").write_text(
+        "pv_ac_mw,duration_hours\n8,0.25\n4,0.5\n")
     (controller / "solves.json").write_text(json.dumps([
         {"status": "optimal", "fallback_applied": False},
         {"status": "time_limit", "fallback_applied": True}]))
@@ -30,10 +34,31 @@ def test_completed_report_uses_realized_metrics_and_auction_statuses(tmp_path):
     text = Path(report).read_text()
     assert "123.500 EUR" in text
     assert "2.000 MWh" in text
+    assert "Gross PV production before curtailment | 4.000 MWh" in text
+    assert "Absolute imbalance / gross PV production | 50.000 %" in text
+    assert "PV curtailment / gross PV production | 25.000 %" in text
     assert "47.000 %" in text
     assert "time_limit: 1" in text
     assert "Fallbacks: 1" in text
     assert "`pvlib_historical_ghi`: 6 intervals" in text
+
+
+def test_zero_production_has_undefined_percentages(tmp_path):
+    """A zero production denominator is reported as unavailable, not zero."""
+    batch = tmp_path / "example"
+    replay = batch / "runs/farm_1/farm_1_four_cycle_example/continuous"
+    controller = replay / "controllers/track_committed_grid"
+    (controller / "json").mkdir(parents=True)
+    (controller / "csv").mkdir()
+    (replay / "manifest.json").write_text(json.dumps({"status": "complete"}))
+    (controller / "json/controller_kpis.json").write_text(json.dumps({
+        "absolute_imbalance_mwh": 2.0, "pv_curtailment_mwh": 0.0}))
+    (controller / "csv/controller_intervals.csv").write_text("pv_ac_mw,duration_hours\n0,0.25\n")
+    plan = {"start_date": "2026-01-01", "end_date": "2026-08-31", "models": {"1": "model"}}
+    report = write_farm_summary(batch, plan, 1, {"exit_code": 0}, {"exit_code": 0})
+    text = Path(report).read_text()
+    assert "Absolute imbalance / gross PV production | unavailable" in text
+    assert "PV curtailment / gross PV production | unavailable" in text
 
 
 def test_failed_run_never_reports_partial_metrics(tmp_path):

@@ -6,7 +6,9 @@ import argparse
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
+import csv
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -77,6 +79,22 @@ def execute_phase(configs, action, workers, log_dir):
     return sorted(records, key=lambda item: item["farm"])
 
 
+def gross_pv_production(interval_path):
+    """Integrate available AC PV before curtailment across actual interval durations."""
+    contributions = []
+    with interval_path.open(newline="", encoding="utf-8") as stream:
+        # Reject incomplete or invalid interval data instead of reporting a misleading ratio.
+        for row in csv.DictReader(stream):
+            power = float(row["pv_ac_mw"])
+            duration = float(row["duration_hours"])
+            if not math.isfinite(power) or power < 0 or not math.isfinite(duration) or duration <= 0:
+                raise ValueError("Invalid PV power or interval duration in controller results")
+            contributions.append(power * duration)
+    if not contributions:
+        raise ValueError("Controller interval results contain no production intervals")
+    return math.fsum(contributions)
+
+
 def write_farm_summary(batch_dir, plan, farm, preflight, run):
     """Summarize one completed or failed replay using its recorded artifacts."""
     reports = batch_dir / "reports"
@@ -85,9 +103,12 @@ def write_farm_summary(batch_dir, plan, farm, preflight, run):
     run_id = f"farm_{farm}_four_cycle_{batch_dir.name}"
     destination = batch_dir / "runs" / f"farm_{farm}" / run_id / "continuous"
     controller = destination / "controllers/track_committed_grid"
+    model_name = plan["models"].get(farm, plan["models"].get(str(farm)))
+    if model_name is None:
+        raise ValueError(f"No model recorded for farm {farm}")
     lines = [f"# Farm {farm}: continuous greedy grid tracking", "",
         f"- Period: {plan['start_date']} to {plan['end_date']} (Europe/Rome).",
-        f"- Model: `{plan['models'][farm]}`; latest available deterministic forecast cycle.",
+        f"- Model: `{model_name}`; latest available deterministic forecast cycle.",
         "- Controller: `track_committed_grid`; no MPC decisions.",
         "- Auction planning uses actual price curves; model and curated PV inputs are retrospective.",
         f"- Preflight: {'passed' if preflight['exit_code'] == 0 else 'failed'}."]
@@ -102,6 +123,15 @@ def write_farm_summary(batch_dir, plan, farm, preflight, run):
         lines.append(f"- Replay manifest status: {manifest.get('status', 'unavailable')}.")
     if run and run["exit_code"] == 0 and manifest.get("status") == "complete":
         metrics = json.loads((controller / "json/controller_kpis.json").read_text())
+        production = gross_pv_production(controller / "csv/controller_intervals.csv")
+        imbalance = metrics.get("absolute_imbalance_mwh")
+        curtailment = metrics.get("pv_curtailment_mwh")
+        metrics["gross_pv_production_mwh"] = production
+        # A zero-production replay has no defined percentage denominator.
+        metrics["absolute_imbalance_production_percent"] = (
+            100 * imbalance / production if production > 0 and imbalance is not None else None)
+        metrics["curtailment_production_percent"] = (
+            100 * curtailment / production if production > 0 and curtailment is not None else None)
         measures = [
             ("Realized operating profit", "realized_operating_profit_eur", "EUR"),
             ("Auction revenue", "auction_revenue_eur", "EUR"),
@@ -109,9 +139,12 @@ def write_farm_summary(batch_dir, plan, farm, preflight, run):
             ("Degradation cost", "degradation_eur", "EUR"),
             ("Import cost", "import_cost_eur", "EUR"),
             ("Trading fees", "trading_fees_eur", "EUR"),
+            ("Gross PV production before curtailment", "gross_pv_production_mwh", "MWh"),
             ("Absolute imbalance", "absolute_imbalance_mwh", "MWh"),
+            ("Absolute imbalance / gross PV production", "absolute_imbalance_production_percent", "%"),
             ("Signed net imbalance", "signed_net_imbalance_mwh", "MWh"),
             ("PV curtailment", "pv_curtailment_mwh", "MWh"),
+            ("PV curtailment / gross PV production", "curtailment_production_percent", "%"),
             ("Battery charge", "charge_mwh", "MWh"),
             ("Battery discharge", "discharge_mwh", "MWh"),
             ("Final SOC", "soc_final_percent", "%"),
@@ -128,7 +161,9 @@ def write_farm_summary(batch_dir, plan, farm, preflight, run):
             else:
                 display = f"{value:,.3f} {unit}"
             lines.append(f"| {label} | {display} |")
-        lines.extend(["", "Realized profit does not assign a value to final battery inventory."])
+        lines.extend(["", "Gross PV production is the replay's available PV before curtailment; "
+            "it may include synthetic values. Percentages use that entire-period production as the denominator.",
+            "Realized profit does not assign a value to final battery inventory."])
         # Keep auction solve diagnostics separate from the zero MPC-solve count.
         solves_path = controller / "json/solves.json"
         if solves_path.is_file():
