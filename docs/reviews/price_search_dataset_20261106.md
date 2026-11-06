@@ -123,6 +123,10 @@ worker limits and one estimator/BLAS thread per worker. Retrospective blocks
 carry their availability label into the fit and score manifests. Prepared arrays
 are derived artifacts and can be rebuilt from the catalog and these manifests.
 
+The runnable integration and 64-CPU Slurm launcher are now documented in
+[the price search cluster guide](price_search_cluster.md). It also gives the
+direct local command for choosing a smaller worker count.
+
 ## Evidence
 
 - [Acquisition manifest](../../outputs/data_imports/swissgrid_energy_history/manifest.json)
