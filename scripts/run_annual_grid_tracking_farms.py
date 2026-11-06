@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from copy import deepcopy
 import json
@@ -76,6 +77,97 @@ def execute_phase(configs, action, workers, log_dir):
     return sorted(records, key=lambda item: item["farm"])
 
 
+def write_farm_summary(batch_dir, plan, farm, preflight, run):
+    """Summarize one completed or failed replay using its recorded artifacts."""
+    reports = batch_dir / "reports"
+    reports.mkdir(exist_ok=True)
+    report = reports / f"farm_{farm}.md"
+    run_id = f"farm_{farm}_four_cycle_{batch_dir.name}"
+    destination = batch_dir / "runs" / f"farm_{farm}" / run_id / "continuous"
+    controller = destination / "controllers/track_committed_grid"
+    lines = [f"# Farm {farm}: continuous greedy grid tracking", "",
+        f"- Period: {plan['start_date']} to {plan['end_date']} (Europe/Rome).",
+        f"- Model: `{plan['models'][farm]}`; latest available deterministic forecast cycle.",
+        "- Controller: `track_committed_grid`; no MPC decisions.",
+        "- Auction planning uses actual price curves; model and curated PV inputs are retrospective.",
+        f"- Preflight: {'passed' if preflight['exit_code'] == 0 else 'failed'}."]
+    if run is None:
+        lines.append("- Run: not started because at least one preflight failed.")
+    else:
+        lines.append(f"- Run process exit code: {run['exit_code']}.")
+    # Incomplete runs do not expose partial numbers as completed results.
+    manifest_path = destination / "manifest.json"
+    manifest = json.loads(manifest_path.read_text()) if manifest_path.is_file() else {}
+    if run is not None:
+        lines.append(f"- Replay manifest status: {manifest.get('status', 'unavailable')}.")
+    if run and run["exit_code"] == 0 and manifest.get("status") == "complete":
+        metrics = json.loads((controller / "json/controller_kpis.json").read_text())
+        measures = [
+            ("Realized operating profit", "realized_operating_profit_eur", "EUR"),
+            ("Auction revenue", "auction_revenue_eur", "EUR"),
+            ("Signed imbalance settlement", "imbalance_cashflow_eur", "EUR"),
+            ("Degradation cost", "degradation_eur", "EUR"),
+            ("Import cost", "import_cost_eur", "EUR"),
+            ("Trading fees", "trading_fees_eur", "EUR"),
+            ("Absolute imbalance", "absolute_imbalance_mwh", "MWh"),
+            ("Signed net imbalance", "signed_net_imbalance_mwh", "MWh"),
+            ("PV curtailment", "pv_curtailment_mwh", "MWh"),
+            ("Battery charge", "charge_mwh", "MWh"),
+            ("Battery discharge", "discharge_mwh", "MWh"),
+            ("Final SOC", "soc_final_percent", "%"),
+            ("Physical safety overrides", "physical_safety_overrides", "intervals"),
+            ("MPC solves", "mpc_solves", "solves"),
+        ]
+        lines.extend(["", "## Realized results", "", "| Metric | Value |", "| --- | ---: |"])
+        for label, key, unit in measures:
+            value = metrics.get(key)
+            if value is None:
+                display = "unavailable"
+            elif unit in {"intervals", "solves"}:
+                display = f"{value:,} {unit}"
+            else:
+                display = f"{value:,.3f} {unit}"
+            lines.append(f"| {label} | {display} |")
+        lines.extend(["", "Realized profit does not assign a value to final battery inventory."])
+        # Keep auction solve diagnostics separate from the zero MPC-solve count.
+        solves_path = controller / "json/solves.json"
+        if solves_path.is_file():
+            solves = json.loads(solves_path.read_text())
+            statuses = Counter(str(row.get("status", "unknown")) for row in solves)
+            lines.extend(["", "## Auction optimization", "", f"- Solve records: {len(solves)}.",
+                f"- Fallbacks: {sum(bool(row.get('fallback_applied')) for row in solves)}."])
+            for status, count in sorted(statuses.items()):
+                lines.append(f"- {status}: {count}.")
+        provenance_path = destination / "input_provenance.json"
+        if provenance_path.is_file():
+            provenance = json.loads(provenance_path.read_text())
+            sources = Counter()
+            for day in provenance.get("days", {}).values():
+                curated = day.get("pv_provenance", {}).get("curated_realized_pv", {})
+                sources.update(curated.get("source_counts", {}))
+            if sources:
+                lines.extend(["", "## Curated PV input sources", ""])
+                for source, count in sorted(sources.items()):
+                    lines.append(f"- `{source}`: {count:,} intervals.")
+                lines.append("\nSynthetic and night-zero inputs are not independent metered production.")
+    elif run is not None:
+        lines.extend(["", "No complete metrics are reported. Inspect the run log and manifest for details."])
+    lines.extend(["", "## Artifacts", ""])
+    # Use relative links so a batch can be moved together with its reports.
+    paths = [("Configuration", batch_dir / "configs" / f"farm_{farm}.yaml")]
+    if preflight.get("log"):
+        paths.append(("Preflight log", Path(preflight["log"])))
+    if run and run.get("log"):
+        paths.append(("Run log", Path(run["log"])))
+    paths.extend([("Replay manifest", manifest_path), ("Daily metrics", controller / "csv/controller_daily_kpis.csv"),
+        ("Input provenance", destination / "input_provenance.json"), ("Plots", controller / "plots")])
+    for label, path in paths:
+        if path.exists():
+            lines.append(f"- [{label}]({os.path.relpath(path, reports)})")
+    report.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return str(report)
+
+
 def main(argv=None):
     """Present the run plan by default; require a distinct flag for preflight or execution."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -140,15 +232,27 @@ def main(argv=None):
             for item in checks:
                 if item["exit_code"] and "log" in item:
                     print(Path(item["log"]).read_text(encoding="utf-8")[-6000:], file=sys.stderr)
+            if args.run:
+                for item in checks:
+                    write_farm_summary(batch_dir, plan, item["farm"], item, None)
             print("Preflight failed; no optimization was started.", file=sys.stderr)
             return 1
         if args.check_only:
             print("All selected farms passed preflight; no optimization was started.")
             return 0
         results = execute_phase(configs, "--run", args.workers, log_dir)
+        checks_by_farm = {item["farm"]: item for item in checks}
+        report_failures = []
+        for result in results:
+            farm = result["farm"]
+            try:
+                result["summary"] = write_farm_summary(batch_dir, plan, farm, checks_by_farm[farm], result)
+            except (OSError, ValueError, KeyError, TypeError) as error:
+                report_failures.append({"farm": farm, "error": str(error)})
+                print(f"Farm {farm} summary failed: {error}", file=sys.stderr)
         (batch_dir / "batch_results.json").write_text(json.dumps({"plan": plan, "preflight": checks,
-            "runs": results}, indent=2), encoding="utf-8")
-        return 1 if any(item["exit_code"] for item in results) else 0
+            "runs": results, "summary_failures": report_failures}, indent=2), encoding="utf-8")
+        return 1 if report_failures or any(item["exit_code"] for item in results) else 0
     finally:
         if temporary:
             temporary.cleanup()

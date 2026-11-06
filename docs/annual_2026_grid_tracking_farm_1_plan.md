@@ -128,7 +128,11 @@ preflight or solve. Example:
 Add `--check-only` for input preflight, or, after reviewing and approving the
 plan, `--run` to preflight every selected farm before starting any solve. The
 run creates a new batch directory with per-farm configurations, logs and run
-outputs; it refuses an existing batch ID. Check-only uses temporary files and
+outputs; it refuses an existing batch ID. Each farm gets a Markdown report at
+`reports/farm_<id>.md`, including realized financial and physical metrics,
+auction solver statuses, curated PV source counts and links to detailed outputs.
+Failed runs and preflights are marked without presenting incomplete metrics as
+completed results. Check-only uses temporary files and
 does not reserve the batch ID. Choose a new batch ID for every execution.
 
 Two workers each request nine Gurobi threads, for up to 18 solver threads on
