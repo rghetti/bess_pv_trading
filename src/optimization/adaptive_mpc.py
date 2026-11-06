@@ -314,6 +314,8 @@ def solve_research_mpc(inputs, solver=None):
         "recourse_mode": settings.recourse_mode if inputs.policy == "ensemble_mpc_adaptive" else "common_controls",
         "future_path_revelation_assumed_after_first_action": inputs.policy == "ensemble_mpc_adaptive" and settings.recourse_mode == "first_action_only",
         "planning_objective": settings.planning_objective,
+        "first_interval_priority": settings.first_interval_priority,
+        "first_interval_weight": settings.first_interval_weight,
         "recourse_observation_features": ("scenario_path_after_first_action" if settings.recourse_mode == "first_action_only"
                                          else "pv_only_no_settlement_price_disclosure"),
         "recourse_observation_lag_intervals": (None if settings.recourse_mode == "first_action_only"
@@ -349,6 +351,13 @@ def solve_research_mpc(inputs, solver=None):
             penalty * expressions["absolute_imbalance_mwh"] + expressions["degradation_eur"]
             + expressions["import_cost_eur"] + expressions["terminal_cost_eur"] - expressions["settlement_eur"]
             + settings.monetary_cvar_weight * expressions["monetary_cvar_eur"])
+        # The observed first interval is common across the ensemble; future
+        # controls retain their scenario-specific recourse after this action.
+        if settings.first_interval_priority == "weighted":
+            first_imbalance = gp.quicksum(float(inputs.weights[s]) *
+                (variables["positive"][s, 0] + variables["negative"][s, 0])
+                for s in range(len(inputs.weights)))
+            objective += penalty * (settings.first_interval_weight - 1) * first_imbalance
         model.setObjective(objective, gp.GRB.MINIMIZE)
         remaining = settings.solver_time_limit_seconds - (perf_counter() - started)
         if remaining <= 0:
@@ -371,6 +380,9 @@ def solve_research_mpc(inputs, solver=None):
             penalty * components["absolute_imbalance_mwh"] + components["degradation_eur"]
             + components["import_cost_eur"] + components["terminal_cost_eur"] - components["settlement_eur"]
             + settings.monetary_cvar_weight * components["monetary_cvar_eur"])
+        if settings.first_interval_priority == "weighted":
+            recomputed += (penalty * (settings.first_interval_weight - 1)
+                * float(plan.expected_absolute_imbalance_by_interval_mwh[0]))
         # Check the complete monetary objective; inactive absolute-value and risk
         # epigraphs may be slack, so validate actual physics-based totals instead.
         scale = max(1.0, abs(recomputed), abs(float(model.ObjVal)))

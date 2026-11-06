@@ -367,9 +367,9 @@ def test_first_interval_priority_settings_reject_conflicting_policies():
     with pytest.raises(ValueError, match='requires weighted'):
         MpcSettings(first_interval_priority='lexicographic', first_interval_weight=10)
     base = inputs_for([[0.0]], [0.1])
-    with pytest.raises(ValueError, match='deterministic price-blind'):
+    with pytest.raises(ValueError, match='price-blind imbalance-and-costs'):
         replace(base, policy='ensemble_mpc', settings=replace(base.settings, first_interval_priority='lexicographic'))
-    with pytest.raises(ValueError, match='deterministic price-blind'):
+    with pytest.raises(ValueError, match='price-blind imbalance-and-costs'):
         replace(base, settings=replace(base.settings, first_interval_priority='weighted',
             first_interval_weight=10, planning_objective='imbalance_only'))
 
@@ -398,3 +398,26 @@ def test_strict_priority_retains_valid_first_action_if_refinement_is_invalid(mon
     assert result.diagnostics['accepted_action_source'] == 'first_interval_stage1'
     assert result.plan.expected_absolute_imbalance_by_interval_mwh[0] == pytest.approx(0, abs=1e-6)
     validate_mpc_plan(base, result.plan)
+
+
+def test_shared_first_ensemble_weight_prioritizes_disclosed_current_pv():
+    """Weight ten applies to a common observed first interval, with recourse later."""
+    settings = MpcSettings(terminal_inventory_mode="none", recourse_mode="first_action_only",
+        current_pv_information="realized_interval_average")
+    scenarios = [[0.0, 0.0]] * 25 + [[0.0, 0.8]] * 26
+    base = inputs_for(scenarios, [0.1, 0.1], energy=0.5,
+        settings=replace(settings, current_pv_information="forecast"), policy="ensemble_mpc_adaptive")
+    base = replace(base, settings=settings, current_realized_pv_mw=0.0,
+        degradation=DegradationSettings(600))
+    original = checked(base)
+    weighted = checked(replace(base, settings=replace(settings,
+        first_interval_priority="weighted", first_interval_weight=10.0)))
+    assert original.plan.expected_absolute_imbalance_by_interval_mwh[0] == pytest.approx(0.1, abs=1e-6)
+    assert weighted.plan.expected_absolute_imbalance_by_interval_mwh[0] == pytest.approx(0.0, abs=1e-6)
+    np.testing.assert_allclose(weighted.plan.scenario_actions[0][0], weighted.plan.scenario_actions[50][0])
+    assert weighted.plan.control_nodes[0][0] == weighted.plan.control_nodes[50][0]
+    assert weighted.plan.control_nodes[0][1] != weighted.plan.control_nodes[50][1]
+    expected = 500 * (weighted.plan.components["absolute_imbalance_mwh"]
+        + 9 * weighted.plan.expected_absolute_imbalance_by_interval_mwh[0])
+    expected += sum(weighted.plan.components[key] for key in ("degradation_eur", "terminal_cost_eur", "import_cost_eur"))
+    assert weighted.diagnostics["planning_objective_value"] == pytest.approx(expected, abs=1e-5)

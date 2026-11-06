@@ -377,6 +377,10 @@ refinement retains the validated first-stage action. The realized first-interval
 PV disclosure is controlled independently and remains a retrospective
 assumption when interval-average realized PV is selected.
 
-These options currently reject ensemble, oracle, economic and pure-imbalance
-policies rather than silently changing their objectives. Planning penalties
-are not realized settlement charges.
+The price-blind `ensemble_mpc_adaptive` policy with `first_action_only`
+recourse also supports `weighted`: the first-interval term is averaged over
+the scenario weights, and only the first action is shared. Future paths then
+have separate schedules, an optimistic path-revelation assumption. Realized
+current-interval PV, when selected, is identical in all scenarios.
+Lexicographic ensemble priority, oracle, economic and pure-imbalance variants
+remain unsupported. Planning penalties are not realized settlement charges.

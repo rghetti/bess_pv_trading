@@ -343,11 +343,16 @@ class MpcInput:
                 continue
             if name.endswith(("available_at_utc", "vintage_utc")) and value is not None and pd.Timestamp(value) > cutoff:
                 raise ValueError(f"MPC forecast {name} is after the cutoff")
-        # First-step priority is currently a price-blind deterministic study,
-        # not an implicit change to oracle or scenario-recourse objectives.
+        # Weighted shared-first recourse uses the same expected first-step term;
+        # oracle, forecast-price and other recourse variants remain separate studies.
+        ensemble_weighted = (self.policy == "ensemble_mpc_adaptive"
+            and self.settings.recourse_mode == "first_action_only"
+            and self.settings.first_interval_priority == "weighted")
         if self.settings.first_interval_priority != "none" and (
-                self.policy != "deterministic_mpc" or self.settings.planning_objective != "imbalance_and_costs"):
-            raise ValueError("First-interval priority requires deterministic price-blind imbalance-and-costs MPC")
+                (self.policy != "deterministic_mpc" and not ensemble_weighted)
+                or self.settings.planning_objective != "imbalance_and_costs"
+                or self.price_forecast is not None):
+            raise ValueError("First-interval priority requires price-blind imbalance-and-costs MPC with supported recourse")
         oracle_policy = self.policy.endswith("price_oracle")
         if oracle_policy != (self.oracle is not None):
             raise ValueError("Future realized settlement prices require an explicit price-oracle policy")
