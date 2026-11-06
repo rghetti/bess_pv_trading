@@ -59,12 +59,22 @@ recorded with the output.
 ## Controller, economics and outputs
 
 Run only `track_committed_grid` with integrated DA and IDA1–3 planning, 15-minute
-products, one worker and nine Gurobi threads. Auction planning assumes the
+products, one worker and nine Gurobi threads. This is a greedy, single-interval
+physical controller: it reacts to current interval-average PV, current SOC and
+the committed grid target, subject to battery and connection limits. It can use
+the retained current-interval curtailment instruction. It does not solve an MPC
+problem or look ahead when choosing real-time battery dispatch. The idealized
+use of realized interval-average PV is a physical feedback assumption, not a
+claim that the full interval average is known at its start.
+
+The separate auction optimizer plans future products at each auction using PV
+forecasts. Auction planning assumes the
 actual clearing-price curves are known in advance, as in the archived tracking
 comparison; this is a price-oracle benchmark, not a deployable price forecast.
 All submitted quantities are committed and realized cash flows use actual
-clearing prices. Initial and final SOC are both 50%; other plant and cost
-assumptions come from `configs/standard.yaml`. The relative MIP gap is 1e-4,
+clearing prices. Initial SOC is 50% and auction planning targets 50% at the end
+of the study; greedy feedback does not guarantee the realized final SOC. Other
+plant and cost assumptions come from `configs/standard.yaml`. The relative MIP gap is 1e-4,
 and the per-auction solve limit is 120 seconds.
 
 Report realized profit and its auction, settlement, fee and wear components,
