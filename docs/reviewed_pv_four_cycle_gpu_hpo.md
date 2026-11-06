@@ -1,5 +1,35 @@
 # Four-cycle reviewed PV search on one GPU
 
+## Finish the frozen selection on its original GPUs
+
+The search finished all 2,560 candidate fits, then stopped during refitting
+because a GPU 1 model refit on GPU 0 differed from its original validation
+score by 1.02096 percentage points. The original strict replay check remains
+in force. The original-device refit entry point verifies the frozen selection,
+trial identity and checksums of completed refits, retains matching artifacts,
+and schedules only missing refits on the same physical GPU that trained each
+trial. It does not repeat the candidate search or reselect using test scores.
+
+```bash
+cd /home/rghetti/bess_pv_trading
+CUDA_VISIBLE_DEVICES=0,1,2 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python scripts/finish_reviewed_pv_original_gpu_refits.py --config configs/pv_experiments/reviewed_four_cycle_neural_hpo_multi_gpu.yaml --check-only
+CUDA_VISIBLE_DEVICES=0,1,2 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python scripts/finish_reviewed_pv_original_gpu_refits.py --config configs/pv_experiments/reviewed_four_cycle_neural_hpo_multi_gpu.yaml --run
+```
+
+The no-training preflight checks the original configuration, code, data,
+software, GPU UUIDs, all trial records, frozen selection and saved refit
+checksums. The refit command uses at most two workers on GPU 0 and one on each
+of GPUs 1 and 2. A job waits for its GPU's configured 4 GiB free-memory guard;
+other devices continue processing their own jobs. If a shared device runs out
+of memory after dispatch, the job waits for additional free memory and retries
+on the same device. Other users' workloads are not stopped. Numerical replay
+failure still stops reporting and preserves the recorded scores for review.
+
+At the first recovery check, 25 refits had completed and 21 remained: 19 on
+GPU 0, one on GPU 1 and one on GPU 2. All four validation-selected overall
+winners already have saved test scores, but the complete top-three and
+family comparison reports will be published after the remaining refits.
+
 ## GPU 0-only recovery of the interrupted three-GPU search
 
 The multi-GPU search stopped after an out-of-memory failure while another
