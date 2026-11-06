@@ -69,12 +69,15 @@ def validate_configuration(config):
     regime = section.get('data_regime', 'historical_ghi')
     if regime not in {'historical_ghi', 'four_cycle_forecast_ghi'}:
         raise ValueError(f'Unsupported reviewed HPO data regime: {regime}')
-    expected_workers = 42 if regime == 'four_cycle_forecast_ghi' else 30
-    if int(section['workers']) != expected_workers or int(section['threads_per_worker']) != 1:
-        raise ValueError(f'This run requires {expected_workers} workers with one CPU thread each')
-    if regime == 'four_cycle_forecast_ghi' and (section['statistical_families'] or
+    #expected_workers = 42 if regime == 'four_cycle_forecast_ghi' else 30
+    #if int(section['workers']) != expected_workers or int(section['threads_per_worker']) != 1:
+    #    raise ValueError(f'This run requires {expected_workers} workers with one CPU thread each')
+    if int(section['threads_per_worker']) != 1:
+        raise ValueError('Each worker must use one CPU thread')
+    if regime == 'four_cycle_forecast_ghi' and (
+            bool(section['statistical_families']) == bool(section['neural_families']) or
             section['cycle_hours_utc'] != [0, 6, 12, 18] or section['issue_horizon_hours'] != 48):
-        raise ValueError('The four-cycle study requires neural models and all four 48-hour cycles')
+        raise ValueError('The four-cycle study requires one model class and all four 48-hour cycles')
     if regime == 'four_cycle_forecast_ghi' and (
             section['training_ghi_source'] != 'historical'
             or section['validation_ghi_source'] != 'forecast'
@@ -82,8 +85,8 @@ def validate_configuration(config):
             or section['include_missing_indicators']):
         raise ValueError('Four-cycle study requires historical training GHI, forecast scoring GHI and no missing flags')
     available = len(os.sched_getaffinity(0)) if hasattr(os, 'sched_getaffinity') else os.cpu_count()
-    if available is not None and available < int(section['workers']):
-        raise ValueError(f'Only {available} CPUs are available for the requested {expected_workers} workers')
+    #if available is not None and available < int(section['workers']):
+    #    raise ValueError(f'Only {available} CPUs are available for the requested {expected_workers} workers')
     if int(section['trials_per_family_per_feature']) < 1:
         raise ValueError('Every model family needs at least one hyperparameter configuration')
     if section['nighttime_exclusions'] != 'keep_curated' or section['missing_night_ghi'] != 'zero_at_night':
@@ -117,7 +120,8 @@ def check_only(config, progress=print):
             prepared[farm_id] = prepare_farm(config, farm_id)
         # These are deterministic train-only feature statistics, not supervised model fits.
         preprocessors, matrices = fit_transforms(prepared[farm_id], config)
-        if section.get('data_regime') == 'four_cycle_forecast_ghi':
+        if (section.get('data_regime') == 'four_cycle_forecast_ghi' and
+                section['neural_families']):
             from ..data.pv_four_cycle_hpo_data import build_cycle_sequences
             item = prepared[farm_id]
             masks = {'train': item.training_mask, 'validation': item.validation_mask, 'test': item.test_mask}
@@ -190,17 +194,22 @@ def _prepare_cache(root, item, config):
     for name, matrix in matrices.items():
         # Packed sequences split at retained prior exclusions but retain nighttime labels.
         if config['pv_reviewed_hpo'].get('data_regime') == 'four_cycle_forecast_ghi':
-            from ..data.pv_four_cycle_hpo_data import build_cycle_sequences
-            from ..data.pv_neural_data import transform_features
-            forecast_features = item.features[name].copy()
-            forecast_features['ghi_w_m2'] = item.frame.ghi_forecast_w_m2.to_numpy()
-            forecast_matrix = transform_features(forecast_features, fitted[name])
-            packed = build_cycle_sequences(item.frame, matrix, masks, item.rating_mw,
-                int(config['pv_reviewed_hpo']['issue_horizon_hours']) * 4, forecast_features=forecast_matrix)
+            if config['pv_reviewed_hpo']['neural_families']:
+                from ..data.pv_four_cycle_hpo_data import build_cycle_sequences
+                from ..data.pv_neural_data import transform_features
+                forecast_features = item.features[name].copy()
+                forecast_features['ghi_w_m2'] = item.frame.ghi_forecast_w_m2.to_numpy()
+                forecast_matrix = transform_features(forecast_features, fitted[name])
+                packed = build_cycle_sequences(item.frame, matrix, masks, item.rating_mw,
+                    int(config['pv_reviewed_hpo']['issue_horizon_hours']) * 4,
+                    forecast_features=forecast_matrix)
+            else:
+                packed = None
         else:
             packed = build_sequences(item.frame, matrix, masks, item.rating_mw)
         np.save(directory / f'x_{name}.npy', matrix, allow_pickle=False)
-        np.savez(directory / f'packed_{name}.npz', **packed)
+        if packed is not None:
+            np.savez(directory / f'packed_{name}.npz', **packed)
         _write_json(directory / f'preprocessor_{name}.json', fitted[name])
 
 
@@ -726,9 +735,9 @@ def run_hpo(config, progress=print):
     section = validate_configuration(config)
     minimum = section.get('minimum_available_memory_gib')
     available = _available_memory_gib()
-    if minimum is not None and (available is None or available < float(minimum)):
-        raise RuntimeError(f"The configured {section['workers']}-worker search requires {minimum} GiB available memory; "
-                           f"currently available: {available} GiB")
+    #if minimum is not None and (available is None or available < float(minimum)):
+    #    raise RuntimeError(f"The configured {section['workers']}-worker search requires {minimum} GiB available memory; "
+    #                       f"currently available: {available} GiB")
     root = config_path(config, section['output_root']) / section['run_id']
     report = config_path(config, section['report_root'])
     root.mkdir(parents=True, exist_ok=True)

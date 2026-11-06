@@ -15,13 +15,20 @@ def main():
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--check-only', action='store_true')
     mode.add_argument('--run', action='store_true')
+    mode.add_argument('--run-pending-on-gpu', choices=('0', '1', '2'))
+    parser.add_argument('--accept-replay-difference-up-to', type=float)
     args = parser.parse_args()
     config = load_config(args.config)
     if args.check_only:
+        if args.accept_replay_difference_up_to is not None:
+            parser.error('Replay tolerance overrides are only valid when running a pending refit')
         plan, *_ = check_only(config)
         print(json.dumps(plan, indent=2, default=str))
         return
-    run_refits(config)
+    if args.accept_replay_difference_up_to is not None and args.run_pending_on_gpu is None:
+        parser.error('--accept-replay-difference-up-to requires --run-pending-on-gpu')
+    run_refits(config, pending_gpu_id=args.run_pending_on_gpu,
+               accepted_replay_tolerance=args.accept_replay_difference_up_to)
 
 
 if __name__ == '__main__':

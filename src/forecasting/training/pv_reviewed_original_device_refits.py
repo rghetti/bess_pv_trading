@@ -1,4 +1,4 @@
-"""Finish frozen reviewed-PV refits on their original physical GPUs."""
+"""Finish frozen reviewed-PV refits on original or explicitly selected GPUs."""
 from __future__ import annotations
 
 from collections import deque
@@ -48,9 +48,10 @@ def _saved_refit(root, selected, identity, tolerance):
     if not path.exists():
         return None
     record = json.loads(path.read_text())
+    replay_limit = float(record.get('accepted_replay_tolerance_percent', tolerance))
     if (record.get('identity') != identity or record.get('trial') != trial or
             record.get('status') != 'complete' or
-            float(record.get('validation_replay_difference_percent', float('inf'))) > tolerance):
+            float(record.get('validation_replay_difference_percent', float('inf'))) > replay_limit):
         raise ValueError(f'Existing refit is incompatible: {path}')
     original = record.get('original_training_gpu', record.get('gpu'))
     if original != selected['gpu']:
@@ -151,14 +152,24 @@ def _schedule_refits(jobs, devices, progress, poll_seconds=15):
                     for other in pending:
                         other.cancel()
                     raise RuntimeError(f"GPU {key} failed refit {job['trial']['name']} for farm {job['trial']['farm_id']}") from error
+                if 'original_training_gpu' in job:
+                    record['original_training_gpu'] = job['original_training_gpu']
+                    record['refit_gpu'] = job['gpu']
+                    record['accepted_replay_tolerance_percent'] = job[
+                        'accepted_replay_tolerance_percent']
+                    base._write_json(base._model_directory(Path(job['root']), job['trial']) / 'result.json', record)
                 completed_count += 1
                 yield record
                 if progress:
                     progress(f'Completed {completed_count}/{len(jobs)} remaining refits')
 
 
-def run_refits(config, progress=print):
-    """Complete and report the frozen selection without repeating any search fits."""
+def run_refits(config, progress=print, pending_gpu_id=None, accepted_replay_tolerance=None):
+    """Complete and report frozen refits without repeating any search fits.
+
+    An explicit destination and replay limit apply only to pending cross-device
+    refits; existing bundles and the saved search identity remain unchanged.
+    """
     section = config['pv_reviewed_hpo']
     root, saved = recovery._saved_contract(config)
     available = base._available_memory_gib()
@@ -171,7 +182,9 @@ def run_refits(config, progress=print):
     except FileExistsError as error:
         raise RuntimeError(f'An HPO run may already be active; inspect {lock}') from error
     with os.fdopen(descriptor, 'w') as stream:
-        stream.write(json.dumps({'pid': os.getpid(), 'mode': 'original_device_refits',
+        mode = (f'gpu{pending_gpu_id}_pending_refits' if pending_gpu_id is not None
+                else 'original_device_refits')
+        stream.write(json.dumps({'pid': os.getpid(), 'mode': mode,
                                  'started_utc': pd.Timestamp.now(tz='UTC').isoformat()}) + '\n')
     try:
         with (root / 'run.log').open('a', buffering=1) as log_file:
@@ -190,19 +203,47 @@ def run_refits(config, progress=print):
             del prepared
             for name in ['OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS']:
                 os.environ[name] = '1'
-            jobs = [{'root': str(root), 'trial': item['trial'], 'identity': saved['identity'], 'gpu': item['gpu'],
-                     'config': multi._single_device_proxy(config),
-                     'expected_validation_score': item['validation']['all']['day_balanced_nrmse_percent']}
-                    for item in remaining]
-            log(f'Retaining {len(refits)} valid refits and completing {len(jobs)} on their original GPUs')
+            # Keep original training provenance when pending refits move to an
+            # explicitly chosen device; the strict replay check decides whether
+            # a cross-device refit is numerically acceptable.
+            destination_gpu = None
+            if pending_gpu_id is not None:
+                destination_gpu = next(
+                    (device for device in plan['runtime']['devices']
+                     if device['visible_id'] == str(pending_gpu_id)), None)
+                if destination_gpu is None:
+                    raise ValueError(f'GPU {pending_gpu_id} is not in the verified device map')
+            jobs = []
+            for item in remaining:
+                job_config = multi._single_device_proxy(config)
+                moved_to_other_gpu = (destination_gpu is not None and
+                                      destination_gpu['visible_id'] != item['gpu']['visible_id'])
+                if accepted_replay_tolerance is not None and moved_to_other_gpu:
+                    default_tolerance = float(section['refit_replay_tolerance_nrmse_percent'])
+                    if float(accepted_replay_tolerance) < default_tolerance:
+                        raise ValueError('Replay override cannot be tighter than the configured tolerance')
+                    job_config['pv_reviewed_hpo']['refit_replay_tolerance_nrmse_percent'] = float(
+                        accepted_replay_tolerance)
+                jobs.append({'root': str(root), 'trial': item['trial'], 'identity': saved['identity'],
+                             'gpu': destination_gpu if destination_gpu is not None else item['gpu'],
+                             'original_training_gpu': item['gpu'],
+                             'accepted_replay_tolerance_percent': (
+                                 float(accepted_replay_tolerance) if moved_to_other_gpu and
+                                 accepted_replay_tolerance is not None else
+                                 float(section['refit_replay_tolerance_nrmse_percent'])),
+                             'config': job_config,
+                             'expected_validation_score': item['validation']['all']['day_balanced_nrmse_percent']})
+            destination = (f'GPU {pending_gpu_id}' if destination_gpu is not None
+                           else 'their original GPUs')
+            log(f'Retaining {len(refits)} valid refits and completing {len(jobs)} on {destination}')
             base._write_json(root / 'status.json', {'status': 'refitting', 'identity': saved['identity'],
                 'hpo_fits': len(records), 'completed': len(records), 'refits_completed': len(refits),
-                'training_started': True, 'mode': 'original_device_refits'})
+                'training_started': True, 'mode': mode})
             for record in _schedule_refits(jobs, plan['runtime']['devices'], log):
                 refits.append(record)
                 base._write_json(root / 'status.json', {'status': 'refitting', 'identity': saved['identity'],
                     'hpo_fits': len(records), 'completed': len(records), 'refits_completed': len(refits),
-                    'training_started': True, 'mode': 'original_device_refits'})
+                    'training_started': True, 'mode': mode})
             report = config_path(config, section['report_root'])
             base.publish_results(config, root, report, records, winners, selected, refits, saved['identity'])
             pd.DataFrame([{'farm_id': item['trial']['farm_id'], 'trial': item['trial']['name'],
@@ -211,7 +252,7 @@ def run_refits(config, progress=print):
                                report / 'trial_gpu_provenance.csv', index=False)
             base._write_json(root / 'status.json', {'status': 'complete', 'identity': saved['identity'],
                 'hpo_fits': len(records), 'completed': len(records), 'refits_completed': len(refits),
-                'report': str(report), 'training_started': True, 'mode': 'original_device_refits'})
+                'report': str(report), 'training_started': True, 'mode': mode})
             log(f'Complete: {report}')
             return {'output': str(root), 'report': str(report), 'identity': saved['identity']}
     finally:

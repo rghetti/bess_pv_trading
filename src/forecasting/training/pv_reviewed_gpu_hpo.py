@@ -116,18 +116,20 @@ def validate_configuration(config):
     if device != 'cpu' and (regime != 'four_cycle_forecast_ghi' or device != 'cuda:0'):
         raise ValueError('GPU search requires the four-cycle regime and cuda:0; select the physical GPU using CUDA_VISIBLE_DEVICES')
     expected_workers = 42 if regime == 'four_cycle_forecast_ghi' else 30
+    configured_cpu_workers = int(runtime.get('cpu_workers', expected_workers))
     workers = int(section['workers'])
     if device == 'cuda:0':
         maximum = int(runtime.get('maximum_gpu_workers', 1))
         if not 1 <= workers <= maximum:
             raise ValueError(f'GPU workers must be between 1 and configured maximum {maximum}')
-    elif workers != expected_workers:
-        raise ValueError(f'This CPU run requires {expected_workers} workers')
+    elif workers != configured_cpu_workers:
+        raise ValueError(f'This CPU run requires its configured {configured_cpu_workers} workers')
     if int(section['threads_per_worker']) != 1:
         raise ValueError('Each worker must use one CPU thread')
-    if regime == 'four_cycle_forecast_ghi' and (section['statistical_families'] or
+    if regime == 'four_cycle_forecast_ghi' and (
+            bool(section['statistical_families']) == bool(section['neural_families']) or
             section['cycle_hours_utc'] != [0, 6, 12, 18] or section['issue_horizon_hours'] != 48):
-        raise ValueError('The four-cycle study requires neural models and all four 48-hour cycles')
+        raise ValueError('The four-cycle study requires one model class and all four 48-hour cycles')
     if regime == 'four_cycle_forecast_ghi' and (
             section['training_ghi_source'] != 'historical'
             or section['validation_ghi_source'] != 'forecast'
@@ -171,7 +173,8 @@ def check_only(config, progress=print):
             prepared[farm_id] = prepare_farm(config, farm_id)
         # These are deterministic train-only feature statistics, not supervised model fits.
         preprocessors, matrices = fit_transforms(prepared[farm_id], config)
-        if section.get('data_regime') == 'four_cycle_forecast_ghi':
+        if (section.get('data_regime') == 'four_cycle_forecast_ghi' and
+                section['neural_families']):
             from ..data.pv_four_cycle_hpo_data import build_cycle_sequences
             item = prepared[farm_id]
             masks = {'train': item.training_mask, 'validation': item.validation_mask, 'test': item.test_mask}
@@ -245,17 +248,22 @@ def _prepare_cache(root, item, config):
     for name, matrix in matrices.items():
         # Packed sequences split at retained prior exclusions but retain nighttime labels.
         if config['pv_reviewed_hpo'].get('data_regime') == 'four_cycle_forecast_ghi':
-            from ..data.pv_four_cycle_hpo_data import build_cycle_sequences
-            from ..data.pv_neural_data import transform_features
-            forecast_features = item.features[name].copy()
-            forecast_features['ghi_w_m2'] = item.frame.ghi_forecast_w_m2.to_numpy()
-            forecast_matrix = transform_features(forecast_features, fitted[name])
-            packed = build_cycle_sequences(item.frame, matrix, masks, item.rating_mw,
-                int(config['pv_reviewed_hpo']['issue_horizon_hours']) * 4, forecast_features=forecast_matrix)
+            if config['pv_reviewed_hpo']['neural_families']:
+                from ..data.pv_four_cycle_hpo_data import build_cycle_sequences
+                from ..data.pv_neural_data import transform_features
+                forecast_features = item.features[name].copy()
+                forecast_features['ghi_w_m2'] = item.frame.ghi_forecast_w_m2.to_numpy()
+                forecast_matrix = transform_features(forecast_features, fitted[name])
+                packed = build_cycle_sequences(item.frame, matrix, masks, item.rating_mw,
+                    int(config['pv_reviewed_hpo']['issue_horizon_hours']) * 4,
+                    forecast_features=forecast_matrix)
+            else:
+                packed = None
         else:
             packed = build_sequences(item.frame, matrix, masks, item.rating_mw)
         np.save(directory / f'x_{name}.npy', matrix, allow_pickle=False)
-        np.savez(directory / f'packed_{name}.npz', **packed)
+        if packed is not None:
+            np.savez(directory / f'packed_{name}.npz', **packed)
         _write_json(directory / f'preprocessor_{name}.json', fitted[name])
 
 

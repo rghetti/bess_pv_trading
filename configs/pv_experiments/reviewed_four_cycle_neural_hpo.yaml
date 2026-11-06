@@ -6,11 +6,11 @@ pv_reviewed_hpo:
   farm_ids: [1, 345, 901, 910]
   dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
   output_root: outputs/pv_reviewed_hpo
-  run_id: four_cycle_neural_night3000_v1
+  run_id: four_cycle_neural_night3000_v2
   report_root: docs/results/pv_reviewed_hpo/four_cycle_neural_night3000_v1
-  resume: true
+  resume: false
   timezone: Europe/Rome
-  workers: 42
+  workers: 30
   threads_per_worker: 1
   # Conservative launch guard; workers, optimizer state and shared workloads add memory beyond a single-model probe.
   minimum_available_memory_gib: 64
@@ -54,7 +54,7 @@ pv_reviewed_hpo:
     dropout: {kind: choice, values: [0.0, 0.05, 0.1, 0.2]}
     learning_rate: {kind: log_uniform, low: 0.0001, high: 0.003}
     weight_decay: {kind: log_uniform, low: 1.0e-7, high: 0.01}
-    batch_size: {kind: choice, values: [2, 4, 8]}
+    batch_size: {kind: choice, values: [ 8, 16, 32]}
     loss: {kind: choice, values: [mse, huber]}
     heads: {kind: choice, values: [4, 8]}
   neural_training:

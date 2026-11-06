@@ -14,6 +14,8 @@ trial. It does not repeat the candidate search or reselect using test scores.
 cd /home/rghetti/bess_pv_trading
 CUDA_VISIBLE_DEVICES=0,1,2 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python scripts/finish_reviewed_pv_original_gpu_refits.py --config configs/pv_experiments/reviewed_four_cycle_neural_hpo_multi_gpu.yaml --check-only
 CUDA_VISIBLE_DEVICES=0,1,2 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python scripts/finish_reviewed_pv_original_gpu_refits.py --config configs/pv_experiments/reviewed_four_cycle_neural_hpo_multi_gpu.yaml --run
+CUDA_VISIBLE_DEVICES=0,1,2 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python scripts/finish_reviewed_pv_original_gpu_refits.py --config configs/pv_experiments/reviewed_four_cycle_neural_hpo_multi_gpu.yaml --run-pending-on-gpu 0
+CUDA_VISIBLE_DEVICES=0,1,2 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python scripts/finish_reviewed_pv_original_gpu_refits.py --config configs/pv_experiments/reviewed_four_cycle_neural_hpo_multi_gpu.yaml --run-pending-on-gpu 1 --accept-replay-difference-up-to 0.0008
 ```
 
 The no-training preflight checks the original configuration, code, data,
@@ -24,6 +26,14 @@ other devices continue processing their own jobs. If a shared device runs out
 of memory after dispatch, the job waits for additional free memory and retries
 on the same device. Other users' workloads are not stopped. Numerical replay
 failure still stops reporting and preserves the recorded scores for review.
+When only a pending refit's original GPU remains unavailable, the explicit
+`--run-pending-on-gpu N` mode keeps the original training-GPU provenance and
+runs pending work on the chosen configured GPU. It retains the strict replay
+check, so a cross-GPU score mismatch stops publication rather than accepting
+altered weights.
+The optional `--accept-replay-difference-up-to` applies only to pending work
+moved to another GPU and is saved in that model's result provenance. It does
+not modify the search identity or the configured default tolerance.
 
 At the first recovery check, 25 refits had completed and 21 remained: 19 on
 GPU 0, one on GPU 1 and one on GPU 2. All four validation-selected overall

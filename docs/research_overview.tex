@@ -37,33 +37,40 @@ equations are collected in appendices.
 \tableofcontents
 \newpage
 
-\section{The problem and our core idea}
-A photovoltaic farm and a battery share a grid connection. Solar generation
-can be exported, stored or curtailed; the battery can also charge from grid
-imports. The producer sells and buys energy in the Italian day-ahead auction
-(DA) and three intraday auctions (IDA1, IDA2 and IDA3). An order becomes binding
-when submitted. Later auctions can adjust the resulting position, while
-battery operation helps deliver it under uncertain solar production.
+\section{The problem and the core idea}
+A photovoltaic (PV) farm and a battery share a grid connection. Solar generation
+can be exported, stored or curtailed; the battery can be charged by the local farm or by grid imports 
+while also being able to discharge to the network. There is no local load.
+The producer sells and buys energy in the Italian day-ahead market
+(MGP) and the three intraday auctions (MI1, MI2 and MI3). 
+Later auctions can adjust the resulting position, while the
+battery has the double function of separating instantenous generation 
+from future trades and of offering flexibility for real time operations 
+when production differs from forecasts.
 
-Our core idea is to connect the information available at each auction with
-\emph{the decisions that can still be changed}. We transform eligible weather
-forecasts (deterministic or ensemble) into production paths, optimize the remaining market opportunities
-and battery operation together, submit the current order, and repeat as new
-information arrives. The actual battery
-state links the decisions across delivery intervals and days.
+The core idea is to jointly optimize at each auction current market positions and 
+expected future adjustments given  available information and present 
+(or expected) State of Charge (SoC). This allows to take advantage of price 
+spreads while respecting physical constraints of our assets, speculating 
+on market prices up until delivery. Only current auction trades 
+are binding while future ones can still be updated as newer production 
+forecasts are available. The actual battery state links the decisions across delivery intervals and days.
 
-The model maximizes expected remaining auction revenue less battery wear and
-trading costs, subject to energy conservation, exclusive charging/discharging,
+
+We formulate the problem as a Mixed-integer Linear Program (MILP) and solve it 
+to optimality via GUROBI. The model maximizes expected
+ remaining auction revenue less battery wear and
+trading costs, subject to energy conservation, exclusive (binary) charging/discharging,
 stored-energy bounds and the shared grid limit. The full optimization is in
 Appendix~\ref{app:auction}.
 
-We assess profit together with imbalance, curtailment, wear and
+We assess profits together with imbalance, curtailment, wear and
 ending stored energy.
 
 \section{The available data}
 \subsection{Four farms and their historical records}
 The dataset covers four anonymous farms in the northern-Italian bidding zone.
-Installed power is measured on the AC side. The supplied metadata describe
+ The supplied metadata describe
 fixed arrays and single-axis trackers and the battery are hypothetical study assets:
 \begin{center}\small
 \begin{tabular}{rllrr}
@@ -80,26 +87,20 @@ calculations use documented geographical proxies;
 
 Historical records run from 1 January 2025 to 31 August 2026 on a 15-minute
 UTC grid: 58,368 timestamps for each farm. They contain AC power, historical
-satellite global horizontal irradiance (GHI), and historical diffuse fraction.
+\emph{satellite} global horizontal irradiance (GHI), and historical diffuse fraction.
 
 
-Production quality and availability matter to both forecasting and trading.
-Reviewed modeling views distinguish retained measurements, approved synthetic
-replacements in unpredictable scenarios, seasonal night zeros and excluded intervals. Historical-GHI
-reconstructions provide explicitly identified counterfactual production where
-used. Raw historical data, reviewed targets and reconstructed production have
-different evidential meanings. Forecast training and replay therefore retain
-their target policy and provenance.
+\subsection{Updating deterministic weather forecasts}
 
-\subsection{Updated deterministic weather forecasts}
-The main weather archive contains 2,440 initialization times, every six hours,
-from 30 December 2024 to 31 August 2026. Each initialization supplies 49 hourly
-lead coordinates, from zero to 48 hours, for every farm. The weather fields
+Given that positions must be traded mostly the day before delivery, obtaining accurate
+pv production forecasts for the next day is imperative. We use weather-to-pv models to obtain such estimates.
+
+The main weather dataset comes from the ECMWF (European Centre for Medium-range Weather Forecast) archive
+ containing 4 deterministic weather forecasts cycles per day (initialized every six hours)
+from 30 December 2024 to 31 August 2026. Each run simulates up until 48 hours from the initialization time. The weather fields
 include several irradiance components, temperature, wind and cloud cover.
 
-
-
- Several cycles therefore predict the same delivery interval with newly available information. This
+Several cycles predict the same delivery interval with newly available information. This
 provides a record of forecast revision as delivery approaches. The four daily
 issues are successive information updates, each supplying one deterministic
 weather trajectory.
@@ -119,10 +120,9 @@ and act as training data for developing more sophisticated forecasting generatio
 
 \subsection{Market observations}
 Historical clearing curves cover DA and the three intraday auctions, with
-imbalance-settlement prices used to value actual delivery deviations. Native
-product durations and daylight-saving changes are preserved. Physical operation
-uses quarter-hours; earlier hourly DA products remain single traded products
-when mapped onto that finer grid.
+imbalance-settlement prices used to value actual delivery deviations. 
+Physical operation uses quarter-hours intervals resulting in 96 time steps per day, 
+mirroring the products granularity.
 
 The participation comparisons use actual future auction prices as a common
 price-information benchmark. This isolates choices about market access,
@@ -185,7 +185,7 @@ and physical decisions. Realized delivery supplies the carried battery state.}
 At a given cutoff, a production path is a possible external input. A decision
 path consists of auction quantities and feasible battery/solar actions along
 the represented information history. Scenarios with the same information must
-share the decisions made before they can be distinguished.
+share the same trajectory.
 
 \subsubsection{Deterministic and ensemble formulations}
 The deterministic case optimizes against one eligible AC production forecast.
@@ -227,10 +227,7 @@ Under the common actual-price curves used here, exact delivery makes useful
 solar injection identical across paths. It is therefore limited by the lowest
 available production at each interval: $0\le i_t\le\min_sV_{s,t}$, whereas the
 deterministic case has $0\le i_t\le V_{0,t}$. This envelope is an exact
-simplification under the shared-control assumptions. Its successive minima
-can come from different weather members; it is a feasibility bound rather
-than one meteorological trajectory. Averaging the ensemble first would instead
-give a single-forecast problem and remove this pathwise protection.
+simplification under the shared-control assumptions. 
 
 The objective retains a scenario-weighted expectation, but weights do not
 soften constraints imposed on every member. With identical prices and common
@@ -374,42 +371,14 @@ $e_{s,T}\ge e_{\rm floor}$ is added where the study requires it. A planning
 terminal target does not itself force an algebraic feedback controller to end
 at that realized energy.
 
-For progressive transaction tariff $F_m$, previously submitted monthly gross
-volume $V_m$ and new gross volume $G_{m,s}=\sum_{a:m(a)=m,t}|q_{a,n_a(s),t}|$,
-\begin{equation}
- C_s^{\rm trade}=\sum_m\{F_m(V_m+G_{m,s})-F_m(V_m)\}.
-\end{equation}
-Exact absolute-value and piecewise-linear graphs are required if reachable
-marginal tariff bands are decreasing; a convex epigraph alone is insufficient.
+
 The month is the submission month, not necessarily the delivery month.
 Earlier auction cash and incurred wear are sunk and absent from
 \eqref{eq:short-objective}. Only the closing auction's order is submitted;
 other quantities are revisable plans. Sequential planning replaces
 $\mathcal A_k$ by the single current auction.
 
-\subsection{Exact envelope for the strict ensemble problem}
-The deterministic specialization has $\mathcal S=\{0\}$ and $w_0=1$.
-The strict ensemble specialization has $\mathcal S=\{0,\ldots,50\}$ and
-$w_s=1/51$, with trades and battery variables shared across all paths:
-\begin{equation}
- q_{a,n_a(s),t}=q_{a,t},\quad
- (c_{n_t(s),t},d_{n_t(s),t},z_{n_t(s),t})=(c_t,d_t,z_t),\quad
- e_{s,t}=e_t.
-\end{equation}
-Curtailment remains path-dependent, subject to common actions when the
-represented observations coincide. Let
-$i_t=Q_t/\Delta_t-d_t+c_t$. Equation~\eqref{eq:main-ensemble-balance} gives
-$u_{s,t}=V_{s,t}-i_t$; nonnegative injection and curtailment then imply
-$0\le i_t\le V_{s,t}$ for every member.
 
-Under exact delivery, common trades/battery controls, identical price paths and
-compatible instantaneous curtailment recourse, $i_t$ is shared and
-\begin{equation}
- 0\le i_t\le\min_sV_{s,t},\qquad u_{s,t}=V_{s,t}-i_t.
-\end{equation}
-This gives an exact reduced feasible set and objective. It does not apply to
-general adaptive or imbalance-enabled problems, and discarding low-probability
-paths is not part of the equivalence.
 
 
 \section{Battery wear, control and realized accounting}
@@ -489,7 +458,7 @@ physical conversion uses the symbolic relationships
  T_{\rm mod}&=T_{\rm air}+G_{\rm POA}/(U_0+U_1v),\\
  P_{\rm DC}&=\max\!\left(0,\frac{P_{\rm AC,rated}}{\eta_{\rm ref}}
    \frac{G_{\rm POA}}{1000}[1+\gamma(T_{\rm mod}-T_{\rm ref})]\right),\\
- V_t&=\mathbf1\{t\text{ outside the seasonal night window}\}
+ V_t&=\mathbf1_{\{t\text{ outside the seasonal night window}\}}
        \clip\bigl(\mathcal C(P_{\rm DC}),0,P_{\rm AC,rated}\bigr).
 \end{align}
 Low-sun handling and valid irradiance bounds are required for the DNI
@@ -499,11 +468,10 @@ $\gamma=-0.004/{}^\circ\mathrm C$ and $\eta_{\rm ref}=0.96$; fitted historical
 conversions retain their own parameters. Tracker position and any rear
 contribution use explicit geometry assumptions.
 
-A statistical model instead fits normalized target $y_t=P_t/P_{\rm AC,rated}$:
+A statistical model instead learns parametrized (with parameters $\theta$) mappings from inputs to the normalized target $y_t=P_t/P_{\rm AC,rated}$:
 \begin{equation}
- \hat\theta=\arg\min_\theta\sum_{d,t}\omega_{dt}
-          \rho\bigl(f_\theta(X)_t-y_t\bigr),\qquad
- \sum_{t\in d}\omega_{dt}=\frac1{|\mathcal D_{\rm train}|}.
+ \hat\theta=\arg\min_\theta\frac1{|\mathcal D_{\rm train}|}\sum_{t\in\mathcal D_{train}}
+          \rho\bigl(f_\theta(X)_t-y_t\bigr)
 \end{equation}
 Squared or Huber loss fits point predictions; normalization and preprocessing
 are learned from training data. Calendar, weather and lead/issue features
