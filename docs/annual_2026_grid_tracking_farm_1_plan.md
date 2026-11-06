@@ -85,3 +85,31 @@ calendar-only plan counts 243 days, 23,324 quarter-hour intervals including the
 spring clock change, and up to 972 auction events. It establishes neither
 input completeness nor runtime. A full preflight may be expensive and must be
 run only when no downloader is using the catalog.
+
+## Previous-model comparison
+
+`configs/research/annual_2026_grid_tracking_farm_1_previous_model.yaml` uses the
+same study settings and greedy tracker with the earlier farm 1 reviewed-GHI
+`bigru_extended_021` bundle. Its separate run ID prevents collisions. The
+previous model is a four-layer bidirectional GRU of width 32 with 21 features;
+it was trained using historical GHI and Huber loss, and selected using 2026
+validation. Its reported validation and test used the preceding delivery day's
+00 UTC forecast; this experiment applies the latest eligible deterministic
+cycle, so those historical scores do not establish updating-cycle performance.
+Both model selections are retrospective, and neither run trains a model.
+
+The local curated replay loader uses 14,828 metered intervals, 8,332 configured
+night-zero intervals, 137 reviewed daylight pvlib replacements, and 27 retained
+daylight exclusions reconstructed with historical-GHI pvlib over the requested
+2026 window. These counts describe the current local input files. The synthetic
+and night-zero values are counterfactual inputs to dispatch and settlement, not
+independent measured production. Per-interval source labels and checksums are
+retained in each run's input provenance. Compare realized operating profit,
+settlement, wear, imbalance, curtailment and final SOC by day, and distinguish
+forecast objective values from realized cash flow.
+
+Run the previous model's `--check-only` preflight before approval and execution.
+Avoid overlapping farm runs or opening the catalog during an active downloader;
+each run uses nine solver threads. No previous-model full preflight or solve has
+been run yet. Unlike the user's existing new-model configuration, this new
+configuration disables overwriting an existing output directory.
