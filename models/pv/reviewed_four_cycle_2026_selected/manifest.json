@@ -1,0 +1,153 @@
+{
+  "schema": "reviewed_four_cycle_selected_models_v1",
+  "search_identity": "9724bb2fc15ae4bc9f730c9fd8336be080d9b6c98deeb6ae0985a645baf81305",
+  "selection": "lowest validation day-balanced daylight nRMSE per farm across the frozen neural search",
+  "source_run": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1",
+  "source_report": "docs/results/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1",
+  "delivery_timezone": "Europe/Rome",
+  "target": "15-minute AC-side MW",
+  "data": {
+    "dataset_root": "data/farms/curated/reviewed_ghi_2025_to_2026_08",
+    "training_period": "2025-01-01 through 2025-12-31",
+    "validation_period": "2026-01-01 through 2026-04-30",
+    "test_period": "2026-05-01 through 2026-08-31",
+    "forecast_cycles_utc": [
+      0,
+      6,
+      12,
+      18
+    ],
+    "issue_horizon_hours": 48,
+    "training_ghi": "historical measured GHI, linearly interpolated where configured",
+    "validation_test_ghi": "forecast GHI",
+    "assumed_release_lag_hours": 6,
+    "night_training_samples_per_farm": 3000,
+    "night_samples_counted_before_cycle_duplication": true,
+    "include_missing_indicators": false,
+    "synthetic_labels": "reviewed pvlib counterfactual replacements are included"
+  },
+  "night_policy": "zero predictions in configured Europe/Rome month-specific nighttime windows",
+  "files": "model.pt, preprocessor.json and result.json per farm; retrospective prediction arrays are omitted",
+  "models": {
+    "1": {
+      "model_name": "bigru_extended_037",
+      "family": "bigru",
+      "architecture": {
+        "hidden_or_channel_width": 128,
+        "depth": 3
+      },
+      "feature_set": "extended",
+      "validation_day_balanced_nrmse_percent": 4.696373357788901,
+      "test_day_balanced_nrmse_percent": 5.783426395991,
+      "test_day_balanced_nmae_percent": 3.5637173363547,
+      "rating_mw": 0.95328,
+      "bundle": "farm_1",
+      "sha256": {
+        "model.pt": "46729d8021376f11afed2165a03683aea637201b44dc0ea0acce07f5413e655a",
+        "preprocessor.json": "3ee18f6128ece4904ec866bdfe1cdb8f6aa99b3a39128e2e291aaf96cd118de4",
+        "result.json": "ba3c72f9a1cfe37a409d264305c503e2d833f0e1969342e50244ae0324e62662"
+      },
+      "source_directory": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_1/models/extended/bigru/bigru_extended_037",
+      "training_gpu": {
+        "visible_id": "0",
+        "uuid": "243a7a16-0e89-09f0-8d59-3c99be061442",
+        "name": "NVIDIA TITAN Xp"
+      },
+      "refit_gpu": {
+        "visible_id": "0",
+        "uuid": "243a7a16-0e89-09f0-8d59-3c99be061442",
+        "name": "NVIDIA TITAN Xp"
+      }
+    },
+    "345": {
+      "model_name": "bigru_core_025",
+      "family": "bigru",
+      "architecture": {
+        "hidden_or_channel_width": 512,
+        "depth": 3
+      },
+      "feature_set": "core",
+      "validation_day_balanced_nrmse_percent": 8.166573930735014,
+      "test_day_balanced_nrmse_percent": 13.150710237674765,
+      "test_day_balanced_nmae_percent": 10.244279313757634,
+      "rating_mw": 1.5246,
+      "bundle": "farm_345",
+      "sha256": {
+        "model.pt": "602cf68e044e018ade55b40a293f536147d156ce38cddebd783151e9d5fc7d34",
+        "preprocessor.json": "046fdca50114d5d25da1a34580b70718cd8db7a09889622b558229828a47d6be",
+        "result.json": "3cc39f51596037c9cac05cdba4d3e49e8009e2e2707d8e3249ffd9e0587a288a"
+      },
+      "source_directory": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_345/models/core/bigru/bigru_core_025",
+      "training_gpu": {
+        "visible_id": "0",
+        "uuid": "243a7a16-0e89-09f0-8d59-3c99be061442",
+        "name": "NVIDIA TITAN Xp"
+      },
+      "refit_gpu": {
+        "visible_id": "0",
+        "uuid": "243a7a16-0e89-09f0-8d59-3c99be061442",
+        "name": "NVIDIA TITAN Xp"
+      }
+    },
+    "901": {
+      "model_name": "tcn_extended_021",
+      "family": "tcn",
+      "architecture": {
+        "hidden_or_channel_width": 512,
+        "depth": 3
+      },
+      "feature_set": "extended",
+      "validation_day_balanced_nrmse_percent": 9.854317883943294,
+      "test_day_balanced_nrmse_percent": 10.960754240285437,
+      "test_day_balanced_nmae_percent": 6.618649441890155,
+      "rating_mw": 4.16,
+      "bundle": "farm_901",
+      "sha256": {
+        "model.pt": "8d91b8f53269da9da1912a2c3b73fcccef30f61d0319ffa9afbd96a959d31332",
+        "preprocessor.json": "1d99fe5639aa793ba534a2bc4770a81b09ca142035f1678998ff8b65112fbf4e",
+        "result.json": "405a949e1e295c8586f8a8f9e3f2a881e235f691195004960fa9f1b618c368a2"
+      },
+      "source_directory": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_901/models/extended/tcn/tcn_extended_021",
+      "training_gpu": {
+        "visible_id": "0",
+        "uuid": "243a7a16-0e89-09f0-8d59-3c99be061442",
+        "name": "NVIDIA TITAN Xp"
+      },
+      "refit_gpu": {
+        "visible_id": "0",
+        "uuid": "243a7a16-0e89-09f0-8d59-3c99be061442",
+        "name": "NVIDIA TITAN Xp"
+      }
+    },
+    "910": {
+      "model_name": "tcn_core_029",
+      "family": "tcn",
+      "architecture": {
+        "hidden_or_channel_width": 512,
+        "depth": 3
+      },
+      "feature_set": "core",
+      "validation_day_balanced_nrmse_percent": 8.731071942271884,
+      "test_day_balanced_nrmse_percent": 12.867498766863456,
+      "test_day_balanced_nmae_percent": 8.144755612794844,
+      "rating_mw": 6.638,
+      "bundle": "farm_910",
+      "sha256": {
+        "model.pt": "8cee8ea2a6ad4c4ff19ff458232fe255578e18955186c67309a1919d2026efa0",
+        "preprocessor.json": "5c4caa88fdf8067b72b55a5d79a658450fd295778c2a6cac6d522e85884b5706",
+        "result.json": "35e4fca1a5a566cb68cf73d7128efbf2195015c2850066b43b236682fe4b2320"
+      },
+      "source_directory": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_910/models/core/tcn/tcn_core_029",
+      "training_gpu": {
+        "visible_id": "0",
+        "uuid": "243a7a16-0e89-09f0-8d59-3c99be061442",
+        "name": "NVIDIA TITAN Xp"
+      },
+      "refit_gpu": {
+        "visible_id": "0",
+        "uuid": "243a7a16-0e89-09f0-8d59-3c99be061442",
+        "name": "NVIDIA TITAN Xp"
+      }
+    }
+  }
+}
