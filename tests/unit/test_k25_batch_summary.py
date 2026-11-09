@@ -14,7 +14,8 @@ def _case(batch, case, controller, *, reuse=False):
     job_id = f"window__farm_1__{case}"
     root = batch / "runs" / "farm_1" / job_id / "continuous"
     root.mkdir(parents=True)
-    config = {"battery": {"soc_min_percent": 7}, "state": {"terminal_soc_percent": 50},
+    config = {"battery": {"soc_min_percent": 7, "capacity_mwh": 1.0}, "state": {"terminal_soc_percent": 50},
+        "market": {"timezone": "Europe/Rome"},
         "realtime_mpc_comparison": {"controllers": [controller]},
         "realtime_mpc": {"first_interval_priority": "weighted", "first_interval_weight": 25}}
     (root / "resolved_config.json").write_text(json.dumps(config))
@@ -39,11 +40,20 @@ def _case(batch, case, controller, *, reuse=False):
     (root / f"summary__{controller}.json").write_text(json.dumps(summary))
     csv_dir = root / "controllers" / controller / "csv"
     csv_dir.mkdir(parents=True)
-    pd.DataFrame([{"auction": "DA", "cashflow_eur": 20}]).to_csv(csv_dir / "accepted_trades.csv", index=False)
+    pd.DataFrame([{"auction": "DA", "cashflow_eur": 10, "interval_id": "first", "quantity_mwh": 0.2, "price_eur_per_mwh": 50},
+                  {"auction": "DA", "cashflow_eur": 10, "interval_id": "second", "quantity_mwh": -0.1, "price_eur_per_mwh": 60}]
+        ).to_csv(csv_dir / "accepted_trades.csv", index=False)
     pd.DataFrame([{"delivery_day": "2026-01-01", "mpc_fallbacks": 0},
                   {"delivery_day": "2026-01-02", "mpc_fallbacks": 1}]).to_csv(
         csv_dir / "controller_daily_kpis.csv", index=False)
     pd.DataFrame({"status": ["optimal", "imbalance_tiebreak_rejected"]}).to_csv(csv_dir / "mpc_solves.csv", index=False)
+    pd.DataFrame([{"interval_id": "first", "start": "2025-12-31T23:00:00Z", "delivery_day": "2026-01-01",
+                   "duration_hours": 0.25, "curtailment_mw": 8, "imbalance_mwh": -1, "net_position_mwh": 0.2,
+                   "grid_mw": -3.2, "charge_mw": 1, "discharge_mw": 0, "energy_start_mwh": 0.5, "imbalance_price_eur_mwh": 40},
+                  {"interval_id": "second", "start": "2026-01-01T23:00:00Z", "delivery_day": "2026-01-02",
+                   "duration_hours": 0.25, "curtailment_mw": 8, "imbalance_mwh": 1, "net_position_mwh": -0.1,
+                   "grid_mw": 3.6, "charge_mw": 0, "discharge_mw": 1, "energy_start_mwh": 0.45, "imbalance_price_eur_mwh": 45}]
+        ).to_csv(csv_dir / "realized_dispatch.csv", index=False)
     return job, result
 
 
@@ -70,6 +80,18 @@ def test_summary_rejects_nonreconciling_auction_cash(tmp_path):
     with pytest.raises(ValueError, match="ledger does not reconcile"):
         write_k25_batch_summary(tmp_path, [job], [result], plots=False)
     assert not (tmp_path / "summary.md").exists()
+
+
+def test_intraday_profiles_reject_mismatched_net_commitments(tmp_path):
+    """A dispatch position must equal purchases plus sales in the executed ledger."""
+    job, result = _case(tmp_path, "deterministic_weighted_k25", "deterministic_mpc")
+    ledger = (tmp_path / "runs/farm_1" / job["job_id"] /
+              "continuous/controllers/deterministic_mpc/csv/accepted_trades.csv")
+    trades = pd.read_csv(ledger)
+    trades.loc[0, "quantity_mwh"] = 0.7
+    trades.to_csv(ledger, index=False)
+    with pytest.raises(ValueError, match="Net commitments do not reconcile"):
+        write_k25_batch_summary(tmp_path, [job], [result], plots=False)
 
 
 def test_comparison_requires_matching_input_fingerprints(tmp_path):

@@ -80,7 +80,7 @@ def _load_rows(batch, jobs, results):
                 & (combined.mpc_fallbacks > 0)).sum())
             rows.append({"farm": farm, "case": job["case_id"], "window": job.get("window_id"),
                 "baseline_case": job.get("baseline_case"), "controller": controller,
-                "label": _label(controller, job["case_id"], config), "summary": summary,
+                "label": _label(controller, job["case_id"], config), "summary": summary, "csv_dir": csv_dir,
                 "config": config, "daily": daily, "auctions": auction_cash,
                 "target": target, "days_at_target": None if target is None else int((end_soc - target).abs().le(0.01).sum()),
                 "days_at_minimum": int((end_soc - minimum).abs().le(0.01).sum()),
@@ -246,6 +246,10 @@ def write_k25_batch_summary(batch, jobs, results, *, plots=True):
         paths = _plots(batch, rows)
         lines.extend(["", "## Plots", ""])
         lines.extend(f"- [Farm {path.stem.split('_')[1]}: profit, imbalance and daily SOC]({path.relative_to(batch)})" for path in paths)
+    from .k25_intraday_profiles import write_intraday_profiles
+
+    intraday = write_intraday_profiles(batch, rows, plots=plots)
+    lines.extend(["", f"[Hourly imbalance and commitments, with monthly quarter-hour profiles]({intraday.relative_to(batch)})"])
     lines.append("")
     output = batch / "summary.md"
     output.write_text("\n".join(lines), encoding="utf-8")

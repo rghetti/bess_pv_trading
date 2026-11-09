@@ -63,6 +63,14 @@ well as per-farm plots when study plots are enabled. To recreate this report for
 an already completed batch, run `python scripts/summarize_k25_batch.py
 <batch-directory>`; `--no-plots` skips plot generation. No optimization is run.
 
+The same step writes `intraday_analysis/summary.md`, hourly tables, monthly
+quarter-hour CSVs and, when plots are enabled, one chart per farm and month.
+Net commitments combine all auction buys and sells (positive is net sale);
+dispatch positions are checked against the executed ledger before plotting.
+The charts show average absolute imbalance, curtailed energy, signed net
+commitment, starting SOC and realized market prices per observed quarter-hour
+in the configured market timezone. Charging and discharging remain in the data.
+
 For an older batch that did not have automatic cleanup, run
 `python scripts/cleanup_k25_preflight.py <batch-directory>`. Add `--wait` to
 wait for a running batch; the command checks that all trajectories and reports
