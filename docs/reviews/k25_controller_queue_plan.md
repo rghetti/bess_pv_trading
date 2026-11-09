@@ -31,7 +31,10 @@ objective, data and retrospective evaluation details.
 The two deterministic MPC cases first minimize total absolute imbalance in
 MWh, with K=25 applying only to the current interval in the weighted case.
 They then minimize battery wear among plans within the configured primary
-objective tolerance. The end of every daily MPC horizon is constrained to 50%
+objective tolerance. The January–August study permits 0.25 kWh of additional
+weighted horizon imbalance per MPC reoptimization during that tie-break;
+this is the energy equivalent of 1 kW for one 15-minute interval, not a
+separate allowance for every interval. The end of every daily MPC horizon is constrained to 50%
 SOC. Every auction optimization also has the 50% equality at the end of its
 delivery day, including the tracker baseline's auction plans. A failed MPC
 solve uses the tracking fallback for that interval and records the reason; this

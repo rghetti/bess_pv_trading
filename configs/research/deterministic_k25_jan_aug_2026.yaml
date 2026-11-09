@@ -90,7 +90,8 @@ realtime_mpc:
   provisional_ida3_mode: ida2_plan
   recourse_mode: observed_history
   planning_objective: imbalance_then_costs
-  imbalance_tiebreak_tolerance_mwh: 1.0e-7
+  # Permit 0.25 kWh of extra weighted horizon imbalance during the cost tie-break.
+  imbalance_tiebreak_tolerance_mwh: 0.00025
   first_interval_priority: none
   first_interval_weight: 1.0
 gme_oracle_experiment:

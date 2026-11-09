@@ -72,6 +72,8 @@ def test_plan_selects_only_requested_farms_and_equal_weight_case(queue_module, c
         (farm, controller, "deterministic_original") for farm in ("901", "910")
         for controller in ("track_committed_grid", "deterministic_mpc")}
     assert all(item["first_interval_weight"] == 1 for item in plan["formulations"])
+    assert all(item["imbalance_tiebreak_tolerance_mwh"] == pytest.approx(0.00025)
+               for item in plan["formulations"])
 
 
 def test_one_farm_id_plans_only_that_farm(queue_module, capsys):

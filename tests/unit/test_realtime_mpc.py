@@ -207,6 +207,23 @@ def test_imbalance_priority_precedes_wear_and_weights_only_first_interval():
     assert weighted.diagnostics["planning_objective_value"] == pytest.approx(0.1, abs=1e-5)
 
 
+@pytest.mark.parametrize("weight", [1, 25])
+def test_tiebreak_allowance_trades_small_horizon_imbalance_for_less_wear(weight):
+    """The second stage can reduce wear only within its configured weighted budget."""
+    settings = MpcSettings(terminal_inventory_mode="hard_target", terminal_soc_target_percent=50,
+        planning_objective="imbalance_then_costs", imbalance_tiebreak_tolerance_mwh=0.0,
+        first_interval_priority="weighted" if weight > 1 else "none", first_interval_weight=weight)
+    inputs = inputs_for([[0.4, 0]], [0, 0.1], energy=0.5, settings=settings)
+    inputs = replace(inputs, degradation=DegradationSettings(1000))
+    tight = checked(inputs)
+    relaxed = checked(replace(inputs, settings=replace(settings, imbalance_tiebreak_tolerance_mwh=0.00025)))
+    assert tight.diagnostics["imbalance_tiebreak_used"]
+    assert relaxed.diagnostics["imbalance_tiebreak_used"]
+    assert relaxed.plan.components["degradation_eur"] < tight.plan.components["degradation_eur"]
+    assert 0 < relaxed.diagnostics["planning_objective_value"] <= 0.00025 + 1e-7
+    assert relaxed.plan.energy_mwh[-1] == pytest.approx(0.5, abs=1e-7)
+
+
 def test_hard_target_infeasibility_is_reported():
     """A one-interval battery cannot be forced from zero to half capacity."""
     settings = MpcSettings(terminal_inventory_mode="hard_target", terminal_soc_target_percent=50,

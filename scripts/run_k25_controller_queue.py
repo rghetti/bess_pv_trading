@@ -226,6 +226,7 @@ def main(argv=None):
                 "terminal_soc_scope", "final_replay_day"),
             "auction_terminal_soc_percent": job["config"].get("state", {}).get("terminal_soc_percent"),
             "mpc_objective": settings.planning_objective, "first_interval_weight": settings.first_interval_weight,
+            "imbalance_tiebreak_tolerance_mwh": settings.imbalance_tiebreak_tolerance_mwh,
             "mpc_terminal_inventory_mode": settings.terminal_inventory_mode,
             "mpc_terminal_soc_percent": settings.terminal_soc_target_percent,
             "mpc_fallback_controller": settings.fallback_controller,
