@@ -384,3 +384,21 @@ have separate schedules, an optimistic path-revelation assumption. Realized
 current-interval PV, when selected, is identical in all scenarios.
 Lexicographic ensemble priority, oracle, economic and pure-imbalance variants
 remain unsupported. Planning penalties are not realized settlement charges.
+
+### Four-cycle reviewed model issue context
+
+Reviewed models declaring an issue horizon are evaluated on the complete known
+weather issue before predictions are sliced to an auction or MPC horizon. The
+pinned deterministic issue is cached per vintage; a request extending outside
+that issue fails instead of splicing in another weather cycle. Each weather
+ensemble member is evaluated independently over the same complete issue.
+Provenance records the issue length and a weather fingerprint.
+
+The study-specific `continuous_optimization.pv_ensemble.issue_context_missing_policy`
+defaults to `error`. The explicitly selected `same_vintage_deterministic`
+option fills missing pre-delivery ensemble context from an available
+deterministic issue of the identical vintage. It records affected feature
+counts, interval identifiers and donor fingerprint, and does not fill delivery
+intervals. These values are a shared forecast surrogate, not observations or
+independent ensemble members. Reviewed model predictions still use the
+configured monthly nighttime clipping policy.

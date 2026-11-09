@@ -1,4 +1,4 @@
-# January: shared-first ensemble original and 25x current-interval imbalance.
+# Portable research settings; supply reviewed model bundles under models/pv.
 include: ../standard.yaml
 farm_id: 1
 forecast:
@@ -19,6 +19,7 @@ continuous_optimization:
     zarr: data/farms/nwp_ens_20260101_20260131.zarr
     member_count: 50
     planning_policy: deterministic
+    issue_context_missing_policy: same_vintage_deterministic
 state:
   initial_soc_percent: 50.0
   terminal_soc_percent: 50.0
@@ -38,22 +39,22 @@ pv:
       '1':
         name: four_cycle_bigru_extended_037
         kind: reviewed_hpo
-        artifact_path: /home/rghetti/bess_pv_trading/models/pv/reviewed_four_cycle_2026_selected/farm_1/result.json
+        artifact_path: models/pv/reviewed_four_cycle_2026_selected/farm_1/result.json
         available_at_utc: '2026-11-09T00:00:00Z'
       '345':
         name: four_cycle_bigru_core_025
         kind: reviewed_hpo
-        artifact_path: /home/rghetti/bess_pv_trading/models/pv/reviewed_four_cycle_2026_selected/farm_345/result.json
+        artifact_path: models/pv/reviewed_four_cycle_2026_selected/farm_345/result.json
         available_at_utc: '2026-11-09T00:00:00Z'
       '901':
         name: four_cycle_tcn_extended_021
         kind: reviewed_hpo
-        artifact_path: /home/rghetti/bess_pv_trading/models/pv/reviewed_four_cycle_2026_selected/farm_901/result.json
+        artifact_path: models/pv/reviewed_four_cycle_2026_selected/farm_901/result.json
         available_at_utc: '2026-11-09T00:00:00Z'
       '910':
         name: four_cycle_tcn_core_029
         kind: reviewed_hpo
-        artifact_path: /home/rghetti/bess_pv_trading/models/pv/reviewed_four_cycle_2026_selected/farm_910/result.json
+        artifact_path: models/pv/reviewed_four_cycle_2026_selected/farm_910/result.json
         available_at_utc: '2026-11-09T00:00:00Z'
 trading:
   optimize_imbalances: false

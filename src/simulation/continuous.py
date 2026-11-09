@@ -395,7 +395,16 @@ class ContinuousReplay:
                     "pv_forecast_model_available_at_utc": available_at.isoformat(),
                     "pv_forecast_model_retrospective": bool(retrospective)}
                 if model["kind"] == "reviewed_hpo":
-                    model_provenance["pv_forecast_model_training_weather_cycle"] = "preceding_day_00_utc"
+                    metadata = json.loads(artifact.read_text())
+                    hours = metadata.get("input_contract", {}).get("issue_horizon_hours")
+                    model_provenance["pv_forecast_model_training_weather_cycle"] = (
+                        "four_cycles_00_06_12_18_utc" if hours is not None else "preceding_day_00_utc")
+                    if hours is not None:
+                        if bundle.provenance.get("model_issue_context_hours") != hours:
+                            raise ValueError("Reviewed model requires its complete issue context")
+                        model_provenance["model_issue_context_hours"] = hours
+                        model_provenance["model_issue_context_weather_sha256"] = bundle.provenance.get(
+                            "model_issue_context_weather_sha256")
         if forecast_night is not None:
             values = values.copy()
             values[night_window_mask(starts, forecast_night)] = 0.0

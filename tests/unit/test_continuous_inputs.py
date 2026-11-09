@@ -260,3 +260,71 @@ def test_delayed_telemetry_is_rejected_before_loading_inputs(prepared_case):
     with pytest.raises(ValueError, match="immediate completed-interval observations"):
         continuous_inputs.prepare_continuous_inputs(config)
     assert not any(calls.values())
+
+
+def test_reviewed_issue_context_is_fixed_before_slicing(monkeypatch, tmp_path):
+    """Overlapping requests use one complete vintage and identical predictions."""
+    import json
+    from bess_pv_trading.forecasting.inference import pv_reviewed_hpo
+
+    artifact = tmp_path / "result.json"
+    artifact.write_text(json.dumps({"input_contract": {"issue_horizon_hours": 48}}))
+    config = {"forecast": {"farm_id": 1}, "market": {"timezone": "Europe/Rome"},
+        "pv": {"forecast_replacement": {"models_by_farm": {"1": {"kind": "reviewed_hpo"}}}},
+        "policy": {"forecast_pv_night": {"enabled": True, "monthly_windows": {}}}}
+    evidence = {"status": "pinned", "artifact": str(artifact), "model": "selected"}
+    cycle = pd.Timestamp("2026-01-15T00:00:00Z")
+    available = cycle + pd.Timedelta(hours=6)
+    issue = pd.date_range(cycle, periods=192, freq="15min")
+    calls = []
+
+    def load(config, calendar, cutoff, starts):
+        calls.append(pd.DatetimeIndex(starts))
+        values = pd.DataFrame({"pv_ac_mw": np.zeros(len(starts)), "weather": np.arange(len(starts))}, index=starts)
+        return ForecastBundle(1, cycle, available, values, {"pv_ac_mw": "MW"})
+
+    def predict(frame, directory, *, farm_id, night_policy):
+        assert len(frame) == 192
+        assert frame.forecast_cycle_utc.nunique() == 1
+        return np.arange(len(frame), dtype=float)
+
+    monkeypatch.setattr(continuous_inputs, "_load_pv_forecast", load)
+    monkeypatch.setattr(pv_reviewed_hpo, "predict_reviewed_hpo", predict)
+    cache = {}
+    first = load(config, None, available, issue[24:60])
+    second = load(config, None, available, issue[30:40])
+    a = continuous_inputs._issue_context_prediction(config, None, available, first, evidence, cache)
+    b = continuous_inputs._issue_context_prediction(config, None, available, second, evidence, cache)
+    np.testing.assert_array_equal(a.values.loc[issue[30:40], "pv_ac_mw"], b.values.pv_ac_mw)
+    np.testing.assert_array_equal(b.values.pv_ac_mw, np.arange(30, 40))
+    assert len(calls) == 3
+    assert len(calls[-1]) == 192
+    assert a.provenance["model_issue_context_hours"] == 48
+    outside = load(config, None, available, pd.DatetimeIndex([issue[-1] + pd.Timedelta(minutes=15)]))
+    with pytest.raises(ValueError, match="outside.*context"):
+        continuous_inputs._issue_context_prediction(config, None, available, outside, evidence, cache)
+
+
+def test_ensemble_context_fill_uses_only_same_vintage_before_delivery(monkeypatch):
+    """Context repair never substitutes delivery weather or a later forecast issue."""
+    cycle = pd.Timestamp("2025-12-31T00:00Z")
+    issue = pd.date_range(cycle, periods=4, freq="15min")
+    delivery = issue[2:]
+    frame = pd.DataFrame({"interval_start_utc": list(issue) * 2,
+        "forecast_ghi": [np.nan, 1.0, np.nan, 3.0] * 2})
+    donor = pd.DataFrame({"forecast_ghi": [7.0, 8.0, 9.0, 10.0]}, index=issue)
+    config = {"forecast_mapping": {"forecast_ghi": "shortwave_radiation"},
+        "continuous_optimization": {"pv_ensemble": {"issue_context_missing_policy": "same_vintage_deterministic"}}}
+    def load(config, calendar, cutoff, starts):
+        return ForecastBundle(1, cycle, cycle + pd.Timedelta(hours=6), donor, {"forecast_ghi": "W/m2"})
+    monkeypatch.setattr(continuous_inputs, "_load_pv_forecast", load)
+    cutoff = cycle + pd.Timedelta(hours=6)
+    filled, evidence = continuous_inputs._fill_prior_issue_context(frame, delivery, issue,
+        config=config, calendar=None, cutoff=cutoff, cycle=cycle)
+    assert filled.forecast_ghi.iloc[0] == 7 and filled.forecast_ghi.iloc[4] == 7
+    assert pd.isna(filled.forecast_ghi.iloc[2]) and pd.isna(filled.forecast_ghi.iloc[6])
+    assert evidence["filled_member_values_by_feature"] == {"forecast_ghi": 2}
+    assert evidence["forecast_vintage_utc"] == cycle.isoformat()
+    with pytest.raises(ValueError, match="same eligible"):
+        continuous_inputs._fill_prior_issue_context(frame, delivery, issue,
+            config=config, calendar=None, cutoff=cutoff, cycle=cycle + pd.Timedelta(hours=6))

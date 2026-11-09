@@ -400,7 +400,8 @@ def test_strict_priority_retains_valid_first_action_if_refinement_is_invalid(mon
     validate_mpc_plan(base, result.plan)
 
 
-def test_shared_first_ensemble_weight_prioritizes_disclosed_current_pv():
+@pytest.mark.parametrize("first_weight", [10.0, 25.0])
+def test_shared_first_ensemble_weight_prioritizes_disclosed_current_pv(first_weight):
     """Weight ten applies to a common observed first interval, with recourse later."""
     settings = MpcSettings(terminal_inventory_mode="none", recourse_mode="first_action_only",
         current_pv_information="realized_interval_average")
@@ -411,13 +412,13 @@ def test_shared_first_ensemble_weight_prioritizes_disclosed_current_pv():
         degradation=DegradationSettings(600))
     original = checked(base)
     weighted = checked(replace(base, settings=replace(settings,
-        first_interval_priority="weighted", first_interval_weight=10.0)))
+        first_interval_priority="weighted", first_interval_weight=first_weight)))
     assert original.plan.expected_absolute_imbalance_by_interval_mwh[0] == pytest.approx(0.1, abs=1e-6)
     assert weighted.plan.expected_absolute_imbalance_by_interval_mwh[0] == pytest.approx(0.0, abs=1e-6)
     np.testing.assert_allclose(weighted.plan.scenario_actions[0][0], weighted.plan.scenario_actions[50][0])
     assert weighted.plan.control_nodes[0][0] == weighted.plan.control_nodes[50][0]
     assert weighted.plan.control_nodes[0][1] != weighted.plan.control_nodes[50][1]
     expected = 500 * (weighted.plan.components["absolute_imbalance_mwh"]
-        + 9 * weighted.plan.expected_absolute_imbalance_by_interval_mwh[0])
+        + (first_weight - 1) * weighted.plan.expected_absolute_imbalance_by_interval_mwh[0])
     expected += sum(weighted.plan.components[key] for key in ("degradation_eur", "terminal_cost_eur", "import_cost_eur"))
     assert weighted.diagnostics["planning_objective_value"] == pytest.approx(expected, abs=1e-5)

@@ -106,7 +106,57 @@ def _replacement_evidence(config):
         "specification": metadata.get("specification"), "inference_threads": int(config["solver"]["threads"])}
 
 
-def _replace_initial_forecast(config, day, cutoff, grid, bundle, forecast, actual, provenance, evidence):
+def _reviewed_issue_hours(config, evidence):
+    """Return the declared complete issue length, if this reviewed bundle needs one."""
+    if not evidence or evidence.get("status") != "pinned":
+        return None
+    models = config["pv"]["forecast_replacement"]["models_by_farm"]
+    farm = int(config["forecast"]["farm_id"])
+    model = models.get(str(farm), models.get(farm))
+    if model.get("kind") != "reviewed_hpo":
+        return None
+    metadata = json.loads(Path(evidence["artifact"]).read_text())
+    hours = metadata.get("input_contract", {}).get("issue_horizon_hours")
+    return None if hours is None else int(hours)
+
+
+def _issue_context_prediction(config, calendar, cutoff, bundle, evidence, cache):
+    """Infer a complete eligible weather issue once, then slice requested intervals."""
+    from ..forecasting.inference.pv_reviewed_hpo import predict_reviewed_hpo
+
+    hours = _reviewed_issue_hours(config, evidence)
+    cycle = pd.Timestamp(bundle.forecast_vintage).tz_convert("UTC")
+    key = (cycle.isoformat(), evidence["artifact"])
+    starts = _utc_index(bundle.values.index)
+    if key not in cache:
+        # Selecting again at the same cutoff must preserve the exact issue vintage.
+        issue_starts = pd.date_range(cycle, periods=hours * 4, freq="15min")
+        full = _load_pv_forecast(config, calendar, cutoff, issue_starts)
+        if pd.Timestamp(full.forecast_vintage) != cycle or pd.Timestamp(full.available_at) > pd.Timestamp(cutoff):
+            raise ValueError("Full issue weather vintage differs or is unavailable")
+        frame = full.values.copy(deep=True)
+        frame["interval_start_utc"] = issue_starts
+        frame["delivery_day"] = issue_starts.tz_convert(config["market"]["timezone"]).strftime("%Y-%m-%d")
+        frame["auction"] = "DA"
+        frame["forecast_cycle_utc"] = cycle
+        frame["forecast_available_at_utc"] = pd.Timestamp(full.available_at)
+        frame["decision_cutoff_utc"] = pd.Timestamp(cutoff)
+        predictions = predict_reviewed_hpo(frame, Path(evidence["artifact"]).parent,
+            farm_id=int(config["forecast"]["farm_id"]),
+            night_policy=config.get("policy", {}).get("forecast_pv_night", {}))
+        cache[key] = (pd.Series(predictions, index=issue_starts), _frame_fingerprint(full.values))
+    predictions, fingerprint = cache[key]
+    positions = predictions.index.get_indexer(starts)
+    if np.any(positions < 0):
+        raise ValueError("Requested forecast lies outside the model's complete issue context")
+    values = bundle.values.copy(deep=True)
+    values["pv_ac_mw"] = predictions.iloc[positions].to_numpy()
+    provenance = {**bundle.provenance, "reviewed_hpo_model": evidence["model"],
+        "model_issue_context_hours": hours, "model_issue_context_weather_sha256": fingerprint}
+    return replace(bundle, values=values, provenance=provenance)
+
+
+def _replace_initial_forecast(config, day, cutoff, grid, bundle, forecast, actual, provenance, evidence, *, calendar=None, issue_cache=None):
     """Use the same selected bundle for initialization and frozen measurement fallback."""
     if evidence is None or evidence.get("status") != "pinned":
         return forecast, actual, bundle, provenance
@@ -116,6 +166,23 @@ def _replace_initial_forecast(config, day, cutoff, grid, bundle, forecast, actua
     model = models.get(str(farm), models.get(farm))
     available = pd.Timestamp(evidence["available_at_utc"])
     if model["kind"] not in {"weather_bundle", "reviewed_hpo"} or (available > cutoff and not settings.get("allow_retrospective_artifacts", False)):
+        return forecast, actual, bundle, provenance
+
+    if _reviewed_issue_hours(config, evidence) is not None:
+        if calendar is None or issue_cache is None:
+            raise ValueError("Complete issue-context inference requires a preflight reader")
+        bundle = _issue_context_prediction(config, calendar, cutoff, bundle, evidence, issue_cache)
+        forecast = bundle.values["pv_ac_mw"].to_numpy(dtype=float).copy()
+        actual = np.asarray(actual).copy()
+        fallback_ids = set(provenance.get("realized_power_fallback_interval_ids", []))
+        for index, product in enumerate(grid.interval_ids):
+            if product in fallback_ids:
+                actual[index] = forecast[index]
+        provenance = {**provenance, "initial_forecast_model": evidence["model"],
+            "initial_forecast_model_retrospective": bool(available > cutoff),
+            "realized_fallback_model": evidence["model"], "forecast_model_evidence": evidence,
+            "model_issue_context_hours": _reviewed_issue_hours(config, evidence),
+            "model_issue_context_weather_sha256": bundle.provenance["model_issue_context_weather_sha256"]}
         return forecast, actual, bundle, provenance
 
     frame = bundle.values.copy(deep=True)
@@ -150,6 +217,42 @@ def _replace_initial_forecast(config, day, cutoff, grid, bundle, forecast, actua
         "initial_forecast_model_retrospective": bool(available > cutoff),
         "realized_fallback_model": evidence["model"], "forecast_model_evidence": evidence}
     return forecast, actual, bundle, provenance
+
+
+def _fill_prior_issue_context(frame, starts, model_starts, *, config, calendar, cutoff, cycle):
+    """Fill only missing pre-delivery weather with the same eligible deterministic vintage."""
+    columns = [name for name in config["forecast_mapping"] if name in frame]
+    before_delivery = pd.DatetimeIndex(frame["interval_start_utc"]) < starts[0]
+    missing = frame[columns].isna().to_numpy() & before_delivery[:, None]
+    if not missing.any():
+        return frame, None
+    policy = config["continuous_optimization"]["pv_ensemble"].get("issue_context_missing_policy", "error")
+    if policy == "error":
+        raise ValueError("Ensemble issue context has missing pre-delivery weather")
+    if policy != "same_vintage_deterministic":
+        raise ValueError("Unknown ensemble issue-context missing-data policy")
+    # The configured fallback cannot fill missing delivery intervals or use a later vintage.
+    deterministic = _load_pv_forecast(config, calendar, cutoff, model_starts)
+    if pd.Timestamp(deterministic.forecast_vintage) != cycle or pd.Timestamp(deterministic.available_at) > cutoff:
+        raise ValueError("Deterministic issue-context fill must use the same eligible weather vintage")
+    donor = deterministic.values.reindex(pd.DatetimeIndex(frame["interval_start_utc"]))
+    result = frame.copy(deep=True)
+    counts = {}
+    intervals = set()
+    for index, name in enumerate(columns):
+        mask = missing[:, index]
+        if not mask.any():
+            continue
+        if name not in donor or not np.isfinite(donor[name].to_numpy(dtype=float)[mask]).all():
+            raise ValueError(f"Same-vintage deterministic issue context is missing {name}")
+        result.loc[mask, name] = donor[name].to_numpy()[mask]
+        counts[name] = int(mask.sum())
+        intervals.update(pd.DatetimeIndex(frame.loc[mask, "interval_start_utc"]).astype(str))
+    return result, {"policy": policy, "forecast_vintage_utc": cycle.isoformat(),
+        "available_at_utc": pd.Timestamp(deterministic.available_at).isoformat(),
+        "filled_member_values_by_feature": counts, "filled_interval_ids": sorted(intervals),
+        "donor_weather_sha256": _frame_fingerprint(deterministic.values),
+        "scope": "missing pre-delivery model context only; delivery weather unchanged"}
 
 
 def _prepare_pv_ensembles(config, days_data, progress=None, *, cycle_overrides=None):
@@ -209,8 +312,17 @@ def _prepare_pv_ensembles(config, days_data, progress=None, *, cycle_overrides=N
             starts = _utc_index(daily["grid"].starts)
             cycle = ((pd.Timestamp(day) - pd.Timedelta(days=1)).tz_localize("UTC")
                 if cycle_overrides is None else pd.Timestamp(cycle_overrides[day]))
+            issue_hours = None
+            if use_bundle and model.get("kind") == "reviewed_hpo":
+                metadata = json.loads(artifact.read_text())
+                issue_hours = metadata.get("input_contract", {}).get("issue_horizon_hours")
+            model_starts = (pd.date_range(cycle, periods=int(issue_hours) * 4, freq="15min")
+                if issue_hours is not None else starts)
+            requested_positions = model_starts.get_indexer(starts)
+            if np.any(requested_positions < 0):
+                raise ValueError(f"PV ensemble delivery intervals exceed issue context for {day}")
             try:
-                weather = align_cycle(dataset, farm_id, cycle, starts, config, ensemble=True)
+                weather = align_cycle(dataset, farm_id, cycle, model_starts, config, ensemble=True)
             except (KeyError, ValueError) as error:
                 raise ValueError(f"PV ensemble missing or invalid for {day}, cycle {cycle}: {error}") from error
             first_cutoff = min(event.submission_at for event in daily["schedule"])
@@ -221,11 +333,16 @@ def _prepare_pv_ensembles(config, days_data, progress=None, *, cycle_overrides=N
                     raise ValueError(f"PV ensemble model was not available at the first cutoff for {day}")
                 # Keep member curves independent for both interpolation and neural sequence packing.
                 frame = weather.values.copy().reset_index(drop=False)
-                frame["interval_start_utc"] = np.tile(starts, len(members))
-                frame["delivery_day"] = day
+                frame["interval_start_utc"] = np.tile(model_starts, len(members))
+                frame["delivery_day"] = np.tile(model_starts.tz_convert(config["market"]["timezone"]).strftime("%Y-%m-%d"), len(members))
                 frame["auction"] = "DA"
                 frame["forecast_cycle_utc"] = cycle
                 frame["_scenario_member"] = frame["member"].astype(str)
+                context_fill = None
+                if issue_hours is not None:
+                    frame, context_fill = _fill_prior_issue_context(frame, starts, model_starts,
+                        config=config, calendar=AuctionCalendar.from_config(config),
+                        cutoff=pd.Timestamp(first_cutoff), cycle=cycle)
                 if model["kind"] == "reviewed_hpo":
                     from ..forecasting.inference.pv_reviewed_hpo import predict_reviewed_hpo
 
@@ -241,12 +358,15 @@ def _prepare_pv_ensembles(config, days_data, progress=None, *, cycle_overrides=N
 
                     predicted = predict_bundle(frame, artifact.parent, farm_id=farm_id,
                                                night_policy=forecast_night)
-                values = np.stack([predicted[frame["_scenario_member"].to_numpy() == member]
+                values = np.stack([predicted[frame["_scenario_member"].to_numpy() == member][requested_positions]
                                    for member in members])
                 conversion = {"model": model.get("name"), "kind": model["kind"],
                     "manifest": str(artifact), "manifest_sha256": hashlib.sha256(artifact.read_bytes()).hexdigest(),
                     "available_at_utc": available_at.isoformat(),
-                    "retrospective": bool(available_at > pd.Timestamp(first_cutoff))}
+                    "retrospective": bool(available_at > pd.Timestamp(first_cutoff)),
+                    "model_issue_context_hours": issue_hours,
+                    "model_issue_context_weather_sha256": _frame_fingerprint(frame),
+                    "model_issue_context_fill": context_fill}
             else:
                 converted = forecast_pv(weather, farm, config["pv"], forecast_night)
                 values = np.stack([converted.values.loc[converted.values.member == member, "pv_ac_mw"].to_numpy(float)
@@ -457,6 +577,7 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
         tuple(item for grid in all_grids for item in grid.starts),
         tuple(item for grid in all_grids for item in grid.ends))
     full_starts = _utc_index(full_grid.starts)
+    issue_cache = {}
     initial_requests: dict[str, tuple[pd.DatetimeIndex, Any]] = {}
     forecast_requests: dict[str, pd.DatetimeIndex] = {}
     # Pin exact prices, common measured PV/fallbacks and every causal forecast when `progress`.
@@ -493,7 +614,8 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             forecast, actual, bundle, pv_provenance = _load_pv(daily, calendar, grid,
                                                               decision_cutoff=first_cutoff)
             forecast, actual, bundle, pv_provenance = _replace_initial_forecast(
-                config, day, first_cutoff, grid, bundle, forecast, actual, pv_provenance, replacement_evidence)
+                config, day, first_cutoff, grid, bundle, forecast, actual, pv_provenance, replacement_evidence,
+                calendar=calendar, issue_cache=issue_cache)
             _validate_bundle(bundle, first_cutoff, _utc_index(grid.starts))
         except (ValueError, RuntimeError) as error:
             raise ValueError(f"Continuous preflight for {day}: {error}") from error
@@ -550,6 +672,12 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             try:
                 bundle = (initial[1] if initial is not None and starts.equals(initial[0]) else
                           _load_pv_forecast(config, calendar, pd.Timestamp(key), starts))
+                if (_reviewed_issue_hours(config, replacement_evidence) is not None
+                        and (pd.Timestamp(replacement_evidence["available_at_utc"]) <= pd.Timestamp(key)
+                            or config["pv"]["forecast_replacement"].get("allow_retrospective_artifacts", False))
+                        and bundle.provenance.get("reviewed_hpo_model") != replacement_evidence["model"]):
+                    bundle = _issue_context_prediction(config, calendar, pd.Timestamp(key), bundle,
+                        replacement_evidence, issue_cache)
                 forecasts.add(pd.Timestamp(key), starts, bundle)
             except (ValueError, RuntimeError) as error:
                 raise ValueError(f"Continuous weather preflight at {key}: {error}") from error
