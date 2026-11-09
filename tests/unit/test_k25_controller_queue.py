@@ -115,6 +115,50 @@ def test_identical_trackers_are_run_once_and_reused(queue_module, tmp_path):
         source / "input_provenance__track_committed_grid.json")
 
 
+def test_external_tracker_compatibility_and_references(queue_module, tmp_path):
+    """Reuse only compatible completed trackers, keeping the old artifacts in place."""
+    batch = tmp_path / "old"
+    source = batch / "runs/farm_1/old_job/continuous"
+    csv = source / "controllers/track_committed_grid/csv"
+    csv.mkdir(parents=True)
+    (csv / "controller_intervals.csv").write_text("interval\n")
+    (source / "summary__track_committed_grid.json").write_text("{}")
+    (source / "input_provenance__track_committed_grid.json").write_text("{}")
+    old = {"continuous_optimization": {"output_root": "old", "run_id": "old_job"},
+           "solver": {"threads": 3}, "realtime_mpc": {"imbalance_tiebreak_tolerance_mwh": 1e-7},
+           "state": {"terminal_soc_percent": 50}}
+    (source / "resolved_config.json").write_text(json.dumps(old))
+    record = {"farm_id": "1", "job_id": "old_job", "controller": "track_committed_grid",
+              "status": "complete", "input_fingerprint": "snapshot"}
+    (batch / "manifest.json").write_text(json.dumps({"results": [record]}))
+    config = {"continuous_optimization": {"output_root": str(tmp_path / "new/runs"), "run_id": "new_job"},
+              "solver": {"threads": 5}, "realtime_mpc": {"imbalance_tiebreak_tolerance_mwh": 0.00025},
+              "state": {"terminal_soc_percent": 50}}
+    job = {"farm_id": "1", "job_id": "new_job", "config": config}
+    selected = queue_module.select_external_trackers([job], [batch])
+    destination = queue_module.trajectory_destination(job)
+    destination.mkdir(parents=True)
+    results = queue_module.attach_external_trackers([job], selected)
+    assert results[0]["input_fingerprint"] == "snapshot"
+    assert (destination / "controllers/track_committed_grid").resolve() == (source / "controllers/track_committed_grid").resolve()
+    config["state"]["terminal_soc_percent"] = 40
+    with pytest.raises(ValueError, match="exactly one compatible"):
+        queue_module.select_external_trackers([job], [batch])
+
+
+def test_external_tracker_fingerprint_checked_before_replay(queue_module, monkeypatch, tmp_path):
+    """A changed data snapshot cannot start an optimization against an old baseline."""
+    monkeypatch.setattr(queue_module, "prepare_continuous_inputs", lambda config, progress: {
+        "imbalance_prices_eur_per_mwh": [1], "input_fingerprint": "new"})
+    job = {"farm_id": "1", "case_id": "original", "job_id": "job", "config": {
+        "continuous_optimization": {"output_root": str(tmp_path), "run_id": "job"}}}
+    (queue_module.trajectory_destination(job) / "logs").mkdir(parents=True)
+    result = queue_module.run_trajectory({"job": job, "controller": "deterministic_mpc", "check_only": False,
+        "preflight_cache": False, "baseline_fingerprint": "old"})
+    assert result["status"] == "failed"
+    assert "fingerprint differs" in result["error"]
+
+
 def test_each_trajectory_uses_its_controller_and_own_state(queue_module, monkeypatch, tmp_path):
     """A tracker worker selects tracking while leaving the paired MPC config intact."""
     from bess_pv_trading.simulation import continuous

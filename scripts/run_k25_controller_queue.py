@@ -70,6 +70,8 @@ def run_trajectory(task):
                 if prepared["imbalance_prices_eur_per_mwh"] is None:
                     raise ValueError("Complete actual settlement prices are required")
                 result["input_fingerprint"] = prepared["input_fingerprint"]
+                if task.get("baseline_fingerprint") and result["input_fingerprint"] != task["baseline_fingerprint"]:
+                    raise ValueError("Prepared input fingerprint differs from the selected tracker baseline")
                 if task["check_only"]:
                     config["realtime_mpc_comparison"]["check_only"] = True
                     run_realtime_mpc_experiment(config, prepared_inputs=prepared, progress=progress)
@@ -178,6 +180,63 @@ def reuse_tracking_results(results, aliases):
     return results
 
 
+def select_external_trackers(jobs, batches):
+    """Find one completed, configuration-compatible tracker for every case."""
+    selected = {}
+    for job in jobs:
+        candidates = []
+        for batch in batches:
+            manifest = json.loads((batch / "manifest.json").read_text())
+            for result in manifest.get("results", []):
+                if (str(result.get("farm_id")) != str(job["farm_id"])
+                        or result.get("controller") != "track_committed_grid"
+                        or result.get("status") != "complete"
+                        or result.get("reused_from_job_id")):
+                    continue
+                source = batch / "runs" / f"farm_{job['farm_id']}" / result["job_id"] / "continuous"
+                config_path = source / "resolved_config.json"
+                if not config_path.is_file():
+                    continue
+                old = json.loads(config_path.read_text())
+                new = deepcopy(job["config"])
+                # These fields affect only MPC refinement, diagnostics, output
+                # locations or solver parallelism, not the tracker policy.
+                for config in (old, new):
+                    for key in ("output_root", "run_id", "validation_diagnostics"):
+                        config.get("continuous_optimization", {}).pop(key, None)
+                    config.get("solver", {}).pop("threads", None)
+                    for key in ("imbalance_tiebreak_tolerance_mwh", "first_interval_priority", "first_interval_weight"):
+                        config.get("realtime_mpc", {}).pop(key, None)
+                if old != new:
+                    continue
+                required = [source / "summary__track_committed_grid.json",
+                            source / "input_provenance__track_committed_grid.json",
+                            source / "controllers" / "track_committed_grid" / "csv" / "controller_intervals.csv"]
+                if all(path.is_file() for path in required) and result.get("input_fingerprint"):
+                    candidates.append((batch, source, result))
+        if len(candidates) != 1:
+            raise ValueError(f"Expected exactly one compatible completed tracker for {job['job_id']}; found {len(candidates)}")
+        selected[job["job_id"]] = candidates[0]
+    return selected
+
+
+def attach_external_trackers(jobs, selected):
+    """Reference existing tracker artifacts without copying their large data."""
+    results = []
+    for job in jobs:
+        batch, source, original = selected[job["job_id"]]
+        destination = trajectory_destination(job)
+        (destination / "controllers").mkdir(exist_ok=True)
+        (destination / "controllers" / "track_committed_grid").symlink_to(
+            (source / "controllers" / "track_committed_grid").resolve(), target_is_directory=True)
+        shutil.copyfile(source / "summary__track_committed_grid.json", destination / "summary__track_committed_grid.json")
+        link_provenance(source / "input_provenance__track_committed_grid.json",
+                        destination / "input_provenance__track_committed_grid.json")
+        results.append({**original, "job_id": job["job_id"], "external_baseline_batch": str(batch.resolve()),
+                        "external_baseline_job_id": original["job_id"]})
+    return results
+
+
 def main(argv=None):
     """Show a plan by default; execute only a specifically selected action."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -186,6 +245,8 @@ def main(argv=None):
     parser.add_argument("--farms", "--farm-ids", "--farm-id", dest="farms", nargs="+", action="extend",
                         help="Select one or more farm IDs declared by the study")
     parser.add_argument("--cases", nargs="+", help="Select study case IDs")
+    parser.add_argument("--tracker-batch", type=Path, action="append", default=[],
+                        help="Reuse completed grid trackers from this batch; repeat for multiple batches")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--per-farm", type=int, default=2)
     parser.add_argument("--solver-threads", type=int, help="Override solver threads per trajectory")
@@ -212,6 +273,17 @@ def main(argv=None):
               "preflight_cache": not args.no_preflight_cache}
         for job in jobs for controller in job["config"]["realtime_mpc_comparison"]["controllers"]]
     tasks, tracking_aliases = deduplicate_tracking(tasks)
+    external_trackers = select_external_trackers(jobs, args.tracker_batch) if args.tracker_batch else {}
+    if external_trackers:
+        if len({job["case_id"] for job in jobs}) != 1:
+            parser.error("--tracker-batch requires exactly one selected case")
+        if any(job.get("baseline_case") for job in jobs):
+            parser.error("--tracker-batch requires a case without a separate case baseline")
+        tasks = [task for task in tasks if task["controller"] != "track_committed_grid"]
+        for task in tasks:
+            task["baseline_fingerprint"] = external_trackers[task["job"]["job_id"]][2]["input_fingerprint"]
+        tracking_aliases = []
+        plan["auction_submission_solves_upper_bound"] = plan.pop("auction_submission_solves", 0) // 2
     if tracking_aliases:
         # The original nominal count includes the omitted tracker trajectories.
         plan["auction_submission_solves_upper_bound"] = plan.pop("auction_submission_solves")
@@ -237,6 +309,9 @@ def main(argv=None):
         preflight_cache="disabled" if args.no_preflight_cache else "batch_local_shared",
         preflight_cache_cleanup="keep" if args.keep_preflight_cache else "after_success",
         physical_controller_trajectories=len(tasks), reused_tracking_trajectories=len(tracking_aliases),
+        external_tracker_baselines=[{"job_id": job_id, "batch": str(batch.resolve()),
+            "source_job_id": result["job_id"], "input_fingerprint": result["input_fingerprint"]}
+            for job_id, (batch, _, result) in external_trackers.items()],
         formulations=formulations,
         note="Compatible trajectories share a batch-local snapshot; paired input fingerprints must match."
             if not args.no_preflight_cache else "Each trajectory independently prepares inputs; fingerprints must match.")
@@ -282,6 +357,8 @@ def main(argv=None):
 
     try:
         results = run_queue(tasks, args.workers, args.per_farm, study["native_threads"], update)
+        if external_trackers and not args.check_only:
+            results.extend(attach_external_trackers(jobs, external_trackers))
         reuse_tracking_results(results, tracking_aliases)
         update(results)
         failures = [item for item in results if item["status"] not in {"complete", "preflight_passed"}]
@@ -325,7 +402,8 @@ def main(argv=None):
             case_manifest = json.loads(path.read_text())
             if case_manifest["status"] == "running":
                 selected = [item for item in results if item["job_id"] == job["job_id"]]
-                passed = args.check_only and len(selected) == 2 and all(
+                expected = 1 if external_trackers else 2
+                passed = args.check_only and len(selected) == expected and all(
                     item["status"] == "preflight_passed" for item in selected)
                 case_manifest["status"] = "preflight_passed" if passed else "failed"
                 _write_json(path, case_manifest)

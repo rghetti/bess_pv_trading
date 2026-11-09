@@ -150,6 +150,12 @@ def write_k25_batch_summary(batch, jobs, results, *, plots=True):
              "Tracker trajectories reused across cases are reported once. Absolute imbalance sums interval magnitudes; "
              "signed imbalance is positive for surplus export. PV percentages use total replay PV production, "
              "including any curated synthetic values.", "", "## Physical results", ""]
+    external = [item for item in results if item.get("external_baseline_batch")]
+    if external:
+        references = sorted({item["external_baseline_batch"] for item in external})
+        lines[4:4] = ["Grid trackers were reused from these earlier batches: " + ", ".join(references) + ". "
+            "The comparison uses matching input fingerprints and compatible settings; independent continuous "
+            "trajectories can submit different auction positions. Tracker artifacts remain in those batches.", ""]
     physical, money, auction, settlement, battery = [], [], [], [], []
     for row in rows:
         s, m, c = row["summary"], row["summary"]["mpc_metrics"], row["summary"]["components"]
