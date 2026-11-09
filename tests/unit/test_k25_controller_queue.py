@@ -159,6 +159,33 @@ def test_external_tracker_fingerprint_checked_before_replay(queue_module, monkey
     assert "fingerprint differs" in result["error"]
 
 
+def test_external_tracker_uses_old_inference_threads_and_new_solver_threads(queue_module, monkeypatch, tmp_path):
+    """Match historical model inference without changing the replay solver setting."""
+    from bess_pv_trading.simulation import continuous
+
+    seen = {}
+    def prepare(config, progress):
+        seen["inference"] = config["solver"]["threads"]
+        return {"imbalance_prices_eur_per_mwh": [1], "input_fingerprint": "same", "provenance": {}}
+
+    class Replay:
+        def __init__(self, config, prepared, strategy, destination, progress):
+            seen["solver"] = config["solver"]["threads"]
+        def run(self):
+            return {"mpc_metrics": {}}
+
+    monkeypatch.setattr(queue_module, "prepare_continuous_inputs", prepare)
+    monkeypatch.setattr(continuous, "ContinuousReplay", Replay)
+    job = {"farm_id": "1", "case_id": "original", "job_id": "job", "config": {
+        "continuous_optimization": {"output_root": str(tmp_path / "runs"), "run_id": "job"},
+        "solver": {"threads": 7}, "execution": {}}}
+    (queue_module.trajectory_destination(job) / "logs").mkdir(parents=True)
+    result = queue_module.run_trajectory({"job": job, "controller": "deterministic_mpc", "check_only": False,
+        "preflight_cache": False, "baseline_fingerprint": "same", "baseline_inference_threads": 3})
+    assert result["status"] == "complete"
+    assert seen == {"inference": 3, "solver": 7}
+
+
 def test_each_trajectory_uses_its_controller_and_own_state(queue_module, monkeypatch, tmp_path):
     """A tracker worker selects tracking while leaving the paired MPC config intact."""
     from bess_pv_trading.simulation import continuous

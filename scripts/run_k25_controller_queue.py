@@ -57,16 +57,21 @@ def run_trajectory(task):
         with redirect_stdout(stream), redirect_stderr(stream):
             try:
                 config = deepcopy(job["config"])
+                preparation_config = deepcopy(config)
+                if task.get("baseline_inference_threads") is not None:
+                    # Match the historical inference setting while retaining the
+                    # requested Gurobi thread count for the actual replay.
+                    preparation_config["solver"]["threads"] = task["baseline_inference_threads"]
                 progress = lambda message: print(f"[{job['job_id']} / {controller}] {message}", flush=True)
                 progress("preparing inputs and forecast cutoffs")
                 if task.get("preflight_cache", True):
                     # The cache lives in this batch only; each consumer receives
                     # its own deserialized copy of the pinned prepared inputs.
                     batch = Path(config["continuous_optimization"]["output_root"]).parent
-                    prepared = prepare_shared(config, batch, prepare_continuous_inputs, progress)
-                    result["preflight_cache_key"] = preparation_key(config)
+                    prepared = prepare_shared(preparation_config, batch, prepare_continuous_inputs, progress)
+                    result["preflight_cache_key"] = preparation_key(preparation_config)
                 else:
-                    prepared = prepare_continuous_inputs(config, progress=progress)
+                    prepared = prepare_continuous_inputs(preparation_config, progress=progress)
                 if prepared["imbalance_prices_eur_per_mwh"] is None:
                     raise ValueError("Complete actual settlement prices are required")
                 result["input_fingerprint"] = prepared["input_fingerprint"]
@@ -281,7 +286,10 @@ def main(argv=None):
             parser.error("--tracker-batch requires a case without a separate case baseline")
         tasks = [task for task in tasks if task["controller"] != "track_committed_grid"]
         for task in tasks:
-            task["baseline_fingerprint"] = external_trackers[task["job"]["job_id"]][2]["input_fingerprint"]
+            _, source, baseline = external_trackers[task["job"]["job_id"]]
+            task["baseline_fingerprint"] = baseline["input_fingerprint"]
+            provenance = json.loads((source / "input_provenance__track_committed_grid.json").read_text())
+            task["baseline_inference_threads"] = provenance.get("forecast_model_artifacts", {}).get("inference_threads")
         tracking_aliases = []
         plan["auction_submission_solves_upper_bound"] = plan.pop("auction_submission_solves", 0) // 2
     if tracking_aliases:
@@ -317,7 +325,8 @@ def main(argv=None):
             if not args.no_preflight_cache else "Each trajectory independently prepares inputs; fingerprints must match.")
     displayed = {key: value for key, value in plan.items() if key != "jobs"}
     displayed["trajectories"] = [{"farm": task["job"]["farm_id"], "case": task["job"]["case_id"],
-        "controller": task["controller"]} for task in tasks]
+        "controller": task["controller"], **({"baseline_inference_threads": task["baseline_inference_threads"]}
+        if task.get("baseline_inference_threads") is not None else {})} for task in tasks]
     print(json.dumps(displayed, indent=2), flush=True)
     if not args.check_only and not args.run:
         return 0
