@@ -8,7 +8,8 @@ explicit approval for the experiment before starting it.
 
 For `january-august-deterministic`, the current study YAML covers 1 January to
 29 August 2026, defaults to farms 1 and 345, and supports explicitly selecting
-farms 901 and 910 with `--farms`. Use `--cases deterministic_original` to run
+farms 901 and 910 with `--farm-ids 901 910` (or `--farm-id 901` for one farm).
+Use `--cases deterministic_original` to run
 only the equal-weight MPC case and its grid-tracking comparison. The study
 also provides the unweighted and first-interval-weight-25
 deterministic MPC cases. Each farm has one greedy-tracking trajectory and one

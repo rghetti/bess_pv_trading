@@ -183,7 +183,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--study", choices=STUDIES, required=True)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--farms", nargs="+", help="Select farm IDs declared by the study")
+    parser.add_argument("--farms", "--farm-ids", "--farm-id", dest="farms", nargs="+", action="extend",
+                        help="Select one or more farm IDs declared by the study")
     parser.add_argument("--cases", nargs="+", help="Select study case IDs")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--per-farm", type=int, default=2)

@@ -61,7 +61,7 @@ def test_queue_fills_slots_and_limits_each_farm(queue_module, monkeypatch):
 def test_plan_selects_only_requested_farms_and_equal_weight_case(queue_module, capsys):
     """The command plans exactly the two controllers per selected farm without launching."""
     result = queue_module.main(["--study", "january-august-deterministic", "--run-id", "planning_only_unit",
-        "--farms", "901", "910", "--cases", "deterministic_original", "--workers", "4", "--per-farm", "2",
+        "--farm-ids", "901", "910", "--cases", "deterministic_original", "--workers", "4", "--per-farm", "2",
         "--solver-threads", "5"])
     plan = json.loads(capsys.readouterr().out)
     assert result == 0
@@ -72,6 +72,17 @@ def test_plan_selects_only_requested_farms_and_equal_weight_case(queue_module, c
         (farm, controller, "deterministic_original") for farm in ("901", "910")
         for controller in ("track_committed_grid", "deterministic_mpc")}
     assert all(item["first_interval_weight"] == 1 for item in plan["formulations"])
+
+
+def test_one_farm_id_plans_only_that_farm(queue_module, capsys):
+    """A single farm-id argument produces only that farm's tracker and MPC."""
+    result = queue_module.main(["--study", "january-august-deterministic", "--run-id", "planning_one_farm",
+        "--farm-id", "910", "--cases", "deterministic_original", "--workers", "2", "--per-farm", "2"])
+    plan = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert {item["farm"] for item in plan["trajectories"]} == {"910"}
+    assert {item["controller"] for item in plan["trajectories"]} == {"track_committed_grid", "deterministic_mpc"}
+    assert plan["physical_controller_trajectories"] == 2
 
 
 def test_identical_trackers_are_run_once_and_reused(queue_module, tmp_path):
