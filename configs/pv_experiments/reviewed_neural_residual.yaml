@@ -1,0 +1,25 @@
+# Forecast-only residual corrections to the previously selected neural models.
+include: ../standard.yaml
+
+pv_residual_study:
+  run_id: neural_forecast_residual_2026_v1
+  base_run: outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1
+  selection_file: docs/results/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/selected_by_farm.csv
+  output_root: outputs/pv_reviewed_hpo/neural_forecast_residual_2026_v1
+  report_root: docs/results/pv_reviewed_hpo/neural_forecast_residual_2026_v1
+  farm_ids: [1, 345, 901, 910]
+  timezone: Europe/Rome
+  train_start: '2026-01-01'
+  validation_start: '2026-03-01'
+  test_start: '2026-05-01'
+  end_exclusive: '2026-09-01'
+  workers: 4
+  threads_per_worker: 1
+  seed: 418721
+  ridge_alphas: [0.1, 10.0, 1000.0]
+  hist_max_leaf_nodes: [7, 15, 31]
+  hist_iterations: 200
+  hist_learning_rate: 0.05
+  hist_min_samples_leaf: 100
+  hist_l2_regularization: 1.0
+  plots_per_split: 3

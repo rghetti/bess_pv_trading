@@ -1,0 +1,272 @@
+{
+  "configuration": {
+    "run_id": "neural_forecast_residual_2026_v1",
+    "base_run": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1",
+    "selection_file": "docs/results/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/selected_by_farm.csv",
+    "output_root": "outputs/pv_reviewed_hpo/neural_forecast_residual_2026_v1",
+    "report_root": "docs/results/pv_reviewed_hpo/neural_forecast_residual_2026_v1",
+    "farm_ids": [
+      1,
+      345,
+      901,
+      910
+    ],
+    "timezone": "Europe/Rome",
+    "train_start": "2026-01-01",
+    "validation_start": "2026-03-01",
+    "test_start": "2026-05-01",
+    "end_exclusive": "2026-09-01",
+    "workers": 4,
+    "threads_per_worker": 1,
+    "seed": 418721,
+    "ridge_alphas": [
+      0.1,
+      10.0,
+      1000.0
+    ],
+    "hist_max_leaf_nodes": [
+      7,
+      15,
+      31
+    ],
+    "hist_iterations": 200,
+    "hist_learning_rate": 0.05,
+    "hist_min_samples_leaf": 100,
+    "hist_l2_regularization": 1.0,
+    "plots_per_split": 3
+  },
+  "farms": [
+    {
+      "farm_id": 1,
+      "selected": "no_correction",
+      "validation_nrmse_percent": 5.5637848678052615,
+      "base_bundle": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_1/models/extended/bigru/bigru_extended_037",
+      "feature_columns": [
+        "ghi_w_m2",
+        "nwp_bhi_w_m2",
+        "temperature_c",
+        "wind_u_10m",
+        "wind_v_10m",
+        "hour_sin",
+        "hour_cos",
+        "annual_sin",
+        "annual_cos",
+        "month_sin",
+        "month_cos",
+        "forecast_lead_hours",
+        "cycle_hour_sin",
+        "cycle_hour_cos",
+        "dew_point_c",
+        "cloud_total_pct",
+        "cloud_low_pct",
+        "cloud_mid_pct",
+        "cloud_high_pct",
+        "precipitation_mm",
+        "snow_water_equivalent_m",
+        "visibility_km",
+        "wind_u_100m",
+        "wind_v_100m",
+        "base_prediction_pu",
+        "quarter_offset",
+        "ghi_previous_hour_delta",
+        "ghi_next_hour_delta",
+        "quarter_times_ghi",
+        "quarter_times_base"
+      ],
+      "input_sha256": {
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_1/cache/frame.parquet": "f87dbec65b00f6d37b5133e577bde8c1363009fc84596fad326391d7a392bab4",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_1/cache/masks.npz": "a0971544eb02f446159adb9985857dc1a6d1cf36e8aba4bac41e3a3b9a6a7169",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_1/cache/x_extended.npy": "52f14141010c8f1162a6025cca6f223352d9cfe4fdb3fb497507c683b6c68a7c",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_1/cache/preprocessor_extended.json": "3ee18f6128ece4904ec866bdfe1cdb8f6aa99b3a39128e2e291aaf96cd118de4",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_1/models/extended/bigru/bigru_extended_037/result.json": "ba3c72f9a1cfe37a409d264305c503e2d833f0e1969342e50244ae0324e62662",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_1/models/extended/bigru/bigru_extended_037/prediction_mw.npy": "1916f3662767f95e06cc02953b932755244fc4116a61f2b60b086cb7a88a37d8"
+      },
+      "split_rows": {
+        "train": 20587,
+        "validation": 27069,
+        "test": 56826
+      },
+      "notes": [
+        "base neural weights were fit in 2025 but selected using January-April 2026",
+        "2026 test period has been inspected previously",
+        "synthetic targets are included and separately reported",
+        "forecast features are standardized using the frozen neural-search preprocessor",
+        "no solar position or missingness flags are inputs"
+      ]
+    },
+    {
+      "farm_id": 345,
+      "selected": "ridge_alpha_1000",
+      "validation_nrmse_percent": 8.496285116858614,
+      "base_bundle": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_345/models/core/bigru/bigru_core_025",
+      "feature_columns": [
+        "ghi_w_m2",
+        "nwp_bhi_w_m2",
+        "temperature_c",
+        "wind_u_10m",
+        "wind_v_10m",
+        "hour_sin",
+        "hour_cos",
+        "annual_sin",
+        "annual_cos",
+        "month_sin",
+        "month_cos",
+        "forecast_lead_hours",
+        "cycle_hour_sin",
+        "cycle_hour_cos",
+        "dew_point_c",
+        "cloud_total_pct",
+        "cloud_low_pct",
+        "cloud_mid_pct",
+        "cloud_high_pct",
+        "precipitation_mm",
+        "snow_water_equivalent_m",
+        "visibility_km",
+        "wind_u_100m",
+        "wind_v_100m",
+        "base_prediction_pu",
+        "quarter_offset",
+        "ghi_previous_hour_delta",
+        "ghi_next_hour_delta",
+        "quarter_times_ghi",
+        "quarter_times_base"
+      ],
+      "input_sha256": {
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_345/cache/frame.parquet": "bbbbf0076ce253f1b9010bcfdca76788a80d2acb6da5841db76a85b86d1647ce",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_345/cache/masks.npz": "a0971544eb02f446159adb9985857dc1a6d1cf36e8aba4bac41e3a3b9a6a7169",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_345/cache/x_extended.npy": "6441160c1747e9581c4c6a0aad844796d52262293bfb3dcea82287bf446775a1",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_345/cache/preprocessor_extended.json": "4c9dc3e1726c06dd9e98e36da1f5543e69bc3c62378e241efacfcd3487d60da1",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_345/models/core/bigru/bigru_core_025/result.json": "3cc39f51596037c9cac05cdba4d3e49e8009e2e2707d8e3249ffd9e0587a288a",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_345/models/core/bigru/bigru_core_025/prediction_mw.npy": "ec055ccfc2489dc589f53facc6b753c2f86f4d738eaa6ce6a332cba96b1c1628"
+      },
+      "split_rows": {
+        "train": 20587,
+        "validation": 27069,
+        "test": 56826
+      },
+      "notes": [
+        "base neural weights were fit in 2025 but selected using January-April 2026",
+        "2026 test period has been inspected previously",
+        "synthetic targets are included and separately reported",
+        "forecast features are standardized using the frozen neural-search preprocessor",
+        "no solar position or missingness flags are inputs"
+      ]
+    },
+    {
+      "farm_id": 901,
+      "selected": "no_correction",
+      "validation_nrmse_percent": 11.161339233517289,
+      "base_bundle": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_901/models/extended/tcn/tcn_extended_021",
+      "feature_columns": [
+        "ghi_w_m2",
+        "nwp_bhi_w_m2",
+        "temperature_c",
+        "wind_u_10m",
+        "wind_v_10m",
+        "hour_sin",
+        "hour_cos",
+        "annual_sin",
+        "annual_cos",
+        "month_sin",
+        "month_cos",
+        "forecast_lead_hours",
+        "cycle_hour_sin",
+        "cycle_hour_cos",
+        "dew_point_c",
+        "cloud_total_pct",
+        "cloud_low_pct",
+        "cloud_mid_pct",
+        "cloud_high_pct",
+        "precipitation_mm",
+        "snow_water_equivalent_m",
+        "visibility_km",
+        "wind_u_100m",
+        "wind_v_100m",
+        "base_prediction_pu",
+        "quarter_offset",
+        "ghi_previous_hour_delta",
+        "ghi_next_hour_delta",
+        "quarter_times_ghi",
+        "quarter_times_base"
+      ],
+      "input_sha256": {
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_901/cache/frame.parquet": "f6559098f0b744d2413add37b2469ea621a94d34d40613d89be90afc5fceae6d",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_901/cache/masks.npz": "a0971544eb02f446159adb9985857dc1a6d1cf36e8aba4bac41e3a3b9a6a7169",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_901/cache/x_extended.npy": "45b3d3febde4ee8f6f12c057347b5dfc2eba8a145ab32c5ddaa80e45e008d145",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_901/cache/preprocessor_extended.json": "1d99fe5639aa793ba534a2bc4770a81b09ca142035f1678998ff8b65112fbf4e",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_901/models/extended/tcn/tcn_extended_021/result.json": "405a949e1e295c8586f8a8f9e3f2a881e235f691195004960fa9f1b618c368a2",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_901/models/extended/tcn/tcn_extended_021/prediction_mw.npy": "a21f85d30c93db9b3e809f0867104288b52cb5ef26611c7d2b40f75dc8d3a109"
+      },
+      "split_rows": {
+        "train": 20587,
+        "validation": 27069,
+        "test": 56826
+      },
+      "notes": [
+        "base neural weights were fit in 2025 but selected using January-April 2026",
+        "2026 test period has been inspected previously",
+        "synthetic targets are included and separately reported",
+        "forecast features are standardized using the frozen neural-search preprocessor",
+        "no solar position or missingness flags are inputs"
+      ]
+    },
+    {
+      "farm_id": 910,
+      "selected": "no_correction",
+      "validation_nrmse_percent": 9.291440453035248,
+      "base_bundle": "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_910/models/core/tcn/tcn_core_029",
+      "feature_columns": [
+        "ghi_w_m2",
+        "nwp_bhi_w_m2",
+        "temperature_c",
+        "wind_u_10m",
+        "wind_v_10m",
+        "hour_sin",
+        "hour_cos",
+        "annual_sin",
+        "annual_cos",
+        "month_sin",
+        "month_cos",
+        "forecast_lead_hours",
+        "cycle_hour_sin",
+        "cycle_hour_cos",
+        "dew_point_c",
+        "cloud_total_pct",
+        "cloud_low_pct",
+        "cloud_mid_pct",
+        "cloud_high_pct",
+        "precipitation_mm",
+        "snow_water_equivalent_m",
+        "visibility_km",
+        "wind_u_100m",
+        "wind_v_100m",
+        "base_prediction_pu",
+        "quarter_offset",
+        "ghi_previous_hour_delta",
+        "ghi_next_hour_delta",
+        "quarter_times_ghi",
+        "quarter_times_base"
+      ],
+      "input_sha256": {
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_910/cache/frame.parquet": "efcc14bb3970806973254dab1aaaeea992b8a9edaf6bc5d79d9240a610eba0de",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_910/cache/masks.npz": "9cb1533437edf4bcc4f8994be630064001e3f42eea80cf777940cd67afb77602",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_910/cache/x_extended.npy": "94d75bf52d10aa1451f4d3e2b8edc9d7732f568bd47a0601534dfe2de515fcd0",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_910/cache/preprocessor_extended.json": "9d1a4aecac0653a13f4c01e56f88b36ccc5a1aa56aca961e540a6620659567b1",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_910/models/core/tcn/tcn_core_029/result.json": "35e4fca1a5a566cb68cf73d7128efbf2195015c2850066b43b236682fe4b2320",
+        "outputs/pv_reviewed_hpo/four_cycle_neural_night3000_multi_gpu_v1/farm_910/models/core/tcn/tcn_core_029/prediction_mw.npy": "2f9c34b1cb0b267df7324da64059080513076c87b993a0213c500ebdaad331f2"
+      },
+      "split_rows": {
+        "train": 20587,
+        "validation": 27069,
+        "test": 56826
+      },
+      "notes": [
+        "base neural weights were fit in 2025 but selected using January-April 2026",
+        "2026 test period has been inspected previously",
+        "synthetic targets are included and separately reported",
+        "forecast features are standardized using the frozen neural-search preprocessor",
+        "no solar position or missingness flags are inputs"
+      ]
+    }
+  ]
+}
