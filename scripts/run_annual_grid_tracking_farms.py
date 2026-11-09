@@ -22,7 +22,7 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATE = ROOT / "configs/research/annual_2026_grid_tracking_farm_1.yaml"
 MODEL_ROOT = ROOT / "models/pv/reviewed_four_cycle_2026_selected"
-OUTPUT_ROOT = ROOT / "outputs/continuous_optimization/annual_2026_grid_tracking/batches"
+OUTPUT_ROOT = ROOT / "outputs/continuous_optimization/annual_26_grid_tracking/batches"
 RUNNER = ROOT / "scripts/run_realtime_mpc_comparison.py"
 FARMS = (1, 345, 901, 910)
 
