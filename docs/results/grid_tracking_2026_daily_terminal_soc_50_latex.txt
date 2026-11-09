@@ -1,0 +1,37 @@
+% Requires \usepackage{graphicx} for \resizebox.
+\begin{table}[htbp]
+\centering
+\caption{Continuous greedy grid-tracking results with a daily 50\% auction-planning terminal SOC, 1 January--29 August 2026.}
+\label{tab:continuous-grid-tracking-daily-soc}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrr}
+\hline
+Metric & Farm 1 & Farm 345 & Farm 901 & Farm 910 \\
+\hline
+Total installed PV capacity (MW) & 0.95328 & 1.52460 & 4.16000 & 6.63800 \\
+Forecasting model & BiGRU & BiGRU & TCN & TCN \\
+Realized operating profit (EUR) & 163,338.71 & 263,162.85 & 952,546.10 & 1,524,282.09 \\
+Auction revenue (EUR) & 173,432.03 & 280,831.45 & 1,022,908.66 & 1,667,040.39 \\
+Signed imbalance settlement (EUR) & -3,514.05 & -7,187.83 & -48,457.27 & -95,521.57 \\
+Degradation cost (EUR) & 6,579.27 & 10,480.78 & 21,905.29 & 47,236.72 \\
+Gross PV production before curtailment (MWh) & 677.35 & 1,310.74 & 5,302.05 & 8,279.71 \\
+Absolute imbalance (MWh) & 22.35 & 46.12 & 307.70 & 614.51 \\
+Absolute imbalance / gross PV (\%) & 3.30 & 3.52 & 5.80 & 7.42 \\
+Signed net imbalance (MWh) & -20.49 & -40.52 & -302.19 & -600.62 \\
+PV curtailment (MWh) & 24.33 & 278.97 & 241.71 & 272.00 \\
+PV curtailment / gross PV (\%) & 3.59 & 21.28 & 4.56 & 3.29 \\
+Battery charge (MWh) & 125.29 & 199.50 & 416.89 & 898.56 \\
+Battery discharge (MWh) & 112.78 & 179.76 & 375.77 & 810.74 \\
+Final state of charge (\%) & 47.65 & 28.07 & 19.67 & 7.00 \\
+\hline
+Retained metered AC (intervals) & 14,696 & 14,359 & 14,753 & 10,212 \\
+Monthly night zero (intervals) & 8,272 & 8,272 & 8,272 & 8,272 \\
+Reviewed pvlib replacement (intervals) & 137 & 40 & 72 & 4,581 \\
+Retained-exclusion pvlib (intervals) & 27 & 459 & 26 & 67 \\
+User-requested zero (intervals) & 0 & 2 & 9 & 0 \\
+\hline
+\end{tabular}%
+}
+\par\smallskip
+\parbox{0.98\textwidth}{\footnotesize\textit{Notes:} The 50\% terminal SOC is imposed in the auction plan for each delivery day; the greedy real-time controller does not enforce it. The final SOC reported is the actual end-of-replay SOC. Runs use the latest eligible deterministic forecast cycle and actual auction prices in planning. PV model selection and current-interval realized PV are retrospective. Gross PV is available AC production before curtailment and includes curated synthetic values and reconstructed exclusions. Percentages use gross PV over the replay as the denominator. Signed imbalance settlement is realized cash flow; negative net imbalance indicates a shortfall. Degradation is a modeled cost, and profit does not value final battery inventory. Night zeros and synthetic values are not independent metered observations.}
+\end{table}
