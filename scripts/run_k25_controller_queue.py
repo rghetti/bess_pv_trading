@@ -305,6 +305,13 @@ def main(argv=None):
                                "comparison": comparison}})
             if comparisons:
                 manifest["reports"] = _reports(batch, comparisons, jobs, study)
+            if not failures and len(comparisons) == len(jobs) and manifest.get("reports", {}).get("status") == "complete":
+                # Generate one readable batch summary after every comparison is complete.
+                from bess_pv_trading.reporting.k25_batch_summary import write_k25_batch_summary
+
+                summary_path = write_k25_batch_summary(batch, jobs, results,
+                    plots=study.get("reporting", {}).get("plots", True))
+                manifest["summary_markdown"] = str(summary_path.relative_to(batch))
         for job in jobs:
             path = trajectory_destination(job) / "manifest.json"
             case_manifest = json.loads(path.read_text())

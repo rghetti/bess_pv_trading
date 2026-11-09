@@ -131,6 +131,7 @@ def test_each_trajectory_uses_its_controller_and_own_state(queue_module, monkeyp
 def test_batch_pairs_only_identical_input_snapshots(queue_module, monkeypatch, tmp_path, matching):
     """A completed pair produces a comparison only after fingerprint verification."""
     from bess_pv_trading.reporting import realtime_mpc
+    from bess_pv_trading.reporting import k25_batch_summary
 
     monkeypatch.setattr(queue_module, "ROOT", tmp_path)
     (tmp_path / "src").mkdir()
@@ -145,6 +146,9 @@ def test_batch_pairs_only_identical_input_snapshots(queue_module, monkeypatch, t
     monkeypatch.setattr(queue_module.subprocess, "check_output", lambda *args, **kwargs: "revision\n")
     monkeypatch.setattr(queue_module, "_reports", lambda *args: {"status": "complete"})
     calls = []
+    summary_calls = []
+    monkeypatch.setattr(k25_batch_summary, "write_k25_batch_summary",
+        lambda batch, jobs, results, plots: summary_calls.append((jobs, results)) or batch / "summary.md")
     monkeypatch.setattr(realtime_mpc, "save_controller_comparison",
         lambda config, path, summaries, mode: calls.append(set(summaries)) or [])
 
@@ -170,6 +174,7 @@ def test_batch_pairs_only_identical_input_snapshots(queue_module, monkeypatch, t
     if matching:
         assert status == 0
         assert calls == [{"track_committed_grid", "deterministic_mpc"}]
+        assert len(summary_calls) == 1
         assert manifest["status"] == "complete"
         assert manifest["input_fingerprint"] == "snapshot"
         assert (queue_module.trajectory_destination(job) / "input_provenance.json").is_file()
@@ -180,6 +185,7 @@ def test_batch_pairs_only_identical_input_snapshots(queue_module, monkeypatch, t
     else:
         assert status == 1
         assert not calls
+        assert not summary_calls
         assert manifest["status"] == "failed"
         assert (batch / "preflight_cache/temporary.pickle").is_file()
         assert json.loads((batch / "manifest.json").read_text())["preflight_cache_cleanup"]["status"] == "retained"

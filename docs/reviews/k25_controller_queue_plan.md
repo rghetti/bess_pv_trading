@@ -57,6 +57,12 @@ planning objectives are not realized cash flow. Prepared snapshots consume disk
 space and each worker still holds a separate copy in memory; no live solver state
 is shared.
 
+After a successful run and its case comparisons, the queue also writes a
+batch-level `summary.md` with physical, financial, SOC and fallback tables, as
+well as per-farm plots when study plots are enabled. To recreate this report for
+an already completed batch, run `python scripts/summarize_k25_batch.py
+<batch-directory>`; `--no-plots` skips plot generation. No optimization is run.
+
 For an older batch that did not have automatic cleanup, run
 `python scripts/cleanup_k25_preflight.py <batch-directory>`. Add `--wait` to
 wait for a running batch; the command checks that all trajectories and reports
