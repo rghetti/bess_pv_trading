@@ -183,6 +183,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--study", choices=STUDIES, required=True)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--farms", nargs="+", help="Select farm IDs declared by the study")
+    parser.add_argument("--cases", nargs="+", help="Select study case IDs")
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--per-farm", type=int, default=2)
     parser.add_argument("--solver-threads", type=int, help="Override solver threads per trajectory")
@@ -196,9 +198,13 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.workers < 1 or args.per_farm < 1 or args.per_farm > args.workers:
         parser.error("worker counts must be positive and --per-farm cannot exceed --workers")
+    if args.farms is not None and len(set(args.farms)) != len(args.farms):
+        parser.error("--farms must not contain duplicate IDs")
+    if args.cases is not None and len(set(args.cases)) != len(args.cases):
+        parser.error("--cases must not contain duplicate IDs")
     path = ROOT / STUDIES[args.study]
     options = {"project_root": str(ROOT), "run_id": args.run_id, "workers": args.workers,
-               "solver_threads": args.solver_threads}
+               "solver_threads": args.solver_threads, "farms": args.farms, "case_ids": args.cases}
     plan = research_plan(path, **options)
     study, batch, jobs = expand_research_jobs(path, **options)
     tasks = [{"job": job, "controller": controller, "check_only": args.check_only,

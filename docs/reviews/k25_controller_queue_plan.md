@@ -7,7 +7,10 @@ three study names as `run_k25_farms.py`, prints a plan by default and requires
 explicit approval for the experiment before starting it.
 
 For `january-august-deterministic`, the current study YAML covers 1 January to
-29 August 2026, farms 1 and 345, and the unweighted and first-interval-weight-25
+29 August 2026, defaults to farms 1 and 345, and supports explicitly selecting
+farms 901 and 910 with `--farms`. Use `--cases deterministic_original` to run
+only the equal-weight MPC case and its grid-tracking comparison. The study
+also provides the unweighted and first-interval-weight-25
 deterministic MPC cases. Each farm has one greedy-tracking trajectory and one
 MPC trajectory for each objective. The queue can schedule these six trajectories
 with up to three processes per farm and six overall. As soon as one finishes it

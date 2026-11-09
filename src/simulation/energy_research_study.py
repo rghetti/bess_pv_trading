@@ -70,7 +70,7 @@ def _study_definition(path, raw=None):
     study = raw.get("energy_research_study", {})
     if not isinstance(study, dict):
         raise ValueError("energy_research_study must be a mapping")
-    allowed = {"run_id", "output_root", "farms", "windows", "cases", "workers", "native_threads",
+    allowed = {"run_id", "output_root", "farms", "additional_farms", "windows", "cases", "workers", "native_threads",
         "solver_threads", "reporting", "factorial_cases", "forecast_flexibility_factorials", "mode"}
     if set(study) - allowed:
         raise ValueError(f"Unknown energy_research_study fields: {sorted(set(study) - allowed)}")
@@ -89,6 +89,16 @@ def _study_definition(path, raw=None):
         raise ValueError("Study farms must be unique selected farm IDs")
     for farm in farms:
         _identifier(str(farm), "Farm ID")
+    # Additional farms are available only when explicitly selected; the
+    # original default farm list remains unchanged for existing launchers.
+    additional = study.get("additional_farms", [])
+    if (not isinstance(additional, list) or any(isinstance(value, bool)
+            or not isinstance(value, (int, str)) for value in additional)
+            or len(set(map(str, additional))) != len(additional)
+            or set(map(str, additional)) & set(map(str, farms))):
+        raise ValueError("Additional farms must be unique and separate from default farms")
+    for farm in additional:
+        _identifier(str(farm), "Additional farm ID")
     for collection, fields in (("cases", {"id", "family", "baseline_case", "overrides", "asset_scales"}),
             ("windows", {"id", "start_date", "end_date", "overrides", "role"})):
         values = study.get(collection, [])
@@ -226,7 +236,8 @@ def expand_research_jobs(path, *, case_ids=None, farms=None, window_ids=None, pr
     root = Path(project_root or Path(__file__).resolve().parents[2]).resolve()
     cases = _select(study["cases"], case_ids, "cases")
     windows = _select(study["windows"], window_ids, "windows")
-    selected_farms = _select([{"id": str(farm)} for farm in study["farms"]], farms, "farms")
+    available_farms = study["farms"] if farms is None else study["farms"] + study.get("additional_farms", [])
+    selected_farms = _select([{"id": str(farm)} for farm in available_farms], farms, "farms")
     output = Path(study["output_root"])
     output = output if output.is_absolute() else root / output
     batch = output / study["run_id"]

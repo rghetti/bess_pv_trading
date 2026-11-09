@@ -146,6 +146,9 @@ energy_research_study:
   farms:
   - 1
   - 345
+  additional_farms:
+  - 901
+  - 910
   workers: 1
   native_threads: 1
   solver_threads: 5

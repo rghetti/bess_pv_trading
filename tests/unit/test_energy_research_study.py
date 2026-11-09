@@ -77,6 +77,26 @@ def test_fresh_raw_config_resolves_each_farm_before_asset_scaling():
     assert all(config["experiment_outputs"]["overwrite_existing"] is False for config in configs.values())
 
 
+def test_additional_farms_are_explicit_and_do_not_change_defaults(tmp_path):
+    """Extra farm IDs are selectable without broadening an existing default study."""
+    path = local_config(tmp_path, lambda value: value["energy_research_study"].update(additional_farms=[345, 901, 910]))
+    _, _, default = study.expand_research_jobs(path)
+    _, _, selected = study.expand_research_jobs(path, farms=[901, 910])
+    assert {job["farm_id"] for job in default} == {"1"}
+    assert {job["farm_id"] for job in selected} == {"901", "910"}
+    assert {job["config"]["forecast"]["farm_id"] for job in selected} == {901, 910}
+    with pytest.raises(ValueError, match="Unknown or empty selected farms"):
+        study.expand_research_jobs(path, farms=[999])
+
+
+@pytest.mark.parametrize("additional", [[1], [345, 345], [True]])
+def test_additional_farm_selection_rejects_duplicates_and_invalid_ids(tmp_path, additional):
+    """Ambiguous or invalid declared farm selections fail before any run."""
+    path = local_config(tmp_path, lambda value: value["energy_research_study"].update(additional_farms=additional))
+    with pytest.raises(ValueError, match="Additional farms"):
+        study.expand_research_jobs(path)
+
+
 def test_expansion_reads_one_snapshot_and_reloads_it_on_next_call(tmp_path, monkeypatch):
     """Jobs share no resolved state and later calls observe configuration edits."""
     path = local_config(tmp_path)

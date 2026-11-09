@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from bess_pv_trading.reporting.k25_intraday_profiles import (aggregate_intraday, aggregate_monthly_prices,
+from bess_pv_trading.reporting.k25_intraday_profiles import (_plot_months, aggregate_intraday, aggregate_monthly_prices,
     prepare_interval_profile, prepare_price_samples)
 
 
@@ -69,3 +69,30 @@ def test_price_samples_retain_different_shortfall_and_surplus_prices():
     samples = prepare_price_samples(dispatch, ledger, intervals, "1", "tracker")
     assert dict(zip(samples.curve, samples.price_eur_per_mwh)) == {
         "DA": 50, "Imbalance surplus": 40, "Imbalance shortfall": 60}
+
+
+def test_monthly_plot_uses_only_selected_controllers(tmp_path, monkeypatch):
+    """Monthly plots retain every panel and omit any unselected K=25 series."""
+    import matplotlib
+    matplotlib.use("Agg")
+    from matplotlib.axes import Axes
+
+    labels = []
+    original_plot = Axes.plot
+
+    def capture(axis, *args, **kwargs):
+        labels.append(kwargs.get("label"))
+        return original_plot(axis, *args, **kwargs)
+
+    monkeypatch.setattr(Axes, "plot", capture)
+    profiles = pd.DataFrame([
+        {"farm": "901", "month": "2026-01", "slot": 0, "label": label,
+         "avg_absolute_imbalance_mwh": 0.1, "avg_curtailment_mwh": 0.2,
+         "avg_net_position_mwh": 0.3, "avg_soc_start_percent": 50}
+        for label in ("Grid tracker", "MPC equal weights")])
+    prices = pd.DataFrame([{"farm": "901", "month": "2026-01", "slot": 0,
+                            "curve": "DA", "avg_price_eur_mwh": 100}])
+    paths = _plot_months(tmp_path, profiles, prices, "Europe/Rome")
+    assert len(paths) == 1 and paths[0].is_file()
+    assert set(labels) == {"Grid tracker", "MPC equal weights", "DA"}
+    assert labels.count("Grid tracker") == labels.count("MPC equal weights") == 4

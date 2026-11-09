@@ -58,6 +58,22 @@ def test_queue_fills_slots_and_limits_each_farm(queue_module, monkeypatch):
     assert updates == list(range(1, 9))
 
 
+def test_plan_selects_only_requested_farms_and_equal_weight_case(queue_module, capsys):
+    """The command plans exactly the two controllers per selected farm without launching."""
+    result = queue_module.main(["--study", "january-august-deterministic", "--run-id", "planning_only_unit",
+        "--farms", "901", "910", "--cases", "deterministic_original", "--workers", "4", "--per-farm", "2",
+        "--solver-threads", "5"])
+    plan = json.loads(capsys.readouterr().out)
+    assert result == 0
+    assert plan["solves_started"] == 0
+    assert plan["physical_controller_trajectories"] == 4
+    assert plan["configured_cpu_threads"] == 20
+    assert {(item["farm"], item["controller"], item["case"]) for item in plan["trajectories"]} == {
+        (farm, controller, "deterministic_original") for farm in ("901", "910")
+        for controller in ("track_committed_grid", "deterministic_mpc")}
+    assert all(item["first_interval_weight"] == 1 for item in plan["formulations"])
+
+
 def test_identical_trackers_are_run_once_and_reused(queue_module, tmp_path):
     """K25 changes MPC alone; retain its task and reuse the matched baseline."""
     base = {"continuous_optimization": {"output_root": str(tmp_path), "run_id": "original"},
