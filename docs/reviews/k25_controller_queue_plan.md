@@ -68,6 +68,14 @@ pass status and any warnings; validation itself is never skipped. The full
 diagnostic mode remains available through
 `continuous_optimization.validation_diagnostics: full`.
 
+Each batch stores one input-provenance JSON per farm and input fingerprint in
+`input_provenance/farm_<id>/`. The existing per-controller and per-case JSON
+paths are hard links to that record, so existing readers still see the complete
+JSON without consuming extra filesystem space. Treat the shared record and its
+links as immutable. Copying individual paths to another filesystem may create
+separate copies; archive the whole batch with hard-link preservation to keep
+the space saving. Records with different fingerprints remain separate.
+
 The plan covers 241 local delivery days, six trajectories and 92,528 nominal MPC
 decisions. The original eight-trajectory auction submission count is an upper
 bound after tracker reuse; cancellations and solver

@@ -29,6 +29,7 @@ from bess_pv_trading.simulation.continuous_inputs import prepare_continuous_inpu
 from bess_pv_trading.simulation.realtime_mpc_study import run_realtime_mpc_experiment
 from bess_pv_trading.simulation.synthetic import write_json
 from k25_preflight_cache import clear_preflight_cache, preparation_key, prepare_shared
+from k25_provenance import link_provenance, publish_provenance
 
 
 STUDIES = {
@@ -74,8 +75,12 @@ def run_trajectory(task):
                     run_realtime_mpc_experiment(config, prepared_inputs=prepared, progress=progress)
                     result["status"] = "preflight_passed"
                     return result
-                # Each process retains its own provenance, ledger and physical state.
-                write_json(destination / f"input_provenance__{controller}.json", prepared["provenance"])
+                # Matching workers share one immutable record while retaining
+                # the existing controller-specific provenance file paths.
+                batch = Path(config["continuous_optimization"]["output_root"]).parent
+                record = publish_provenance(batch, job["farm_id"], prepared["input_fingerprint"],
+                    prepared["provenance"], destination / f"input_provenance__{controller}.json")
+                result["shared_input_provenance"] = str(record.relative_to(batch))
                 selected = deepcopy(config)
                 selected["execution"]["dispatch_policy"] = controller
                 from bess_pv_trading.simulation.continuous import ContinuousReplay
@@ -165,8 +170,10 @@ def reuse_tracking_results(results, aliases):
             target_dir = trajectory_destination(target["job"])
             # The copied summary retains the original controller output path,
             # so both comparisons read the one set of baseline artifacts.
-            for name in ("summary__track_committed_grid.json", "input_provenance__track_committed_grid.json"):
-                shutil.copyfile(source_dir / name, target_dir / name)
+            name = "summary__track_committed_grid.json"
+            shutil.copyfile(source_dir / name, target_dir / name)
+            name = "input_provenance__track_committed_grid.json"
+            link_provenance(source_dir / name, target_dir / name)
         results.append(result)
     return results
 
@@ -283,7 +290,7 @@ def main(argv=None):
                     failures.append({"job_id": job["job_id"], "error": "Input fingerprints differ"})
                     continue
                 destination = trajectory_destination(job)
-                shutil.copyfile(destination / "input_provenance__track_committed_grid.json",
+                link_provenance(destination / "input_provenance__track_committed_grid.json",
                                 destination / "input_provenance.json")
                 summaries = {item["controller"]: json.loads(
                     (destination / f"summary__{item['controller']}.json").read_text()) for item in selected}

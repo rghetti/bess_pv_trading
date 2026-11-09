@@ -82,6 +82,8 @@ def test_identical_trackers_are_run_once_and_reused(queue_module, tmp_path):
     assert results[-1]["job_id"] == "weighted"
     assert results[-1]["reused_from_job_id"] == "original"
     assert (target / "summary__track_committed_grid.json").is_file()
+    assert (target / "input_provenance__track_committed_grid.json").samefile(
+        source / "input_provenance__track_committed_grid.json")
 
 
 def test_each_trajectory_uses_its_controller_and_own_state(queue_module, monkeypatch, tmp_path):
@@ -109,7 +111,7 @@ def test_each_trajectory_uses_its_controller_and_own_state(queue_module, monkeyp
     monkeypatch.setattr(continuous, "ContinuousReplay", Replay)
     monkeypatch.setattr(realtime_mpc, "save_mpc_outputs", lambda *args: {"mpc_metrics": {"mpc_solves": 0}})
     job = {"farm_id": "1", "case_id": "original", "job_id": "sample", "config": {
-        "continuous_optimization": {"output_root": str(tmp_path), "run_id": "sample"},
+        "continuous_optimization": {"output_root": str(tmp_path / "runs"), "run_id": "sample"},
         "execution": {"dispatch_policy": "deterministic_mpc"}}}
     destination = queue_module.trajectory_destination(job)
     (destination / "logs").mkdir(parents=True)
@@ -120,6 +122,9 @@ def test_each_trajectory_uses_its_controller_and_own_state(queue_module, monkeyp
     assert seen == [("track_committed_grid", prepared, "integrated")]
     assert job["config"]["execution"]["dispatch_policy"] == "deterministic_mpc"
     assert (destination / "summary__track_committed_grid.json").is_file()
+    record = tmp_path / result["shared_input_provenance"]
+    assert (destination / "input_provenance__track_committed_grid.json").samefile(record)
+    assert json.loads(record.read_text()) == prepared["provenance"]
 
 
 @pytest.mark.parametrize("matching", [True, False])
@@ -168,6 +173,8 @@ def test_batch_pairs_only_identical_input_snapshots(queue_module, monkeypatch, t
         assert manifest["status"] == "complete"
         assert manifest["input_fingerprint"] == "snapshot"
         assert (queue_module.trajectory_destination(job) / "input_provenance.json").is_file()
+        assert (queue_module.trajectory_destination(job) / "input_provenance.json").samefile(
+            queue_module.trajectory_destination(job) / "input_provenance__track_committed_grid.json")
         assert not (batch / "preflight_cache").exists()
         assert json.loads((batch / "manifest.json").read_text())["preflight_cache_cleanup"]["status"] == "removed"
     else:
