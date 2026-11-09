@@ -140,6 +140,31 @@ def _read(destination, filename):
     return json.loads((destination / "json" / filename).read_text())
 
 
+def test_every_auction_plan_has_a_daily_hard_terminal_target(continuous_config, tmp_path, monkeypatch):
+    """Each day's market model plans to end at the configured SOC target."""
+    continuous_config["continuous_optimization"]["terminal_soc_scope"] = "each_delivery_day"
+    prepared, _ = _prepared(continuous_config)
+    module = _module()
+    original = module.build_model
+    captured = []
+
+    def capture(inputs):
+        captured.append(inputs)
+        return original(inputs)
+
+    monkeypatch.setattr(module, "build_model", capture)
+    replay, summary = _run(continuous_config, prepared, "integrated", tmp_path / "daily_target")
+    assert len(prepared["days"]) > 1
+    assert len(captured) == sum(len(item["schedule"]) for item in prepared["days_data"].values())
+    assert all(inputs.terminal_target_mwh == prepared["terminal_energy_mwh"] for inputs in captured)
+    assert all(row["terminal_target_mwh"] == prepared["terminal_energy_mwh"] for row in replay.solves)
+    for snapshots in replay.plan_snapshots.values():
+        for rows in snapshots.values():
+            if rows and rows[-1].get("plan_status") == "optimized":
+                assert rows[-1]["soc_end_mwh"] == pytest.approx(prepared["terminal_energy_mwh"], abs=1e-6)
+    assert summary["auction_terminal_soc_scope"] == "each_delivery_day"
+
+
 def test_scenario_planning_uses_frozen_members_and_shared_decisions(continuous_config, tmp_path):
     """A cutoff combines the current deterministic update with frozen PV members."""
     config = continuous_config

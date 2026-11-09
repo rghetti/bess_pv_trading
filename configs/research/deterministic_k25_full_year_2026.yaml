@@ -24,7 +24,7 @@ state:
   terminal_soc_percent: 50.0
   terminal_soc_min_percent: null
 solver:
-  threads: 1
+  threads: 5
   time_limit_seconds: 120.0
   mip_gap: 0.0001
   feasibility_tolerance: 1.0e-08
@@ -146,7 +146,7 @@ energy_research_study:
   - 345
   workers: 1
   native_threads: 1
-  solver_threads: 1
+  solver_threads: 5
   reporting:
     plots: true
     block_days: 7

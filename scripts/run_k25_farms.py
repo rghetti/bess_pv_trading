@@ -17,10 +17,10 @@ STUDIES = {
 
 
 def farm_command(study, farm, run_id, action):
-    """Keep each farm independent and limit each spawned worker to one solver thread."""
+    """Keep each farm independent and take its solver threads from the study YAML."""
     return [sys.executable, "-u", str(ROOT / "scripts/run_energy_research_study.py"),
         "--config", str(ROOT / STUDIES[study]), "--farm", str(farm), "--workers", "1",
-        "--solver-threads", "1", "--run-id", f"{run_id}_farm{farm}", action]
+        "--run-id", f"{run_id}_farm{farm}", action]
 
 
 def main(argv=None):

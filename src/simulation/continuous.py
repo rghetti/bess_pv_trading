@@ -563,7 +563,11 @@ class ContinuousReplay:
             self.market.transaction_fee_state)
         pending_positions = tuple(sum(offer.get(product, 0.0) for auction, offer in self.submitted[day].items()
             if auction not in self.known[day]) for product in grid.interval_ids)
-        terminal = self.prepared["terminal_energy_mwh"] if day == self.days[-1] else None
+        # Keep the legacy final-day scope unless a study explicitly requests
+        # the same hard target for every auction delivery book.
+        terminal_scope = self.config["continuous_optimization"].get("terminal_soc_scope", "final_replay_day")
+        terminal = (self.prepared["terminal_energy_mwh"]
+                    if terminal_scope == "each_delivery_day" or day == self.days[-1] else None)
         terminal_minimum = self.prepared["terminal_minimum_energy_mwh"]
         native = daily.get("native_interval_minutes_by_auction")
         # Project retained operation, then construct only the target day's MILP when `native is None`.
@@ -1013,12 +1017,14 @@ class ContinuousReplay:
                 "numerical_tolerances": asdict(self.numerical_tolerances),
                 "final_state": asdict(self.state), "final_fee_state": asdict(self.market.transaction_fee_state),
                 "terminal_target_mwh": self.prepared["terminal_energy_mwh"],
+                "auction_terminal_soc_scope": self.config["continuous_optimization"].get(
+                    "terminal_soc_scope", "final_replay_day"),
                 "terminal_minimum_mwh": self.prepared["terminal_minimum_energy_mwh"],
                 "terminal_error_mwh": (None if self.prepared["terminal_energy_mwh"] is None else
                     self.state.energy_mwh - self.prepared["terminal_energy_mwh"]),
                 "replay_wall_seconds_this_invocation": perf_counter() - started,
                 "comparison_scope": ("Continuous physical MPC execution, deterministic open-loop boundary projection; configured terminal inventory treatment"
-                    if self.realtime else "Continuous physical execution, retained-plan boundary projection, one delivery-day planning horizon; no intermediate terminal target or salvage value")})
+                    if self.realtime else "Continuous physical execution, retained-plan boundary projection, one delivery-day planning horizon; configured auction terminal SOC scope")})
         if self.realtime is not None or self.prepared.get("frozen_commitments") is not None:
             from ..reporting.realtime_mpc import save_mpc_outputs
             extra = save_mpc_outputs(self.config, self.destination, dispatch,

@@ -345,3 +345,50 @@ def test_first_interval_priorities_run_chronologically_with_realized_current_pv(
     assert summary['net_profit_eur'] == pytest.approx(replay.market.cashflow_eur
         + dispatch.imbalance_cashflow_eur.sum() - dispatch.degradation_eur.sum()
         - dispatch.import_fee_eur.sum() - replay.market.transaction_fee_state.cumulative_fees_eur)
+
+
+def test_hard_target_study_falls_back_to_tracking_when_mpc_fails(continuous_config, tmp_path, monkeypatch):
+    """An infeasible MPC uses the tracker and records the failure explicitly."""
+    from bess_pv_trading.optimization.mpc import MpcResult
+    from bess_pv_trading.simulation import realtime_control
+
+    config = continuous_config
+    config["execution"]["dispatch_policy"] = "deterministic_mpc"
+    config["realtime_mpc"] = {"terminal_inventory_mode": "hard_target",
+                              "planning_objective": "imbalance_then_costs"}
+    prepared = mpc_prepared(config, one_day=True)
+    replay = ContinuousReplay(config, prepared, "integrated", tmp_path / "strict_failure")
+    captured = []
+
+    def infeasible(inputs, solver):
+        captured.append(inputs)
+        return MpcResult("infeasible", diagnostics={"fallback_applied": True, "runtime_seconds": 0})
+
+    monkeypatch.setattr(realtime_control, "solve_mpc", infeasible)
+    replay.realtime.issue(0, pd.Timestamp(replay.grid.starts[0]))
+    assert captured[0].hard_terminal_target_mwh == pytest.approx(0.5 * replay.plant.battery.capacity_mwh)
+    pending = replay.pending[replay.grid.interval_ids[0]]
+    assert pending["policy"] == "track_committed_grid"
+    assert pending["detail"]["mpc_fallback"]
+    assert pending["detail"]["mpc_failure_reason"] == "infeasible"
+    assert replay.realtime.state.solves[-1]["fallback_applied"]
+
+
+@pytest.mark.parametrize("weight", [1.0, 25.0])
+def test_continuous_hard_target_mpc_reaches_midnight_on_feasible_fixture(continuous_config, tmp_path, weight):
+    """A complete synthetic delivery day carries the constrained SOC into midnight."""
+    config = continuous_config
+    config["execution"]["dispatch_policy"] = "deterministic_mpc"
+    config["state"]["terminal_soc_percent"] = 50.0
+    config["state"]["terminal_target_mwh"] = 0.5 * config["battery"]["capacity_mwh"]
+    config["realtime_mpc"] = {"terminal_inventory_mode": "hard_target",
+        "terminal_soc_target_percent": 50.0, "planning_objective": "imbalance_then_costs",
+        "current_pv_information": "realized_interval_average",
+        "first_interval_priority": "weighted" if weight > 1 else "none", "first_interval_weight": weight}
+    prepared = mpc_prepared(config, one_day=True)
+    replay = ContinuousReplay(config, prepared, "integrated", tmp_path / f"hard_target_{weight}")
+    replay.run()
+    assert len(replay.realtime.state.solves) == len(prepared["full_grid"].interval_ids)
+    assert not any(row["fallback_applied"] for row in replay.realtime.state.solves)
+    assert replay.state.energy_mwh == pytest.approx(0.5 * replay.plant.battery.capacity_mwh, abs=1e-6)
+    assert all(row["planning_objective_units"] == "MWh" for row in replay.realtime.state.solves)

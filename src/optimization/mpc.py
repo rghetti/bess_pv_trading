@@ -48,6 +48,7 @@ class MpcSettings:
     """Controller-only settings; shared assets, wear and solver settings stay external."""
     planning_imbalance_penalty_eur_per_mwh: float = 500.0
     planning_objective: str = "imbalance_and_costs"
+    imbalance_tiebreak_tolerance_mwh: float = 1e-7
     first_interval_priority: str = "none"
     first_interval_weight: float = 1.0
     first_interval_priority_tolerance_mwh: float = 1e-7
@@ -81,8 +82,9 @@ class MpcSettings:
     recourse_mode: str = "observed_history"
 
     def __post_init__(self):
-        if not isinstance(self.planning_objective, str) or self.planning_objective not in {"imbalance_and_costs", "imbalance_only"}:
-            raise ValueError("MPC planning_objective must be imbalance_and_costs or imbalance_only")
+        objectives = {"imbalance_and_costs", "imbalance_only", "imbalance_then_costs"}
+        if not isinstance(self.planning_objective, str) or self.planning_objective not in objectives:
+            raise ValueError("Unknown MPC planning_objective")
         if self.first_interval_priority not in {"none", "weighted", "lexicographic"}:
             raise ValueError("Unknown MPC first_interval_priority")
         weight = self.first_interval_weight
@@ -93,6 +95,9 @@ class MpcSettings:
         tolerance = self.first_interval_priority_tolerance_mwh
         if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not np.isfinite(tolerance) or tolerance < 0:
             raise ValueError("MPC first_interval_priority_tolerance_mwh must be finite and nonnegative")
+        tolerance = self.imbalance_tiebreak_tolerance_mwh
+        if isinstance(tolerance, bool) or not isinstance(tolerance, (int, float)) or not np.isfinite(tolerance) or tolerance < 0:
+            raise ValueError("MPC imbalance_tiebreak_tolerance_mwh must be finite and nonnegative")
         if not isinstance(self.recourse_mode, str) or self.recourse_mode not in {"observed_history", "first_action_only"}:
             raise ValueError("MPC recourse_mode must be observed_history or first_action_only")
         # Reject booleans and nonfinite numeric values rather than coercing YAML.
@@ -126,7 +131,7 @@ class MpcSettings:
                 or not isinstance(tolerance, (int, float)) or not np.isfinite(tolerance)
                 or not 1e-9 <= tolerance <= 1e-2):
             raise ValueError("Oracle retry feasibility tolerance requires a focus and must be in [1e-9, 1e-2]")
-        if self.terminal_inventory_mode not in {"none", "soft_target", "linear_value", "piecewise_linear"}:
+        if self.terminal_inventory_mode not in {"none", "soft_target", "hard_target", "linear_value", "piecewise_linear"}:
             raise ValueError("Unknown MPC terminal_inventory_mode")
         if self.current_pv_information not in {"forecast", "realized_interval_average"}:
             raise ValueError("MPC current_pv_information must be forecast or realized_interval_average")
@@ -328,6 +333,13 @@ class MpcInput:
             initial_segment_energy(self.state, battery, self.degradation)
         elif self.state.cycle_segment_energy_mwh is not None:
             raise ValueError("MPC cannot discard Xu segment memory")
+        # A configured daily target is a physical equality for every MPC horizon.
+        if self.settings.terminal_inventory_mode == "hard_target":
+            target = battery.capacity_mwh * self.settings.terminal_soc_target_percent / 100
+            if self.hard_terminal_target_mwh is not None and not np.isclose(
+                    self.hard_terminal_target_mwh, target, rtol=0, atol=1e-9):
+                raise ValueError("Daily hard terminal SOC conflicts with the study terminal target")
+            object.__setattr__(self, "hard_terminal_target_mwh", target)
         for name in ("hard_terminal_target_mwh", "hard_terminal_minimum_mwh"):
             value = getattr(self, name)
             if value is not None and (not np.isfinite(value) or not battery.energy_min_mwh <= value <= battery.maximum_energy):
@@ -350,9 +362,14 @@ class MpcInput:
             and self.settings.first_interval_priority == "weighted")
         if self.settings.first_interval_priority != "none" and (
                 (self.policy != "deterministic_mpc" and not ensemble_weighted)
-                or self.settings.planning_objective != "imbalance_and_costs"
+                or self.settings.planning_objective not in {"imbalance_and_costs", "imbalance_then_costs"}
                 or self.price_forecast is not None):
             raise ValueError("First-interval priority requires price-blind imbalance-and-costs MPC with supported recourse")
+        if self.settings.planning_objective == "imbalance_then_costs" and (
+                self.policy != "deterministic_mpc" or self.settings.first_interval_priority == "lexicographic"
+                or self.oracle is not None or self.price_forecast is not None
+                or self.settings.monetary_cvar_weight):
+            raise ValueError("imbalance_then_costs requires a deterministic, price-blind MPC")
         oracle_policy = self.policy.endswith("price_oracle")
         if oracle_policy != (self.oracle is not None):
             raise ValueError("Future realized settlement prices require an explicit price-oracle policy")
@@ -758,13 +775,15 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
         costs = expressions["degradation_eur"] + expressions["import_cost_eur"] + expressions["terminal_cost_eur"]
         oracle = inputs.oracle is not None
         imbalance_only = settings.planning_objective == "imbalance_only"
-        objective = expressions["absolute_imbalance_mwh"] if oracle or imbalance_only else (
+        imbalance_then_costs = settings.planning_objective == "imbalance_then_costs"
+        objective = gp.LinExpr(expressions["absolute_imbalance_mwh"]) if oracle or imbalance_only or imbalance_then_costs else (
             settings.planning_imbalance_penalty_eur_per_mwh * expressions["absolute_imbalance_mwh"] + costs)
         priority = settings.first_interval_priority
         lexicographic = priority == "lexicographic"
         if priority == "weighted":
-            objective += (settings.planning_imbalance_penalty_eur_per_mwh
-                * (settings.first_interval_weight - 1) * variables["first_interval_absolute_imbalance"])
+            # The pure-imbalance objective is measured in MWh, not euros.
+            weight_scale = 1.0 if imbalance_then_costs else settings.planning_imbalance_penalty_eur_per_mwh
+            objective += weight_scale * (settings.first_interval_weight - 1) * variables["first_interval_absolute_imbalance"]
         model.setObjective(variables["first_interval_absolute_imbalance"] if lexicographic else objective, gp.GRB.MINIMIZE)
 
         def optimize_stage(name, maximum_seconds=None, *, independent_budget=False):
@@ -789,7 +808,7 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
             first_budget = max(0.0, settings.solver_time_limit_seconds - (perf_counter() - started))
             first_budget *= 1 - settings.oracle_fallback_time_reserve_fraction
         first_stage_name = ("minimum_first_interval_imbalance" if lexicographic else
-            "minimum_absolute_imbalance" if oracle or imbalance_only else "price_blind")
+            "minimum_absolute_imbalance" if oracle or imbalance_only or imbalance_then_costs else "price_blind")
         found = optimize_stage(first_stage_name, first_budget,
                                independent_budget=independent_first)
         # If the reserved first stage has not met the requested fallback gap,
@@ -813,8 +832,30 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
         stage1_valid = True
         result.plan = first_plan
         certified = model.Status == gp.GRB.OPTIMAL
-        diagnostics["stage1_minimum_certified"] = bool((oracle or lexicographic) and certified)
+        diagnostics["stage1_minimum_certified"] = bool((oracle or lexicographic or imbalance_then_costs) and certified)
         diagnostics["first_interval_refinement_used"] = False
+        diagnostics["imbalance_tiebreak_used"] = False
+        if imbalance_then_costs:
+            # Only a primary solution certified to the solver tolerance can be
+            # used as the cap for a secondary minimization of operating costs.
+            first_imbalance = first_plan.expected_absolute_imbalance_by_interval_mwh
+            primary_value = float(first_imbalance.sum() + (settings.first_interval_weight - 1) * first_imbalance[0])
+            cap = primary_value + settings.imbalance_tiebreak_tolerance_mwh
+            diagnostics.update(imbalance_primary_mwh=primary_value,
+                imbalance_primary_optimal=certified, imbalance_tiebreak_cap_mwh=cap)
+            if certified and perf_counter() - started < settings.solver_time_limit_seconds:
+                model.addConstr(objective <= cap, name="weighted_imbalance_tiebreak_cap")
+                model.setObjective(costs, gp.GRB.MINIMIZE)
+                if optimize_stage("minimum_costs_given_imbalance"):
+                    candidate = _plan_from_solution(inputs, variables, expressions)
+                    validate_mpc_plan(inputs, candidate, max(1e-7, 2 * model.Params.FeasibilityTol))
+                    candidate_imbalance = candidate.expected_absolute_imbalance_by_interval_mwh
+                    candidate_primary = float(candidate_imbalance.sum()
+                        + (settings.first_interval_weight - 1) * candidate_imbalance[0])
+                    if candidate_primary > cap + 2 * model.Params.FeasibilityTol:
+                        raise ValueError("Cost tie-break exceeds the weighted imbalance cap")
+                    result.plan = candidate
+                    diagnostics["imbalance_tiebreak_used"] = True
         if lexicographic:
             # A time-limited incumbent is usable, but does not certify a minimum.
             first_minimum = float(first_plan.expected_absolute_imbalance_by_interval_mwh[0])
@@ -903,15 +944,17 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
         components, residuals = validate_mpc_plan(inputs, result.plan, max(1e-7, 2 * model.Params.FeasibilityTol))
         diagnostics.update(physical_residuals=residuals, recomputed_components=components)
         # Stage 1 ignores economic epigraphs: validate their tightness only in an economic stage.
-        economic_stage = ((not oracle and not imbalance_only and
-            (not lexicographic or diagnostics["first_interval_refinement_used"])) or diagnostics["oracle_stage2_used"])
+        economic_stage = ((not oracle and not imbalance_only and not imbalance_then_costs and
+            (not lexicographic or diagnostics["first_interval_refinement_used"]))
+            or diagnostics["oracle_stage2_used"] or diagnostics["imbalance_tiebreak_used"])
         if imbalance_only:
             error = abs(result.plan.components["absolute_imbalance_mwh"] - components["absolute_imbalance_mwh"])
             if error > max(1e-6, 2 * model.Params.FeasibilityTol * len(inputs.grid.interval_ids)):
                 raise ValueError("Pure-imbalance objective differs from reconstructed physical deviations")
         if economic_stage:
             errors = {key: abs(result.plan.components[key] - value) for key, value in components.items()
-                      if key != "absolute_imbalance_mwh" or (not oracle and settings.planning_imbalance_penalty_eur_per_mwh > 0)}
+                      if key != "absolute_imbalance_mwh" or (not oracle and not imbalance_then_costs
+                          and settings.planning_imbalance_penalty_eur_per_mwh > 0)}
             diagnostics["component_residuals"] = errors
             allowances = _component_validation_allowances(inputs, residuals,
                 model.Params.FeasibilityTol, model.Params.IntFeasTol)
@@ -923,15 +966,25 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
         if oracle and (certified or qualified):
             diagnostics["oracle_additional_imbalance_used_mwh"] = max(0.0,
                 components["absolute_imbalance_mwh"] - diagnostics["stage1_incumbent_mwh"])
-        diagnostics["planning_objective_value"] = (components["settlement_eur"] - sum(components[k] for k in
-            ("degradation_eur", "import_cost_eur", "terminal_cost_eur")) if diagnostics.get("oracle_stage2_used") else
-            components["absolute_imbalance_mwh"] if oracle or imbalance_only else
-            settings.planning_imbalance_penalty_eur_per_mwh * (components["absolute_imbalance_mwh"]
-                + (settings.first_interval_weight - 1) * float(result.plan.expected_absolute_imbalance_by_interval_mwh[0]))
-            + sum(components[k] for k in ("degradation_eur", "import_cost_eur", "terminal_cost_eur")))
+        # Report the primary objective in its own units even if a second-stage
+        # objective was used to choose among nearly equivalent plans.
+        first_imbalance = float(result.plan.expected_absolute_imbalance_by_interval_mwh[0])
+        weighted_imbalance = (components["absolute_imbalance_mwh"]
+            + (settings.first_interval_weight - 1) * first_imbalance)
+        cost_total = sum(components[key] for key in ("degradation_eur", "import_cost_eur", "terminal_cost_eur"))
+        if diagnostics.get("oracle_stage2_used"):
+            diagnostics["planning_objective_value"] = components["settlement_eur"] - cost_total
+        elif imbalance_then_costs:
+            diagnostics["planning_objective_value"] = weighted_imbalance
+        elif oracle or imbalance_only:
+            diagnostics["planning_objective_value"] = components["absolute_imbalance_mwh"]
+        else:
+            diagnostics["planning_objective_value"] = settings.planning_imbalance_penalty_eur_per_mwh * weighted_imbalance + cost_total
         if lexicographic and not diagnostics["first_interval_refinement_used"]:
             diagnostics["planning_objective_value"] = float(result.plan.expected_absolute_imbalance_by_interval_mwh[0])
         result.status = diagnostics["stages"][-1]["status"]
+        if imbalance_then_costs and not diagnostics["imbalance_tiebreak_used"]:
+            result.status = "primary_imbalance_only"
         if lexicographic and not diagnostics["first_interval_refinement_used"]:
             result.status = "first_interval_stage1_only"
         if qualified:
@@ -941,21 +994,33 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
                              else "feasible_gap_qualified_unrefined")
         diagnostics["accepted_action_source"] = ("first_interval_stage1" if lexicographic and not diagnostics["first_interval_refinement_used"]
             else "first_interval_refined" if lexicographic else "minimum_expected_absolute_imbalance" if imbalance_only
+            else "imbalance_then_costs" if imbalance_then_costs and diagnostics["imbalance_tiebreak_used"]
+            else "primary_imbalance_only" if imbalance_then_costs
             else "economic" if economic_stage else "price_blind_stage1")
     except Exception as error:
         diagnostics["failure_reason"] = str(error)
         # Economic refinement cannot discard an already validated stage-1 action.
-        if stage1_valid and (inputs.oracle is not None or inputs.settings.first_interval_priority == "lexicographic"):
+        if stage1_valid and (inputs.oracle is not None or inputs.settings.first_interval_priority == "lexicographic"
+                             or inputs.settings.planning_objective == "imbalance_then_costs"):
             result.plan = first_plan
             result.plan.components, residuals = validate_mpc_plan(inputs, first_plan,
                 max(1e-7, 2 * model.Params.FeasibilityTol))
             lexicographic = inputs.settings.first_interval_priority == "lexicographic"
-            result.status = "first_interval_refinement_rejected" if lexicographic else "oracle_refinement_rejected"
+            tiebreak = inputs.settings.planning_objective == "imbalance_then_costs"
+            result.status = ("first_interval_refinement_rejected" if lexicographic else
+                "imbalance_tiebreak_rejected" if tiebreak else "oracle_refinement_rejected")
+            primary_value = result.plan.components["absolute_imbalance_mwh"]
+            if lexicographic:
+                primary_value = float(first_plan.expected_absolute_imbalance_by_interval_mwh[0])
+            elif tiebreak:
+                primary_value += ((inputs.settings.first_interval_weight - 1)
+                    * float(first_plan.expected_absolute_imbalance_by_interval_mwh[0]))
             diagnostics.update(oracle_stage2_used=False, first_interval_refinement_used=False,
-                accepted_action_source="first_interval_stage1" if lexicographic else "price_blind_stage1",
+                accepted_action_source="first_interval_stage1" if lexicographic else
+                    "primary_imbalance_only" if tiebreak else "price_blind_stage1",
                 physical_residuals=residuals, components=result.plan.components,
-                planning_objective_value=float(first_plan.expected_absolute_imbalance_by_interval_mwh[0])
-                    if lexicographic else result.plan.components["absolute_imbalance_mwh"])
+                planning_objective_value=primary_value)
+            diagnostics["imbalance_tiebreak_used"] = False
         else:
             result.plan = None
             result.status = "invalid_or_failed_solve"
@@ -969,7 +1034,7 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
             if diagnostics.get("first_interval_minimum_certified"):
                 diagnostics["first_interval_increase_over_incumbent_mwh"] = max(0.0,
                     diagnostics["first_interval_expected_imbalance_mwh"] - diagnostics["first_interval_incumbent_mwh"])
-        diagnostics["planning_objective_units"] = ("MWh" if inputs.settings.planning_objective == "imbalance_only"
+        diagnostics["planning_objective_units"] = ("MWh" if inputs.settings.planning_objective in {"imbalance_only", "imbalance_then_costs"}
             or inputs.oracle is not None and not diagnostics.get("oracle_stage2_used", False)
             or inputs.settings.first_interval_priority == "lexicographic" and not diagnostics.get("first_interval_refinement_used", False)
             else "EUR")

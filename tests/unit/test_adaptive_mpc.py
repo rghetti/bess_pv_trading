@@ -100,6 +100,16 @@ def test_pure_first_action_only_keeps_hard_terminal_constraints_and_rejects_pric
         replace(inputs, policy="ensemble_mpc")
 
 
+def test_daily_hard_target_is_enforced_on_each_adaptive_path():
+    """The hard inventory mode constrains every scenario without a soft cost."""
+    settings = MpcSettings(terminal_inventory_mode="hard_target", terminal_soc_target_percent=50,
+                           planning_objective="imbalance_only")
+    inputs = case([[0, 0], [0, 0]], [0, 0], energy=0.25, settings=settings)
+    result = checked(inputs)
+    np.testing.assert_allclose(result.plan.scenario_energy_mwh[:, -1], 0.5, atol=1e-7)
+    assert result.plan.components["terminal_cost_eur"] == pytest.approx(0)
+
+
 def test_first_action_only_single_interval_has_one_issued_command():
     inputs = case([[0], [0]], [0.25], settings=MpcSettings(terminal_inventory_mode="none",
         planning_objective="imbalance_only", recourse_mode="first_action_only"))

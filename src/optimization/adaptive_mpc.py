@@ -61,7 +61,7 @@ def _terminal_cost(model, inputs, terminal_energy, scenario, gp):
     """Represent each path's configured inventory cost exactly, in EUR."""
     settings = inputs.settings
     mode = settings.terminal_inventory_mode
-    if mode == "none":
+    if mode in {"none", "hard_target"}:
         return gp.LinExpr()
     if mode == "linear_value":
         return -settings.terminal_inventory_value_eur_per_mwh * terminal_energy

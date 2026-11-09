@@ -175,6 +175,83 @@ def test_terminal_modes_and_hard_study_target(mode):
     assert result.plan.components["terminal_cost_eur"] == pytest.approx(expected)
 
 
+def test_daily_hard_target_rejects_conflicts_and_is_enforced():
+    """Every configured MPC horizon ends at the requested battery energy."""
+    settings = MpcSettings(terminal_inventory_mode="hard_target", terminal_soc_target_percent=50,
+                           planning_objective="imbalance_then_costs")
+    inputs = inputs_for([[0, 0]], [0, 0], energy=0.25, settings=settings)
+    assert inputs.hard_terminal_target_mwh == pytest.approx(0.5)
+    result = checked(inputs)
+    assert result.plan.energy_mwh[-1] == pytest.approx(0.5)
+    assert result.plan.components["absolute_imbalance_mwh"] == pytest.approx(0.25, abs=1e-6)
+    with pytest.raises(ValueError, match="conflicts"):
+        replace(inputs, hard_terminal_target_mwh=0.6)
+
+
+def test_imbalance_priority_precedes_wear_and_weights_only_first_interval():
+    """Wear breaks equal-imbalance ties and K=25 prefers current delivery."""
+    settings = MpcSettings(terminal_inventory_mode="hard_target", terminal_soc_target_percent=50,
+                           planning_objective="imbalance_then_costs")
+    inputs = inputs_for([[0, 0]], [0.1, 0], energy=0.5, settings=settings)
+    inputs = replace(inputs, degradation=DegradationSettings(1000))
+    ordinary = checked(inputs)
+    weighted = checked(replace(inputs, settings=replace(settings,
+        first_interval_priority="weighted", first_interval_weight=25)))
+    assert ordinary.diagnostics["imbalance_tiebreak_used"]
+    assert ordinary.plan.actions[0].discharge_mw == pytest.approx(0, abs=1e-5)
+    assert weighted.plan.actions[0].discharge_mw == pytest.approx(0.4, abs=1e-5)
+    assert weighted.plan.actions[1].charge_mw == pytest.approx(0.4, abs=1e-5)
+    assert ordinary.plan.energy_mwh[-1] == pytest.approx(0.5)
+    assert weighted.plan.energy_mwh[-1] == pytest.approx(0.5)
+    assert ordinary.diagnostics["planning_objective_units"] == "MWh"
+    assert weighted.diagnostics["planning_objective_value"] == pytest.approx(0.1, abs=1e-5)
+
+
+def test_hard_target_infeasibility_is_reported():
+    """A one-interval battery cannot be forced from zero to half capacity."""
+    settings = MpcSettings(terminal_inventory_mode="hard_target", terminal_soc_target_percent=50,
+                           planning_objective="imbalance_then_costs")
+    inputs = inputs_for([[0]], [0], energy=0, settings=settings)
+    result = solve_mpc(inputs, SolverSettings(threads=1))
+    assert result.plan is None
+    assert result.status == "infeasible"
+
+
+@pytest.mark.parametrize("unused_penalty", [0, 1000000])
+def test_weighted_primary_objective_does_not_depend_on_eur_penalty(unused_penalty):
+    """An unavoidable current imbalance is weighted by 25, without a price multiplier."""
+    settings = MpcSettings(terminal_inventory_mode="hard_target", planning_objective="imbalance_then_costs",
+        first_interval_priority="weighted", first_interval_weight=25,
+        planning_imbalance_penalty_eur_per_mwh=unused_penalty)
+    result = checked(inputs_for([[0]], [0.1], energy=0.5, settings=settings))
+    assert result.plan.components["absolute_imbalance_mwh"] == pytest.approx(0.1)
+    assert result.diagnostics["stages"][0]["objective"] == pytest.approx(2.5)
+    assert result.diagnostics["planning_objective_value"] == pytest.approx(2.5)
+
+
+def test_rejected_wear_tiebreak_preserves_feasible_primary_plan(monkeypatch):
+    """A failed secondary solve cannot discard the verified imbalance optimum."""
+    import bess_pv_trading.optimization.mpc as module
+
+    settings = MpcSettings(terminal_inventory_mode="hard_target", planning_objective="imbalance_then_costs")
+    inputs = inputs_for([[0, 0]], [0.1, 0], energy=0.5, settings=settings)
+    original = module._plan_from_solution
+    calls = []
+
+    def reject_second(*args):
+        calls.append(1)
+        if len(calls) == 2:
+            raise ValueError("secondary solution rejected")
+        return original(*args)
+
+    monkeypatch.setattr(module, "_plan_from_solution", reject_second)
+    result = solve_mpc(inputs, SolverSettings(threads=1))
+    assert result.status == "imbalance_tiebreak_rejected"
+    assert result.plan is not None
+    assert result.plan.energy_mwh[-1] == pytest.approx(0.5)
+    assert not result.diagnostics["imbalance_tiebreak_used"]
+
+
 def test_self_discharge_efficiencies_and_xu_memory():
     inputs = inputs_for([[0, 0]], [0.1, 0.1], energy=0.5)
     battery = replace(inputs.plant.battery, self_discharge_per_hour=0.01,
@@ -319,6 +396,7 @@ def test_exhausted_oracle_budget_never_authorizes_uncertified_economics():
 
 @pytest.mark.parametrize("values", [
     {"solver_time_limit_seconds": 0}, {"oracle_relative_imbalance_budget": -0.1},
+    {"imbalance_tiebreak_tolerance_mwh": -0.1},
     {"terminal_inventory_mode": "hard_midnight"}, {"ensemble_include_deterministic_member": 1},
     {"scenario_weights": {"a": 0.8}}, {"reoptimization_minutes": True},
     {"oracle_retry_numeric_focus": True}, {"oracle_retry_numeric_focus": 4},

@@ -26,6 +26,25 @@ def test_price_snapshot_cache_limit_is_validated_before_preparation(invalid):
         resolve_config(config)
 
 
+@pytest.mark.parametrize("scope", ["invalid", True, None])
+def test_terminal_soc_scope_rejects_invalid_values(scope):
+    """A misspelled target scope must not silently remove daily constraints."""
+    config = load_config(JANUARY)
+    config["continuous_optimization"]["terminal_soc_scope"] = scope
+    with pytest.raises(ConfigurationError, match="terminal_soc_scope"):
+        resolve_config(config)
+
+
+def test_daily_terminal_soc_scope_requires_a_target():
+    """Every-day hard targets need an explicit configured SOC percentage."""
+    config = load_config(JANUARY)
+    config["continuous_optimization"]["terminal_soc_scope"] = "each_delivery_day"
+    resolve_config(config)
+    config["state"]["terminal_soc_percent"] = None
+    with pytest.raises(ConfigurationError, match="daily terminal SOC requires"):
+        resolve_config(config)
+
+
 def test_continuous_template_requires_explicit_delivery_dates():
     config = load_config(STANDARD)
     assert config["continuous_optimization"]["start_date"] is None
