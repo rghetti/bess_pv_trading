@@ -1,0 +1,253 @@
+{
+  "status": "complete",
+  "identity": "9724bb2fc15ae4bc9f730c9fd8336be080d9b6c98deeb6ae0985a645baf81305",
+  "trial": {
+    "farm_id": 1,
+    "feature": "extended",
+    "family": "bigru",
+    "number": 37,
+    "seed": 1995511328,
+    "parameters": {
+      "width": 128,
+      "depth": 3,
+      "kernel_size": 9,
+      "dropout": 0.2,
+      "learning_rate": 0.00018104607937312794,
+      "weight_decay": 0.00011336440393492471,
+      "batch_size": 16,
+      "loss": "huber",
+      "heads": 4
+    },
+    "name": "bigru_extended_037"
+  },
+  "schema": "reviewed_ghi_forecast_bundle_v1",
+  "timezone": "Europe/Rome",
+  "rating_mw": 0.95328,
+  "training": {
+    "epochs": 19,
+    "best_epoch": 4,
+    "validation_nrmse_percent": 4.696373357644959,
+    "parameters": 794497,
+    "history": [
+      {
+        "epoch": 1,
+        "validation_nrmse_percent": 4.9999846878101435
+      },
+      {
+        "epoch": 2,
+        "validation_nrmse_percent": 4.83037633200414
+      },
+      {
+        "epoch": 3,
+        "validation_nrmse_percent": 4.826460249520963
+      },
+      {
+        "epoch": 4,
+        "validation_nrmse_percent": 4.696373357644959
+      },
+      {
+        "epoch": 5,
+        "validation_nrmse_percent": 4.9819254660620995
+      },
+      {
+        "epoch": 6,
+        "validation_nrmse_percent": 4.806040483527426
+      },
+      {
+        "epoch": 7,
+        "validation_nrmse_percent": 4.7347492183362565
+      },
+      {
+        "epoch": 8,
+        "validation_nrmse_percent": 4.803724789006651
+      },
+      {
+        "epoch": 9,
+        "validation_nrmse_percent": 4.786582991096135
+      },
+      {
+        "epoch": 10,
+        "validation_nrmse_percent": 4.861931344663597
+      },
+      {
+        "epoch": 11,
+        "validation_nrmse_percent": 4.76660471848999
+      },
+      {
+        "epoch": 12,
+        "validation_nrmse_percent": 4.7725758054404865
+      },
+      {
+        "epoch": 13,
+        "validation_nrmse_percent": 4.8424383827074795
+      },
+      {
+        "epoch": 14,
+        "validation_nrmse_percent": 4.888033063609878
+      },
+      {
+        "epoch": 15,
+        "validation_nrmse_percent": 4.854815399568559
+      },
+      {
+        "epoch": 16,
+        "validation_nrmse_percent": 4.816988278137302
+      },
+      {
+        "epoch": 17,
+        "validation_nrmse_percent": 4.925278236560603
+      },
+      {
+        "epoch": 18,
+        "validation_nrmse_percent": 4.850583068185917
+      },
+      {
+        "epoch": 19,
+        "validation_nrmse_percent": 4.851540271124769
+      }
+    ],
+    "device": "cuda:0",
+    "training_loss": "huber"
+  },
+  "validation_replay_difference_percent": 1.439417474102811e-10,
+  "metrics": [
+    {
+      "split": "train",
+      "target_source": "all",
+      "quarters": 171264,
+      "days": 364,
+      "day_balanced_nrmse_percent": 4.304167778965341,
+      "day_balanced_nmae_percent": 2.685461296252035,
+      "day_balanced_bias_percent": 0.8291135627484231,
+      "quarter_weighted_nrmse_percent": 4.416441716703312,
+      "quarter_weighted_nmae_percent": 2.762191088256992,
+      "window_energy_bias_mwh": 371.27711768173685
+    },
+    {
+      "split": "train",
+      "target_source": "measured",
+      "quarters": 166288,
+      "days": 352,
+      "day_balanced_nrmse_percent": 4.198966582128538,
+      "day_balanced_nmae_percent": 2.5912370321418736,
+      "day_balanced_bias_percent": 1.0123735752955454,
+      "quarter_weighted_nrmse_percent": 4.3380675512160805,
+      "quarter_weighted_nmae_percent": 2.689906149249535,
+      "window_energy_bias_mwh": 417.474454521967
+    },
+    {
+      "split": "train",
+      "target_source": "synthetic",
+      "quarters": 4976,
+      "days": 19,
+      "day_balanced_nrmse_percent": 7.001222033462386,
+      "day_balanced_nmae_percent": 5.629830509430834,
+      "day_balanced_bias_percent": -3.339836972827613,
+      "quarter_weighted_nrmse_percent": 6.514135852375218,
+      "quarter_weighted_nmae_percent": 5.177809644863106,
+      "window_energy_bias_mwh": -46.19733684023005
+    },
+    {
+      "split": "validation",
+      "target_source": "all",
+      "quarters": 47656,
+      "days": 119,
+      "day_balanced_nrmse_percent": 4.696373357788901,
+      "day_balanced_nmae_percent": 2.9798620732900454,
+      "day_balanced_bias_percent": 0.31528383024749795,
+      "quarter_weighted_nrmse_percent": 4.827645538999524,
+      "quarter_weighted_nmae_percent": 3.0798825835407073,
+      "window_energy_bias_mwh": 36.344180386637916
+    },
+    {
+      "split": "validation",
+      "target_source": "measured",
+      "quarters": 46879,
+      "days": 117,
+      "day_balanced_nrmse_percent": 4.633918707032786,
+      "day_balanced_nmae_percent": 2.926870840386042,
+      "day_balanced_bias_percent": 0.4097679988801916,
+      "quarter_weighted_nrmse_percent": 4.77902523550346,
+      "quarter_weighted_nmae_percent": 3.0360544587248883,
+      "window_energy_bias_mwh": 45.18757398162779
+    },
+    {
+      "split": "validation",
+      "target_source": "synthetic",
+      "quarters": 777,
+      "days": 4,
+      "day_balanced_nrmse_percent": 9.938786234854643,
+      "day_balanced_nmae_percent": 8.492906461677652,
+      "day_balanced_bias_percent": -7.976790822496353,
+      "quarter_weighted_nrmse_percent": 7.175417022841881,
+      "quarter_weighted_nmae_percent": 5.72417944742846,
+      "window_energy_bias_mwh": -8.843393594989879
+    },
+    {
+      "split": "test",
+      "target_source": "all",
+      "quarters": 56826,
+      "days": 123,
+      "day_balanced_nrmse_percent": 5.783426395991,
+      "day_balanced_nmae_percent": 3.5637173363547,
+      "day_balanced_bias_percent": 0.5337472662520091,
+      "quarter_weighted_nrmse_percent": 5.7834263959909995,
+      "quarter_weighted_nmae_percent": 3.563717336354698,
+      "window_energy_bias_mwh": 72.28417703273377
+    },
+    {
+      "split": "test",
+      "target_source": "measured",
+      "quarters": 56455,
+      "days": 123,
+      "day_balanced_nrmse_percent": 5.7705062074705165,
+      "day_balanced_nmae_percent": 3.5586443451951464,
+      "day_balanced_bias_percent": 0.5250737799929421,
+      "quarter_weighted_nrmse_percent": 5.78147024097682,
+      "quarter_weighted_nmae_percent": 3.5668017905064207,
+      "window_energy_bias_mwh": 70.68431234405463
+    },
+    {
+      "split": "test",
+      "target_source": "synthetic",
+      "quarters": 371,
+      "days": 6,
+      "day_balanced_nrmse_percent": 8.874946290661338,
+      "day_balanced_nmae_percent": 5.154418604288508,
+      "day_balanced_bias_percent": 3.243046269516451,
+      "quarter_weighted_nrmse_percent": 6.07375645843808,
+      "quarter_weighted_nmae_percent": 3.0943565300594065,
+      "window_energy_bias_mwh": 1.599864688679148
+    }
+  ],
+  "elapsed_seconds": 120.5880038421601,
+  "warnings": [],
+  "checksums": {
+    "model.pt": "46729d8021376f11afed2165a03683aea637201b44dc0ea0acce07f5413e655a",
+    "prediction_mw.npy": "1916f3662767f95e06cc02953b932755244fc4116a61f2b60b086cb7a88a37d8",
+    "preprocessor.json": "3ee18f6128ece4904ec866bdfe1cdb8f6aa99b3a39128e2e291aaf96cd118de4"
+  },
+  "input_contract": {
+    "ghi_training": "historical measured/interpolated",
+    "ghi_validation_test": "forecast, after assumed release",
+    "hourly_radiation": "interval mean repeated across four quarters",
+    "context": "48-hour weather issue sequence",
+    "issue_horizon_hours": 48,
+    "target": "model_target_mw",
+    "pvlib_model_input": false,
+    "night_training_samples_per_farm": 3000,
+    "evaluation": "outside month-specific night window"
+  },
+  "availability": "four issue cycles with assumed configured release lag",
+  "limitations": "Selected on previously inspected 2026 validation; some labels are synthetic.",
+  "gpu": {
+    "visible_id": "0",
+    "uuid": "243a7a16-0e89-09f0-8d59-3c99be061442",
+    "name": "NVIDIA TITAN Xp"
+  },
+  "original_training_gpu": {
+    "visible_id": "0",
+    "uuid": "243a7a16-0e89-09f0-8d59-3c99be061442",
+    "name": "NVIDIA TITAN Xp"
+  }
+}

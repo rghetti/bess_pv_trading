@@ -1,0 +1,241 @@
+{
+  "status": "complete",
+  "identity": "9724bb2fc15ae4bc9f730c9fd8336be080d9b6c98deeb6ae0985a645baf81305",
+  "trial": {
+    "farm_id": 345,
+    "feature": "core",
+    "family": "bigru",
+    "number": 25,
+    "seed": 150112356,
+    "parameters": {
+      "width": 512,
+      "depth": 3,
+      "kernel_size": 5,
+      "dropout": 0.0,
+      "learning_rate": 0.001296122216912477,
+      "weight_decay": 0.00011603818097706382,
+      "batch_size": 48,
+      "loss": "mse",
+      "heads": 4
+    },
+    "name": "bigru_core_025"
+  },
+  "schema": "reviewed_ghi_forecast_bundle_v1",
+  "timezone": "Europe/Rome",
+  "rating_mw": 1.5246,
+  "training": {
+    "epochs": 16,
+    "best_epoch": 1,
+    "validation_nrmse_percent": 8.166573930689779,
+    "parameters": 12610049,
+    "history": [
+      {
+        "epoch": 1,
+        "validation_nrmse_percent": 8.166573930689779
+      },
+      {
+        "epoch": 2,
+        "validation_nrmse_percent": 11.639405928224475
+      },
+      {
+        "epoch": 3,
+        "validation_nrmse_percent": 11.738017057335716
+      },
+      {
+        "epoch": 4,
+        "validation_nrmse_percent": 11.179994309000117
+      },
+      {
+        "epoch": 5,
+        "validation_nrmse_percent": 11.792673420059092
+      },
+      {
+        "epoch": 6,
+        "validation_nrmse_percent": 12.054438402512416
+      },
+      {
+        "epoch": 7,
+        "validation_nrmse_percent": 11.07360737885366
+      },
+      {
+        "epoch": 8,
+        "validation_nrmse_percent": 10.710528406205501
+      },
+      {
+        "epoch": 9,
+        "validation_nrmse_percent": 12.345275997661597
+      },
+      {
+        "epoch": 10,
+        "validation_nrmse_percent": 12.323318604935347
+      },
+      {
+        "epoch": 11,
+        "validation_nrmse_percent": 11.273798020847957
+      },
+      {
+        "epoch": 12,
+        "validation_nrmse_percent": 11.53192340215036
+      },
+      {
+        "epoch": 13,
+        "validation_nrmse_percent": 11.275163782072063
+      },
+      {
+        "epoch": 14,
+        "validation_nrmse_percent": 12.494448284595503
+      },
+      {
+        "epoch": 15,
+        "validation_nrmse_percent": 11.588928267795692
+      },
+      {
+        "epoch": 16,
+        "validation_nrmse_percent": 12.177362984264144
+      }
+    ],
+    "device": "cuda:0",
+    "training_loss": "mse"
+  },
+  "validation_replay_difference_percent": 4.523492691532738e-11,
+  "metrics": [
+    {
+      "split": "train",
+      "target_source": "all",
+      "quarters": 171264,
+      "days": 364,
+      "day_balanced_nrmse_percent": 6.940516659646868,
+      "day_balanced_nmae_percent": 5.384263175125296,
+      "day_balanced_bias_percent": 2.6992904323278153,
+      "quarter_weighted_nrmse_percent": 7.142169610412556,
+      "quarter_weighted_nmae_percent": 5.551465507294934,
+      "window_energy_bias_mwh": 1777.5294801609334
+    },
+    {
+      "split": "train",
+      "target_source": "measured",
+      "quarters": 162136,
+      "days": 353,
+      "day_balanced_nrmse_percent": 7.023696749459522,
+      "day_balanced_nmae_percent": 5.447714583454261,
+      "day_balanced_bias_percent": 2.674594722757637,
+      "quarter_weighted_nrmse_percent": 7.241599919014983,
+      "quarter_weighted_nmae_percent": 5.628949177945225,
+      "window_energy_bias_mwh": 1649.2971436455582
+    },
+    {
+      "split": "train",
+      "target_source": "synthetic",
+      "quarters": 9128,
+      "days": 82,
+      "day_balanced_nrmse_percent": 4.7430359302135505,
+      "day_balanced_nmae_percent": 3.87674160041952,
+      "day_balanced_bias_percent": 3.2622829291738293,
+      "quarter_weighted_nrmse_percent": 5.0603342984974145,
+      "quarter_weighted_nmae_percent": 4.1751626562261785,
+      "window_energy_bias_mwh": 128.23233651537498
+    },
+    {
+      "split": "validation",
+      "target_source": "all",
+      "quarters": 47656,
+      "days": 119,
+      "day_balanced_nrmse_percent": 8.166573930735014,
+      "day_balanced_nmae_percent": 5.621964652356653,
+      "day_balanced_bias_percent": -1.591005532309206,
+      "quarter_weighted_nrmse_percent": 8.505499842733085,
+      "quarter_weighted_nmae_percent": 5.852384374275258,
+      "window_energy_bias_mwh": -333.8391413215942
+    },
+    {
+      "split": "validation",
+      "target_source": "measured",
+      "quarters": 44639,
+      "days": 119,
+      "day_balanced_nrmse_percent": 8.473477296763175,
+      "day_balanced_nmae_percent": 5.839966543584869,
+      "day_balanced_bias_percent": -1.7016791114659675,
+      "quarter_weighted_nrmse_percent": 8.70801615846343,
+      "quarter_weighted_nmae_percent": 6.0044039798128646,
+      "window_energy_bias_mwh": -316.16792737659074
+    },
+    {
+      "split": "validation",
+      "target_source": "synthetic",
+      "quarters": 3017,
+      "days": 49,
+      "day_balanced_nrmse_percent": 4.86211246654965,
+      "day_balanced_nmae_percent": 3.797491578910687,
+      "day_balanced_bias_percent": -1.1310265198053193,
+      "quarter_weighted_nrmse_percent": 4.55686540269638,
+      "quarter_weighted_nmae_percent": 3.603129096982174,
+      "window_energy_bias_mwh": -17.671213945003487
+    },
+    {
+      "split": "test",
+      "target_source": "all",
+      "quarters": 56826,
+      "days": 123,
+      "day_balanced_nrmse_percent": 13.150710237674765,
+      "day_balanced_nmae_percent": 10.244279313757634,
+      "day_balanced_bias_percent": -3.5664072517883434,
+      "quarter_weighted_nrmse_percent": 13.150710237674767,
+      "quarter_weighted_nmae_percent": 10.244279313757634,
+      "window_energy_bias_mwh": -772.4563458351083
+    },
+    {
+      "split": "test",
+      "target_source": "measured",
+      "quarters": 56406,
+      "days": 123,
+      "day_balanced_nrmse_percent": 13.190797050490186,
+      "day_balanced_nmae_percent": 10.28058361318264,
+      "day_balanced_bias_percent": -3.6414131798133504,
+      "quarter_weighted_nrmse_percent": 13.18122081157394,
+      "quarter_weighted_nmae_percent": 10.276191711641413,
+      "window_energy_bias_mwh": -781.0854343063236
+    },
+    {
+      "split": "test",
+      "target_source": "synthetic",
+      "quarters": 420,
+      "days": 13,
+      "day_balanced_nrmse_percent": 8.31070080426901,
+      "day_balanced_nmae_percent": 6.1965859395082,
+      "day_balanced_bias_percent": 5.604195079088128,
+      "quarter_weighted_nrmse_percent": 8.065001368871384,
+      "quarter_weighted_nmae_percent": 5.9584442779658735,
+      "window_energy_bias_mwh": 8.62908847121535
+    }
+  ],
+  "elapsed_seconds": 200.25777851324528,
+  "warnings": [],
+  "checksums": {
+    "model.pt": "602cf68e044e018ade55b40a293f536147d156ce38cddebd783151e9d5fc7d34",
+    "prediction_mw.npy": "ec055ccfc2489dc589f53facc6b753c2f86f4d738eaa6ce6a332cba96b1c1628",
+    "preprocessor.json": "046fdca50114d5d25da1a34580b70718cd8db7a09889622b558229828a47d6be"
+  },
+  "input_contract": {
+    "ghi_training": "historical measured/interpolated",
+    "ghi_validation_test": "forecast, after assumed release",
+    "hourly_radiation": "interval mean repeated across four quarters",
+    "context": "48-hour weather issue sequence",
+    "issue_horizon_hours": 48,
+    "target": "model_target_mw",
+    "pvlib_model_input": false,
+    "night_training_samples_per_farm": 3000,
+    "evaluation": "outside month-specific night window"
+  },
+  "availability": "four issue cycles with assumed configured release lag",
+  "limitations": "Selected on previously inspected 2026 validation; some labels are synthetic.",
+  "gpu": {
+    "visible_id": "0",
+    "uuid": "243a7a16-0e89-09f0-8d59-3c99be061442",
+    "name": "NVIDIA TITAN Xp"
+  },
+  "original_training_gpu": {
+    "visible_id": "0",
+    "uuid": "243a7a16-0e89-09f0-8d59-3c99be061442",
+    "name": "NVIDIA TITAN Xp"
+  }
+}
