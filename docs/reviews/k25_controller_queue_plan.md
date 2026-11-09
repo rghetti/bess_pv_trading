@@ -43,8 +43,12 @@ one batch share a preflight snapshot per farm and
 input configuration. A lock prevents duplicate preparation, and each worker
 loads an independent copy; the cache checksum and input fingerprint are checked.
 The cache is local to the batch, so a separate check-only batch does not populate
-the cache of a later run. Use `--no-preflight-cache` to prepare each trajectory
-independently. Each trajectory has its own state, market ledger, configuration,
+the cache of a later run. Successful batches delete the temporary cache after
+all workers and reports finish; failed or interrupted batches retain it for
+diagnosis. Use `--keep-preflight-cache` to retain it on success, or
+`--no-preflight-cache` to prepare each trajectory independently. In-memory model
+and inference caches are released when their worker processes exit. Each
+trajectory has its own state, market ledger, configuration,
 checkpoints and log. Per-case reports are generated only
 after both trajectories complete and their input fingerprints agree. Existing
 reports continue to compare realized operating profit, signed settlement,
@@ -52,6 +56,17 @@ imbalance, curtailment, wear, SOC, auction revenue and solver diagnostics;
 planning objectives are not realized cash flow. Prepared snapshots consume disk
 space and each worker still holds a separate copy in memory; no live solver state
 is shared.
+
+For an older batch that did not have automatic cleanup, run
+`python scripts/cleanup_k25_preflight.py <batch-directory>`. Add `--wait` to
+wait for a running batch; the command checks that all trajectories and reports
+completed before removing its cache. Failed or interrupted batches keep it.
+
+The January–August deterministic study records detailed auction and MPC
+validation residuals only for failed checks. Successful checks retain their
+pass status and any warnings; validation itself is never skipped. The full
+diagnostic mode remains available through
+`continuous_optimization.validation_diagnostics: full`.
 
 The plan covers 241 local delivery days, six trajectories and 92,528 nominal MPC
 decisions. The original eight-trajectory auction submission count is an upper

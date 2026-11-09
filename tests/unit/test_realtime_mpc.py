@@ -252,6 +252,23 @@ def test_rejected_wear_tiebreak_preserves_feasible_primary_plan(monkeypatch):
     assert not result.diagnostics["imbalance_tiebreak_used"]
 
 
+def test_failed_physical_validation_records_residuals(monkeypatch):
+    """The actual failed values remain available even when no MPC action is issued."""
+    import bess_pv_trading.optimization.mpc as module
+
+    settings = MpcSettings(terminal_inventory_mode="hard_target", planning_objective="imbalance_then_costs")
+    inputs = inputs_for([[0]], [0], energy=0.5, settings=settings)
+
+    def reject(*args, **kwargs):
+        raise module.MpcValidationError("MPC physical validation failed", {"energy_transition": 0.01}, 1e-7)
+
+    monkeypatch.setattr(module, "validate_mpc_plan", reject)
+    result = solve_mpc(inputs, SolverSettings(threads=1))
+    assert result.plan is None
+    assert result.diagnostics["failed_validation_residuals"] == {"energy_transition": 0.01}
+    assert result.diagnostics["failed_validation_tolerance"] == pytest.approx(1e-7)
+
+
 def test_self_discharge_efficiencies_and_xu_memory():
     inputs = inputs_for([[0, 0]], [0.1, 0.1], energy=0.5)
     battery = replace(inputs.plant.battery, self_discharge_per_hour=0.01,

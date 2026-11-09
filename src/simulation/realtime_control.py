@@ -14,6 +14,7 @@ from ..reporting.mpc_history import archive_completed_history, validate_mpc_hist
 from .energy_price_inputs import (settlement_forecasts, transform_mpc_scenarios,
     conditional_terminal_value)
 from .replay import execute_interval
+from .validation_diagnostics import mpc_validation_record
 
 
 class RealtimeControl:
@@ -160,7 +161,9 @@ class RealtimeControl:
             terminal_value=conditional_terminal_value(replay, daily, cutoff, grid.ends[-1]),
             provisional_ida3_mwh=provisional_ida3)
         result = solve_mpc(inputs, SolverSettings(**replay.config["solver"]))
-        diagnostic = {**result.diagnostics, "delivery_day": day, "interval_id": product,
+        validation_mode = replay.config["continuous_optimization"].get("validation_diagnostics", "full")
+        validation_record = mpc_validation_record(result.diagnostics, validation_mode, has_plan=result.plan is not None)
+        diagnostic = {**validation_record, "delivery_day": day, "interval_id": product,
                       "current_pv_observation_source": ("initial_frozen_forecast_fallback"
                           if current_pv is not None and product in daily.get("pv_provenance", {}).get("realized_power_fallback_interval_ids", [])
                           else "effective_realized_interval_average" if current_pv is not None else "forecast"),

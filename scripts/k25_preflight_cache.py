@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import pickle
+import shutil
 import tempfile
 
 
@@ -34,6 +35,22 @@ def _sha256(path):
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def clear_preflight_cache(batch):
+    """Remove only a batch's temporary cache after all workers have exited."""
+    cache_dir = Path(batch) / "preflight_cache"
+    if cache_dir.is_symlink():
+        raise ValueError("Refusing to remove a symlinked preflight cache")
+    if not cache_dir.exists():
+        return {"status": "absent", "logical_bytes": 0}
+    if not cache_dir.is_dir():
+        raise ValueError("Preflight cache path is not a directory")
+    # Count only the cache contents; source models and result files remain
+    # outside this directory and are not touched.
+    size = sum(path.lstat().st_size for path in cache_dir.rglob("*") if path.is_file())
+    shutil.rmtree(cache_dir)
+    return {"status": "removed", "logical_bytes": size}
 
 
 def prepare_shared(config, batch, prepare, progress):

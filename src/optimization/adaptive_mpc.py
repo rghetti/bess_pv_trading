@@ -16,7 +16,7 @@ from ..domain import SolverSettings
 from .degradation import evaluate_xu_dispatch
 from .model import classify_status
 from .physical import add_battery_controls, build_battery_degradation, energy_transition
-from .mpc import MpcAction, MpcPlan, MpcResult
+from .mpc import MpcAction, MpcPlan, MpcResult, MpcValidationError
 
 
 def control_history_nodes(inputs):
@@ -262,7 +262,7 @@ def validate_research_plan(inputs, plan, tolerance=1e-6):
     if inputs.hard_terminal_minimum_mwh is not None:
         residuals["terminal_floor"] = np.max(inputs.hard_terminal_minimum_mwh - energy[:, -1])
     if not all(np.isfinite(value) for value in residuals.values()) or max(residuals.values()) > tolerance:
-        raise ValueError(f"Research MPC physical validation failed: {residuals}")
+        raise MpcValidationError("Research MPC physical validation failed", residuals, tolerance)
     wear = inputs.degradation.cost_eur_per_mwh_throughput * np.sum(
         (charge + discharge) * inputs.grid.delta_hours, axis=1)
     if inputs.degradation.mode == "xu_segmented":
@@ -398,6 +398,9 @@ def solve_research_mpc(inputs, solver=None):
     except Exception as error:
         result.status = "invalid_or_failed_solve"
         diagnostics["failure_reason"] = str(error)
+        if isinstance(error, MpcValidationError):
+            diagnostics["failed_validation_residuals"] = error.residuals
+            diagnostics["failed_validation_tolerance"] = error.tolerance
         result.plan = None
     finally:
         diagnostics.update(solve_wall_seconds=perf_counter() - started, status=result.status,

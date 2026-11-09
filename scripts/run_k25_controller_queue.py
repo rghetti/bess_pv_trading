@@ -28,7 +28,7 @@ from bess_pv_trading.simulation.energy_research_study import (
 from bess_pv_trading.simulation.continuous_inputs import prepare_continuous_inputs
 from bess_pv_trading.simulation.realtime_mpc_study import run_realtime_mpc_experiment
 from bess_pv_trading.simulation.synthetic import write_json
-from k25_preflight_cache import preparation_key, prepare_shared
+from k25_preflight_cache import clear_preflight_cache, preparation_key, prepare_shared
 
 
 STUDIES = {
@@ -181,6 +181,8 @@ def main(argv=None):
     parser.add_argument("--solver-threads", type=int, help="Override solver threads per trajectory")
     parser.add_argument("--no-preflight-cache", action="store_true",
                         help="Prepare each trajectory independently instead of sharing within this batch")
+    parser.add_argument("--keep-preflight-cache", action="store_true",
+                        help="Retain the batch-local cache after successful completion")
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--check-only", action="store_true")
     action.add_argument("--run", action="store_true")
@@ -212,11 +214,13 @@ def main(argv=None):
             "mpc_objective": settings.planning_objective, "first_interval_weight": settings.first_interval_weight,
             "mpc_terminal_inventory_mode": settings.terminal_inventory_mode,
             "mpc_terminal_soc_percent": settings.terminal_soc_target_percent,
-            "mpc_fallback_controller": settings.fallback_controller})
+            "mpc_fallback_controller": settings.fallback_controller,
+            "validation_diagnostics": job["config"]["continuous_optimization"].get("validation_diagnostics", "full")})
     plan.update(scheduler="controller_trajectories", workers=effective_workers, per_farm=args.per_farm,
         configured_cpu_threads=effective_workers * max(study["native_threads"], study["solver_threads"]),
         maximum_solver_threads=effective_workers * study["solver_threads"],
         preflight_cache="disabled" if args.no_preflight_cache else "batch_local_shared",
+        preflight_cache_cleanup="keep" if args.keep_preflight_cache else "after_success",
         physical_controller_trajectories=len(tasks), reused_tracking_trajectories=len(tracking_aliases),
         formulations=formulations,
         note="Compatible trajectories share a batch-local snapshot; paired input fingerprints must match."
@@ -311,6 +315,17 @@ def main(argv=None):
                         error=str(error) or type(error).__name__)
         raise
     finally:
+        # All worker processes have exited by this point. Preserve the cache
+        # on interrupted or failed batches for diagnosis; successful batches
+        # no longer need their batch-local preflight and model-inference data.
+        if manifest["status"] in {"complete", "preflight_passed"} and not args.keep_preflight_cache:
+            try:
+                manifest["preflight_cache_cleanup"] = clear_preflight_cache(batch)
+            except (OSError, ValueError) as error:
+                manifest["preflight_cache_cleanup"] = {"status": "failed", "error": str(error)}
+                print(f"Warning: could not remove preflight cache: {error}", file=sys.stderr, flush=True)
+        else:
+            manifest["preflight_cache_cleanup"] = {"status": "retained"}
         _write_json(batch / "manifest.json", manifest)
 
 

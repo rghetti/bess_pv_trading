@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
-from k25_preflight_cache import preparation_key, prepare_shared
+from k25_preflight_cache import clear_preflight_cache, preparation_key, prepare_shared
 
 
 def config():
@@ -74,3 +74,27 @@ def test_forecast_provider_round_trip(tmp_path):
     loaded = prepare_shared(config(), tmp_path, prepare, lambda message: None)
     assert isinstance(loaded["forecast_provider"], _PreparedForecasts)
     assert loaded["forecast_provider"] is not provider
+
+
+def test_cache_cleanup_removes_only_batch_cache(tmp_path):
+    """Cleanup never touches result files next to the temporary snapshot."""
+    cache = tmp_path / "preflight_cache"
+    cache.mkdir()
+    (cache / "model.pickle").write_bytes(b"temporary")
+    (tmp_path / "result.json").write_text("keep")
+    result = clear_preflight_cache(tmp_path)
+    assert result == {"status": "removed", "logical_bytes": len(b"temporary")}
+    assert not cache.exists()
+    assert (tmp_path / "result.json").read_text() == "keep"
+    assert clear_preflight_cache(tmp_path)["status"] == "absent"
+
+
+def test_cache_cleanup_rejects_symlink(tmp_path):
+    """A replaced cache directory cannot redirect deletion to another location."""
+    outside = tmp_path / "other"
+    outside.mkdir()
+    (outside / "important").write_text("keep")
+    (tmp_path / "preflight_cache").symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError, match="symlinked"):
+        clear_preflight_cache(tmp_path)
+    assert (outside / "important").read_text() == "keep"

@@ -381,6 +381,7 @@ def test_continuous_hard_target_mpc_reaches_midnight_on_feasible_fixture(continu
     config["execution"]["dispatch_policy"] = "deterministic_mpc"
     config["state"]["terminal_soc_percent"] = 50.0
     config["state"]["terminal_target_mwh"] = 0.5 * config["battery"]["capacity_mwh"]
+    config["continuous_optimization"]["validation_diagnostics"] = "failures_only"
     config["realtime_mpc"] = {"terminal_inventory_mode": "hard_target",
         "terminal_soc_target_percent": 50.0, "planning_objective": "imbalance_then_costs",
         "current_pv_information": "realized_interval_average",
@@ -392,3 +393,9 @@ def test_continuous_hard_target_mpc_reaches_midnight_on_feasible_fixture(continu
     assert not any(row["fallback_applied"] for row in replay.realtime.state.solves)
     assert replay.state.energy_mwh == pytest.approx(0.5 * replay.plant.battery.capacity_mwh, abs=1e-6)
     assert all(row["planning_objective_units"] == "MWh" for row in replay.realtime.state.solves)
+    # A rejected refinement retains its diagnostic evidence even if the primary plan succeeds.
+    passed = [row for row in replay.realtime.state.solves if not row.get("failure_reason")]
+    rejected = [row for row in replay.realtime.state.solves if row.get("failure_reason")]
+    assert passed
+    assert all(row.get("validation_passed") and "physical_residuals" not in row for row in passed)
+    assert all("failed_validation_residuals" in row or "component_residuals" in row for row in rejected)

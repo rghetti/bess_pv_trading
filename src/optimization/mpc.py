@@ -29,6 +29,16 @@ RESEARCH_MPC_POLICIES = frozenset({"deterministic_mpc_economic",
 CAUSAL_TRACKER = "causal_track_committed_grid"
 
 
+class MpcValidationError(ValueError):
+    """Preserve failed numerical residuals without storing successful maps."""
+
+    def __init__(self, message, residuals, tolerance):
+        self.residuals = {name: float(value) if np.isfinite(value) else str(value)
+                          for name, value in residuals.items()}
+        self.tolerance = float(tolerance)
+        super().__init__(f"{message}: {self.residuals}")
+
+
 def uses_realtime_control(config):
     """Identify forecast needs without changing the auction PV planning policy."""
     policies = set(config.get("realtime_mpc_comparison", {}).get("controllers", []))
@@ -632,7 +642,7 @@ def validate_mpc_plan(inputs: MpcInput, plan: MpcPlan, tolerance=1e-6):
     if inputs.hard_terminal_minimum_mwh is not None:
         residuals["terminal_floor"] = inputs.hard_terminal_minimum_mwh - plan.energy_mwh[-1]
     if max(residuals.values()) > tolerance:
-        raise ValueError(f"MPC physical validation failed: {residuals}")
+        raise MpcValidationError("MPC physical validation failed", residuals, tolerance)
     degradation = inputs.degradation.cost_eur_per_mwh_throughput * np.sum((charge + discharge) * inputs.grid.delta_hours)
     if inputs.degradation.mode == "xu_segmented":
         degradation = evaluate_xu_dispatch(battery=battery, settings=inputs.degradation, state=inputs.state,
@@ -853,6 +863,11 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
                     candidate_primary = float(candidate_imbalance.sum()
                         + (settings.first_interval_weight - 1) * candidate_imbalance[0])
                     if candidate_primary > cap + 2 * model.Params.FeasibilityTol:
+                        diagnostics["failed_validation_residuals"] = {
+                            "candidate_weighted_imbalance_mwh": candidate_primary,
+                            "weighted_imbalance_cap_mwh": cap,
+                            "excess_mwh": candidate_primary - cap,
+                            "solver_allowance_mwh": 2 * model.Params.FeasibilityTol}
                         raise ValueError("Cost tie-break exceeds the weighted imbalance cap")
                     result.plan = candidate
                     diagnostics["imbalance_tiebreak_used"] = True
@@ -914,6 +929,9 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
                         if candidate.components["absolute_imbalance_mwh"] > minimum + budget + 2 * model.Params.FeasibilityTol:
                             raise ValueError("Oracle refinement exceeds modeled imbalance cap")
                     except ValueError as error:
+                        if isinstance(error, MpcValidationError):
+                            diagnostics["failed_validation_residuals"] = error.residuals
+                            diagnostics["failed_validation_tolerance"] = error.tolerance
                         if attempt or settings.oracle_retry_numeric_focus is None:
                             raise
                         remaining = (settings.oracle_stage2_time_limit_seconds - (perf_counter() - refinement_started)
@@ -999,6 +1017,9 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
             else "economic" if economic_stage else "price_blind_stage1")
     except Exception as error:
         diagnostics["failure_reason"] = str(error)
+        if isinstance(error, MpcValidationError):
+            diagnostics["failed_validation_residuals"] = error.residuals
+            diagnostics["failed_validation_tolerance"] = error.tolerance
         # Economic refinement cannot discard an already validated stage-1 action.
         if stage1_valid and (inputs.oracle is not None or inputs.settings.first_interval_priority == "lexicographic"
                              or inputs.settings.planning_objective == "imbalance_then_costs"):

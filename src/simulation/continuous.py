@@ -27,6 +27,7 @@ from .continuous_inputs import prepare_continuous_inputs
 from .events import Event, EventEngine, EventKind
 from .replay import execute_interval
 from .synthetic import json_default, write_json
+from .validation_diagnostics import auction_validation_record
 from ..optimization.mpc import MPC_POLICIES, CAUSAL_TRACKER, MpcControllerState
 from .realtime_control import RealtimeControl
 
@@ -748,7 +749,8 @@ class ContinuousReplay:
         diagnostic["solution_validation_objective_relative_tolerance"] = objective_relative_tolerance
         diagnostic["solution_validation_component_absolute_tolerance_eur"] = tolerances.money_absolute_eur
         diagnostic["solution_validation_component_relative_tolerance"] = tolerances.relative
-        diagnostic["validation"] = asdict(validation)
+        validation_mode = self.config["continuous_optimization"].get("validation_diagnostics", "full")
+        diagnostic["validation"] = auction_validation_record(validation, validation_mode)
         # Enforce the input contract: Continuous solution validation failed: `validation.violations`.
         if not validation.valid:
             self._save_attempts()

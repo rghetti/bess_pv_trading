@@ -9,6 +9,7 @@ continuous_optimization:
   start_date: '2026-01-01'
   end_date: '2026-08-29'
   terminal_soc_scope: each_delivery_day
+  validation_diagnostics: failures_only
   planning_modes:
   - integrated
   perfect_pv_reference: false

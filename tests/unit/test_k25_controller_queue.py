@@ -145,6 +145,9 @@ def test_batch_pairs_only_identical_input_snapshots(queue_module, monkeypatch, t
 
     def fake_queue(tasks, workers, per_farm, native_threads, completed):
         destination = queue_module.trajectory_destination(job)
+        cache = batch / "preflight_cache"
+        cache.mkdir()
+        (cache / "temporary.pickle").write_bytes(b"temporary")
         results = []
         for task in tasks:
             controller = task["controller"]
@@ -165,7 +168,11 @@ def test_batch_pairs_only_identical_input_snapshots(queue_module, monkeypatch, t
         assert manifest["status"] == "complete"
         assert manifest["input_fingerprint"] == "snapshot"
         assert (queue_module.trajectory_destination(job) / "input_provenance.json").is_file()
+        assert not (batch / "preflight_cache").exists()
+        assert json.loads((batch / "manifest.json").read_text())["preflight_cache_cleanup"]["status"] == "removed"
     else:
         assert status == 1
         assert not calls
         assert manifest["status"] == "failed"
+        assert (batch / "preflight_cache/temporary.pickle").is_file()
+        assert json.loads((batch / "manifest.json").read_text())["preflight_cache_cleanup"]["status"] == "retained"

@@ -213,6 +213,9 @@ def validate_continuous_optimization(config: dict[str, Any], *, require_dates: b
     cache_entries = section.get("price_snapshot_cache_entries", 8)
     if isinstance(cache_entries, bool) or not isinstance(cache_entries, int) or cache_entries < 1:
         raise ConfigurationError("continuous_optimization.price_snapshot_cache_entries must be a positive integer")
+    detail = section.get("validation_diagnostics", "full")
+    if detail not in ("full", "failures_only"):
+        raise ConfigurationError("continuous_optimization.validation_diagnostics must be full or failures_only")
     # A study can require its configured end SOC for every delivery day.
     target_scope = section.get("terminal_soc_scope", "final_replay_day")
     if target_scope not in ("final_replay_day", "each_delivery_day"):

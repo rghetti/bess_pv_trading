@@ -45,6 +45,16 @@ def test_daily_terminal_soc_scope_requires_a_target():
         resolve_config(config)
 
 
+def test_validation_diagnostics_mode_is_explicitly_validated():
+    """A misspelled storage mode cannot silently discard failure details."""
+    config = load_config(JANUARY)
+    config["continuous_optimization"]["validation_diagnostics"] = "failures_only"
+    resolve_config(config)
+    config["continuous_optimization"]["validation_diagnostics"] = "discard_all"
+    with pytest.raises(ConfigurationError, match="validation_diagnostics"):
+        resolve_config(config)
+
+
 def test_continuous_template_requires_explicit_delivery_dates():
     config = load_config(STANDARD)
     assert config["continuous_optimization"]["start_date"] is None
