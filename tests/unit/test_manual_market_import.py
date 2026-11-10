@@ -8,7 +8,7 @@ import pytest
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data.duckdb_store import DuckDBCache
 from bess_pv_trading.data.manual_market_import import (
-    _novel_records, check_market_history, merge_market_workbooks, stage_market_workbooks,
+    _coverage, _novel_records, check_market_history, merge_market_workbooks, stage_market_workbooks,
 )
 from bess_pv_trading.data.terna_workbooks import parse_terna_workbook
 from test_terna_workbooks import xlsx_bytes, workbook_case
@@ -181,6 +181,24 @@ def test_different_native_boundaries_never_silently_replace_existing_prices():
     new = pd.DataFrame({**common, "product_end": [start+pd.Timedelta(minutes=15)]})
     with pytest.raises(ValueError, match="different durations"):
         _novel_records(old, new)
+
+
+def test_coverage_excludes_older_different_resolution_from_requested_window():
+    """An old hourly record must not invalidate a later quarter-hour audit."""
+    day = pd.Timestamp("2026-11-01", tz="Europe/Rome")
+    starts = pd.date_range(day, day + pd.Timedelta(days=1), freq="15min", inclusive="left").tz_convert("UTC")
+    starts = starts.insert(0, pd.Timestamp("2024-01-01T00:00:00Z"))
+    durations = [60] + [15] * (len(starts) - 1)
+    frame = pd.DataFrame({"provider": "gme", "dataset": "ida1_prices", "zone": "NORD",
+        "product_start": starts, "product_end": starts + pd.to_timedelta(durations, unit="min"),
+        "price_eur_mwh": 10.0, "unit": "EUR/MWh", "native_interval_minutes": durations})
+    settings = {"date_start": "2026-11-01", "date_end_exclusive": "2026-11-02",
+        "timezone": "Europe/Rome", "zone": "NORD", "ida3_start_clock": "12:00",
+        "datasets": [{"provider": "gme", "dataset": "ida1_prices"}]}
+    summaries, daily = _coverage(frame, settings, {})
+    assert summaries[0]["records"] == 96
+    assert summaries[0]["missing_prices_in_requested_window"] == 0
+    assert daily.iloc[0]["status"] == "complete"
 
 
 def test_postcheck_covers_preexisting_history_before_the_staged_files(tmp_path):

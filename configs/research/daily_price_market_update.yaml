@@ -1,0 +1,19 @@
+include: ../standard.yaml
+
+# Runtime paths and date windows can be overridden without changing data semantics.
+daily_price_market_update:
+  database_path: data/api/market.duckdb
+  timezone: Europe/Rome
+  lookback_days: 14
+  output_directory: outputs/data_updates/price_market
+  energy_charts_config: configs/research/energy_charts_nord_fall2026.yaml
+  entsoe_config: configs/api_experiments/entsoe_api.yaml
+  gme_config: configs/api_experiments/gme_api.yaml
+  european_context_config: configs/research/european_context.yaml
+  swissgrid_energy_config: configs/api_experiments/swissgrid_energy_history.yaml
+  entsoe_token_env: ENTSOE_API_TOKEN
+  gme_username_env: GME_USERNAME
+  gme_password_env: GME_PASSWORD
+  france_realtime_endpoint: https://odre.opendatasoft.com/api/explore/v2.1/catalog/datasets/eco2mix-national-tr/exports/json
+  france_realtime_dataset: electricity_balance_realtime
+  providers: [energy_charts, entsoe, gme, france_final, france_realtime, swissgrid_energy, swissgrid_border, bfe]

@@ -35,6 +35,8 @@ def main():
     for name, value in {"database_path": args.database, "output_directory": args.output, "workers": args.workers}.items():
         if value is not None:
             settings[name] = value
+    if settings.get("requires_merged_sources") and (args.run or args.prepare_only):
+        parser.error("Use scripts.search_price_full_year; the standard runner would ignore source fallbacks")
     if not args.run and not args.prepare_only:
         subsets = sum(2 ** len(blocks) for blocks in settings["cohorts"].values())
         print(json.dumps({"action": "plan_only", "groups": list(settings["product_groups"]),

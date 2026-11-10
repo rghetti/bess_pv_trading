@@ -1,0 +1,12 @@
+include: ../standard.yaml
+
+# The public endpoint returns day-ahead spot prices, not IDA prices.
+energy_charts_prices:
+  start: '2026-10-20'
+  end_exclusive: '2026-11-11'
+  timezone: Europe/Rome
+  zone: NORD
+  bidding_zone: IT-North
+  endpoint: https://api.energy-charts.info/price
+  database_path: outputs/energy_charts_nord_fall2026/market.duckdb
+  database_threads: 2

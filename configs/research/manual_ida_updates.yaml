@@ -1,0 +1,25 @@
+include: ../standard.yaml
+
+# Manual GME exports are staged, checked, and merged without replacing existing prices.
+manual_market_import:
+  source_directory: data/api
+  stage_directory: outputs/data_imports/ida_updates
+  stage_path: null
+  target_database: data/api/market.duckdb
+  duckdb_threads: 2
+  zone: NORD
+  timezone: Europe/Rome
+  date_start: '2026-10-20'
+  date_end_exclusive: '2026-11-11'
+  gme_glob: '*_MI-A[123]_PrezziZonali_Nord.xlsx'
+  terna_glob: Riepilogo_Mensile_Quarto_Orario_*.xlsx
+  gme_schema_config: configs/api_experiments/gme_workbook_import.yaml
+  terna_schema_config: configs/api_experiments/terna_workbook_import.yaml
+  terna_ambiguous_time_policy: second_occurrence_minute_marker
+  ida3_start_clock: '12:00'
+  audit_delivery_days: ['2026-10-25', '2026-11-09', '2026-11-10']
+  check_report_path: outputs/data_imports/ida_updates/postcheck.json
+  datasets:
+    - {provider: gme, dataset: ida1_prices}
+    - {provider: gme, dataset: ida2_prices}
+    - {provider: gme, dataset: ida3_prices}

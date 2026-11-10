@@ -1,0 +1,70 @@
+# All data needed by the new price feature search come from this catalog.
+include: ../standard.yaml
+price_search_inputs:
+  database_path: data/api/market.duckdb
+  database_threads: 2
+  output_directory: outputs/price_feature_selection/inputs
+  start: '2024-01-01'
+  end_exclusive: '2026-12-01'
+  timezone: Europe/Rome
+  excluded_providers: [farm_archive, open_meteo]
+  sources:
+    - name: nord_auctions
+      provider: gme
+      zone: NORD
+      datasets: [day_ahead_prices, ida1_prices, ida2_prices, ida3_prices]
+      columns: [provider, dataset, zone, product_start, product_end, value, unit, resolution, record_status, published_at, publication_provenance]
+      role: labels_and_gate_consistent_price_history
+    - name: energy_charts_nord_da
+      provider: energy_charts
+      zone: NORD
+      datasets: [day_ahead_prices]
+      columns: [provider, dataset, zone, product_start, product_end, value, unit, resolution, record_status, published_at, publication_provenance]
+      role: fallback_da_prices_after_gme_with_source_provenance
+    - name: nord_forecasts
+      provider: entsoe
+      zone: NORD
+      datasets: [load_forecast, generation_forecast, solar_forecast, wind_onshore_forecast]
+      columns: [provider, dataset, zone, product_start, product_end, value, unit, direction, reference_time, source_document_time, historical_available_at, availability_provenance]
+      availability: user_assumed_previous_day_available_at_all_gates
+    - name: psv_gas
+      provider: gme
+      zone: PSV
+      datasets: [gas_igi]
+      date_column: gas_delivery_day
+      columns: [provider, dataset, zone, gas_delivery_day, value, unit, scheduled_available_at, availability_provenance]
+      feature_policy: daily_index_with_declared_previous_day_lags
+    - name: france_balance
+      provider: rte
+      zone: FR
+      datasets: [electricity_balance]
+      columns: [provider, dataset, zone, product_start, product_end, value, unit, generation_mw, consumption_normalized_mw, generation_components_json, source_record, nature, historical_available_at, availability_provenance]
+      feature_policy: nuclear_hydro_and_exchanges_from_source_components
+      availability: same_delivery_day_actuals_retrospective_or_explicit_previous_day_lags
+    - name: france_balance_realtime
+      provider: rte
+      zone: FR
+      datasets: [electricity_balance_realtime]
+      columns: [provider, dataset, zone, product_start, product_end, value, unit, generation_mw, consumption_normalized_mw, generation_components_json, source_record, nature, historical_available_at, availability_provenance]
+      role: provisional_fallback_when_consolidated_observations_are_missing
+    - name: swiss_energy_statistics
+      provider: swissgrid
+      zone: CH
+      datasets: [energy_statistics]
+      columns: [provider, dataset, zone, product_start, product_end, value, unit, generation_mw, consumption_mw, end_user_consumption_mw, physical_ch_to_it_mw, physical_it_to_ch_mw, physical_ch_to_fr_mw, physical_fr_to_ch_mw, physical_ch_to_de_mw, physical_de_to_ch_mw, physical_ch_to_at_mw, physical_at_to_ch_mw, physical_net_export_it_mw, physical_net_export_fr_mw, physical_net_export_de_mw, physical_net_export_at_mw, physical_import_mw, physical_export_mw, physical_transit_mw, afrr_positive_price_eur_mwh, afrr_negative_price_eur_mwh, mfrr_positive_price_eur_mwh, mfrr_negative_price_eur_mwh, source_timestamp_label, historical_available_at, availability_provenance]
+      availability: same_delivery_day_realized_values_retrospective_or_explicit_previous_day_lags
+    - name: swiss_commercial_border
+      provider: swissgrid
+      zone: CH
+      datasets: [border_context]
+      columns: [provider, dataset, zone, product_start, product_end, variable, value, unit, source_field, historical_available_at, availability_provenance]
+      feature_policy: commercial_schedules_intraday_ntc_and_day_ahead_spot_spreads
+      availability: weekly_source_same_delivery_day_use_explicitly_retrospective
+      target_leakage_note: spread_it_nord_ch_contains_the_Italian_DA_clearing_price_itself_so_same_day_DA_use_is_outcome_derived
+      coverage_note: currently_only_2026_do_not_reduce_full_history_physical_flow_arms_to_this_window
+    - name: swiss_reservoirs
+      provider: bfe
+      zone: CH
+      datasets: [reservoir_levels]
+      columns: [provider, dataset, zone, product_start, product_end, variable, value, unit, scheduled_available_at, availability_provenance]
+      feature_policy: weekly_state_with_explicit_lag_and_state_alignment

@@ -160,6 +160,7 @@ def main() -> None:
     failures = []
     remaining = Counter(job["group"] for job in jobs)
     winners = {}
+    completed_winners = {}
     with ProcessPoolExecutor(max_workers=args.workers, mp_context=multiprocessing.get_context("spawn")) as pool:
         futures = {pool.submit(validate_candidate, job, str(root), prepared["groups"][job["group"]], str(output)): job
                    for job in jobs}
@@ -180,10 +181,11 @@ def main() -> None:
             # Publish each group as soon as its selected families have finished.
             if remaining[group] == 0 and group in winners:
                 plot_winner(winners[group], output, args.timezone)
-                (output / "validation_winners.json").write_text(json.dumps(winners, indent=2) + "\n")
+                completed_winners[group] = winners[group]
+                (output / "validation_winners.json").write_text(json.dumps(completed_winners, indent=2) + "\n")
             print(f"Validated {len(results)}/{len(jobs)} candidates; failures={len(failures)}", flush=True)
     (output / "validation_results.json").write_text(json.dumps(results, indent=2) + "\n")
-    (output / "validation_winners.json").write_text(json.dumps(winners, indent=2) + "\n")
+    (output / "validation_winners.json").write_text(json.dumps(completed_winners, indent=2) + "\n")
 
 
 if __name__ == "__main__":

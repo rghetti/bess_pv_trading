@@ -1,0 +1,10 @@
+include: ../standard.yaml
+
+# Build a separate calendar-feature sidecar from the frozen price-search grid.
+price_holiday_expansion:
+  source_search: outputs/price_feature_search_full
+  output_directory: outputs/price_holiday_feature_expansion_general_v2
+  cohort: full_history
+  hour_interactions: true
+  include_adjacent_days: true
+  include_bridge_day: true

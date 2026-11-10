@@ -386,7 +386,8 @@ class DuckDBCache:
         manual_source = metadata.get("source_kind") in {"manual_gme_xlsx", "manual_terna_xlsx"}
         raw_file = metadata.get("source_file") if manual_source else None
         if raw_file is None:
-            raw_file = "response.xml" if identity["provider"] == "entsoe" else "response.json"
+            raw_file = ("response.csv" if metadata.get("source_kind") in {"swissgrid_public_csv", "bfe_public_csv"}
+                        else "response.xml" if identity["provider"] == "entsoe" else "response.json")
         manifest = {"schema_version": "api-cache-v1", "request": dict(identity),
                     "raw_file": raw_file,
                     "raw_sha256": hashlib.sha256(payload).hexdigest(),
@@ -413,6 +414,7 @@ class DuckDBCache:
         source_kind = source.get("metadata", {}).get("source_kind")
         manual_source = source_kind in {"manual_gme_xlsx", "manual_terna_xlsx"}
         expected_raw = source.get("metadata", {}).get("source_file") if manual_source else (
+            "response.csv" if source_kind in {"swissgrid_public_csv", "bfe_public_csv"} else
             "response.xml" if identity["provider"] == "entsoe" else "response.json")
         if manual_source and (identity.get("provider") != {"manual_gme_xlsx": "gme", "manual_terna_xlsx": "terna"}[source_kind]
                               or not isinstance(expected_raw, str)

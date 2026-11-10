@@ -151,6 +151,12 @@ def _coverage(frame, settings, cancellations):
     for specification in settings["datasets"]:
         provider, dataset = specification["provider"], specification["dataset"]
         portion = frame.loc[frame.provider.eq(provider) & frame.dataset.eq(dataset)] if not frame.empty else frame
+        # Coverage and native-resolution checks concern only the requested local-date window.
+        # Older catalog records can have a different product resolution and remain untouched.
+        if not portion.empty:
+            start = pd.Timestamp(settings["date_start"], tz=settings["timezone"]).tz_convert("UTC")
+            stop = pd.Timestamp(settings["date_end_exclusive"], tz=settings["timezone"]).tz_convert("UTC")
+            portion = portion.loc[(portion.product_start >= start) & (portion.product_start < stop)]
         if not portion.empty:
             unique = _unique_records(portion)
             local = unique.product_start.dt.tz_convert(settings["timezone"])
