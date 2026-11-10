@@ -95,7 +95,7 @@ change an existing snapshot. Run from the repository root in tmux:
 ```bash
 /home/rghetti/miniforge3/envs/bess/bin/python -m scripts.search_price_full_year \
   --database /home/rghetti/bess_pv_trading_features/data/api/market.duckdb \
-  --output outputs/price_feature_search_full_year_2026 \
+  --output outputs/price_feature_search_full_year_2026_cancellations_v1 \
   --workers 5 --prepare-only
 ```
 
@@ -121,7 +121,7 @@ validation feature/target rows before copying any fit:
 
 ```bash
 /home/rghetti/miniforge3/envs/bess/bin/python -m scripts.transfer_full_year_checkpoints \
-  --source outputs/price_feature_search_full_year_2026 \
+  --source outputs/price_feature_search_full_year_2026_cancellations_v1 \
   --destination outputs/price_feature_search_full_year_later
 ```
 

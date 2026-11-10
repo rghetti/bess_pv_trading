@@ -7,6 +7,7 @@ price_search_inputs:
   start: '2024-01-01'
   end_exclusive: '2026-12-01'
   timezone: Europe/Rome
+  include_gme_cancellation_notices: true
   excluded_providers: [farm_archive, open_meteo]
   sources:
     - name: nord_auctions

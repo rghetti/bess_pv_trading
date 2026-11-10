@@ -27,6 +27,12 @@ def prepare_merged_inputs(config, raw, merged, *, source_builder=build_price_sea
     # Keep all raw tables and original snapshot manifests; derived tables go separately.
     result = {**original, "tables": {}}
     tables = {name: pd.read_parquet(raw / item["path"]) for name, item in original["tables"].items()}
+    # Save source-backed cancellation notices; absence of prices alone is not proof.
+    settings = config["price_search_inputs"]
+    if settings.get("include_gme_cancellation_notices", False):
+        from bess_pv_trading.forecasting.studies.price_cancellation_features import catalog_cancellations
+        result["gme_cancellation_notices"] = catalog_cancellations(settings["database_path"],
+            settings["start"], settings["end_exclusive"], settings["timezone"])
     da = tables["nord_auctions"]
     replacement, da_audit = prefer_existing_intervals(da, tables["energy_charts_nord_da"],
         identity_columns=["dataset", "zone", "product_start", "product_end"])

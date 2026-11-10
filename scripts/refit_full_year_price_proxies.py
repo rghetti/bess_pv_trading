@@ -62,7 +62,7 @@ def load_array(root, descriptor):
     return np.load(path, mmap_mode="r", allow_pickle=False)
 
 
-def coverage_table(days, predicted_days, market, settings, timezone):
+def coverage_table(days, predicted_days, market, settings, timezone, cancelled_days=()):
     """Expose every missing observed or predicted product, including future days."""
     first = pd.Timestamp(settings["prediction_start"], tz=timezone)
     last = pd.Timestamp(settings["prediction_end_exclusive"], tz=timezone)
@@ -72,9 +72,13 @@ def coverage_table(days, predicted_days, market, settings, timezone):
     expected = pd.Series(grid.strftime("%Y-%m-%d")).value_counts().sort_index()
     observed = pd.Series(days).value_counts()
     predicted = pd.Series(predicted_days).value_counts()
-    return pd.DataFrame({"local_day": expected.index, "expected_products": expected.to_numpy(),
+    frame = pd.DataFrame({"local_day": expected.index, "expected_products": expected.to_numpy(),
         "observed_products": observed.reindex(expected.index, fill_value=0).to_numpy(),
         "predicted_products": predicted.reindex(expected.index, fill_value=0).to_numpy()})
+    frame["documented_cancelled"] = frame.local_day.isin(cancelled_days)
+    frame["status"] = np.where(frame.documented_cancelled, "documented_cancelled",
+        np.where(frame.predicted_products == frame.expected_products, "complete", "missing_or_partial"))
+    return frame
 
 
 def refit_group(root, destination, group_name, group, selected, settings):
@@ -107,7 +111,8 @@ def refit_group(root, destination, group_name, group, selected, settings):
     prediction_path = destination / f"{group_name}.parquet"
     joblib.dump(model, model_path, compress=3)
     frame.to_parquet(prediction_path, index=False)
-    coverage = coverage_table(days, frame.local_day, group["market"], settings, settings["timezone"])
+    coverage = coverage_table(days, frame.local_day, group["market"], settings, settings["timezone"],
+                              settings.get("cancelled_days", {}).get(group["market"], ()))
     coverage_path = destination / f"{group_name}_daily_coverage.csv"
     coverage.to_csv(coverage_path, index=False)
     return {"group": group_name, "auction": group["market"], "selected": selected,
@@ -121,7 +126,8 @@ def refit_group(root, destination, group_name, group, selected, settings):
         "warnings": warnings, "model_path": str(model_path), "model_sha256": digest(model_path),
         "prediction_path": str(prediction_path), "prediction_sha256": digest(prediction_path),
         "coverage_path": str(coverage_path), "coverage_sha256": digest(coverage_path),
-        "complete_prediction_days": int((coverage.predicted_products == coverage.expected_products).sum())}
+        "complete_prediction_days": int((coverage.status == "complete").sum()),
+        "documented_cancelled_days": int(coverage.documented_cancelled.sum())}
 
 
 def main():
@@ -143,6 +149,11 @@ def main():
         if prepared["implementation_sha256"] != _implementation() or prepared["software"] != _software(prepared["scientific_settings"]):
             raise ValueError("Search code or software differs from the frozen search; use its original environment")
         settings = {**settings, "timezone": prepared["scientific_settings"]["timezone"]}
+        input_manifest = json.loads((root / "inputs" / "manifest.json").read_text())
+        auctions = prepared["scientific_settings"]["auctions"]
+        settings["cancelled_days"] = {market: sorted({row["delivery_day"] for row in
+            input_manifest["gme_cancellation_notices"] if row["dataset"] == auction["dataset"]})
+            for market, auction in auctions.items()}
         selected, failures = select_candidates(root, prepared, settings["cohort"])
         destination.mkdir(parents=True, exist_ok=False)
         results = []

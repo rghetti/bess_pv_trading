@@ -28,18 +28,18 @@ outer October/November validation or test.
 cd /home/rghetti/bess_pv_trading
 /home/rghetti/miniforge3/envs/bess/bin/python -m scripts.search_price_full_year \
   --database /home/rghetti/bess_pv_trading_features/data/api/market.duckdb \
-  --output outputs/price_feature_search_full_year_2026 \
+  --output outputs/price_feature_search_full_year_2026_cancellations_v1 \
   --workers 5 --prepare-only
 ```
 
 Review each group's cohort `counts` and `training_eligible` in
-`outputs/price_feature_search_full_year_2026/prepared.json`. Different cohorts
+`outputs/price_feature_search_full_year_2026_cancellations_v1/prepared.json`. Different cohorts
 can contain different dates. Then launch in tmux:
 
 ```bash
 /home/rghetti/miniforge3/envs/bess/bin/python -m scripts.search_price_full_year \
   --database /home/rghetti/bess_pv_trading_features/data/api/market.duckdb \
-  --output outputs/price_feature_search_full_year_2026 \
+  --output outputs/price_feature_search_full_year_2026_cancellations_v1 \
   --workers 5 --inner-only
 ```
 
@@ -68,7 +68,7 @@ Italian–Swiss DA spread contains the target Italian DA price. A different coho
 can be chosen in `configs/research/price_full_year_proxy_refit.yaml`, but compare
 scores across cohorts only on explicitly matched dates.
 
-The output directory `outputs/price_full_year_retrospective_proxies_2026`
+The output directory `outputs/price_full_year_retrospective_proxies_2026_cancellations_v1`
 contains one model and one Parquet price file per auction, daily coverage CSVs,
 plots, and a manifest recording candidates, features, source fingerprint,
 failed candidates and whether each predicted row was used in refitting.
@@ -85,3 +85,14 @@ the DA gate. They also are not yet a drop-in artifact for the existing
 realtime-MPC forecast provider. The later integration must preserve auction
 information timing and actual settlement and be validated for all farms; no
 simulation framework changes are made here.
+
+Documented GME cancellations are copied from current source snapshot metadata
+into the pinned input manifest. A cancelled preceding auction's features and
+spread anchor use the nearest earlier cleared auction, with explicit binary
+cancellation flags. When lagged other-auction prices or own-auction daily curves
+refer to a cancelled auction, the feature builder searches up to the configured
+14 earlier days for a published value or complete curve and adds a flag. If no
+fallback exists, the input remains missing. An unexplained data gap is never
+treated as a cancellation. Cancellation-notice availability is retrospective;
+the source does not establish the historical publication clock of the notice.
+The old prepared snapshot has a different feature contract and cannot be reused.

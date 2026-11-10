@@ -19,6 +19,15 @@ def test_coverage_counts_native_products_on_daylight_saving_changes():
     assert coverage.loc["2026-10-25", "expected_products"] == 100
 
 
+def test_coverage_distinguishes_cancelled_days_from_data_gaps():
+    """A source-confirmed cancellation is not reported as a missing price day."""
+    settings = {"prediction_start": "2026-04-16", "prediction_end_exclusive": "2026-04-18"}
+    coverage = proxies.coverage_table(np.array([], dtype="U10"), np.array([], dtype="U10"),
+        "IDA1", settings, "Europe/Rome", ["2026-04-16"]).set_index("local_day")
+    assert coverage.loc["2026-04-16", "status"] == "documented_cancelled"
+    assert coverage.loc["2026-04-17", "status"] == "missing_or_partial"
+
+
 def test_selection_requires_complete_tasks_and_uses_matched_cohort(tmp_path):
     """Select the lowest inner WAPE, and reject a missing search checkpoint."""
     trials = tmp_path / "trials"

@@ -74,7 +74,8 @@ def main():
     settings["full_year_adapter_sha256"] = {str(path): _digest(path) for path in (
         Path(__file__), Path("scripts/prepare_full_year_price_inputs.py"),
         Path("src/data/price_source_fallback.py"), Path("src/forecasting/studies/price_full_year_features.py"),
-        Path("src/forecasting/studies/price_holiday_features.py"), Path(settings["holiday_feature_config"]))}
+        Path("src/forecasting/studies/price_holiday_features.py"),
+        Path("src/forecasting/studies/price_cancellation_features.py"), Path(settings["holiday_feature_config"]))}
     input_settings = load_config(settings["input_config"])["price_search_inputs"]
     if not (args.prepare_only or args.inner_only or args.run):
         print(json.dumps({"action": "plan_only", "groups": list(settings["product_groups"]),
@@ -89,7 +90,8 @@ def main():
         return
     # Patch only this coordinator's first-time source builder; existing search code remains unchanged.
     from bess_pv_trading.data import price_search_inputs
-    from bess_pv_trading.forecasting.studies import price_feature_search
+    from bess_pv_trading.forecasting.studies import price_feature_data, price_feature_search
+    from bess_pv_trading.forecasting.studies.price_cancellation_features import build_cancellation_aware_base, cancellation_days
     from bess_pv_trading.forecasting.studies.price_full_year_features import annotate_cohort_coverage, append_calendar_features
     original_builder = price_search_inputs.build_price_search_inputs
     original_validate = price_feature_search._validate
@@ -116,7 +118,22 @@ def main():
             effective = {**study_settings, "minimum_evaluation_rows": 0}
         else:
             effective = study_settings
-        groups = original_matrices(effective, source, destination)
+        manifest = json.loads((Path(source) / "manifest.json").read_text())
+        if "gme_cancellation_notices" not in manifest:
+            raise ValueError("Full-year study requires source-backed GME cancellation notices")
+        import pandas as pd
+        prices = pd.read_parquet(Path(source) / manifest["tables"]["nord_auctions"]["path"])
+        cancelled = cancellation_days(manifest["gme_cancellation_notices"], study_settings["auctions"],
+                                      prices, study_settings["timezone"])
+        original_base = price_feature_data._base_matrix
+        def cancellation_aware_base(history, histories, starts, settings, group):
+            return build_cancellation_aware_base(original_base, histories, starts, settings, group,
+                                                 cancelled, int(settings["cancellation_fallback_days"]))
+        price_feature_data._base_matrix = cancellation_aware_base
+        try:
+            groups = original_matrices(effective, source, destination)
+        finally:
+            price_feature_data._base_matrix = original_base
         # Training eligibility stays distinct from whether future evaluation rows exist.
         annotate_cohort_coverage(groups, threshold)
         holiday = load_config(study_settings["holiday_feature_config"])["price_holiday_expansion"]

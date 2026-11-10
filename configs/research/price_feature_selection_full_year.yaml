@@ -7,7 +7,7 @@ price_feature_search:
   allow_training_without_evaluation_coverage: true
   input_config: configs/research/price_search_inputs_full_year.yaml
   database_path: data/api/market.duckdb
-  output_directory: outputs/price_feature_search_full_year_2026
+  output_directory: outputs/price_feature_search_full_year_2026_cancellations_v1
   timezone: Europe/Rome
   seed: 20261106
   workers: 5
@@ -21,6 +21,7 @@ price_feature_search:
   minimum_evaluation_rows: 96
   lag_hours: [24, 23, 25, 48, 47, 49, 72, 168, 167, 169, 336]
   max_lag_age_hours: 336
+  cancellation_fallback_days: 14
   daily_curve_lag_days: [1, 2, 7]
   near_auction_offsets_products: [-4, -2, -1, 1, 2, 4]
   past_other_market_lag_hours: [24, 48]
