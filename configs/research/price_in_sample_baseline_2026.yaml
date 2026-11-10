@@ -1,0 +1,15 @@
+include: ../standard.yaml
+
+# A deliberately retrospective, price-only baseline using the existing snapshot.
+price_in_sample_baseline:
+  source_search: outputs/price_feature_search_full
+  output_directory: outputs/price_in_sample_baseline_2026_v1
+  holiday_config: configs/research/price_holiday_feature_expansion.yaml
+  train_start: '2025-01-01'
+  train_end_exclusive: '2027-01-01'
+  prediction_start: '2026-01-01'
+  prediction_end_exclusive: '2027-01-01'
+  group_names: [da_quarter_hourly, ida1_quarter_hourly, ida2_quarter_hourly, ida3_quarter_hourly]
+  model_family: ridge
+  model_parameters: {alpha: 1000.0}
+  seed: 17
