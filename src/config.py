@@ -219,6 +219,12 @@ def validate_continuous_optimization(config: dict[str, Any], *, require_dates: b
     intermediate = section.get("ida3_enforce_intermediate_soc", True)
     if not isinstance(intermediate, bool):
         raise ConfigurationError("continuous_optimization.ida3_enforce_intermediate_soc must be a YAML boolean")
+    # Checkpoint-free runs retain final outputs but cannot resume an interrupted trajectory.
+    checkpoint_enabled = section.get("checkpoint_enabled", True)
+    if not isinstance(checkpoint_enabled, bool):
+        raise ConfigurationError("continuous_optimization.checkpoint_enabled must be a YAML boolean")
+    if not checkpoint_enabled and section.get("resume", False):
+        raise ConfigurationError("continuous_optimization.resume requires checkpoint_enabled")
     # A study can require its configured end SOC for every delivery day.
     target_scope = section.get("terminal_soc_scope", "final_replay_day")
     if target_scope not in ("final_replay_day", "each_delivery_day"):

@@ -33,9 +33,13 @@ at a time and refill workers as they finish. Each uses two Gurobi threads,
 with a relative MIP gap of 0.0001; up to 16 solver threads can oversubscribe
 the 10 logical CPUs reported on this machine. Forecast and market inputs are
 prepared once per farm and shared across targets; successful batches release
-the temporary preflight cache. The prior 31-day sweep occupied approximately
-7 GiB; a linear estimate for this longer period is roughly 55 GiB, plus
-temporary data, but actual use depends on the outputs and solver behavior.
+the temporary preflight cache. Daily resumable checkpoints are disabled for
+this study, and solver-attempt histories are written at completion or on a
+handled failure rather than rewritten after every auction. An interrupted
+trajectory must therefore restart from the beginning. Final analysis outputs
+and input provenance are still retained. The prior 31-day sweep occupied
+approximately 7 GiB including checkpoints; actual storage for this longer
+period will depend on the retained outputs and solver behavior.
 
 Report each target's operating profit, auction and imbalance cash flows,
 modeled degradation, absolute imbalance, curtailment, battery usage, actual

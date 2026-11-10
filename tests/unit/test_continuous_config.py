@@ -55,6 +55,20 @@ def test_validation_diagnostics_mode_is_explicitly_validated():
         resolve_config(config)
 
 
+def test_checkpoint_setting_requires_boolean_and_enabled_resume():
+    """Reject ambiguous checkpoint settings and impossible resume configurations."""
+    config = load_config(JANUARY)
+    config["continuous_optimization"]["resume"] = False
+    config["continuous_optimization"]["checkpoint_enabled"] = "false"
+    with pytest.raises(ConfigurationError, match="checkpoint_enabled must be a YAML boolean"):
+        resolve_config(config)
+    config["continuous_optimization"]["checkpoint_enabled"] = False
+    resolve_config(config)
+    config["continuous_optimization"]["resume"] = True
+    with pytest.raises(ConfigurationError, match="resume requires checkpoint_enabled"):
+        resolve_config(config)
+
+
 @pytest.mark.parametrize("value", ["false", 0, None])
 def test_intermediate_midnight_option_requires_boolean(value):
     """An invalid flag cannot silently change the IDA3 SOC policy."""

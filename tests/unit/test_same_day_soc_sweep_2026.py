@@ -31,6 +31,7 @@ def test_plan_sets_same_day_horizon_and_eight_workers(launcher, capsys):
     assert plan["workers"] == 8
     assert plan["solver_threads_per_job"] == 2
     assert plan["maximum_solver_threads"] == 16
+    assert plan["checkpoint_enabled"] is False
     assert plan["auction_submissions_upper_bound"] == 76 * 241 * 4
     assert plan["solves_started"] == 0
     assert not Path(plan["output_dir"]).exists()

@@ -135,6 +135,11 @@ class ContinuousReplay:
         self.progress = progress
         self.destination = Path(destination)
         self.resume = bool(resume)
+        self.checkpoint_enabled = config["continuous_optimization"].get("checkpoint_enabled", True)
+        if not isinstance(self.checkpoint_enabled, bool):
+            raise ValueError("continuous_optimization.checkpoint_enabled must be a boolean")
+        if self.resume and not self.checkpoint_enabled:
+            raise ValueError("Cannot resume a continuous replay when checkpointing is disabled")
         self.current_only = strategy == "current_auction_only"
         self.perfect = strategy == "perfect_pv"
         self.perfect_reoptimizes = config["continuous_optimization"].get(
@@ -250,9 +255,12 @@ class ContinuousReplay:
                 raise ValueError("Archived MPC checkpoint requires daily_parquet history mode")
 
     def save_checkpoint(self, event):
-        """Commit a midnight after observation, next control and settlement events."""
+        """Archive daily MPC history and optionally save the resumable midnight state."""
         if self.realtime is not None:
             self.realtime.archive_completed(event.at)
+        # A checkpoint-free study still writes its ordinary final analysis outputs.
+        if not self.checkpoint_enabled:
+            return
         checkpoint = {"identity": self.identity, "state": asdict(self.state),
             "accepted_trades": [asdict(trade) for trade in self.market.accepted_trades],
             "transaction_fee_state": asdict(self.market.transaction_fee_state),
@@ -739,8 +747,13 @@ class ContinuousReplay:
                 **pv_provenance})
         return inputs, diagnostic
 
-    def _save_attempts(self):
-        """Keep actual solver work even when a partial day is replayed on resume."""
+    def _save_attempts(self, *, force=False):
+        """Persist solver diagnostics incrementally for resume, or once at completion."""
+        # Without restart checkpoints there is no need to rewrite all prior
+        # diagnostics after each auction. Explicit final and failure writes
+        # retain the same files for later analysis.
+        if not self.checkpoint_enabled and not force:
+            return
         _atomic_json(self.destination / "json/optimization_attempts.json", self.attempts)
         records = [solve_timing(row, category="perfect_pv_reference" if self.perfect else "replay",
             strategy=self.strategy, delivery_day=row["delivery_day"], auction=row["current_auction"],
@@ -1145,8 +1158,21 @@ class ContinuousReplay:
                 raise ValueError("Continuous checkpoint cursor is not in this replay's event calendar")
             events = [event for event in events if tuple(self._event_key(event)) > key]
         engine = EventEngine(events)
-        engine.run({kind: self._handle for kind in (EventKind.AUCTION_SUBMISSION, EventKind.AUCTION_RESULTS,
-            EventKind.PHYSICAL_CONTROL, EventKind.OBSERVATION_AVAILABLE, EventKind.SETTLEMENT)})
+        try:
+            engine.run({kind: self._handle for kind in (EventKind.AUCTION_SUBMISSION, EventKind.AUCTION_RESULTS,
+                EventKind.PHYSICAL_CONTROL, EventKind.OBSERVATION_AVAILABLE, EventKind.SETTLEMENT)})
+        except BaseException as error:
+            # Preserve completed solve diagnostics for ordinary errors and
+            # interrupts, even when restart checkpoints were disabled.
+            if not self.checkpoint_enabled:
+                try:
+                    self._save_attempts(force=True)
+                except Exception as flush_error:
+                    error.add_note(f"Could not save solver diagnostics: {flush_error}")
+            raise
+        # Save completed solver diagnostics before any output reconciliation
+        # so they are also available if a later reporting step fails.
+        self._save_attempts(force=True)
         dispatch, ledger, fees = self._final_dispatch_and_ledger()
         plans = [row for day in self.days for snapshot in self.plan_snapshots[day].values() for row in snapshot]
         context_plans = [row for day in self.context_days
@@ -1155,7 +1181,6 @@ class ContinuousReplay:
             # Preserve future plans without including their delivery products in
             # January dispatch, settlement or expected-plan scoring.
             pd.DataFrame(context_plans).to_csv(self.destination / "csv/context_dispatch_plans.csv", index=False)
-        self._save_attempts()
         write_json(self.destination / "json/event_trace.json", self.event_trace)
         write_json(self.destination / "json/price_publications.json", self.publications)
         saved_config = self.destination / "json/study_config.json"

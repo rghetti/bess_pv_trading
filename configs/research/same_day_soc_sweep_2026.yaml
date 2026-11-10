@@ -12,6 +12,7 @@ continuous_optimization:
   ida3_next_day_horizon: false
   pin_tracker_forecast_replacement: true
   terminal_soc_scope: each_delivery_day
+  checkpoint_enabled: false
   validation_diagnostics: failures_only
   planning_modes:
   - integrated

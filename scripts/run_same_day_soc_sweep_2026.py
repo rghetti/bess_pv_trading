@@ -172,6 +172,7 @@ def main(argv=None):
         "initial_auction": "2025-12-31 DA for 2026-01-01; no 2025-12-31 IDA3",
         "controller": "track_committed_grid", "planning": "same delivery day at every auction, including IDA3",
         "soc_policy": "hard equality at the delivery-day midnight at every auction",
+        "checkpoint_enabled": jobs[0]["config"]["continuous_optimization"].get("checkpoint_enabled", True),
         "initial_soc_percent": jobs[0]["config"]["state"]["initial_soc_percent"],
         "preflight_reference_target_soc_percent": reference_target,
         "forecast": "frozen retrospective four-cycle neural models, latest available 48-hour weather issue, six-hour lag",

@@ -794,6 +794,24 @@ def test_perfect_pv_reference_preserves_daily_horizon_and_chronology(continuous_
     np.testing.assert_allclose(daily_kpis.realized_minus_expected_profit_eur, 0, atol=tolerance, rtol=0)
 
 
+def test_checkpoint_free_run_preserves_analysis_and_rejects_resume(continuous_config, tmp_path):
+    """Turning off checkpoints leaves physical and financial replay outputs unchanged."""
+    prepared, _ = _prepared(continuous_config, one_day=True)
+    regular = tmp_path / "regular"
+    lean = tmp_path / "lean"
+    _run(continuous_config, prepared, "integrated", regular)
+    continuous_config["continuous_optimization"]["checkpoint_enabled"] = False
+    _run(continuous_config, prepared, "integrated", lean)
+    assert (regular / "json/checkpoint.json").is_file()
+    assert not (lean / "json/checkpoint.json").exists()
+    for name in ("realized_dispatch.csv", "accepted_trades.csv", "daily_kpis.csv",
+                 "pv_forecast_inputs.csv"):
+        pd.testing.assert_frame_equal(pd.read_csv(regular / "csv" / name),
+                                      pd.read_csv(lean / "csv" / name))
+    with pytest.raises(ValueError, match="Cannot resume.*checkpointing is disabled"):
+        _module().ContinuousReplay(continuous_config, prepared, "integrated", lean, resume=True)
+
+
 @pytest.mark.parametrize("mode", ["current_auction_only", "perfect_pv"])
 def test_checkpoint_resume_matches_uninterrupted_execution(continuous_config, tmp_path, monkeypatch, mode):
     prepared, _ = _prepared(continuous_config)
