@@ -20,7 +20,7 @@
 \begin{document}
 \maketitle
 \begin{abstract}
-A solar producer must commit electricity before its production is known.
+A solar farm owner must commit electricity before its production is known.
 Battery storage provides flexibility, while successive auctions create
 opportunities to revise the contracted position as weather information
 improves. We study this problem using four northern-Italian farms, historical
@@ -29,7 +29,7 @@ weather ensembles. Weather is converted into possible AC production paths that
 are used to plan physically feasible trading and battery decisions.
 Auction participation studies investigate the importance of jointly optimizing current trades
 and future adjustments.
-This document explains the available data, the forecast-to-decision process,
+This report explains the available data, the forecast-to-decision process,
 the deterministic and ensemble formulations, and physical delivery control.
 The full optimization and supporting
 equations are collected in appendices.
@@ -48,9 +48,9 @@ battery has the double function of separating instantenous generation
 from future trades and of offering flexibility for real time operations 
 when production differs from forecasts.
 
-The core idea is to jointly optimize at each auction current market positions and 
+The core idea is to jointly optimize at each auction the current market positions and 
 expected future adjustments given  available information and present 
-(or expected) State of Charge (SoC). This allows to take advantage of price 
+(or projected) State of Charge (SoC). This allows to take advantage of price 
 spreads while respecting physical constraints of our assets, speculating 
 on market prices up until delivery. Only current auction trades 
 are binding while future ones can still be updated as newer production 
@@ -65,7 +65,7 @@ stored-energy bounds and the shared grid limit. The full optimization is in
 Appendix~\ref{app:auction}.
 
 We assess profits together with imbalance, curtailment, wear and
-ending stored energy.
+ending stored energy, while assuming to be a price-taker market participant.
 
 \section{The available data}
 \subsection{Four farms and their historical records}
@@ -92,13 +92,13 @@ UTC grid: 58,368 timestamps for each farm. They contain AC power, historical
 
 \subsection{Updating deterministic weather forecasts}
 
-Given that positions must be traded mostly the day before delivery, obtaining accurate
-pv production forecasts for the next day is imperative. We use weather-to-pv models to obtain such estimates.
+Given that market positions must be traded mostly the day before delivery, obtaining accurate
+PV production forecasts for the next day is imperative. We use weather-to-pv models to obtain such estimates.
 
 The main weather dataset comes from the ECMWF (European Centre for Medium-range Weather Forecast) archive
  containing 4 deterministic weather forecasts cycles per day (initialized every six hours)
-from 30 December 2024 to 31 August 2026. Each run simulates up until 48 hours from the initialization time. The weather fields
-include several irradiance components, temperature, wind and cloud cover.
+from 30 December 2024 to 31 August 2026. Each run simulates up until 48 hours from the initialization time. 
+The weather fields include several irradiance components, temperature, wind and cloud cover.
 
 Several cycles predict the same delivery interval with newly available information. This
 provides a record of forecast revision as delivery approaches. The four daily
@@ -127,8 +127,13 @@ mirroring the products granularity.
 The participation comparisons use actual future auction prices as a common
 price-information benchmark. This isolates choices about market access,
 production forecasts and physical flexibility under that benchmark. Their
-profits must be interpreted with this price-foresight assumption. Developing
-price forecasts is a further route toward operational decisions.
+profits must be interpreted with this price-foresight assumption. 
+We are also developing price prediction models based on load and generation 
+forecasts as well as past historical prices. The first results show that 
+real operating profits with price proxies are around a third or a fourth 
+compared to simulations using actual realized prices. Real bidding and auction behavior 
+has not been included in this work yet.
+
 
 \section{From weather information to production and decision paths}
 \subsection{Selecting information at the auction cutoff}
@@ -144,9 +149,9 @@ IDA3 & Delivery day, 10:00 & Noon to midnight & Delivery day, 00 UTC\\
 \bottomrule\end{tabular}\end{center}
 The last column follows the six-hour release assumption and requires sufficient
 remaining-horizon coverage. In our data weather forecasts have a 48-hour horizon allowing us
-to have prediction for trading in day ahead markets.
+to have predictions for trading in day ahead markets.
  At every cutoff, the deterministic forecast is
-updated to the latest eligible issue. Given the raw data size of storing all 4 cycles of the ensemble,
+updated to the latest eligible issue. Given the raw data size of all 4 cycles of the ensemble,
 only the 00 UTC is used for the ensemble studies.
 
 \subsection{Converting weather into AC generation}
@@ -157,7 +162,7 @@ DC production and converts it to AC power. Output is bounded by the farm AC
 rating and forced to zero during the specified seasonal nighttime windows.
 Effective conversion parameters can be estimated from historical data.
 
-Statistical and neural models provide another mapping from weather, calendar,
+Statistical and time-series neural models provide another mapping from weather, calendar,
 lead-time and farm information to AC production. Historical power and irradiance
 support fitting and diagnosis; evaluation uses the forecast weather available
 for the delivery interval. Where learning uses historical irradiance, the shift
@@ -208,8 +213,8 @@ curtailment $u_{s,t}$, exact delivery requires
  \qquad 0\le u_{s,t}\le V_{s,t},\qquad\forall s,t.
 \end{equation}
 Thus one submitted position and battery plan must be feasible under every
-represented production path. The full formulation and its information-sharing
-constraints are in Appendix~\ref{app:auction}.
+represented production path. Other possibilities like allowing each path
+to have its own schedule while sharing the first action is a possible extension.
 
 \begin{center}\small
 \begin{tabular}{>{\raggedright\arraybackslash}p{0.20\textwidth}
@@ -230,18 +235,17 @@ deterministic case has $0\le i_t\le V_{0,t}$. This envelope is an exact
 simplification under the shared-control assumptions. 
 
 The objective retains a scenario-weighted expectation, but weights do not
-soften constraints imposed on every member. With identical prices and common
-grid exchange, the represented cash and physical costs coincide across paths;
-the ensemble changes the feasible decisions through production uncertainty.
+soften constraints imposed on every member.
 This explains the conservatism of this strict formulation. Allowing planned
 deviations or future battery actions conditional on new observations defines
-a different stochastic formulation.
+a different stochastic formulation and is being investigated.
 
 \subsection{Reoptimizing the remaining decisions}
 
 Integrated planning optimizes the remaining participating auctions together.
 Only the closing auction's quantity is submitted. At the next gate, that order
-is fixed and provisional later orders are reoptimized with new eligible
+is fixed (or in future iterations updated with actual accepted trades)
+ and provisional later orders are reoptimized with new eligible
 forecasts. During delivery, commitment tracking adjusts physical battery power
 within its energy, power and grid limits. Actual SOC, submitted commitments,
 wear and transaction-fee state carry into subsequent decisions and days. A
@@ -251,8 +255,9 @@ today's delivery is still in progress; the realized state governs execution.
 \section{Imbalances and real-time control}
 Even an exactly balanced forecast plan can produce a realized imbalance:
 actual exported energy differs from the submitted position, and the signed
-deviation is valued at the applicable settlement price. Our baseline is a
-\emph{greedy grid-tracking policy}. In each quarter-hour it adjusts battery
+deviation is valued at the applicable settlement price. For realtime operation, 
+a feedback policy must be chosen to minimize imbalances. Our baseline is a
+\emph{greedy grid-tracking policy}. In each quarter-hour, it adjusts battery
 power to bring grid exchange toward the contracted target, discharging for
 a shortfall and charging for a surplus within available power and SOC limits.
 It releases scheduled curtailment when useful and redirects otherwise-curtailed
@@ -267,10 +272,88 @@ forecasts. It trades expected imbalance volume or forecast settlement value
 against wear and terminal energy, executes only the first action and repeats.
 The comparison asks whether anticipating later shortfalls and preserving
 flexibility improves delivery and operating profit relative to greedy tracking.
-The physical controller submits no new auction orders; its changed battery
-state can affect subsequent auction decisions.
+The physical controller submits no new auction orders, but the changed battery
+state affects subsequent auction decisions.
 
-\section{Participation studies: a compact illustration}
+
+\begin{table}[htbp]
+\centering
+\caption{Continuous greedy grid-tracking results oracle prices, 1 January--31 August 2026.}
+\label{tab:continuous-grid-tracking-results}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrrr}
+\hline
+Metric & Farm 1 (new) & Farm 1 (previous) & Farm 345 & Farm 901 & Farm 910 \\
+\hline
+Total installed capacity (MW) & 0.95328 & 0.95328 & 1.52460 & 4.16000 & 6.63800 \\
+Forecasting Model & BiGRU & BiGRU & BiGRU & TCN  & TCN \\
+
+Realized operating profit (EUR) & 165,806.38 & 164,206.15 & 271,676.98 & 967,777.75 & 1,547,926.25 \\
+Auction revenue (EUR) & 181,953.78 & 176,836.03 & 298,667.43 & 1,058,105.79 & 1,747,432.44 \\
+Signed imbalance settlement (EUR) & -9,832.26 & -5,932.07 & -16,724.55 & -68,157.65 & -154,668.67 \\
+Degradation cost (EUR) & 6,315.14 & 6,697.81 & 10,265.91 & 22,170.39 & 44,837.52 \\
+Gross PV production before curtailment (MWh) & 684.70 & 684.70 & 1,325.14 & 5,358.40 & 8,367.90 \\
+Absolute imbalance (MWh) & 56.78 & 36.71 & 97.41 & 412.48 & 926.08 \\
+Absolute imbalance / gross PV (\%) & 8.29 & 5.36 & 7.35 & 7.70 & 11.07 \\
+Signed net imbalance (MWh) & -54.73 & -33.44 & -93.80 & -410.41 & -918.67 \\
+PV curtailment (MWh) & 21.78 & 43.54 & 227.02 & 204.53 & 225.70 \\
+PV curtailment / gross PV (\%) & 3.18 & 6.36 & 17.13 & 3.82 & 2.70 \\
+Battery charge (MWh) & 120.27 & 127.56 & 195.46 & 422.22 & 853.02 \\
+Battery discharge (MWh) & 108.25 & 114.81 & 176.02 & 380.04 & 769.46 \\
+Final state of charge (\%) & 49.01 & 48.90 & 38.87 & 47.77 & 13.20 \\
+\hline
+Retained metered AC (intervals) & 14,828 & 14,828 & 14,491 & 14,885 & 10,212 \\
+Monthly night zero (intervals) & 8,332 & 8,332 & 8,332 & 8,332 & 8,332 \\
+Reviewed pvlib replacement (intervals) & 137 & 137 & 40 & 72 & 4,713 \\
+Retained-exclusion pvlib (intervals) & 27 & 27 & 459 & 26 & 67 \\
+\hline
+\end{tabular}%
+}
+\par\smallskip
+\parbox{0.98\textwidth}{\footnotesize\textit{Notes:} All runs use the latest available deterministic forecast cycle, greedy grid tracking and actual auction-price curves in planning. Gross PV is available AC production before curtailment and may contain synthetic values to isolate outages. Percentages use gross PV over the entire replay as their denominator. Signed imbalance settlement is realized cash flow.}
+\end{table}
+
+% Requires \usepackage{graphicx} for \resizebox.
+\begin{table}[htbp]
+\centering
+\caption{Continuous greedy grid-tracking results with a daily 50\% auction-planning terminal SOC, 1 January--29 August 2026.}
+\label{tab:continuous-grid-tracking-daily-soc}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrr}
+\hline
+Metric & Farm 1 & Farm 345 & Farm 901 & Farm 910 \\
+\hline
+Total installed PV capacity (MW) & 0.95328 & 1.52460 & 4.16000 & 6.63800 \\
+Forecasting model & BiGRU & BiGRU & TCN & TCN \\
+Realized operating profit (EUR) & 163,338.71 & 263,162.85 & 952,546.10 & 1,524,282.09 \\
+Auction revenue (EUR) & 173,432.03 & 280,831.45 & 1,022,908.66 & 1,667,040.39 \\
+Signed imbalance settlement (EUR) & -3,514.05 & -7,187.83 & -48,457.27 & -95,521.57 \\
+Degradation cost (EUR) & 6,579.27 & 10,480.78 & 21,905.29 & 47,236.72 \\
+Gross PV production before curtailment (MWh) & 677.35 & 1,310.74 & 5,302.05 & 8,279.71 \\
+Absolute imbalance (MWh) & 22.35 & 46.12 & 307.70 & 614.51 \\
+Absolute imbalance / gross PV (\%) & 3.30 & 3.52 & 5.80 & 7.42 \\
+Signed net imbalance (MWh) & -20.49 & -40.52 & -302.19 & -600.62 \\
+PV curtailment (MWh) & 24.33 & 278.97 & 241.71 & 272.00 \\
+PV curtailment / gross PV (\%) & 3.59 & 21.28 & 4.56 & 3.29 \\
+Battery charge (MWh) & 125.29 & 199.50 & 416.89 & 898.56 \\
+Battery discharge (MWh) & 112.78 & 179.76 & 375.77 & 810.74 \\
+Final state of charge (\%) & 47.65 & 28.07 & 19.67 & 7.00 \\
+\hline
+Retained metered AC (intervals) & 14,696 & 14,359 & 14,753 & 10,212 \\
+Monthly night zero (intervals) & 8,272 & 8,272 & 8,272 & 8,272 \\
+Reviewed pvlib replacement (intervals) & 137 & 40 & 72 & 4,581 \\
+Retained-exclusion pvlib (intervals) & 27 & 459 & 26 & 67 \\
+User-requested zero (intervals) & 0 & 2 & 9 & 0 \\
+\hline
+\end{tabular}%
+}
+\par\smallskip
+\parbox{0.98\textwidth}{\footnotesize\textit{Notes:} The 50\% terminal SOC is imposed in the auction plan for each delivery day; the greedy real-time controller does not enforce it. The final SOC reported is the actual end-of-replay SOC. Runs use the latest eligible deterministic forecast cycle and actual auction prices in planning. PV model selection and current-interval realized PV are retrospective. Gross PV is available AC production before curtailment and includes curated synthetic values and reconstructed exclusions. Percentages use gross PV over the replay as the denominator. Signed imbalance settlement is realized cash flow; negative net imbalance indicates a shortfall. Degradation is a modeled cost, and profit does not value final battery inventory. Night zeros and synthetic values are not independent metered observations.}
+\end{table}
+
+
+
+\section{Participation studies: the importance of joint optimization}
 The four auctions give 15 nonempty participation profiles. We compare their
 integrated planning with sequential all-auction planning, which optimizes only
 the current auction's trade, and a perfect-production reference. Each profile
@@ -280,12 +363,12 @@ Figure~\ref{fig:participation} summarizes farm 1. Actual future auction prices
 are shared across paths, so integrated planning also benefits from anticipating
 cross-auction spreads.
 
-\begin{figure}[htbp]
+\begin{figure}[h]
 \centering
 \includegraphics[width=0.96\textwidth]{docs/figures/research_report/participation_profiles.pdf}
 \caption{Farm 1, continuous January 2026: monthly operating profit for all
 15 auction subsets and the two references. Paired bars compare the updating
-deterministic and strict 51-path formulations under actual-price foresight.}
+deterministic and strict 51-path formulations under actual-price foresight. DA = Day Ahead, IDA=IntraDay Auction}
 \label{fig:participation}
 \end{figure}
 
@@ -297,14 +380,18 @@ totals are the residual after real-time feedback, which can redirect
 otherwise-curtailed PV into the battery when charging power and SOC headroom
 are available.
 
+Future studies will repeat this experiment with predicted prices, measuring 
+how uncertainties interact with profits in all-auction participation.
+
 \section{What this framework enables next}
-The available data connect forecast revision, production uncertainty and
+This work connects forecast revision, production uncertainty and
 sequential participation within one physical chronology. The next questions
 are how forecast calibration and price prediction change those participation
 results, and how receding-horizon battery control uses new observations between
 auction gates. These developments build on the same data-to-path-to-decision
-structure. Longer comparisons must retain common dates, target provenance,
-information timing and ending-inventory accounting.
+structure. Our framework combines multiple ideas from the literature like multi-auction 
+participation and scenario-based stochastic optimization with accurate and historically 
+available weather data and realtime feedback controllers.
 
 \clearpage
 \appendix
@@ -372,7 +459,6 @@ terminal target does not itself force an algebraic feedback controller to end
 at that realized energy.
 
 
-The month is the submission month, not necessarily the delivery month.
 Earlier auction cash and incurred wear are sunk and absent from
 \eqref{eq:short-objective}. Only the closing auction's order is submitted;
 other quantities are revisable plans. Sequential planning replaces
@@ -398,8 +484,7 @@ $\beta\ge1$, $J$ segments and marginal discharge cost
 Segment energy transitions sum to aggregate energy; shallow-first charging and
 discharging priorities preserve cycle-depth memory. The segment vector carries
 between decisions and cannot generally be recovered from SOC alone. This is
-an approximation to cycle wear, not dynamic capacity fade or thermal/calendar
-aging~\cite{xu}.
+an approximation to cycle wear~\cite{xu}.
 
 \subsection{Feedback, chronology and profit}
 Commitment tracking uses target $g_t^*=Q_t^{\rm sub}/\Delta_t$ and interval PV.
@@ -450,7 +535,7 @@ conditions; retrospective fitted models retain their historical-use label.
 
 \subsection{Physical and statistical production mappings}
 For GHI, horizontal beam irradiance BHI and solar zenith $\theta_z$, the
-physical conversion uses the symbolic relationships
+physical conversion uses the symbolic relationships implemented in the pvlib library:
 \begin{align}
  G_{\rm DHI}&=G_{\rm GHI}-G_{\rm BHI},\qquad
  G_{\rm DNI}\simeq G_{\rm BHI}/\cos\theta_z,\\

@@ -10,7 +10,7 @@ pv_reviewed_hpo:
   report_root: docs/results/pv_reviewed_hpo/four_cycle_statistical_night3000_v1
   resume: true
   timezone: Europe/Rome
-  workers: 10
+  workers: 30
   threads_per_worker: 1
   runtime:
     device: cpu

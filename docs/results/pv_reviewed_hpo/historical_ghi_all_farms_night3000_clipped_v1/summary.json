@@ -1,0 +1,8 @@
+{
+  "source_identity": "e8e1b55f600928d6c139d59cb176e59ebb3e6b2a8f04146b034fc80adff2af80",
+  "saved_models_rescored": 132,
+  "validation_trials_with_unchanged_daylight_score": 8192,
+  "evaluation": "original eligible month-specific daylight mask",
+  "night_policy": "zero finite predictions inside stored monthly night mask",
+  "limitation": "Only selected model predictions were retained; other trials have validation scores only."
+}

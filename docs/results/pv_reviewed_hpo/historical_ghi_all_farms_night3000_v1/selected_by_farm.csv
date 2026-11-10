@@ -1,0 +1,5 @@
+farm_id,feature,family,name,validation_nrmse_percent,model_directory
+1,extended,bigru,bigru_extended_021,4.7080749026536655,outputs/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1/farm_1/models/extended/bigru/bigru_extended_021
+345,extended,transformer,transformer_extended_001,7.6452928449331825,outputs/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1/farm_345/models/extended/transformer/transformer_extended_001
+910,extended,tcn,tcn_extended_003,8.976680666366228,outputs/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1/farm_910/models/extended/tcn/tcn_extended_003
+901,extended,bilstm,bilstm_extended_021,10.241122878820127,outputs/pv_reviewed_hpo/historical_ghi_all_farms_night3000_v1/farm_901/models/extended/bilstm/bilstm_extended_021
