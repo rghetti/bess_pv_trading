@@ -20,7 +20,7 @@ from bess_pv_trading.forecasting.studies.price_feature_search import run_search
 from scripts.prepare_full_year_price_inputs import prepare_merged_inputs
 
 
-def run_inner_only(settings, input_settings, output, engine):
+def run_inner_only(settings, input_settings, output, engine, retry_failed=False):
     """Checkpoint inner trials without selecting on or scoring later periods."""
     output = Path(output).resolve()
     with engine.run_lock(output):
@@ -40,7 +40,7 @@ def run_inner_only(settings, input_settings, output, engine):
             if len(rows) == 1 or len(rows) % 25 == 0:
                 print(f"inner_search: {len(rows)} tasks finished", flush=True)
         engine.write_json(path, state)
-        jobs = [(task, False) for task in prepared["tasks"]]
+        jobs = [(task, retry_failed) for task in prepared["tasks"]]
         results = engine._pool_jobs(engine._trial_task, jobs, settings["workers"], progress, output, prepared["groups"])
         state["inner_fits_complete"] = sum(item["successful"] for item in results)
         state["inner_fits_failed"] = sum(item["failed"] for item in results)
@@ -58,6 +58,7 @@ def main():
     parser.add_argument("--database", required=True)
     parser.add_argument("--output")
     parser.add_argument("--workers", type=int)
+    parser.add_argument("--retry-failed", action="store_true", help="Retry failed inner candidates when resuming")
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--prepare-only", action="store_true")
     action.add_argument("--inner-only", action="store_true", help="Fit inner trials without validation or test")
@@ -123,7 +124,8 @@ def main():
     price_feature_search.prepare_matrices = prepare_full_year_matrices
     try:
         if args.inner_only:
-            result = run_inner_only(settings, input_settings, Path(settings["output_directory"]), price_feature_search)
+            result = run_inner_only(settings, input_settings, Path(settings["output_directory"]),
+                                    price_feature_search, retry_failed=args.retry_failed)
         else:
             # Do not score a partially populated snapshot as a completed final evaluation.
             prepared_path = Path(settings["output_directory"]) / "prepared.json"

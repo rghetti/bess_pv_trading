@@ -1,0 +1,9 @@
+include: ../standard.yaml
+
+# Choose among models compared on identical full-history training rows.
+price_full_year_proxy_refit:
+  source_search: outputs/price_feature_search_full_year_2026
+  output_directory: outputs/price_full_year_retrospective_proxies_2026
+  cohort: full_history
+  prediction_start: '2026-01-01'
+  prediction_end_exclusive: '2027-01-01'
