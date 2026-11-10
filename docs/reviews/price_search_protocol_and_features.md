@@ -7,6 +7,21 @@ native delivery product. A feature's presence in the matrix does not imply it
 was chosen by a particular candidate: each candidate receives the mandatory
 price/calendar features and one selected subset of the external blocks below.
 
+**Historical IDA warning:** the pinned input snapshot labels 2024 data as
+`ida1_prices`, `ida2_prices` and `ida3_prices`, including January through
+12 June. Pan-European IDAs in Italy began on 13 June 2024. The provenance and
+auction identity of the earlier records therefore need independent verification;
+the configured modern IDA gate and publication assumptions must not be treated
+as established for those records. The old hourly IDA fits and previews are
+exploratory until this issue is resolved. They used native 60-minute records,
+not aggregated 15-minute target labels.
+
+The same snapshot has hourly DA throughout 2024 and January–September 2025;
+its IDA observations switch from hourly to quarter-hourly on 1 January 2025,
+while DA switches on 1 October 2025. Thus January–September 2025 has hourly DA
+and quarter-hourly IDA. For 15-minute IDA inputs the hourly DA clearing price
+is carried across its four covered quarters; IDA target prices remain native.
+
 ## When and what is predicted
 
 The decision clocks below are study assumptions, in Europe/Rome local time;
