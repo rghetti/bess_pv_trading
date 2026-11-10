@@ -23,7 +23,7 @@ def test_plan_is_tracker_only_and_never_starts_solves(launcher, capsys, tmp_path
     assert plan["controller"] == "track_committed_grid"
     assert plan["trajectory_count"] == 4
     assert plan["planning_context_through"] == "2026-02-01"
-    assert plan["maximum_solver_threads"] == 20
+    assert plan["maximum_solver_threads"] == 24
     assert plan["midnight_soc_floor_percent"] == 40
     assert plan["solves_started"] == 0
     assert not Path(plan["output_dir"]).exists()
@@ -40,3 +40,28 @@ def test_configuration_selects_only_tracker(launcher, tmp_path):
         assert config["continuous_optimization"]["ida3_next_day_horizon"] is True
         assert config["state"]["terminal_soc_percent"] is None
         assert config["state"]["terminal_soc_min_percent"] == 40
+
+
+def test_completed_batch_generates_and_links_both_reports(launcher, monkeypatch, tmp_path):
+    """Successful batches expose the intraday analysis from every summary."""
+    seen = []
+    def comparison(batch, farms, sources):
+        seen.append(("comparison", farms, sources))
+        summary = batch / "summary.md"
+        summary.write_text("# Summary\n")
+        for farm in farms:
+            (batch / f"farm_{farm}_summary.md").write_text("# Farm\n")
+        return summary
+
+    def intraday(batch, farms, sources):
+        seen.append(("intraday", farms, sources))
+        return batch / "intraday_analysis/summary.md"
+
+    monkeypatch.setattr(launcher, "write_comparison", comparison)
+    monkeypatch.setattr(launcher, "write_ida3_intraday_profiles", intraday)
+    baselines = {"1": tmp_path / "old"}
+    summary, path = launcher.generate_reports(tmp_path, ["1"], baselines)
+    assert [item[0] for item in seen] == ["comparison", "intraday"]
+    assert path == tmp_path / "intraday_analysis/summary.md"
+    for report in (summary, tmp_path / "farm_1_summary.md"):
+        assert "intraday_analysis/summary.md" in report.read_text()

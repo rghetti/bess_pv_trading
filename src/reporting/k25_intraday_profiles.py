@@ -162,9 +162,13 @@ def _plot_months(output, profiles, prices, timezone):
     return paths
 
 
-def write_intraday_profiles(batch, rows, *, plots=True):
-    """Write monthly quarter-hour plots and year-period hourly tables for a completed batch."""
+def write_intraday_profiles(batch, rows, *, plots=True, start_date=None, end_date=None):
+    """Write monthly plots and hourly tables for complete or selected delivery dates."""
     batch = Path(batch)
+    if (start_date is None) != (end_date is None):
+        raise ValueError("Both intraday delivery date bounds must be supplied together")
+    if start_date is not None and str(start_date) > str(end_date):
+        raise ValueError("Intraday delivery date bounds must be ordered")
     frames = []
     prices = []
     timezones = {row["config"]["market"]["timezone"] for row in rows}
@@ -182,6 +186,11 @@ def write_intraday_profiles(batch, rows, *, plots=True):
         dispatch = pd.read_csv(path, usecols=columns)
         ledger = pd.read_csv(row["csv_dir"] / "accepted_trades.csv",
                              usecols=["interval_id", "quantity_mwh", "auction", "price_eur_per_mwh"])
+        if start_date is not None:
+            # Filter both physical data and transactions by delivery product;
+            # order submission dates can precede the selected delivery window.
+            dispatch = dispatch.loc[dispatch.delivery_day.astype(str).between(str(start_date), str(end_date))].copy()
+            ledger = ledger.loc[ledger.interval_id.isin(dispatch.interval_id)].copy()
         commitments = ledger.groupby("interval_id").quantity_mwh.sum()
         recorded = dispatch.set_index("interval_id").net_position_mwh
         if not recorded.index.is_unique or set(recorded.index) != set(commitments.index):

@@ -22,7 +22,7 @@ import pandas as pd
 
 from bess_pv_trading.config import _read_mapping, merge_mapping, resolve_config
 from bess_pv_trading.parallel import configure_worker_threads
-from bess_pv_trading.reporting.ida3_horizon_comparison import write_comparison
+from bess_pv_trading.reporting.ida3_horizon_comparison import write_comparison, write_ida3_intraday_profiles
 from bess_pv_trading.simulation.energy_research_study import _artifact_requirements
 from bess_pv_trading.simulation.continuous_inputs import prepare_continuous_inputs
 from bess_pv_trading.simulation.synthetic import write_json
@@ -115,13 +115,27 @@ def run_farm(job, batch, baseline, check_only):
     return result
 
 
+def generate_reports(batch, farms, baselines):
+    """Produce and cross-link the comparison and its intraday analysis."""
+    batch = Path(batch)
+    sources = {farm: str(baselines[farm] / "controllers/track_committed_grid") for farm in farms}
+    summary = write_comparison(batch, farms, sources)
+    intraday = write_ida3_intraday_profiles(batch, farms, sources)
+    # Link the shared analysis from both the batch and farm summaries.
+    link = "\n[Hourly tables and monthly intraday plots](intraday_analysis/summary.md)\n"
+    for report in [summary, *(batch / f"farm_{farm}_summary.md" for farm in farms)]:
+        with report.open("a", encoding="utf-8") as stream:
+            stream.write(link)
+    return summary, intraday
+
+
 def main(argv=None):
     """Show a concrete plan without solving unless an action is explicitly selected."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--farm-ids", nargs="+", choices=FARMS, default=list(FARMS))
     parser.add_argument("--workers", type=int, default=4)
-    parser.add_argument("--solver-threads", type=int, default=5)
+    parser.add_argument("--solver-threads", type=int, default=6)
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--check-only", action="store_true")
     action.add_argument("--run", action="store_true")
@@ -194,9 +208,8 @@ def main(argv=None):
         elif args.check_only:
             manifest["status"] = "preflight_passed"
         else:
-            sources = {farm: str(baselines[farm] / "controllers/track_committed_grid") for farm in args.farm_ids}
-            path = write_comparison(batch, args.farm_ids, sources)
-            manifest.update(status="complete", summary_markdown=str(path))
+            path, intraday = generate_reports(batch, args.farm_ids, baselines)
+            manifest.update(status="complete", summary_markdown=str(path), intraday_markdown=str(intraday))
         return 1 if failures else 0
     except BaseException as error:
         manifest.update(status="interrupted" if isinstance(error, KeyboardInterrupt) else "failed", error=str(error))

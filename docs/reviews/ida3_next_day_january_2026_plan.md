@@ -63,14 +63,16 @@ bitwise equality of predictions is not assumed.
 
 ## Compute, checks and outputs
 
-Use four processes, one per farm, and five Gurobi threads per process by
-default (up to 20 solver threads), CPU-only, with a 120-second solve limit and
+Use four processes, one per farm, and six Gurobi threads per process by
+default (up to 24 solver threads), CPU-only, with a 120-second solve limit and
 relative MIP gap 1e-4. There are up to 127 auction submissions per farm:
 four for each January delivery day plus February 1 DA, IDA1 and IDA2 before
 the replay boundary. Missing/cancelled auctions and fallback affect the count.
 The preflight performs no optimization and compares January realized PV,
 auction-price fingerprints, settlement values and model checksums with the
 historical results. Preserve failure diagnostics and do not start if it fails.
+This machine reports 10 logical CPUs, so 24 solver threads can oversubscribe
+it; the launcher allows the worker and solver counts to be changed.
 
 Report per-farm and combined revenue, settlement, degradation, profit,
 imbalance, curtailment, battery throughput and SOC, all modeled versus actual
@@ -78,4 +80,7 @@ midnight SOC, floor violations, auction fallback and solver time. Profit does
 not value final inventory. Record provenance, configuration, cutoff times,
 future plans, orders and price publication. Check historical and new actual
 inputs on matching January products; fail clearly if they differ. The
-comparison is a descriptive historical evaluation, not model selection.
+comparison is a descriptive historical evaluation, not model selection. At
+successful completion, generate hourly tables and January quarter-hour profiles
+for absolute imbalance, curtailment, final signed net position, actual SOC and
+auction/settlement prices for both frameworks.

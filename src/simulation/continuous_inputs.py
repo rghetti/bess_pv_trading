@@ -677,7 +677,7 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     # MPC has many more cutoffs than auctions; distinguish this scan from the
     # completed daily checks and report progress during long cached-data reads.
     forecast_request_count = len(forecast_requests)
-    show_forecast_progress = progress is not None and uses_realtime_control(config)
+    show_forecast_progress = progress is not None and (uses_realtime_control(config) or extended_horizon)
     if show_forecast_progress:
         progress(f"Daily input checks complete; preflighting {forecast_request_count} forecast cutoffs")
     with _forecast_preflight_session(config, calendar) as forecast_reader:
@@ -695,7 +695,8 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
                 forecasts.add(pd.Timestamp(key), starts, bundle)
             except (ValueError, RuntimeError) as error:
                 raise ValueError(f"Continuous weather preflight at {key}: {error}") from error
-            if show_forecast_progress and (request_index % 100 == 0 or request_index == forecast_request_count):
+            progress_interval = 10 if extended_horizon else 100
+            if show_forecast_progress and (request_index % progress_interval == 0 or request_index == forecast_request_count):
                 progress(f"Forecast preflight {request_index}/{forecast_request_count}: {key}")
         forecast_reader_stats = forecast_reader.stats
     if show_forecast_progress:

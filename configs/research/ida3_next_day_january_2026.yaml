@@ -28,7 +28,7 @@ state:
   terminal_soc_percent: null
   terminal_soc_min_percent: 40.0
 solver:
-  threads: 5
+  threads: 6
   time_limit_seconds: 120.0
   mip_gap: 0.0001
   feasibility_tolerance: 1.0e-08

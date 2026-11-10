@@ -765,6 +765,8 @@ class ContinuousReplay:
                 "plan_source_delivery_day": day,
                 "plan_source_cutoff_utc": snapshot[0]["optimizer_cutoff_utc"],
                 "submitted_product_count": len(quantities)}
+        if self.progress and self.config["continuous_optimization"].get("ida3_next_day_horizon", False):
+            self.progress(f"Starting auction optimization for {day}/{auction}")
         inputs, diagnostic = self._planning_inputs(instance, cutoff)
         built = self._build_model(inputs)
         diagnostic.update(trade_variable_count=len(built.variables["trades"]),
@@ -788,6 +790,9 @@ class ContinuousReplay:
             pv_scenario_ids=list(inputs.scenarios.scenario_ids),
             pv_scenario_probabilities=inputs.scenarios.probabilities.tolist(),
             planning_imbalance_penalty_eur_per_mwh=inputs.imbalance_penalty_eur_per_mwh)
+        if self.progress and self.config["continuous_optimization"].get("ida3_next_day_horizon", False):
+            self.progress(f"Auction {day}/{auction}: {result.status}; "
+                          f"solver time {float(result.diagnostics.get('runtime_seconds') or 0):.2f}s")
         self.attempts.append(diagnostic)
         self._save_attempts()
         # When `not result.has_incumbent`, set `snapshots` using `self.plan_snapshots[day]`.

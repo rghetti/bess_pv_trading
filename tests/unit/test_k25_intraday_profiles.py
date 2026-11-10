@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 
 from bess_pv_trading.reporting.k25_intraday_profiles import (_plot_months, aggregate_intraday, aggregate_monthly_prices,
-    prepare_interval_profile, prepare_price_samples)
+    prepare_interval_profile, prepare_price_samples, write_intraday_profiles)
 
 
 def test_repeated_dst_hour_uses_both_utc_intervals_and_no_netting():
@@ -96,3 +96,36 @@ def test_monthly_plot_uses_only_selected_controllers(tmp_path, monkeypatch):
     assert len(paths) == 1 and paths[0].is_file()
     assert set(labels) == {"Grid tracker", "MPC equal weights", "DA"}
     assert labels.count("Grid tracker") == labels.count("MPC equal weights") == 4
+
+
+def test_selected_dates_filter_historical_dispatch_and_auction_prices(tmp_path):
+    """Compare January deliveries without importing February observations or prices."""
+    rows = []
+    for case, label in (("old", "Historical"), ("new", "Extended")):
+        csv_dir = tmp_path / case
+        csv_dir.mkdir()
+        observations = []
+        trades = []
+        for start, day, price in (("2026-01-01T00:00:00Z", "2026-01-01", 50),
+                                  ("2026-02-01T00:00:00Z", "2026-02-01", 500)):
+            observations.append({"interval_id": start, "start": start, "delivery_day": day,
+                "duration_hours": 0.25, "curtailment_mw": 0.4, "imbalance_mwh": 0.1,
+                "net_position_mwh": 0.2, "grid_mw": 1.2, "charge_mw": 0.0,
+                "discharge_mw": 0.0, "energy_start_mwh": 0.5, "imbalance_price_eur_mwh": price})
+            trades.append({"interval_id": start, "quantity_mwh": 0.2,
+                           "auction": "DA", "price_eur_per_mwh": price})
+        pd.DataFrame(observations).to_csv(csv_dir / "realized_dispatch.csv", index=False)
+        pd.DataFrame(trades).to_csv(csv_dir / "accepted_trades.csv", index=False)
+        rows.append({"farm": "1", "case": case, "controller": "track_committed_grid", "label": label,
+            "csv_dir": csv_dir, "config": {"market": {"timezone": "Europe/Rome"},
+                                            "battery": {"capacity_mwh": 1.0}},
+            "summary": {"absolute_imbalance_mwh": 0.1, "curtailment_mwh": 0.1}})
+    report = write_intraday_profiles(tmp_path, rows, plots=False,
+                                     start_date="2026-01-01", end_date="2026-01-31")
+    prices = pd.read_csv(report.parent / "monthly_price_profiles.csv")
+    monthly = pd.read_csv(report.parent / "monthly_quarter_hour_profiles.csv")
+    assert set(monthly.month) == {"2026-01"}
+    assert set(monthly.label) == {"Historical", "Extended"}
+    assert set(prices.avg_price_eur_mwh) == {50}
+    assert all(prices.samples == 1)
+    assert monthly.total_absolute_imbalance_mwh.tolist() == pytest.approx([0.1, 0.1])

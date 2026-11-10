@@ -109,6 +109,37 @@ def _all_planned_midnights(root, daily, capacity, farm):
     return rows
 
 
+def write_ida3_intraday_profiles(batch, farms, historical, *, plots=True):
+    """Compare hourly and quarter-hour January profiles for both tracker policies."""
+    from .k25_intraday_profiles import write_intraday_profiles
+
+    batch = Path(batch)
+    rows = []
+    for farm in farms:
+        roots = [("historical", "Historical 50% target", Path(historical[str(farm)])),
+                 ("extended", "Extended IDA3 40% floor",
+                  batch / "runs" / f"farm_{farm}" / "controllers/track_committed_grid")]
+        for case, label, root in roots:
+            # The saved historical runs extend beyond January, so their daily
+            # totals and interval data must be filtered to the same deliveries.
+            daily = _daily(root)
+            config = json.loads((root / "json/study_config.json").read_text())
+            rows.append({"farm": str(farm), "case": case, "controller": "track_committed_grid",
+                "label": label, "csv_dir": root / "csv", "config": config,
+                "summary": {"absolute_imbalance_mwh": float(daily.absolute_imbalance_mwh.sum()),
+                            "curtailment_mwh": float(daily.curtailment_mwh.sum())}})
+    path = write_intraday_profiles(batch, rows, plots=plots, start_date=START, end_date=END)
+    # State the causal limits on the standalone intraday page as well as in the
+    # combined report, since the plots can be opened independently.
+    content = path.read_text(encoding="utf-8")
+    note = ("Both strategies use the greedy tracker; the historical planner has a 50% daily equality, "
+            "while extended IDA3 uses a 40% midnight floor. The comparison combines both changes. "
+            "Forecast models and actual-price oracle inputs are retrospective.\n\n")
+    title, remainder = content.split("\n\n", 1)
+    path.write_text(title + "\n\n" + note + remainder, encoding="utf-8")
+    return path
+
+
 def write_comparison(batch, farms, historical):
     """Write paired metrics and SOC diagnostics without rerunning historical studies."""
     batch = Path(batch)
