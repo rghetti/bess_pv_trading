@@ -541,7 +541,15 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     # Keep legacy tracking preflight/fingerprints unchanged. MPC workflows pin
     # model artifacts and use the selected model for their initial fallback too.
     extended_horizon = bool(settings.get("ida3_next_day_horizon", False))
-    replacement_evidence = _replacement_evidence(config) if uses_realtime_control(config) or extended_horizon else None
+    # The same-day tracker may explicitly request complete issue-context neural
+    # forecasts, matching the extended IDA3 studies without changing old runs.
+    require_replacement = settings.get("pin_tracker_forecast_replacement", False)
+    if not isinstance(require_replacement, bool):
+        raise ValueError("continuous_optimization.pin_tracker_forecast_replacement must be a boolean")
+    replacement_evidence = (_replacement_evidence(config)
+                            if uses_realtime_control(config) or extended_horizon or require_replacement else None)
+    if require_replacement and (replacement_evidence is None or replacement_evidence.get("status") != "pinned"):
+        raise ValueError("Same-day neural tracker requires an available pinned forecast replacement artifact")
     try:
         first = date.fromisoformat(str(settings["start_date"]))
         last = date.fromisoformat(str(settings["end_date"]))
@@ -677,7 +685,8 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     # MPC has many more cutoffs than auctions; distinguish this scan from the
     # completed daily checks and report progress during long cached-data reads.
     forecast_request_count = len(forecast_requests)
-    show_forecast_progress = progress is not None and (uses_realtime_control(config) or extended_horizon)
+    show_forecast_progress = progress is not None and (
+        uses_realtime_control(config) or extended_horizon or require_replacement)
     if show_forecast_progress:
         progress(f"Daily input checks complete; preflighting {forecast_request_count} forecast cutoffs")
     with _forecast_preflight_session(config, calendar) as forecast_reader:
@@ -695,7 +704,7 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
                 forecasts.add(pd.Timestamp(key), starts, bundle)
             except (ValueError, RuntimeError) as error:
                 raise ValueError(f"Continuous weather preflight at {key}: {error}") from error
-            progress_interval = 10 if extended_horizon else 100
+            progress_interval = 10 if extended_horizon or require_replacement else 100
             if show_forecast_progress and (request_index % progress_interval == 0 or request_index == forecast_request_count):
                 progress(f"Forecast preflight {request_index}/{forecast_request_count}: {key}")
         forecast_reader_stats = forecast_reader.stats

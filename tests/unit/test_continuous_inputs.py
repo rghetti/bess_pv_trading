@@ -355,3 +355,54 @@ def test_ensemble_context_fill_uses_only_same_vintage_before_delivery(monkeypatc
     with pytest.raises(ValueError, match="same eligible"):
         continuous_inputs._fill_prior_issue_context(frame, delivery, issue,
             config=config, calendar=None, cutoff=cutoff, cycle=cycle + pd.Timedelta(hours=6))
+
+
+def test_same_day_tracker_prepares_full_issue_neural_forecast_for_auction(prepared_case, monkeypatch, tmp_path):
+    """Same-day greedy auctions consume pinned neural outputs, not short-context PV forecasts."""
+    import json
+    from bess_pv_trading.simulation.continuous import ContinuousReplay
+
+    config, _, _ = prepared_case
+    config["continuous_optimization"]["pin_tracker_forecast_replacement"] = True
+    config["continuous_optimization"]["ida3_next_day_horizon"] = False
+    config["policy"]["forecast_pv_night"] = {"enabled": False}
+    artifact = tmp_path / "result.json"
+    artifact.write_text(json.dumps({"input_contract": {"issue_horizon_hours": 48}}))
+    model = {"name": "selected", "kind": "reviewed_hpo", "artifact_path": str(artifact),
+             "available_at_utc": "2024-01-01T00:00:00Z"}
+    config["pv"]["forecast_replacement"] = {"enabled": True, "allow_retrospective_artifacts": True,
+                                             "models_by_farm": {str(config["forecast"]["farm_id"]): model}}
+    evidence = {"status": "pinned", "model": "selected", "artifact": str(artifact),
+                "available_at_utc": model["available_at_utc"], "checksums": {"result.json": "fixture"}}
+    monkeypatch.setattr(continuous_inputs, "_replacement_evidence", lambda config: evidence)
+    calls = []
+    def predict(config, calendar, cutoff, bundle, evidence, cache):
+        calls.append(pd.Timestamp(cutoff))
+        frame = bundle.values.copy()
+        frame["pv_ac_mw"] = 0.321
+        frame["solar_zenith_deg"] = 30.0
+        return replace(bundle, values=frame, provenance={**bundle.provenance,
+            "reviewed_hpo_model": "selected", "model_issue_context_hours": 48,
+            "model_issue_context_weather_sha256": "fixture"})
+
+    monkeypatch.setattr(continuous_inputs, "_issue_context_prediction", predict)
+    prepared = continuous_inputs.prepare_continuous_inputs(config)
+    assert calls
+    assert prepared["provenance"]["forecast_model_artifacts"]["model"] == "selected"
+    day = prepared["days"][0]
+    event = next(event for event in prepared["days_data"][day]["schedule"] if event.auction == "DA")
+    starts = pd.DatetimeIndex(prepared["days_data"][day]["grid"].starts)
+    replay = ContinuousReplay(config, prepared, "integrated", tmp_path / "replay")
+    values, metadata = replay._forecast(event.submission_at, starts, "DA")
+    np.testing.assert_allclose(values, 0.321)
+    assert metadata["pv_forecast_model"] == "selected"
+    assert metadata["model_issue_context_hours"] == 48
+
+
+def test_same_day_tracker_rejects_missing_neural_forecast(prepared_case, monkeypatch):
+    """The explicitly requested neural study must not silently fall back to pvlib."""
+    config, _, _ = prepared_case
+    config["continuous_optimization"]["pin_tracker_forecast_replacement"] = True
+    monkeypatch.setattr(continuous_inputs, "_replacement_evidence", lambda config: None)
+    with pytest.raises(ValueError, match="requires an available pinned forecast"):
+        continuous_inputs.prepare_continuous_inputs(config)
