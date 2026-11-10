@@ -86,13 +86,71 @@ realtime-MPC forecast provider. The later integration must preserve auction
 information timing and actual settlement and be validated for all farms; no
 simulation framework changes are made here.
 
+## How auction cancellations change the features
+
 Documented GME cancellations are copied from current source snapshot metadata
-into the pinned input manifest. A cancelled preceding auction's features and
-spread anchor use the nearest earlier cleared auction, with explicit binary
-cancellation flags. When lagged other-auction prices or own-auction daily curves
-refer to a cancelled auction, the feature builder searches up to the configured
-14 earlier days for a published value or complete curve and adds a flag. If no
-fallback exists, the input remains missing. An unexplained data gap is never
-treated as a cancellation. Cancellation-notice availability is retrospective;
-the source does not establish the historical publication clock of the notice.
-The old prepared snapshot has a different feature contract and cannot be reused.
+into `inputs/manifest.json` along with the source snapshot ID and raw checksum.
+The flag means **confirmed cancellation**, not simply an absent price. The
+builder rejects a cancellation notice that conflicts with observed prices. The
+publication time of the historical cancellation notice is not established;
+using the notice is therefore a retrospective assumption.
+
+Each IDA model predicts a spread relative to a clearing price for the **same
+delivery product**, called its anchor. At the auction's gate, the builder uses
+the latest earlier auction that cleared for that product:
+
+| Target | If all earlier auctions cleared | If an earlier auction was cancelled |
+| --- | --- | --- |
+| IDA1 | DA | DA remains the anchor |
+| IDA2 | IDA1 | If IDA1 was cancelled, use DA |
+| IDA3 | IDA2 | If IDA2 was cancelled, use IDA1; if both IDA1 and IDA2 were cancelled, use DA |
+
+This assumes the required earlier price is present and available at the
+configured cutoff. An unexplained missing earlier price stays missing and can
+exclude the row. If the target auction itself was cancelled, there is no target
+price or target row for that auction on that day.
+
+The anchor is not the only earlier-auction feature. For each earlier market,
+the model also receives its cleared price at the target product and its six
+configured neighboring product offsets. If that market was cancelled, those
+features are filled from the nearest earlier market's corresponding product
+and neighboring products. A binary `earlier_<market>_cancelled` feature is 1
+for that cancellation and 0 otherwise. The anchor is selected after these
+replacements; the fitted target is `actual IDA price - anchor`, and scoring
+and output add the anchor back to the predicted spread.
+
+For example, DA is €100/MWh, IDA1 is cancelled and IDA2 clears at €105/MWh.
+The IDA3 inputs include DA = 100, the IDA1 feature filled with DA = 100,
+`earlier_IDA1_cancelled = 1`, and IDA2 = 105. The anchor is IDA2 = 105; a
+predicted spread of +2 gives an IDA3 prediction of €107/MWh. These earlier
+prices are actual values available at the IDA3 gate under the configured
+clock assumptions, not prices available to a forecast made at the DA gate.
+
+Two additional groups of binary indicators cover historical features:
+
+- `past_<market>_<lag>h_cancelled` marks a confirmed cancellation on the
+  requested previous-auction lag, which is 24 or 48 elapsed hours. If that
+  price is missing because of the cancellation, the builder searches the
+  corresponding earlier daily product times for a published price, up to
+  `cancellation_fallback_days` (14) days. If none is available, it stays
+  missing.
+- `own_curve_<lag>d_cancelled` marks a confirmed cancellation on the model's
+  own D-1, D-2 or D-7 historical curve. The builder searches backward up to
+  14 days for a fully available earlier daily curve. It uses one complete
+  curve, rather than joining hours from different fallback days; otherwise
+  the curve stays missing.
+
+The pre-existing own-price lag features already use their configured historical
+fallback when a requested lag is unavailable; that behavior is separate from
+these cancellation flags. In every case, the source price's configured
+publication clock must precede the decision cutoff.
+
+The cancelled day can still remove rows if another required input is missing,
+and a missing source record without a cancellation notice is not classified as
+cancelled. In the prepared snapshot, the confirmed IDA1 cancellation on
+10 December 2025 retains all 96 IDA2 and 48 IDA3 native targets in the
+`full_history` training cohort. The coverage CSV labels confirmed cancellations
+separately from unexplained missing or partial days.
+
+The earlier prepared snapshot has a different feature contract and cannot be
+reused for this cancellation-aware search.

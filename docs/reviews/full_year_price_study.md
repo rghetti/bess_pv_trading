@@ -27,6 +27,10 @@ the existing hourly-product study remains separate.
   adds the anchor back. The forecasts are point values, not calibrated price
   scenarios. DA and earlier IDA prices are inputs only when their configured
   clearing clocks precede the relevant IDA gate.
+- Confirmed cancellations use the preceding cleared auction for the same
+  product when it is available. The precise flags, replacement features,
+  historical fallbacks and retrospective notice assumption are described in
+  [the full-year proxy workflow](full_year_price_proxy_workflow.md#how-auction-cancellations-change-the-features).
 
 ## Features, candidate models and cohorts
 

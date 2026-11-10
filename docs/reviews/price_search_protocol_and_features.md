@@ -1,11 +1,13 @@
 # Price search: exact features, training and evaluation
 
 This describes `configs/research/price_feature_selection.yaml` and the prepared
-`outputs/price_feature_search_full` search. The running search evaluates point
+`outputs/price_feature_search_full` search. That search evaluates point
 prices in the Italian NORD zone. One row corresponds to an auction and one
 native delivery product. A feature's presence in the matrix does not imply it
 was chosen by a particular candidate: each candidate receives the mandatory
 price/calendar features and one selected subset of the external blocks below.
+The cancellation-aware full-year search has additional features and anchor
+fallbacks documented in [the full-year proxy workflow](full_year_price_proxy_workflow.md#how-auction-cancellations-change-the-features).
 
 **Historical IDA warning:** the pinned input snapshot labels 2024 data as
 `ida1_prices`, `ida2_prices` and `ida3_prices`, including January through
