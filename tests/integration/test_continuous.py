@@ -181,6 +181,53 @@ def test_ida3_extends_next_day_and_keeps_future_orders_provisional(continuous_co
     assert "provisional_previous_day_ida3" in set(context_plans.plan_status)
 
 
+def test_extended_ida3_enforces_equalities_at_both_future_midnights(continuous_config, tmp_path):
+    """A two-day plan links energy and fixes both future midnight SOC values."""
+    config = continuous_config
+    prepared, _ = _prepared(config)
+    first, following = prepared["days"][:2]
+    first_grid = prepared["days_data"][first]["grid"]
+    count = len(first_grid.interval_ids)
+    prepared.update(days=(first,), context_days=(following,), full_grid=first_grid,
+        full_realized_pv=prepared["full_realized_pv"][:count],
+        imbalance_prices_eur_per_mwh=prepared["imbalance_prices_eur_per_mwh"][:count],
+        initial_energy_mwh=0.5, terminal_energy_mwh=0.5, terminal_minimum_energy_mwh=None)
+    config["continuous_optimization"].update(end_date=first, ida3_next_day_horizon=True,
+                                              terminal_soc_scope="each_delivery_day")
+    config["state"].update(terminal_soc_percent=50, terminal_soc_min_percent=None)
+    replay, _ = _run(config, prepared, "integrated", tmp_path / "extended_equalities")
+    ida3 = next(row for row in replay.solves if row["delivery_day"] == first and row["current_auction"] == "IDA3")
+    assert ida3["status"] == "optimal"
+    assert ida3["target_energy_mwh_by_boundary"] == {48: 0.5, 144: 0.5}
+    assert list(ida3["planned_midnight_energy_mwh"].values()) == pytest.approx([0.5, 0.5])
+    assert not ida3["minimum_energy_mwh_by_boundary"]
+
+
+def test_single_day_equality_does_not_rewrite_projected_initial_soc(continuous_config, tmp_path):
+    """The future midnight is targeted without requiring the past projection to equal it."""
+    config = continuous_config
+    prepared, _ = _prepared(config)
+    first, following = prepared["days"][:2]
+    first_grid = prepared["days_data"][first]["grid"]
+    count = len(first_grid.interval_ids)
+    prepared.update(days=(first,), context_days=(following,), full_grid=first_grid,
+        full_realized_pv=prepared["full_realized_pv"][:count],
+        imbalance_prices_eur_per_mwh=prepared["imbalance_prices_eur_per_mwh"][:count],
+        initial_energy_mwh=0.1, terminal_energy_mwh=0.5, terminal_minimum_energy_mwh=None)
+    config["continuous_optimization"].update(end_date=first, ida3_next_day_horizon=True,
+                                              terminal_soc_scope="each_delivery_day")
+    config["state"].update(terminal_soc_percent=50, terminal_soc_min_percent=None)
+    replay = _module().ContinuousReplay(config, prepared, "integrated", tmp_path / "initial_state")
+    event = next(item for item in replay.events if getattr(item.payload, "delivery_day", None) == first
+                 and item.payload.event.auction == "DA" and item.kind.name == "AUCTION_SUBMISSION")
+    inputs, _ = replay._planning_inputs(event.payload, event.at)
+    assert inputs.state.energy_mwh == pytest.approx(0.1)
+    assert inputs.target_energy_mwh_by_boundary == {96: 0.5}
+    replay._submit(event)
+    assert replay.solves[-1]["status"] == "optimal"
+    assert replay.solves[-1]["planned_midnight_energy_mwh"]
+
+
 @pytest.mark.parametrize("day,following,first_count,future_count", [
     ("2025-03-30", "2025-03-31", 92, 96),
     ("2025-10-25", "2025-10-26", 96, 100),

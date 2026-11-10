@@ -59,6 +59,7 @@ def _metrics(root, daily):
     result["final_soc_percent"] = float(daily.iloc[-1].final_soc_percent)
     result["mean_midnight_soc_percent"] = float(daily.final_soc_percent.mean())
     result["midnights_below_40_percent"] = int((daily.final_soc_percent < 40 - 1e-6).sum())
+    result["midnights_at_50_percent"] = int((daily.final_soc_percent - 50).abs().le(0.01).sum())
     attempts = json.loads((root / "json/optimization_attempts.json").read_text())
     attempts = [row for row in attempts if START <= row["delivery_day"] <= END]
     result["auction_solve_attempts"] = len(attempts)
@@ -109,16 +110,18 @@ def _all_planned_midnights(root, daily, capacity, farm):
     return rows
 
 
-def write_ida3_intraday_profiles(batch, farms, historical, *, plots=True):
+def write_ida3_intraday_profiles(batch, farms, historical, *, plots=True, soc_policy="floor40", extended_history=None):
     """Compare hourly and quarter-hour January profiles for both tracker policies."""
     from .k25_intraday_profiles import write_intraday_profiles
 
     batch = Path(batch)
     rows = []
     for farm in farms:
-        roots = [("historical", "Historical 50% target", Path(historical[str(farm)])),
-                 ("extended", "Extended IDA3 40% floor",
-                  batch / "runs" / f"farm_{farm}" / "controllers/track_committed_grid")]
+        roots = [("historical", "Historical 50% target", Path(historical[str(farm)]))]
+        if extended_history:
+            roots.append(("extended40", "Extended IDA3 40% floor", Path(extended_history[str(farm)])))
+        new_label = "Extended IDA3 50% equality" if soc_policy == "equality50" else "Extended IDA3 40% floor"
+        roots.append(("extended", new_label, batch / "runs" / f"farm_{farm}" / "controllers/track_committed_grid"))
         for case, label, root in roots:
             # The saved historical runs extend beyond January, so their daily
             # totals and interval data must be filtered to the same deliveries.
@@ -132,7 +135,10 @@ def write_ida3_intraday_profiles(batch, farms, historical, *, plots=True):
     # State the causal limits on the standalone intraday page as well as in the
     # combined report, since the plots can be opened independently.
     content = path.read_text(encoding="utf-8")
-    note = ("Both strategies use the greedy tracker; the historical planner has a 50% daily equality, "
+    note = ("All strategies use the greedy tracker. The new extended IDA3 run and the historical "
+            "same-day planner impose 50% midnight equalities; the previous extended run used a 40% floor. "
+            "Forecast models and actual-price oracle inputs are retrospective.\n\n" if soc_policy == "equality50" else
+            "Both strategies use the greedy tracker; the historical planner has a 50% daily equality, "
             "while extended IDA3 uses a 40% midnight floor. The comparison combines both changes. "
             "Forecast models and actual-price oracle inputs are retrospective.\n\n")
     title, remainder = content.split("\n\n", 1)
@@ -140,7 +146,7 @@ def write_ida3_intraday_profiles(batch, farms, historical, *, plots=True):
     return path
 
 
-def write_comparison(batch, farms, historical):
+def write_comparison(batch, farms, historical, *, soc_policy="floor40", extended_history=None):
     """Write paired metrics and SOC diagnostics without rerunning historical studies."""
     batch = Path(batch)
     rows = []
@@ -151,14 +157,20 @@ def write_comparison(batch, farms, historical):
     for farm in farms:
         old = Path(historical[str(farm)])
         new = batch / "runs" / f"farm_{farm}" / "controllers/track_committed_grid"
-        evidence[str(farm)] = _check_common_inputs(old, new)
+        evidence[str(farm)] = {"same_day": _check_common_inputs(old, new)}
         old_daily, new_daily = _daily(old), _daily(new)
         new_config = json.loads((new / "json/study_config.json").read_text())
         capacity = float(new_config["battery"]["capacity_mwh"])
         planned_midnights.extend(_all_planned_midnights(new, new_daily, capacity, str(farm)))
-        daily_plot_data[str(farm)] = (old_daily, new_daily)
-        for label, root, daily in (("Historical: same-day, 50% target", old, old_daily),
-                                   ("Extended IDA3, 40% floor", new, new_daily)):
+        comparisons = [("Historical: same-day, 50% target", old, old_daily)]
+        if extended_history:
+            prior = Path(extended_history[str(farm)])
+            evidence[str(farm)]["extended_40"] = _check_common_inputs(prior, new)
+            comparisons.append(("Extended IDA3, 40% floor", prior, _daily(prior)))
+        new_label = "Extended IDA3, 50% equality" if soc_policy == "equality50" else "Extended IDA3, 40% floor"
+        comparisons.append((new_label, new, new_daily))
+        daily_plot_data[str(farm)] = [(label, daily) for label, _, daily in comparisons]
+        for label, root, daily in comparisons:
             rows.append({"farm": str(farm), "framework": label, **_metrics(root, daily)})
             soc.append(_midnight_records(root, daily, capacity, label).assign(farm=str(farm)))
     frame = pd.DataFrame(rows)
@@ -168,24 +180,28 @@ def write_comparison(batch, farms, historical):
         "ending_delivery_day", "planned_soc_percent", "actual_soc_percent"]).to_csv(
             batch / "all_planned_midnights.csv", index=False)
     (batch / "comparison_input_checks.json").write_text(json.dumps(evidence, indent=2) + "\n")
-    lines = ["# January 2026 grid-tracking comparison", "",
+    description = ("The new extended IDA3 planner imposes a 50% equality at every future modeled midnight. "
+        "The historical same-day planner also uses a 50% equality; the prior extended run uses a 40% floor. "
+        "The greedy tracker does not enforce those planning targets. Continuous trajectories can submit different positions."
+        if soc_policy == "equality50" else
         "The extended IDA3 horizon also changes the planner from a 50% daily equality to a 40% midnight floor. "
         "Differences therefore combine both changes. The greedy tracker does not enforce the planning floor. "
-        "Continuous trajectories can make different auction commitments.", "",
+        "Continuous trajectories can make different auction commitments.")
+    lines = ["# January 2026 grid-tracking comparison", "", description, "",
         "Only January delivery products are scored; February 1 is planning context. "
         "The input checks compare realized PV, settlement prices and auction-product prices. "
         "PV model selection and current-interval observations are retrospective, and future actual auction prices "
         "are an oracle, including February prices in the extended IDA3 horizon. "
         "Final inventory is not valued in profit.", "",
-        "| Farm | Framework | Profit (€) | Auction (€) | Settlement (€) | Wear (€) | Curtailment (MWh) | Absolute imbalance (MWh) | PV (MWh) | Charge (MWh) | Discharge (MWh) | Mean midnight SOC (%) | Midnights below 40% | Final SOC (%) | Auction fallbacks | Solve time (s) |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
+        "| Farm | Framework | Profit (€) | Auction (€) | Settlement (€) | Wear (€) | Curtailment (MWh) | Absolute imbalance (MWh) | PV (MWh) | Charge (MWh) | Discharge (MWh) | Mean midnight SOC (%) | Midnights below 40% | Midnights at 50% | Final SOC (%) | Auction fallbacks | Solve time (s) |",
+        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for row in rows:
         lines.append(f"| {row['farm']} | {row['framework']} | {row['net_profit_eur']:,.2f} | "
             f"{row['auction_revenue_eur']:,.2f} | {row['imbalance_cashflow_eur']:,.2f} | "
             f"{row['degradation_eur']:,.2f} | {row['curtailment_mwh']:,.2f} | "
             f"{row['absolute_imbalance_mwh']:,.2f} | {row['pv_realized_energy_mwh']:,.2f} | "
             f"{row['charge_mwh']:,.2f} | {row['discharge_mwh']:,.2f} | "
-            f"{row['mean_midnight_soc_percent']:.2f} | {row['midnights_below_40_percent']} | "
+            f"{row['mean_midnight_soc_percent']:.2f} | {row['midnights_below_40_percent']} | {row['midnights_at_50_percent']} | "
             f"{row['final_soc_percent']:.2f} | {row['auction_fallbacks']} | {row['auction_solver_seconds']:.2f} |")
     lines += ["", "Daily IDA3 planned and actual midnight SOC: [CSV](january_midnight_soc.csv). "
         "All modeled midnight plans: [CSV](all_planned_midnights.csv). "
@@ -193,9 +209,9 @@ def write_comparison(batch, farms, historical):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    for farm, (old_daily, new_daily) in daily_plot_data.items():
+    for farm, trajectories in daily_plot_data.items():
         figure, axes = plt.subplots(3, 1, figsize=(10, 8), sharex=True, layout="constrained")
-        for label, daily in (("Historical 50% target", old_daily), ("Extended 40% floor", new_daily)):
+        for label, daily in trajectories:
             dates = pd.to_datetime(daily.delivery_day)
             axes[0].plot(dates, daily.net_profit_eur.cumsum(), label=label)
             axes[1].plot(dates, daily.absolute_imbalance_mwh.cumsum(), label=label)
@@ -203,7 +219,7 @@ def write_comparison(batch, farms, historical):
         axes[0].set_ylabel("Cumulative profit (€)")
         axes[1].set_ylabel("Absolute imbalance (MWh)")
         axes[2].set_ylabel("Midnight SOC (%)")
-        axes[2].axhline(40, color="black", linestyle="--", alpha=0.5)
+        axes[2].axhline(50 if soc_policy == "equality50" else 40, color="black", linestyle="--", alpha=0.5)
         axes[2].set_xlabel("Italian delivery day")
         for axis in axes:
             axis.grid(alpha=0.25)
@@ -213,7 +229,9 @@ def write_comparison(batch, farms, historical):
         plt.close(figure)
         farm_rows = [row for row in rows if row["farm"] == farm]
         report = [f"# Farm {farm}: January grid-tracking comparison", "",
-            "Horizon length and planning SOC policy both change; actual tracker SOC may fall below the floor.", "",
+            ("The tracker can end away from 50% even when the auction plan targets it."
+             if soc_policy == "equality50" else
+             "Horizon length and planning SOC policy both change; actual tracker SOC may fall below the floor."), "",
             "| Framework | Profit (€) | Auction (€) | Settlement (€) | Wear (€) | Fees (€) | PV (MWh) | Imbalance (MWh) | Curtailment (MWh) | Charge (MWh) | Discharge (MWh) | Final SOC (%) | Below 40% (days) | Fallbacks | Solve time (s) |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
         for row in farm_rows:

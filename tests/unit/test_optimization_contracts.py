@@ -120,6 +120,18 @@ def test_multiday_boundary_floor_contract_and_chronological_auction_order():
         replace(inputs, minimum_energy_mwh_by_boundary={1: 2.0})
 
 
+def test_boundary_target_contract_checks_index_and_physical_bounds():
+    """Only physical boundaries and feasible battery energy values are accepted."""
+    inputs = example_inputs(prices=((0, 0),), pv=np.zeros((1, 2)), battery=configured_battery("unit"))
+    assert replace(inputs, target_energy_mwh_by_boundary={0: 0.5, 2: 0.5}).target_energy_mwh_by_boundary[2] == 0.5
+    for boundary in (True, -1, 3, 1.5):
+        with pytest.raises(ValueError, match="boundary"):
+            replace(inputs, target_energy_mwh_by_boundary={boundary: 0.5})
+    for target in (-0.1, 2.0, np.nan):
+        with pytest.raises(ValueError):
+            replace(inputs, target_energy_mwh_by_boundary={1: target})
+
+
 def test_probabilities_and_tree_mass_are_validated():
     inputs = example_inputs(prices=((100,), (0,)), probabilities=(0.7, 0.3))
     with pytest.raises(ValueError, match="sum to one"):

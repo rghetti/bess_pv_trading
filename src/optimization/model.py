@@ -66,6 +66,10 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
         for boundary, minimum in inputs.minimum_energy_mwh_by_boundary.items():
             model.addConstr(energy[s, boundary] >= minimum,
                 name=f"boundary_minimum_energy[s{scenario},boundary{boundary}]")
+        # Exact targets at selected midnights apply to each scenario separately.
+        for boundary, target in inputs.target_energy_mwh_by_boundary.items():
+            model.addConstr(energy[s, boundary] == target,
+                name=f"boundary_target_energy[s{scenario},boundary{boundary}]")
         # Balance battery energy, PV generation, curtailment and grid exchange each interval.
         for t, duration in enumerate(inputs.grid.delta_hours):
             suffix = f"s{scenario},t{inputs.grid.interval_ids[t]}"

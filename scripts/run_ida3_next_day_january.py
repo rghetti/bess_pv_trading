@@ -28,6 +28,7 @@ from bess_pv_trading.simulation.continuous_inputs import prepare_continuous_inpu
 from bess_pv_trading.simulation.synthetic import write_json
 
 CONFIG = ROOT / "configs/research/ida3_next_day_january_2026.yaml"
+EQUALITY_CONFIG = ROOT / "configs/research/ida3_next_day_january_equal50_2026.yaml"
 FARMS = ("1", "345", "901", "910")
 
 
@@ -42,9 +43,9 @@ def historical_paths():
     return result
 
 
-def resolved_jobs(farms, batch, solver_threads):
+def resolved_jobs(farms, batch, solver_threads, soc_policy="floor40"):
     """Resolve each farm from a fresh common study configuration."""
-    raw = _read_mapping(CONFIG)
+    raw = _read_mapping(EQUALITY_CONFIG if soc_policy == "equality50" else CONFIG)
     jobs = []
     for farm in farms:
         forced = {"farm_id": int(farm), "_project_root": str(ROOT),
@@ -115,12 +116,13 @@ def run_farm(job, batch, baseline, check_only):
     return result
 
 
-def generate_reports(batch, farms, baselines):
+def generate_reports(batch, farms, baselines, soc_policy="floor40", extended_baselines=None):
     """Produce and cross-link the comparison and its intraday analysis."""
     batch = Path(batch)
     sources = {farm: str(baselines[farm] / "controllers/track_committed_grid") for farm in farms}
-    summary = write_comparison(batch, farms, sources)
-    intraday = write_ida3_intraday_profiles(batch, farms, sources)
+    summary = write_comparison(batch, farms, sources, soc_policy=soc_policy, extended_history=extended_baselines)
+    intraday = write_ida3_intraday_profiles(batch, farms, sources, soc_policy=soc_policy,
+                                           extended_history=extended_baselines)
     # Link the shared analysis from both the batch and farm summaries.
     link = "\n[Hourly tables and monthly intraday plots](intraday_analysis/summary.md)\n"
     for report in [summary, *(batch / f"farm_{farm}_summary.md" for farm in farms)]:
@@ -136,6 +138,8 @@ def main(argv=None):
     parser.add_argument("--farm-ids", nargs="+", choices=FARMS, default=list(FARMS))
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--solver-threads", type=int, default=6)
+    parser.add_argument("--soc-policy", choices=("floor40", "equality50"), default="floor40",
+                        help="Select the midnight SOC constraint for auction planning")
     action = parser.add_mutually_exclusive_group()
     action.add_argument("--check-only", action="store_true")
     action.add_argument("--run", action="store_true")
@@ -148,10 +152,18 @@ def main(argv=None):
     if workers < 1 or args.solver_threads < 1 or workers * args.solver_threads > 48:
         parser.error("worker and solver thread counts must be positive and fit the 48-thread budget")
     batch = ROOT / "outputs/energy_research" / args.run_id
-    jobs = resolved_jobs(args.farm_ids, batch, args.solver_threads)
+    jobs = resolved_jobs(args.farm_ids, batch, args.solver_threads, args.soc_policy)
     baselines = historical_paths()
+    extended_baselines = None
+    if args.soc_policy == "equality50":
+        previous_batch = ROOT / "outputs/energy_research/ida3_january_four_farms_v1"
+        extended_baselines = {farm: str(previous_batch / "runs" / f"farm_{farm}" /
+            "controllers/track_committed_grid") for farm in args.farm_ids}
     missing = [str(baselines[farm]) for farm in args.farm_ids
                if not (baselines[farm] / "input_provenance__track_committed_grid.json").is_file()]
+    if extended_baselines:
+        missing.extend(path for path in extended_baselines.values()
+                       if not (Path(path) / "json/manifest.json").is_file())
     requirements = {job["farm"]: _artifact_requirements(job["config"]) for job in jobs}
     missing_inputs = {farm: [item for item in items if not item["present"]]
                       for farm, items in requirements.items()}
@@ -160,7 +172,10 @@ def main(argv=None):
         "initial_auction": "2025-12-31 DA gate for 2026-01-01; no 2025-12-31 IDA3",
         "controller": "track_committed_grid", "trajectory_count": len(jobs), "workers": workers,
         "solver_threads_per_farm": args.solver_threads, "maximum_solver_threads": workers * args.solver_threads,
-        "auction_horizon": "IDA3 remainder of delivery day plus next delivery day", "midnight_soc_floor_percent": 40,
+        "auction_horizon": "IDA3 remainder of delivery day plus next delivery day",
+        "midnight_soc_floor_percent": 40 if args.soc_policy == "floor40" else None,
+        "midnight_soc_equality_percent": 50 if args.soc_policy == "equality50" else None,
+        "soc_policy": args.soc_policy,
         "forecast": "latest eligible deterministic 48-hour weather cycles and selected retrospective neural models",
         "forecast_availability_lag_hours": jobs[0]["config"]["source"]["availability_lag_hours"],
         "pv_models": {job["farm"]: job["config"]["pv"]["forecast_replacement"]["models_by_farm"][job["farm"]]["name"]
@@ -169,7 +184,9 @@ def main(argv=None):
         "actual_pv_preprocessing": "reviewed AC, monthly night zeros and explicitly labeled synthetic or historical-GHI replacements",
         "actual_price_information": "retrospective auction-price oracle including future next-day prices",
         "pv_information": "curated actual PV, including synthetic replacements; realized interval-average known to tracker",
-        "comparison": "January historical same-day auction plans with a hard 50% target; horizon and SOC policy both differ",
+        "comparison": ("January same-day hard 50% and extended IDA3 40% floor runs; actual tracker SOC is not constrained"
+            if args.soc_policy == "equality50" else
+            "January historical same-day auction plans with a hard 50% target; horizon and SOC policy both differ"),
         "historical_baselines": {farm: str(baselines[farm]) for farm in args.farm_ids},
         "missing_baselines": missing, "missing_inputs": missing_inputs, "solves_started": 0, "models_fitted": 0}
     print(json.dumps(plan, indent=2), flush=True)
@@ -208,7 +225,7 @@ def main(argv=None):
         elif args.check_only:
             manifest["status"] = "preflight_passed"
         else:
-            path, intraday = generate_reports(batch, args.farm_ids, baselines)
+            path, intraday = generate_reports(batch, args.farm_ids, baselines, args.soc_policy, extended_baselines)
             manifest.update(status="complete", summary_markdown=str(path), intraday_markdown=str(intraday))
         return 1 if failures else 0
     except BaseException as error:

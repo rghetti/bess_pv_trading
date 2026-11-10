@@ -1,0 +1,122 @@
+# Portable research settings; supply reviewed model bundles under models/pv.
+include: ../standard.yaml
+farm_id: 1
+forecast:
+  curated_realized:
+    enabled: true
+    dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
+continuous_optimization:
+  start_date: '2026-01-01'
+  end_date: '2026-01-31'
+  context_end_date: '2026-02-01'
+  ida3_next_day_horizon: true
+  terminal_soc_scope: each_delivery_day
+  validation_diagnostics: failures_only
+  planning_modes:
+  - integrated
+  perfect_pv_reference: false
+  resume: false
+  output_root: outputs/energy_research
+  run_id: ida3_next_day_january_equal50_2026
+  pv_ensemble:
+    enabled: false
+    zarr: null
+    member_count: null
+    planning_policy: deterministic
+state:
+  initial_soc_percent: 50.0
+  terminal_soc_percent: 50.0
+  terminal_soc_min_percent: null
+solver:
+  threads: 6
+  time_limit_seconds: 120.0
+  mip_gap: 0.0001
+  feasibility_tolerance: 1.0e-08
+  integrality_tolerance: 1.0e-08
+pv:
+  direct_exceeds_ghi: clip_and_flag
+  forecast_replacement:
+    enabled: true
+    allow_retrospective_artifacts: true
+    models_by_farm:
+      '1':
+        name: four_cycle_bigru_extended_037
+        kind: reviewed_hpo
+        artifact_path: models/pv/reviewed_four_cycle_2026_selected/farm_1/result.json
+        available_at_utc: '2026-11-09T00:00:00Z'
+      '345':
+        name: four_cycle_bigru_core_025
+        kind: reviewed_hpo
+        artifact_path: models/pv/reviewed_four_cycle_2026_selected/farm_345/result.json
+        available_at_utc: '2026-11-09T00:00:00Z'
+      '901':
+        name: four_cycle_tcn_extended_021
+        kind: reviewed_hpo
+        artifact_path: models/pv/reviewed_four_cycle_2026_selected/farm_901/result.json
+        available_at_utc: '2026-11-09T00:00:00Z'
+      '910':
+        name: four_cycle_tcn_core_029
+        kind: reviewed_hpo
+        artifact_path: models/pv/reviewed_four_cycle_2026_selected/farm_910/result.json
+        available_at_utc: '2026-11-09T00:00:00Z'
+trading:
+  optimize_imbalances: false
+execution:
+  dispatch_policy: track_committed_grid
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+  mpc_curtailment_recovery: false
+settlement:
+  enabled: true
+experiment_outputs:
+  overwrite_existing: false
+  plots: true
+  save_model_files: false
+gme_oracle_experiment:
+  study_id: null
+  delivery_day: null
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA:
+      dataset: day_ahead_prices
+      native_interval_minutes: null
+    IDA1:
+      dataset: ida1_prices
+      native_interval_minutes: 15
+    IDA2:
+      dataset: ida2_prices
+      native_interval_minutes: 15
+    IDA3:
+      dataset: ida3_prices
+      native_interval_minutes: 15
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions:
+  - DA
+  - IDA1
+  - IDA2
+  - IDA3
+realtime_mpc_comparison:
+  mode: continuous
+  controllers:
+  - track_committed_grid
+  frozen_source: null
+  check_only: false
+  representative_days: 2
+energy_price_forecast:
+  auction_enabled: false
+  settlement_enabled: false
+  artifacts: {}
+  seed: 17
+research_information:
+  pv_updates: latest
+  price_updates: latest
+realtime_scenarios:
+  dependence: raw
+  reduce_to: null

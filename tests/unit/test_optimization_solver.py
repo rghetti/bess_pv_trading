@@ -149,6 +149,50 @@ def test_unreachable_intermediate_floor_returns_solver_infeasibility():
     assert result.status == "infeasible"
 
 
+def test_intermediate_and_final_energy_equalities_are_enforced_and_validated():
+    """Every modeled midnight reaches its exact target despite arbitrage prices."""
+    battery = configured_battery("unit")
+    inputs = example_inputs(prices=np.array([[100.0, 0.0]]), pv=np.zeros((1, 2)),
+                            battery=battery, hours=1.0)
+    target = battery.capacity_mwh * 0.5
+    inputs = replace(inputs, state=replace(inputs.state, energy_mwh=target),
+        terminal_target_mwh=None, target_energy_mwh_by_boundary={1: target, 2: target},
+        optimize_imbalances=False)
+    result = solve(inputs)
+    np.testing.assert_allclose(result.arrays["energy_mwh"][0, 1:], [target, target], atol=1e-8)
+    result.arrays["energy_mwh"][0, 1] = target + 0.01
+    report = validate_solution(inputs, result)
+    assert not report.valid
+    assert any("boundary_target_energy_mwh_1" in violation for violation in report.violations)
+
+
+def test_unreachable_initial_boundary_equality_returns_solver_infeasibility():
+    """The optimizer reports a conflicting initial target so fallback can run."""
+    battery = configured_battery("unit")
+    inputs = example_inputs(prices=np.array([[0.0]]), pv=np.zeros((1, 1)), battery=battery, hours=0.25)
+    inputs = replace(inputs, state=replace(inputs.state, energy_mwh=battery.energy_min_mwh),
+        terminal_target_mwh=None, target_energy_mwh_by_boundary={0: battery.capacity_mwh * 0.5})
+    built = build_model(inputs)
+    try:
+        result = solve_model(built)
+        assert result.status == "infeasible"
+    finally:
+        built.model.dispose()
+
+
+def test_boundary_equality_applies_to_each_scenario():
+    """A boundary target is a physical constraint in every scenario."""
+    battery = configured_battery("unit")
+    target = battery.capacity_mwh * 0.5
+    inputs = example_inputs(prices=np.array([[100.0, 0.0], [0.0, 100.0]]),
+                            pv=np.zeros((2, 2)), battery=battery, hours=1.0)
+    inputs = replace(inputs, state=replace(inputs.state, energy_mwh=target),
+        terminal_target_mwh=None, target_energy_mwh_by_boundary={1: target},
+        optimize_imbalances=False)
+    result = solve(inputs)
+    np.testing.assert_allclose(result.arrays["energy_mwh"][:, 1], [target, target], atol=1e-8)
+
+
 def test_free_imbalances_remove_battery_value_despite_free_terminal_soc():
     inputs, expected = configured_solver_inputs("free_imbalances")
     result = solve(inputs)

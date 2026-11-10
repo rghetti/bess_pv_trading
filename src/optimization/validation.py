@@ -140,6 +140,9 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     # Check every midnight floor independently from the final target.
     for boundary, minimum in inputs.minimum_energy_mwh_by_boundary.items():
         upper(f"boundary_minimum_energy_mwh_{boundary}", minimum - energy[:, boundary])
+    # Check every target using the independently reconstructed energy values.
+    for boundary, target in inputs.target_energy_mwh_by_boundary.items():
+        equality(f"boundary_target_energy_mwh_{boundary}", energy[:, boundary] - target)
     upper("energy_upper_mwh", energy - battery.maximum_energy)
     upper("energy_lower_mwh", battery.energy_min_mwh - energy)
     upper("charge_lower_mw", -charge)

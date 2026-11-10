@@ -45,7 +45,7 @@ def test_configuration_selects_only_tracker(launcher, tmp_path):
 def test_completed_batch_generates_and_links_both_reports(launcher, monkeypatch, tmp_path):
     """Successful batches expose the intraday analysis from every summary."""
     seen = []
-    def comparison(batch, farms, sources):
+    def comparison(batch, farms, sources, **kwargs):
         seen.append(("comparison", farms, sources))
         summary = batch / "summary.md"
         summary.write_text("# Summary\n")
@@ -53,7 +53,7 @@ def test_completed_batch_generates_and_links_both_reports(launcher, monkeypatch,
             (batch / f"farm_{farm}_summary.md").write_text("# Farm\n")
         return summary
 
-    def intraday(batch, farms, sources):
+    def intraday(batch, farms, sources, **kwargs):
         seen.append(("intraday", farms, sources))
         return batch / "intraday_analysis/summary.md"
 
@@ -65,3 +65,18 @@ def test_completed_batch_generates_and_links_both_reports(launcher, monkeypatch,
     assert path == tmp_path / "intraday_analysis/summary.md"
     for report in (summary, tmp_path / "farm_1_summary.md"):
         assert "intraday_analysis/summary.md" in report.read_text()
+
+
+def test_equality_policy_keeps_four_tracker_only_farms(launcher, capsys, tmp_path):
+    """The equality study retains all farms and the two completed comparisons."""
+    assert launcher.main(["--run-id", "ida3_equality_plan_only_unit", "--soc-policy", "equality50"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["trajectory_count"] == 4
+    assert plan["midnight_soc_equality_percent"] == 50
+    assert plan["midnight_soc_floor_percent"] is None
+    assert plan["missing_baselines"] == []
+    jobs = launcher.resolved_jobs(["1", "345", "901", "910"], tmp_path, 6, "equality50")
+    for job in jobs:
+        assert job["config"]["state"]["terminal_soc_percent"] == 50
+        assert job["config"]["state"]["terminal_soc_min_percent"] is None
+        assert job["config"]["execution"]["dispatch_policy"] == "track_committed_grid"

@@ -502,6 +502,9 @@ class OptimizationInput:
     # Optional tail-risk penalty on total scenario absolute imbalance (EUR/MWh).
     imbalance_cvar_confidence: float = 0.95
     imbalance_cvar_weight_eur_per_mwh: float = 0.0
+    # Exact stored-energy targets at explicitly indexed physical boundaries.
+    # Boundary zero is the supplied initial state; the last is the horizon end.
+    target_energy_mwh_by_boundary: Mapping[int, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         # Validate fee state only when the optimization includes transaction fees.
@@ -558,6 +561,13 @@ class OptimizationInput:
             finite_nonnegative(minimum, "boundary minimum energy")
             if not battery.energy_min_mwh <= minimum <= battery.maximum_energy:
                 raise ValueError("Boundary minimum energy outside battery bounds")
+        # Leave reachability to the solver so auction fallback remains possible.
+        for boundary, target in self.target_energy_mwh_by_boundary.items():
+            if isinstance(boundary, bool) or not isinstance(boundary, int) or not 0 <= boundary <= len(self.grid.interval_ids):
+                raise ValueError("Energy target boundary must be an integer within the delivery grid")
+            finite_nonnegative(target, "boundary target energy")
+            if not battery.energy_min_mwh <= target <= battery.maximum_energy:
+                raise ValueError("Boundary target energy outside battery bounds")
         # Segmented degradation requires a compatible battery state and segment layout.
         if self.degradation.mode == "xu_segmented":
             # Enforce the input contract: Xu cycle aging requires positive battery capacity.

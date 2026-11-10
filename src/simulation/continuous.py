@@ -581,17 +581,25 @@ class ContinuousReplay:
                     if terminal_scope == "each_delivery_day" or day == self.days[-1] else None)
         terminal_minimum = self.prepared["terminal_minimum_energy_mwh"]
         indexed_minimum = {}
+        indexed_target = {}
         if self.config["continuous_optimization"].get("ida3_next_day_horizon", False):
-            if terminal_minimum is None:
-                raise ValueError("Extended IDA3 requires a configured midnight SOC minimum")
-            # Let infeasible projected floors reach the solver, so the normal
-            # previous-order fallback remains available.
-            indexed_minimum = {len(grid.interval_ids): terminal_minimum}
-            local_start = pd.Timestamp(grid.starts[0]).tz_convert(self.prepared["calendar"].timezone)
-            if local_start.hour == 0 and local_start.minute == 0:
-                # A next-day auction starts at midnight; its projected initial
-                # state is also an encompassed midnight and cannot be reset.
-                indexed_minimum[0] = terminal_minimum
+            configured_target = self.prepared["terminal_energy_mwh"]
+            if configured_target is not None and terminal_minimum is not None:
+                raise ValueError("Extended IDA3 requires either a midnight SOC target or minimum")
+            if configured_target is not None:
+                # A projected initial state is already fixed; require equality
+                # only at future midnights that the model can still influence.
+                indexed_target = {len(grid.interval_ids): configured_target}
+                terminal = None
+            elif terminal_minimum is not None:
+                # Keep the existing floor policy, including its starting
+                # midnight, so historical 40% studies remain reproducible.
+                indexed_minimum = {len(grid.interval_ids): terminal_minimum}
+                local_start = pd.Timestamp(grid.starts[0]).tz_convert(self.prepared["calendar"].timezone)
+                if local_start.hour == 0 and local_start.minute == 0:
+                    indexed_minimum[0] = terminal_minimum
+            else:
+                raise ValueError("Extended IDA3 requires a configured midnight SOC target or minimum")
             terminal_minimum = None
         native = daily.get("native_interval_minutes_by_auction")
         # Project retained operation, then construct only the target day's MILP when `native is None`.
@@ -618,7 +626,8 @@ class ContinuousReplay:
             native_interval_minutes_by_auction={auction: native[auction] for auction in masks},
             transaction_fees=self.fees,
             auction_submission_times={item.auction: item.submission_at for item in schedule},
-            minimum_energy_mwh_by_boundary=indexed_minimum)
+            minimum_energy_mwh_by_boundary=indexed_minimum,
+            target_energy_mwh_by_boundary=indexed_target)
         diagnostic = {"delivery_day": day, "current_auction": event.auction, "cutoff": cutoff.isoformat(),
             "cutoff_utc": cutoff.isoformat(), "strategy": self.strategy,
             "auction_planning_mode": "current_auction_only" if self.current_only else "integrated",
@@ -628,6 +637,8 @@ class ContinuousReplay:
             "planning_start_utc": str(grid.starts[0]), "planning_end_utc": str(grid.ends[-1]),
             "physical_planning_intervals": len(grid.interval_ids), "terminal_target_mwh": terminal,
             "terminal_minimum_mwh": terminal_minimum,
+            "minimum_energy_mwh_by_boundary": indexed_minimum,
+            "target_energy_mwh_by_boundary": indexed_target,
             "projected_boundary_energy_mwh": boundary.energy_mwh, "locked_prefix_projection": projection,
             "locked_prefix_intervals": len(projection), "modeled_auctions": list(masks),
             "known_auctions": list(self.known[day]), "fixed_commitment_auctions": list(self.submitted[day]),
@@ -697,17 +708,22 @@ class ContinuousReplay:
             provenance={"auction_eligible_product_indices": {key: list(np.flatnonzero(mask))
                         for key, mask in masks.items()}, "price_information": "actual_future_clearing_price_oracle"})
         floor = self.prepared["terminal_minimum_energy_mwh"]
-        if floor is None:
-            raise ValueError("Extended IDA3 requires a configured midnight SOC minimum")
+        target = self.prepared["terminal_energy_mwh"]
+        if (floor is None) == (target is None):
+            raise ValueError("Extended IDA3 requires exactly one midnight SOC target or minimum")
+        floor_boundaries = {} if floor is None else {current_len: floor, total: floor}
+        target_boundaries = {} if target is None else {current_len: target, total: target}
         pending = np.concatenate((np.asarray(initial.pending_position_mwh, dtype=float),
                                   np.zeros(len(future_grid.interval_ids))))
         inputs = replace(initial, grid=grid, scenarios=scenarios, tree=tree, auction_eligibility=masks,
             terminal_target_mwh=None, terminal_minimum_mwh=None,
-            minimum_energy_mwh_by_boundary={current_len: floor, total: floor},
+            minimum_energy_mwh_by_boundary=floor_boundaries,
+            target_energy_mwh_by_boundary=target_boundaries,
             pending_position_mwh=pending, native_interval_minutes_by_auction=resolutions,
             auction_submission_times=submission_times)
         diagnostic.update(planning_end_utc=str(grid.ends[-1]), physical_planning_intervals=total,
-            modeled_auctions=list(masks), minimum_energy_mwh_by_boundary={current_len: floor, total: floor},
+            modeled_auctions=list(masks), minimum_energy_mwh_by_boundary=floor_boundaries,
+            target_energy_mwh_by_boundary=target_boundaries,
             target_delivery_days=[day, following], extended_ida3=True,
             auction_price_information="actual_future_clearing_price_oracle", **pv_provenance)
         for start, value in zip(future_grid.starts, pv[current_len:]):
@@ -858,11 +874,12 @@ class ContinuousReplay:
         if not validation.valid:
             self._save_attempts()
             raise RuntimeError(f"Continuous solution validation failed: {validation.violations}")
-        if inputs.minimum_energy_mwh_by_boundary:
+        midnight_boundaries = set(inputs.minimum_energy_mwh_by_boundary) | set(inputs.target_energy_mwh_by_boundary)
+        if midnight_boundaries:
             diagnostic["planned_midnight_energy_mwh"] = {
                 pd.Timestamp(inputs.grid.starts[0] if index == 0 else inputs.grid.ends[index - 1]).isoformat():
                     float(result.arrays["energy_mwh"][0, index])
-                for index in inputs.minimum_energy_mwh_by_boundary}
+                for index in sorted(midnight_boundaries)}
         if validation.warnings and self.progress:
             self.progress(f"Continuous {self.strategy} {day}/{auction}: {validation.warnings[0]}")
         diagnostic["expected_auction_revenue_eur"] = float(np.dot(
