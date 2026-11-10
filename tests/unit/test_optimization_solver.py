@@ -121,6 +121,34 @@ def test_configured_terminal_minimum_soc_is_enforced_and_validated():
         built.model.dispose()
 
 
+def test_intermediate_and_final_energy_floors_are_enforced_and_validated():
+    """A profitable first interval may not consume a later midnight's reserve."""
+    battery = configured_battery("unit")
+    inputs = example_inputs(prices=np.array([[100.0, 0.0]]), pv=np.zeros((1, 2)),
+                            battery=battery, hours=1.0)
+    floor = battery.capacity_mwh * 0.4
+    inputs = replace(inputs, state=replace(inputs.state, energy_mwh=battery.capacity_mwh * 0.5),
+        terminal_target_mwh=None, minimum_energy_mwh_by_boundary={1: floor, 2: floor},
+        optimize_imbalances=False)
+    result = solve(inputs)
+    assert result.arrays["energy_mwh"][0, 1] == pytest.approx(floor)
+    assert result.arrays["energy_mwh"][0, 2] >= floor - 1e-8
+    result.arrays["energy_mwh"][0, 1] = floor - 0.01
+    report = validate_solution(inputs, result)
+    assert not report.valid
+    assert any("boundary_minimum_energy_mwh_1" in violation for violation in report.violations)
+
+
+def test_unreachable_intermediate_floor_returns_solver_infeasibility():
+    """Unreachable floors reach the solver, so the caller can apply its fallback."""
+    battery = configured_battery("slow")
+    inputs = example_inputs(prices=np.array([[0.0]]), pv=np.zeros((1, 1)), battery=battery, hours=0.25)
+    inputs = replace(inputs, state=replace(inputs.state, energy_mwh=battery.energy_min_mwh),
+        terminal_target_mwh=None, minimum_energy_mwh_by_boundary={1: battery.maximum_energy})
+    result = solve_model(build_model(inputs))
+    assert result.status == "infeasible"
+
+
 def test_free_imbalances_remove_battery_value_despite_free_terminal_soc():
     inputs, expected = configured_solver_inputs("free_imbalances")
     result = solve(inputs)

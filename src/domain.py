@@ -496,6 +496,9 @@ class OptimizationInput:
     transaction_fees: TransactionFeeSettings = field(default_factory=TransactionFeeSettings)
     auction_submission_times: Mapping[str, datetime] = field(default_factory=dict)
     terminal_minimum_mwh: float | None = None
+    # Additional energy floors at explicit boundaries, numbered from 0 at the
+    # start to len(grid) at the end; used for midnight inside longer horizons.
+    minimum_energy_mwh_by_boundary: Mapping[int, float] = field(default_factory=dict)
     # Optional tail-risk penalty on total scenario absolute imbalance (EUR/MWh).
     imbalance_cvar_confidence: float = 0.95
     imbalance_cvar_weight_eur_per_mwh: float = 0.0
@@ -547,6 +550,14 @@ class OptimizationInput:
         # Enforce the input contract: Initial battery energy is outside its bounds.
         if not battery.energy_min_mwh <= self.state.energy_mwh <= battery.maximum_energy:
             raise ValueError("Initial battery energy is outside its bounds")
+        # Validate every explicit physical boundary without assuming that the
+        # floor is reachable: the solver and fallback handle infeasible plans.
+        for boundary, minimum in self.minimum_energy_mwh_by_boundary.items():
+            if isinstance(boundary, bool) or not isinstance(boundary, int) or not 0 <= boundary <= len(self.grid.interval_ids):
+                raise ValueError("Energy floor boundary must be an integer within the delivery grid")
+            finite_nonnegative(minimum, "boundary minimum energy")
+            if not battery.energy_min_mwh <= minimum <= battery.maximum_energy:
+                raise ValueError("Boundary minimum energy outside battery bounds")
         # Segmented degradation requires a compatible battery state and segment layout.
         if self.degradation.mode == "xu_segmented":
             # Enforce the input contract: Xu cycle aging requires positive battery capacity.

@@ -15,7 +15,8 @@ import pandas as pd
 
 from ..config import validate_continuous_optimization
 from ..data import config_path, night_window_mask
-from ..domain import AcceptedTrade, DeliveryGrid, MarketState, OptimizationInput, PhysicalState, SolverSettings
+from ..domain import (AcceptedTrade, DeliveryGrid, InformationNode, InformationTree, MarketState,
+                      OptimizationInput, PhysicalState, ScenarioBundle, SolverSettings)
 from ..numerical_tolerances import continuous_tolerances
 from ..optimization import build_model, solve_model, validate_solution
 from ..optimization.degradation import degradation_settings_from_config
@@ -140,10 +141,15 @@ class ContinuousReplay:
             "perfect_pv_reoptimize_at_each_auction", False)
         self.grid, self.plant = prepared["full_grid"], prepared["plant"]
         self.days, self.daily = tuple(prepared["days"]), prepared["days_data"]
-        self.starts = pd.DatetimeIndex(self.grid.starts)
-        self.index = {product: index for index, product in enumerate(self.grid.interval_ids)}
-        self.day_for_product = {product: day for day in self.days for product in self.daily[day]["grid"].interval_ids}
-        self.day_offsets = {day: self.index[self.daily[day]["grid"].interval_ids[0]] for day in self.days}
+        self.context_days = tuple(prepared.get("context_days", ()))
+        self.book_days = self.days + self.context_days
+        grids = [self.daily[day]["grid"] for day in self.book_days]
+        self.planning_grid = DeliveryGrid(tuple(product for grid in grids for product in grid.interval_ids),
+            tuple(start for grid in grids for start in grid.starts), tuple(end for grid in grids for end in grid.ends))
+        self.starts = pd.DatetimeIndex(self.planning_grid.starts)
+        self.index = {product: index for index, product in enumerate(self.planning_grid.interval_ids)}
+        self.day_for_product = {product: day for day in self.book_days for product in self.daily[day]["grid"].interval_ids}
+        self.day_offsets = {day: self.index[self.daily[day]["grid"].interval_ids[0]] for day in self.book_days}
         self.fees = transaction_fees_from_config(config)
         self.aging = degradation_settings_from_config(config)
         self.trading = config["trading"]
@@ -175,10 +181,10 @@ class ContinuousReplay:
             origin="known_delivery_start_assumption",
             cycle_segment_energy_mwh=config["state"].get("cycle_segment_energy_mwh"))
         self.market = MarketState(transaction_fee_state=self.fees.initial_state)
-        self.submitted = {day: {} for day in self.days}
-        self.known = {day: [] for day in self.days}
+        self.submitted = {day: {} for day in self.book_days}
+        self.known = {day: [] for day in self.book_days}
         self.fee_records, self.control_plan, self.pending, self.records = {}, {}, {}, {}
-        self.plan_snapshots = {day: {} for day in self.days}
+        self.plan_snapshots = {day: {} for day in self.book_days}
         self.solves, self.projections, self.event_trace, self.publications = [], [], [], []
         self.forecast_inputs, self.initial_expectations, self.initial_revenues = [], {}, {}
         self.cursor = None
@@ -200,9 +206,13 @@ class ContinuousReplay:
         """Interleave current-day IDA3, next-day trading and physical execution."""
         events = []
         # Interleave current-day IDA3, next-day trading and physical execution for each `day` in `self.days`.
-        for day in self.days:
+        for day in self.book_days:
             # Interleave current-day IDA3, next-day trading and physical execution for each `auction` in `self.daily[day]['schedule']`.
             for auction in self.daily[day]["schedule"]:
+                # Context auctions are real events only while the scored replay
+                # is active; their products remain outside the scored ledger.
+                if day in self.context_days and auction.results_at > pd.Timestamp(self.grid.ends[-1]):
+                    continue
                 instance = ContinuousAuction(day, auction)
                 events.append(Event(auction.submission_at, EventKind.AUCTION_SUBMISSION, len(events), instance))
                 events.append(Event(auction.results_at, EventKind.AUCTION_RESULTS, len(events), instance))
@@ -439,7 +449,7 @@ class ContinuousReplay:
             from .continuous_inputs import ensemble_at_cutoff
 
             forecast = forecast.copy()
-            for index, product in enumerate(self.grid.interval_ids[update_first:stop_global]):
+            for index, product in enumerate(self.planning_grid.interval_ids[update_first:stop_global]):
                 source_day = self.day_for_product[product]
                 source = self.daily[source_day]
                 info = self.prepared["provenance"]["pv_ensemble"][source_day]
@@ -451,11 +461,11 @@ class ContinuousReplay:
             provenance = {**provenance, "pv_forecast_policy": "available_weather_ensemble_mean",
                 "pv_forecast_vintage_utc": target_info["forecast_vintage_utc"],
                 "pv_forecast_available_at_utc": target_info["available_at_utc"]}
-        by_product = dict(zip(self.grid.interval_ids[update_first:stop_global], map(float, forecast)))
+        by_product = dict(zip(self.planning_grid.interval_ids[update_first:stop_global], map(float, forecast)))
         # MPC boundary projection always uses deterministic PV, even for ensemble auctions.
-        projection_pv = dict(zip(self.grid.interval_ids[update_first:stop_global], map(float, deterministic_forecast)))
+        projection_pv = dict(zip(self.planning_grid.interval_ids[update_first:stop_global], map(float, deterministic_forecast)))
         # Projection intervals may belong to another day's frozen ensemble.
-        for product, start, value in zip(self.grid.interval_ids[update_first:stop_global], update_starts, forecast):
+        for product, start, value in zip(self.planning_grid.interval_ids[update_first:stop_global], update_starts, forecast):
             row_provenance = dict(provenance)
             if not self.perfect and ensemble_settings.get("enabled", False) and pv_policy == "ensemble_mean":
                 info = self.prepared["provenance"]["pv_ensemble"][self.day_for_product[product]]
@@ -570,6 +580,19 @@ class ContinuousReplay:
         terminal = (self.prepared["terminal_energy_mwh"]
                     if terminal_scope == "each_delivery_day" or day == self.days[-1] else None)
         terminal_minimum = self.prepared["terminal_minimum_energy_mwh"]
+        indexed_minimum = {}
+        if self.config["continuous_optimization"].get("ida3_next_day_horizon", False):
+            if terminal_minimum is None:
+                raise ValueError("Extended IDA3 requires a configured midnight SOC minimum")
+            # Let infeasible projected floors reach the solver, so the normal
+            # previous-order fallback remains available.
+            indexed_minimum = {len(grid.interval_ids): terminal_minimum}
+            local_start = pd.Timestamp(grid.starts[0]).tz_convert(self.prepared["calendar"].timezone)
+            if local_start.hour == 0 and local_start.minute == 0:
+                # A next-day auction starts at midnight; its projected initial
+                # state is also an encompassed midnight and cannot be reset.
+                indexed_minimum[0] = terminal_minimum
+            terminal_minimum = None
         native = daily.get("native_interval_minutes_by_auction")
         # Project retained operation, then construct only the target day's MILP when `native is None`.
         if native is None:
@@ -594,7 +617,8 @@ class ContinuousReplay:
             market_timezone=self.prepared["calendar"].timezone,
             native_interval_minutes_by_auction={auction: native[auction] for auction in masks},
             transaction_fees=self.fees,
-            auction_submission_times={item.auction: item.submission_at for item in schedule})
+            auction_submission_times={item.auction: item.submission_at for item in schedule},
+            minimum_energy_mwh_by_boundary=indexed_minimum)
         diagnostic = {"delivery_day": day, "current_auction": event.auction, "cutoff": cutoff.isoformat(),
             "cutoff_utc": cutoff.isoformat(), "strategy": self.strategy,
             "auction_planning_mode": "current_auction_only" if self.current_only else "integrated",
@@ -617,6 +641,80 @@ class ContinuousReplay:
                 "mpc_plan_cutoff_utc": next(iter(self.realtime.state.latest_plan.values()), {}).get("issued_at"),
                 "projection_fallback_intervals": sum(bool(row.get("projection_fallback")) for row in projection),
                 "deterministic_projection_provenance": deterministic_provenance} if self.realtime else {}), **provenance})
+        if (self.config["continuous_optimization"].get("ida3_next_day_horizon", False)
+                and event.auction == "IDA3"):
+            inputs, diagnostic = self._extend_ida3_inputs(instance, cutoff, inputs, diagnostic)
+        return inputs, diagnostic
+
+    def _extend_ida3_inputs(self, instance, cutoff, initial, diagnostic):
+        """Extend an IDA3 plan across midnight while keeping future bids provisional."""
+        if self.strategy != "integrated" or self.realtime is not None:
+            raise ValueError("Extended IDA3 requires integrated greedy tracking")
+        if self.config["continuous_optimization"].get("pv_ensemble", {}).get("enabled", False):
+            raise ValueError("Extended IDA3 currently requires deterministic PV")
+        if self.config.get("energy_price_forecast", {}).get("auction_enabled", False):
+            raise ValueError("Extended IDA3 currently requires the explicit auction price oracle")
+        day = instance.delivery_day
+        following = (pd.Timestamp(day) + pd.Timedelta(days=1)).date().isoformat()
+        if following not in self.daily:
+            raise ValueError(f"Extended IDA3 requires next-day context for {following}")
+        future = self.daily[following]
+        future_grid = future["grid"]
+        grid = DeliveryGrid(initial.grid.interval_ids + future_grid.interval_ids,
+            initial.grid.starts + future_grid.starts, initial.grid.ends + future_grid.ends)
+        starts = pd.DatetimeIndex(grid.starts)
+        pv, pv_provenance = self._forecast(cutoff, starts, "IDA3")
+        current_len = len(initial.grid.interval_ids)
+        total = len(grid.interval_ids)
+        current_event = instance.event
+        events = [("IDA3", day, current_event)]
+        for event in future["schedule"]:
+            events.append((f"{following}:{event.auction}", following, event))
+        masks, prices, resolutions, submission_times = {}, {}, {}, {}
+        for key, delivery_day, event in events:
+            source = self.daily[delivery_day]
+            mask = np.zeros(total, dtype=bool)
+            eligible_ids = {source["grid"].interval_ids[index] for index in event.eligible_intervals}
+            for index, product in enumerate(grid.interval_ids):
+                mask[index] = product in eligible_ids
+            curve = np.zeros(total, dtype=float)
+            source_prices = np.asarray(source["prices"][event.auction], dtype=float)
+            source_indices = {product: index for index, product in enumerate(source["grid"].interval_ids)}
+            for index in np.flatnonzero(mask):
+                value = source_prices[source_indices[grid.interval_ids[index]]]
+                if not np.isfinite(value):
+                    raise ValueError(f"Missing eligible price for {delivery_day}/{event.auction}")
+                curve[index] = value
+            masks[key] = tuple(bool(value) for value in mask)
+            prices[key] = curve[None, :]
+            resolutions[key] = source["native_interval_minutes_by_auction"][event.auction]
+            submission_times[key] = event.submission_at
+        node = InformationNode("root", None, cutoff.to_pydatetime())
+        tree = InformationTree((node,), ("root",), {key: ("root",) for key in masks},
+                               (tuple("root" for _ in grid.interval_ids),))
+        scenarios = ScenarioBundle(("oracle",), np.ones(1), pv[None, :], prices,
+            np.zeros((1, total)), origin="perfect-price / deterministic-PV",
+            provenance={"auction_eligible_product_indices": {key: list(np.flatnonzero(mask))
+                        for key, mask in masks.items()}, "price_information": "actual_future_clearing_price_oracle"})
+        floor = self.prepared["terminal_minimum_energy_mwh"]
+        if floor is None:
+            raise ValueError("Extended IDA3 requires a configured midnight SOC minimum")
+        pending = np.concatenate((np.asarray(initial.pending_position_mwh, dtype=float),
+                                  np.zeros(len(future_grid.interval_ids))))
+        inputs = replace(initial, grid=grid, scenarios=scenarios, tree=tree, auction_eligibility=masks,
+            terminal_target_mwh=None, terminal_minimum_mwh=None,
+            minimum_energy_mwh_by_boundary={current_len: floor, total: floor},
+            pending_position_mwh=pending, native_interval_minutes_by_auction=resolutions,
+            auction_submission_times=submission_times)
+        diagnostic.update(planning_end_utc=str(grid.ends[-1]), physical_planning_intervals=total,
+            modeled_auctions=list(masks), minimum_energy_mwh_by_boundary={current_len: floor, total: floor},
+            target_delivery_days=[day, following], extended_ida3=True,
+            auction_price_information="actual_future_clearing_price_oracle", **pv_provenance)
+        for start, value in zip(future_grid.starts, pv[current_len:]):
+            self.forecast_inputs.append({"delivery_day": following, "auction": "IDA3",
+                "cutoff_utc": cutoff.isoformat(), "interval_start_utc": str(start),
+                "pv_ac_forecast_mw": float(value), "forecast_role": "next_day_provisional",
+                **pv_provenance})
         return inputs, diagnostic
 
     def _save_attempts(self):
@@ -755,6 +853,11 @@ class ContinuousReplay:
         if not validation.valid:
             self._save_attempts()
             raise RuntimeError(f"Continuous solution validation failed: {validation.violations}")
+        if inputs.minimum_energy_mwh_by_boundary:
+            diagnostic["planned_midnight_energy_mwh"] = {
+                pd.Timestamp(inputs.grid.starts[0] if index == 0 else inputs.grid.ends[index - 1]).isoformat():
+                    float(result.arrays["energy_mwh"][0, index])
+                for index in inputs.minimum_energy_mwh_by_boundary}
         if validation.warnings and self.progress:
             self.progress(f"Continuous {self.strategy} {day}/{auction}: {validation.warnings[0]}")
         diagnostic["expected_auction_revenue_eur"] = float(np.dot(
@@ -773,11 +876,13 @@ class ContinuousReplay:
             if name == auction and node == owner}
         self._commit_quantities(day, auction, cutoff, quantities)
         snapshot = []
+        future_snapshot = []
         # Submit one immutable order and scope every change to its delivery book for each `(index, product)` in `enumerate(inputs.grid.interval_ids)`.
         for index, product in enumerate(inputs.grid.interval_ids):
+            product_day = self.day_for_product[product]
             commands = {name: max(0.0, float(result.arrays[name][0, index]))
                 for name in ("charge_mw", "discharge_mw", "curtailment_mw")}
-            row = {"delivery_day": day, "auction": auction, "interval_id": product,
+            row = {"delivery_day": product_day, "auction": auction, "interval_id": product,
                 "interval_start_utc": str(inputs.grid.starts[index]), "interval_end_utc": str(inputs.grid.ends[index]),
                 "optimizer_cutoff_utc": cutoff.isoformat(), "plan_status": "optimized",
                 "pv_forecast_vintage_utc": diagnostic["pv_forecast_vintage_utc"],
@@ -790,17 +895,27 @@ class ContinuousReplay:
                 "soc_end_mwh": float(result.arrays["energy_mwh"][0, index + 1]),
                 "auction_trade_mwh": quantities.get(product, 0.0), "snapshot_scenario_count": len(inputs.scenarios.scenario_ids)}
             # Submit one immutable order and scope every change to its delivery book for each `planned` in `self.daily[day]['schedule']`.
-            for planned in self.daily[day]["schedule"]:
-                # When `planned.auction in inputs.tree.bid_nodes`, set `node` using `inputs.tree.bid_nodes[planned.auction][0]`.
-                if planned.auction in inputs.tree.bid_nodes:
-                    node = inputs.tree.bid_nodes[planned.auction][0]
-                    quantity = result.trades.get((planned.auction, node, product), 0.0)
+            for planned in self.daily[product_day]["schedule"]:
+                model_auction = (f"{product_day}:{planned.auction}"
+                                 if product_day != day else planned.auction)
+                if model_auction in inputs.tree.bid_nodes:
+                    node = inputs.tree.bid_nodes[model_auction][0]
+                    quantity = result.trades.get((model_auction, node, product), 0.0)
                 else:
-                    quantity = self.submitted[day].get(planned.auction, {}).get(product, 0.0)
+                    quantity = self.submitted[product_day].get(planned.auction, {}).get(product, 0.0)
                 row[f"planned_trade_{planned.auction}_mwh"] = float(quantity)
-            self.control_plan[product] = row
-            snapshot.append(row)
+            if product_day == day:
+                self.control_plan[product] = row
+                snapshot.append(row)
+            else:
+                # Future-day bids are only a shadow plan until their own gate.
+                row["plan_status"] = "provisional_previous_day_ida3"
+                row["plan_source_delivery_day"] = day
+                future_snapshot.append(row)
         self.plan_snapshots[day][auction] = snapshot
+        if future_snapshot:
+            next_day = future_snapshot[0]["delivery_day"]
+            self.plan_snapshots[next_day]["previous_day_IDA3"] = future_snapshot
         self._save_attempts()
 
     def _commit_quantities(self, day, auction, cutoff, quantities):
@@ -971,6 +1086,12 @@ class ContinuousReplay:
                 raise RuntimeError("Continuous monthly operator volume does not reconcile")
         ledger = [{**asdict(trade), **reference[trade.trade_id], "cashflow_eur": trade.cashflow_eur,
             "delivery_day": self.day_for_product[trade.interval_id]} for trade in self.market.accepted_trades]
+        context_ledger = [row for row in ledger if row["delivery_day"] in self.context_days]
+        if context_ledger:
+            # Keep submitted context transactions auditable without counting
+            # their future delivery cash flows in the scored period.
+            pd.DataFrame(context_ledger).to_csv(self.destination / "csv/context_accepted_trades.csv", index=False)
+            ledger = [row for row in ledger if row["delivery_day"] in self.days]
         revenue, fees = {}, {}
         # Reconcile the global ledger and allocate increments to delivery products for each `row` in `ledger`.
         for row in ledger:
@@ -998,6 +1119,12 @@ class ContinuousReplay:
             EventKind.PHYSICAL_CONTROL, EventKind.OBSERVATION_AVAILABLE, EventKind.SETTLEMENT)})
         dispatch, ledger, fees = self._final_dispatch_and_ledger()
         plans = [row for day in self.days for snapshot in self.plan_snapshots[day].values() for row in snapshot]
+        context_plans = [row for day in self.context_days
+                         for snapshot in self.plan_snapshots[day].values() for row in snapshot]
+        if context_plans:
+            # Preserve future plans without including their delivery products in
+            # January dispatch, settlement or expected-plan scoring.
+            pd.DataFrame(context_plans).to_csv(self.destination / "csv/context_dispatch_plans.csv", index=False)
         self._save_attempts()
         write_json(self.destination / "json/event_trace.json", self.event_trace)
         write_json(self.destination / "json/price_publications.json", self.publications)
@@ -1026,7 +1153,9 @@ class ContinuousReplay:
                     self.state.energy_mwh - self.prepared["terminal_energy_mwh"]),
                 "replay_wall_seconds_this_invocation": perf_counter() - started,
                 "comparison_scope": ("Continuous physical MPC execution, deterministic open-loop boundary projection; configured terminal inventory treatment"
-                    if self.realtime else "Continuous physical execution, retained-plan boundary projection, one delivery-day planning horizon; configured auction terminal SOC scope")})
+                    if self.realtime else "Continuous greedy tracking; IDA3 extends through the following day" if
+                    self.config["continuous_optimization"].get("ida3_next_day_horizon", False) else
+                    "Continuous physical execution, retained-plan boundary projection, one delivery-day planning horizon; configured auction terminal SOC scope")})
         if self.realtime is not None or self.prepared.get("frozen_commitments") is not None:
             from ..reporting.realtime_mpc import save_mpc_outputs
             extra = save_mpc_outputs(self.config, self.destination, dispatch,

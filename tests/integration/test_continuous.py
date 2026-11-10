@@ -1,5 +1,6 @@
 """Synthetic acceptance coverage for one causal, consecutive operating trajectory."""
 from copy import deepcopy
+from dataclasses import replace
 import importlib
 import json
 from pathlib import Path
@@ -10,7 +11,7 @@ import pytest
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.data import ForecastBundle
-from bess_pv_trading.domain import DeliveryGrid, OptimizationResult
+from bess_pv_trading.domain import DeliveryGrid, OptimizationResult, PhysicalState
 from bess_pv_trading.markets import AuctionCalendar
 from bess_pv_trading.simulation import synthetic
 from bess_pv_trading.simulation.continuous_inputs import _fingerprint
@@ -138,6 +139,131 @@ def _run(config, prepared, mode, destination, *, resume=False):
 
 def _read(destination, filename):
     return json.loads((destination / "json" / filename).read_text())
+
+
+def test_ida3_extends_next_day_and_keeps_future_orders_provisional(continuous_config, tmp_path):
+    """One real-time replay trades context gates but scores the requested day only."""
+    config = continuous_config
+    prepared, _ = _prepared(config)
+    first, following = prepared["days"][:2]
+    first_grid = prepared["days_data"][first]["grid"]
+    count = len(first_grid.interval_ids)
+    prepared.update(days=(first,), context_days=(following,), full_grid=first_grid,
+        full_realized_pv=prepared["full_realized_pv"][:count],
+        imbalance_prices_eur_per_mwh=prepared["imbalance_prices_eur_per_mwh"][:count],
+        terminal_energy_mwh=None, terminal_minimum_energy_mwh=0.4)
+    config["continuous_optimization"].update(end_date=first, ida3_next_day_horizon=True,
+                                              terminal_soc_scope="each_delivery_day")
+    config["state"].update(terminal_soc_percent=None, terminal_soc_min_percent=40)
+    replay, summary = _run(config, prepared, "integrated", tmp_path / "extended")
+    ida3 = next(row for row in replay.solves if row["delivery_day"] == first and row["current_auction"] == "IDA3")
+    assert ida3["extended_ida3"]
+    assert ida3["physical_planning_intervals"] == 144
+    assert ida3["minimum_energy_mwh_by_boundary"] == {48: 0.4, 144: 0.4}
+    assert set(ida3["modeled_auctions"]) == {"IDA3", *(f"{following}:{name}" for name in ("DA", "IDA1", "IDA2", "IDA3"))}
+    assert set(replay.submitted[following]) == {"DA", "IDA1", "IDA2"}
+    assert "previous_day_IDA3" in replay.plan_snapshots[following]
+    submissions = [row for row in replay.event_trace if row["kind"] == "AUCTION_SUBMISSION"]
+    first_auction = submissions[0]
+    assert first_auction["auction"] == "DA"
+    assert first_auction["delivery_day"] == first
+    assert pd.Timestamp(first_auction["at"]).tz_convert("Europe/Rome").date() == (
+        pd.Timestamp(first).date() - pd.Timedelta(days=1))
+    ida3_days = [row["delivery_day"] for row in submissions if row["auction"] == "IDA3"]
+    assert ida3_days == [first]
+    assert summary["delivery_days"] == 1
+    ledger = pd.read_csv(tmp_path / "extended/csv/accepted_trades.csv")
+    assert set(ledger.delivery_day) == {first}
+    context = pd.read_csv(tmp_path / "extended/csv/context_accepted_trades.csv")
+    assert set(context.delivery_day) == {following}
+    context_plans = pd.read_csv(tmp_path / "extended/csv/context_dispatch_plans.csv")
+    assert set(context_plans.delivery_day) == {following}
+    assert "provisional_previous_day_ida3" in set(context_plans.plan_status)
+
+
+@pytest.mark.parametrize("day,following,first_count,future_count", [
+    ("2025-03-30", "2025-03-31", 92, 96),
+    ("2025-10-25", "2025-10-26", 96, 100),
+])
+def test_extended_ida3_midnights_follow_local_dst_calendar(
+        continuous_config, tmp_path, day, following, first_count, future_count):
+    """A two-day horizon uses local midnights rather than fixed 24-hour offsets."""
+    config = continuous_config
+    config["continuous_optimization"].update(start_date=day, end_date=following)
+    config["market"].update(valid_from=day, valid_to=following)
+    prepared, _ = _prepared(config)
+    first_grid = prepared["days_data"][day]["grid"]
+    assert len(first_grid.interval_ids) == first_count
+    assert len(prepared["days_data"][following]["grid"].interval_ids) == future_count
+    prepared.update(days=(day,), context_days=(following,), full_grid=first_grid,
+        full_realized_pv=prepared["full_realized_pv"][:first_count],
+        imbalance_prices_eur_per_mwh=prepared["imbalance_prices_eur_per_mwh"][:first_count],
+        terminal_energy_mwh=None, terminal_minimum_energy_mwh=0.4)
+    config["continuous_optimization"].update(end_date=day, ida3_next_day_horizon=True,
+                                              terminal_soc_scope="each_delivery_day")
+    config["state"].update(terminal_soc_percent=None, terminal_soc_min_percent=40)
+    replay = _module().ContinuousReplay(config, prepared, "integrated", tmp_path / day)
+    replay.known[day] = ["DA", "IDA1", "IDA2"]
+    event = next(item for item in prepared["days_data"][day]["schedule"] if item.auction == "IDA3")
+    inputs, _ = replay._planning_inputs(_module().ContinuousAuction(day, event), event.submission_at)
+    assert inputs.minimum_energy_mwh_by_boundary == {48: 0.4, 48 + future_count: 0.4}
+    for boundary in inputs.minimum_energy_mwh_by_boundary:
+        assert pd.Timestamp(inputs.grid.ends[boundary - 1]).tz_convert("Europe/Rome").hour == 0
+
+
+def test_extended_auction_rejects_unreachable_initial_midnight_floor(continuous_config, tmp_path):
+    """A projected state below the floor is not reset or silently accepted."""
+    config = continuous_config
+    prepared, _ = _prepared(config)
+    first, following = prepared["days"][:2]
+    first_grid = prepared["days_data"][first]["grid"]
+    count = len(first_grid.interval_ids)
+    prepared.update(days=(first,), context_days=(following,), full_grid=first_grid,
+        full_realized_pv=prepared["full_realized_pv"][:count],
+        imbalance_prices_eur_per_mwh=prepared["imbalance_prices_eur_per_mwh"][:count],
+        initial_energy_mwh=0.1, terminal_energy_mwh=None, terminal_minimum_energy_mwh=0.4)
+    config["continuous_optimization"].update(end_date=first, ida3_next_day_horizon=True)
+    config["state"].update(terminal_soc_percent=None, terminal_soc_min_percent=40)
+    replay = _module().ContinuousReplay(config, prepared, "integrated", tmp_path / "infeasible")
+    event = next(item for item in replay.events if getattr(item.payload, "delivery_day", None) == first
+                 and item.payload.event.auction == "DA" and item.kind.name == "AUCTION_SUBMISSION")
+    with pytest.raises(RuntimeError, match="infeasible"):
+        replay._submit(event)
+    assert replay.state.energy_mwh == pytest.approx(0.1)
+    assert not replay.submitted[first]
+
+
+def test_extended_da_falls_back_when_projected_midnight_is_below_floor(continuous_config, tmp_path):
+    """Preserve the prior provisional DA bid if updated physical state breaks the floor."""
+    config = continuous_config
+    prepared, _ = _prepared(config)
+    first, following = prepared["days"][:2]
+    first_grid = prepared["days_data"][first]["grid"]
+    count = len(first_grid.interval_ids)
+    original_provider = prepared["forecast_provider"]
+    def zero_provider(cutoff, starts):
+        bundle = original_provider(cutoff, starts)
+        values = bundle.values.copy()
+        values["pv_ac_mw"] = 0.0
+        return replace(bundle, values=values)
+    prepared.update(days=(first,), context_days=(following,), full_grid=first_grid,
+        full_realized_pv=prepared["full_realized_pv"][:count],
+        imbalance_prices_eur_per_mwh=prepared["imbalance_prices_eur_per_mwh"][:count],
+        forecast_provider=zero_provider, terminal_energy_mwh=None, terminal_minimum_energy_mwh=0.4)
+    config["continuous_optimization"].update(end_date=first, ida3_next_day_horizon=True)
+    config["state"].update(terminal_soc_percent=None, terminal_soc_min_percent=40)
+    replay = _module().ContinuousReplay(config, prepared, "integrated", tmp_path / "fallback_floor")
+    event = next(item for item in replay.events if getattr(item.payload, "delivery_day", None) == following
+                 and item.payload.event.auction == "DA" and item.kind.name == "AUCTION_SUBMISSION")
+    replay.state = PhysicalState(event.at.floor("15min").to_pydatetime(), 0.1)
+    future_grid = prepared["days_data"][following]["grid"]
+    replay.plan_snapshots[following]["previous_day_IDA3"] = [
+        {"interval_id": product, "interval_start_utc": str(start), "planned_trade_DA_mwh": 0.0}
+        for product, start in zip(future_grid.interval_ids, future_grid.starts)]
+    replay._submit(event)
+    assert replay.solves[-1]["fallback_applied"]
+    assert replay.solves[-1]["plan_source_auction"] == "previous_day_IDA3"
+    assert len(replay.submitted[following]["DA"]) == len(future_grid.interval_ids)
 
 
 def test_every_auction_plan_has_a_daily_hard_terminal_target(continuous_config, tmp_path, monkeypatch):

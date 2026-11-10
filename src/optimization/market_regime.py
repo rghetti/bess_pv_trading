@@ -5,11 +5,25 @@ from collections import defaultdict
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-from ..domain import DeliveryGrid
+from ..domain import DeliveryGrid, OptimizationInput
 
 
 MGP_QUARTER_HOUR_START = date(2025, 10, 1)
 MARKET_TIMEZONE = ZoneInfo("Europe/Rome")
+
+
+def ordered_auctions(inputs: OptimizationInput) -> tuple[str, ...]:
+    """Order multiple delivery-day auction instances by their actual gate times."""
+    names = inputs.auction_eligibility
+    times = inputs.auction_submission_times
+    # Legacy single-day fixtures may omit timing, so preserve their old order.
+    if not set(names).issubset(times):
+        return tuple(sorted(names, key=lambda name: ({"DA": 0, "IDA1": 1, "IDA2": 2, "IDA3": 3}.get(name, 4), name)))
+    for name in names:
+        value = times[name]
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Auction submission times must be timezone-aware")
+    return tuple(sorted(names, key=lambda name: (times[name], name)))
 
 
 def historical_quarter_hour_indices(grid: DeliveryGrid) -> frozenset[int]:

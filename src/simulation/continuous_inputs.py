@@ -540,7 +540,8 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     settings = config["continuous_optimization"]
     # Keep legacy tracking preflight/fingerprints unchanged. MPC workflows pin
     # model artifacts and use the selected model for their initial fallback too.
-    replacement_evidence = _replacement_evidence(config) if uses_realtime_control(config) else None
+    extended_horizon = bool(settings.get("ida3_next_day_horizon", False))
+    replacement_evidence = _replacement_evidence(config) if uses_realtime_control(config) or extended_horizon else None
     try:
         first = date.fromisoformat(str(settings["start_date"]))
         last = date.fromisoformat(str(settings["end_date"]))
@@ -549,7 +550,15 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     # Enforce the input contract: Continuous optimization end_date must not precede start_date.
     if last < first:
         raise ValueError("Continuous optimization end_date must not precede start_date")
+    context_end = date.fromisoformat(str(settings.get("context_end_date", last)))
+    if extended_horizon and context_end < last + pd.Timedelta(days=1):
+        raise ValueError("IDA3 next-day planning requires at least one context delivery day")
+    if not extended_horizon and context_end != last:
+        raise ValueError("Context delivery days require IDA3 next-day planning")
     days = tuple(day.date().isoformat() for day in pd.date_range(first, last, freq="D"))
+    context_days = tuple(day.date().isoformat() for day in pd.date_range(
+        last + pd.Timedelta(days=1), context_end, freq="D"))
+    input_days = days + context_days
     calendar = AuctionCalendar.from_config(config)
     # Enforce the input contract: Continuous market and price experiment timezones must agree.
     if calendar.timezone != config["gme_oracle_experiment"]["timezone"]:
@@ -572,24 +581,25 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     initial_energy, terminal_energy = _soc_energy_targets(config["state"], battery)
     terminal_minimum = terminal_minimum_energy_mwh(config["state"], battery)
     days_data: dict[str, dict[str, Any]] = {}
-    all_grids = [calendar.delivery_grid(day).to_domain() for day in days]
-    full_grid = DeliveryGrid(tuple(item for grid in all_grids for item in grid.interval_ids),
-        tuple(item for grid in all_grids for item in grid.starts),
-        tuple(item for grid in all_grids for item in grid.ends))
-    full_starts = _utc_index(full_grid.starts)
+    all_grids = [calendar.delivery_grid(day).to_domain() for day in input_days]
+    scored_grids = all_grids[:len(days)]
+    full_grid = DeliveryGrid(tuple(item for grid in scored_grids for item in grid.interval_ids),
+        tuple(item for grid in scored_grids for item in grid.starts),
+        tuple(item for grid in scored_grids for item in grid.ends))
+    full_starts = _utc_index(tuple(item for grid in all_grids for item in grid.starts))
     issue_cache = {}
     initial_requests: dict[str, tuple[pd.DatetimeIndex, Any]] = {}
     forecast_requests: dict[str, pd.DatetimeIndex] = {}
     # Pin exact prices, common measured PV/fallbacks and every causal forecast when `progress`.
     if progress:
-        progress(f"Preflighting continuous delivery inputs for {days[0]} through {days[-1]} (offline)")
+        progress(f"Preflighting continuous delivery inputs for {input_days[0]} through {input_days[-1]} (offline)")
 
     # Reuse verified workbook snapshots across days, keeping memory bounded and
     # releasing database connections before weather conversion or inference.
     from ..data.api_catalog import SnapshotReadCache
     price_snapshot_cache = SnapshotReadCache(settings.get("price_snapshot_cache_entries", 8))
     # Read actual production once per day, with one strategy-independent fallback.
-    for day, grid in zip(days, all_grids):
+    for day, grid in zip(input_days, all_grids):
         daily = deepcopy(config)
         study = daily["gme_oracle_experiment"]
         study["delivery_day"] = day
@@ -634,9 +644,13 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
         # Pin exact prices, common measured PV/fallbacks and every causal forecast for each `event` in `schedule`.
         for event in schedule:
             cutoff = event.submission_at.tz_convert("UTC")
+            forecast_end = pd.Timestamp(grid.ends[-1])
+            if extended_horizon and event.auction == "IDA3" and date.fromisoformat(day) <= last:
+                forecast_end = pd.Timestamp(calendar.delivery_grid(
+                    (date.fromisoformat(day) + pd.Timedelta(days=1)).isoformat()).ends[-1])
             # Include the in-progress interval for its forecast-only remainder.
             starts = full_starts[(full_starts >= cutoff.floor("15min"))
-                                 & (full_starts < pd.Timestamp(grid.ends[-1]))]
+                                 & (full_starts < forecast_end)]
             key = cutoff.isoformat()
             forecast_requests[key] = forecast_requests.get(key, starts).union(starts)
         # Pin exact prices, common measured PV/fallbacks and every causal forecast when `progress`.
@@ -720,12 +734,17 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
         **({"forecast_model_artifacts": replacement_evidence} if replacement_evidence is not None else {}),
         "settlement": settlement_provenance,
         "settlement_values_sha256": None if settlement_values is None else _fingerprint(settlement_values)}
+    if extended_horizon:
+        provenance["scored_end_date"] = last.isoformat()
+        provenance["context_end_date"] = context_end.isoformat()
     prepared = {"calendar": calendar, "days": days, "days_data": days_data,
         "plant": plant, "initial_energy_mwh": initial_energy, "terminal_energy_mwh": terminal_energy,
         "terminal_minimum_energy_mwh": terminal_minimum,
         "full_grid": full_grid, "full_realized_pv": full_actual,
         "forecast_provider": forecasts, "imbalance_prices_eur_per_mwh": settlement_values,
         "settlement_frame": settlement, "provenance": provenance}
+    if extended_horizon:
+        prepared["context_days"] = context_days
     from .energy_price_inputs import prepare_energy_price_provider
     prepare_energy_price_provider(config, prepared)
     prepared["input_fingerprint"] = _fingerprint(provenance)

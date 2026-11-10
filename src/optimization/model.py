@@ -8,7 +8,7 @@ from typing import Any
 import numpy as np
 
 from ..domain import BuiltModel, OptimizationInput, OptimizationResult, SolverSettings
-from .market_regime import configured_auction_product_groups, configured_dispatch_groups, market_product_groups
+from .market_regime import configured_auction_product_groups, configured_dispatch_groups, market_product_groups, ordered_auctions
 from .transaction_fees import build_transaction_fees
 from .pv_envelope import lift_envelope_result, reduce_exact_pv
 from ..transaction_fees import scenario_fee_details
@@ -62,6 +62,10 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
         if inputs.terminal_minimum_mwh is not None:
             model.addConstr(energy[s, intervals] >= inputs.terminal_minimum_mwh,
                 name=f"terminal_minimum_energy[s{scenario}]")
+        # Enforce all named intermediate and final energy floors per scenario.
+        for boundary, minimum in inputs.minimum_energy_mwh_by_boundary.items():
+            model.addConstr(energy[s, boundary] >= minimum,
+                name=f"boundary_minimum_energy[s{scenario},boundary{boundary}]")
         # Balance battery energy, PV generation, curtailment and grid exchange each interval.
         for t, duration in enumerate(inputs.grid.delta_hours):
             suffix = f"s{scenario},t{inputs.grid.interval_ids[t]}"
@@ -85,7 +89,7 @@ def _trading(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
     """Apply POI-derived limits to each auction trade and each cumulative position."""
     count, intervals = np.shape(inputs.scenarios.pv_ac_mw)
     trades, positions, auction_revenue = {}, {}, {}
-    auction_order = sorted(inputs.auction_eligibility, key=lambda a: ({"DA": 0, "IDA1": 1, "IDA2": 2, "IDA3": 3}.get(a, 4), a))
+    auction_order = ordered_auctions(inputs)
     # Create the trade variables for `auction` from `auction_order`.
     for auction in auction_order:
         # Create the trade variables for `node` from `sorted(set(inputs.tree.bid_nodes[auction]))`.

@@ -102,6 +102,24 @@ def test_state_timestamp_and_terminal_reachability_are_checked():
         replace(inputs, terminal_target_mwh=1)
 
 
+def test_multiday_boundary_floor_contract_and_chronological_auction_order():
+    """Boundary indices and namespaced auctions are checked independently."""
+    from bess_pv_trading.optimization.market_regime import ordered_auctions
+
+    first = "2026-01-01:IDA3"
+    second = "2026-01-02:DA"
+    inputs = example_inputs(prices=((0, 0),), pv=np.zeros((1, 2)), battery=configured_battery("unit"),
+                            auctions={first: np.zeros((1, 2)), second: np.zeros((1, 2))})
+    cutoff = inputs.tree.nodes[0].cutoff
+    inputs = replace(inputs, auction_submission_times={first: cutoff, second: cutoff + timedelta(hours=2)},
+                     minimum_energy_mwh_by_boundary={1: 0.4, 2: 0.4})
+    assert ordered_auctions(inputs) == (first, second)
+    with pytest.raises(ValueError, match="boundary"):
+        replace(inputs, minimum_energy_mwh_by_boundary={3: 0.4})
+    with pytest.raises(ValueError, match="outside battery bounds"):
+        replace(inputs, minimum_energy_mwh_by_boundary={1: 2.0})
+
+
 def test_probabilities_and_tree_mass_are_validated():
     inputs = example_inputs(prices=((100,), (0,)), probabilities=(0.7, 0.3))
     with pytest.raises(ValueError, match="sum to one"):

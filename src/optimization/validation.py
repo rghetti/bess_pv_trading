@@ -5,7 +5,7 @@ import numpy as np
 
 from ..domain import OptimizationInput, OptimizationResult, ValidationReport
 from .degradation import evaluate_xu_dispatch, initial_segment_energy, xu_segment_parameters
-from .market_regime import configured_auction_product_groups, configured_dispatch_groups, market_product_groups
+from .market_regime import configured_auction_product_groups, configured_dispatch_groups, market_product_groups, ordered_auctions
 from ..transaction_fees import scenario_fee_details
 
 
@@ -137,6 +137,9 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     # Recompute balances, signs, sharing and accounting independently of Gurobi when `inputs.terminal_minimum_mwh is not None`.
     if inputs.terminal_minimum_mwh is not None:
         upper("terminal_minimum_energy_mwh", inputs.terminal_minimum_mwh - energy[:, -1])
+    # Check every midnight floor independently from the final target.
+    for boundary, minimum in inputs.minimum_energy_mwh_by_boundary.items():
+        upper(f"boundary_minimum_energy_mwh_{boundary}", minimum - energy[:, boundary])
     upper("energy_upper_mwh", energy - battery.maximum_energy)
     upper("energy_lower_mwh", battery.energy_min_mwh - energy)
     upper("charge_lower_mw", -charge)
@@ -225,7 +228,7 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     # When `inputs.pending_position_mwh is not None`, set `positions` using `np.asarray(inputs.pending_position_mwh)[None, :]`.
     if inputs.pending_position_mwh is not None:
         positions += np.asarray(inputs.pending_position_mwh)[None, :]
-    auction_order = sorted(inputs.auction_eligibility, key=lambda a: ({"DA": 0, "IDA1": 1, "IDA2": 2, "IDA3": 3}.get(a, 4), a))
+    auction_order = ordered_auctions(inputs)
     # Recompute balances, signs, sharing and accounting independently of Gurobi for each `auction` in `auction_order`.
     for auction in auction_order:
         # Recompute balances, signs, sharing and accounting independently of Gurobi for each `s` in `range(count)`.

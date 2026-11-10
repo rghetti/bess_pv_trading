@@ -130,6 +130,33 @@ def test_continuous_preflight_shares_inputs_and_reads_no_previous_day_observatio
         assert item["native_interval_minutes_by_auction"]["IDA3"] == config["test_case"]["expected_da_quarter_minutes"]
 
 
+def test_extended_ida3_preflight_pins_next_day_without_scoring_it(prepared_case, monkeypatch):
+    """An IDA3 cutoff can request the next full delivery day as context."""
+    config, _, _ = prepared_case
+    config["continuous_optimization"].update(ida3_next_day_horizon=True, context_end_date="2025-01-03")
+    seen = []
+    monkeypatch.setattr(continuous_inputs, "_replacement_evidence", lambda config: seen.append(True))
+    prepared = continuous_inputs.prepare_continuous_inputs(config)
+    assert seen == [True]
+    assert prepared["days"] == ("2025-01-01", "2025-01-02")
+    assert prepared["context_days"] == ("2025-01-03",)
+    assert len(prepared["full_grid"].interval_ids) == 192
+    current = prepared["days_data"]["2025-01-02"]
+    following = prepared["days_data"]["2025-01-03"]
+    cutoff = next(event.submission_at for event in current["schedule"] if event.auction == "IDA3")
+    bundle = prepared["forecast_provider"](cutoff, following["grid"].starts)
+    assert len(bundle.values) == 96
+    assert prepared["provenance"]["scored_end_date"] == "2025-01-02"
+
+
+def test_extended_ida3_requires_context_day(prepared_case):
+    """A replay cannot silently shorten the last IDA3 planning horizon."""
+    config, _, _ = prepared_case
+    config["continuous_optimization"]["ida3_next_day_horizon"] = True
+    with pytest.raises(ValueError, match="requires at least one context"):
+        continuous_inputs.prepare_continuous_inputs(config)
+
+
 def test_mpc_preflight_pins_every_physical_cutoff_without_enabling_auction_ensemble(prepared_case):
     config, _, _ = prepared_case
     config["execution"]["dispatch_policy"] = "deterministic_mpc"
