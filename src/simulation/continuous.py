@@ -711,8 +711,12 @@ class ContinuousReplay:
         target = self.prepared["terminal_energy_mwh"]
         if (floor is None) == (target is None):
             raise ValueError("Extended IDA3 requires exactly one midnight SOC target or minimum")
-        floor_boundaries = {} if floor is None else {current_len: floor, total: floor}
-        target_boundaries = {} if target is None else {current_len: target, total: target}
+        # The optional look-ahead policy leaves the first midnight free while
+        # retaining the configured target or floor at the final midnight.
+        enforce_intermediate = self.config["continuous_optimization"].get("ida3_enforce_intermediate_soc", True)
+        boundaries = (current_len, total) if enforce_intermediate else (total,)
+        floor_boundaries = {} if floor is None else {index: floor for index in boundaries}
+        target_boundaries = {} if target is None else {index: target for index in boundaries}
         pending = np.concatenate((np.asarray(initial.pending_position_mwh, dtype=float),
                                   np.zeros(len(future_grid.interval_ids))))
         inputs = replace(initial, grid=grid, scenarios=scenarios, tree=tree, auction_eligibility=masks,
@@ -724,6 +728,8 @@ class ContinuousReplay:
         diagnostic.update(planning_end_utc=str(grid.ends[-1]), physical_planning_intervals=total,
             modeled_auctions=list(masks), minimum_energy_mwh_by_boundary=floor_boundaries,
             target_energy_mwh_by_boundary=target_boundaries,
+            modeled_midnight_boundary_indices=[current_len, total],
+            ida3_enforce_intermediate_soc=enforce_intermediate,
             target_delivery_days=[day, following], extended_ida3=True,
             auction_price_information="actual_future_clearing_price_oracle", **pv_provenance)
         for start, value in zip(future_grid.starts, pv[current_len:]):
@@ -874,7 +880,9 @@ class ContinuousReplay:
         if not validation.valid:
             self._save_attempts()
             raise RuntimeError(f"Continuous solution validation failed: {validation.violations}")
-        midnight_boundaries = set(inputs.minimum_energy_mwh_by_boundary) | set(inputs.target_energy_mwh_by_boundary)
+        midnight_boundaries = (set(inputs.minimum_energy_mwh_by_boundary)
+            | set(inputs.target_energy_mwh_by_boundary)
+            | set(diagnostic.get("modeled_midnight_boundary_indices", ())))
         if midnight_boundaries:
             diagnostic["planned_midnight_energy_mwh"] = {
                 pd.Timestamp(inputs.grid.starts[0] if index == 0 else inputs.grid.ends[index - 1]).isoformat():

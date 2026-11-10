@@ -216,6 +216,9 @@ def validate_continuous_optimization(config: dict[str, Any], *, require_dates: b
     detail = section.get("validation_diagnostics", "full")
     if detail not in ("full", "failures_only"):
         raise ConfigurationError("continuous_optimization.validation_diagnostics must be full or failures_only")
+    intermediate = section.get("ida3_enforce_intermediate_soc", True)
+    if not isinstance(intermediate, bool):
+        raise ConfigurationError("continuous_optimization.ida3_enforce_intermediate_soc must be a YAML boolean")
     # A study can require its configured end SOC for every delivery day.
     target_scope = section.get("terminal_soc_scope", "final_replay_day")
     if target_scope not in ("final_replay_day", "each_delivery_day"):

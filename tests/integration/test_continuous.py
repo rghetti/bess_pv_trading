@@ -203,6 +203,68 @@ def test_extended_ida3_enforces_equalities_at_both_future_midnights(continuous_c
     assert not ida3["minimum_energy_mwh_by_boundary"]
 
 
+def test_extended_ida3_can_move_intermediate_soc_without_changing_final_target(continuous_config, tmp_path):
+    """Both higher and lower intermediate states remain feasible with the same final SOC."""
+    config = continuous_config
+    prepared, _ = _prepared(config)
+    first, following = prepared["days"][:2]
+    grid = prepared["days_data"][first]["grid"]
+    count = len(grid.interval_ids)
+    prepared.update(days=(first,), context_days=(following,), full_grid=grid,
+        full_realized_pv=prepared["full_realized_pv"][:count],
+        imbalance_prices_eur_per_mwh=prepared["imbalance_prices_eur_per_mwh"][:count],
+        initial_energy_mwh=0.5, terminal_energy_mwh=0.5, terminal_minimum_energy_mwh=None)
+    config["continuous_optimization"].update(end_date=first, ida3_next_day_horizon=True,
+        ida3_enforce_intermediate_soc=False, terminal_soc_scope="each_delivery_day")
+    config["state"].update(terminal_soc_percent=50, terminal_soc_min_percent=None)
+    replay = _module().ContinuousReplay(config, prepared, "integrated", tmp_path / "free_midnight")
+    replay.known[first] = ["DA", "IDA1", "IDA2"]
+    event = next(item for item in prepared["days_data"][first]["schedule"] if item.auction == "IDA3")
+    inputs, diagnostic = replay._planning_inputs(_module().ContinuousAuction(first, event), event.submission_at)
+    assert inputs.target_energy_mwh_by_boundary == {144: 0.5}
+    assert diagnostic["modeled_midnight_boundary_indices"] == [48, 144]
+    # An extra independent target at the intermediate boundary is feasible on
+    # both sides of 50%, proving it is not fixed by the new formulation.
+    for intermediate in (0.3, 0.7):
+        forced = replace(inputs, target_energy_mwh_by_boundary={48: intermediate, 144: 0.5})
+        built = _module().build_model(forced)
+        try:
+            result = _module().solve_model(built)
+        finally:
+            built.model.dispose()
+        assert result.has_incumbent
+        assert result.arrays["energy_mwh"][0, 48] == pytest.approx(intermediate, abs=1e-6)
+        assert result.arrays["energy_mwh"][0, 144] == pytest.approx(0.5, abs=1e-6)
+
+    # DA for the same delivery day still has its ordinary terminal target.
+    replay.known[first] = []
+    da = next(item for item in prepared["days_data"][first]["schedule"] if item.auction == "DA")
+    daily, _ = replay._planning_inputs(_module().ContinuousAuction(first, da), da.submission_at)
+    assert daily.target_energy_mwh_by_boundary == {96: 0.5}
+
+
+def test_extended_ida3_records_unconstrained_intermediate_midnight(continuous_config, tmp_path):
+    """Completed diagnostics preserve both midnight predictions for reporting."""
+    config = continuous_config
+    prepared, _ = _prepared(config)
+    first, following = prepared["days"][:2]
+    grid = prepared["days_data"][first]["grid"]
+    count = len(grid.interval_ids)
+    prepared.update(days=(first,), context_days=(following,), full_grid=grid,
+        full_realized_pv=prepared["full_realized_pv"][:count],
+        imbalance_prices_eur_per_mwh=prepared["imbalance_prices_eur_per_mwh"][:count],
+        initial_energy_mwh=0.5, terminal_energy_mwh=0.5, terminal_minimum_energy_mwh=None)
+    config["continuous_optimization"].update(end_date=first, ida3_next_day_horizon=True,
+        ida3_enforce_intermediate_soc=False, terminal_soc_scope="each_delivery_day")
+    config["state"].update(terminal_soc_percent=50, terminal_soc_min_percent=None)
+    replay, _ = _run(config, prepared, "integrated", tmp_path / "free_midnight_replay")
+    ida3 = next(row for row in replay.solves if row["delivery_day"] == first and row["current_auction"] == "IDA3")
+    assert ida3["status"] == "optimal"
+    assert ida3["target_energy_mwh_by_boundary"] == {144: 0.5}
+    assert len(ida3["planned_midnight_energy_mwh"]) == 2
+    assert list(ida3["planned_midnight_energy_mwh"].values())[-1] == pytest.approx(0.5)
+
+
 def test_single_day_equality_does_not_rewrite_projected_initial_soc(continuous_config, tmp_path):
     """The future midnight is targeted without requiring the past projection to equal it."""
     config = continuous_config

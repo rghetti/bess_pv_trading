@@ -55,6 +55,15 @@ def test_validation_diagnostics_mode_is_explicitly_validated():
         resolve_config(config)
 
 
+@pytest.mark.parametrize("value", ["false", 0, None])
+def test_intermediate_midnight_option_requires_boolean(value):
+    """An invalid flag cannot silently change the IDA3 SOC policy."""
+    config = load_config(JANUARY)
+    config["continuous_optimization"]["ida3_enforce_intermediate_soc"] = value
+    with pytest.raises(ConfigurationError, match="ida3_enforce_intermediate_soc"):
+        resolve_config(config)
+
+
 def test_continuous_template_requires_explicit_delivery_dates():
     config = load_config(STANDARD)
     assert config["continuous_optimization"]["start_date"] is None
