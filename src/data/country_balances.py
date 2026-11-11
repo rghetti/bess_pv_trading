@@ -105,6 +105,31 @@ def _month_bounds(first, stop, timezone):
         cursor = bound
 
 
+def _rte_coverage(frame, first, end, as_of):
+    """Measure observed half-hours through the last finished interval, including DST."""
+    first = pd.Timestamp(first).tz_convert("UTC")
+    end = pd.Timestamp(end).tz_convert("UTC")
+    now = pd.Timestamp(as_of).tz_convert("UTC")
+    elapsed_end = max(first, min(end, now.floor("30min")))
+    expected = pd.date_range(first, elapsed_end, freq="30min", inclusive="left")
+    full_window = pd.date_range(first, end, freq="30min", inclusive="left")
+    if frame.empty:
+        observed = pd.DatetimeIndex([], tz="UTC")
+        valid = observed
+    else:
+        starts = pd.DatetimeIndex(pd.to_datetime(frame.product_start, utc=True))
+        observed = starts.intersection(expected)
+        finite = np.isfinite(pd.to_numeric(frame["value"], errors="coerce").to_numpy(float))
+        valid = starts[finite].intersection(expected)
+    missing = len(expected) - len(observed)
+    state = ("future_window" if not len(expected) else "missing_elapsed_intervals" if missing
+             else "complete_through_as_of" if now < end else "complete_window")
+    return {"as_of_utc": now.isoformat(), "window_open": now < end,
+        "expected_full_window_intervals": len(full_window), "expected_elapsed_intervals": len(expected),
+        "observed_elapsed_intervals": len(observed), "valid_balance_elapsed_intervals": len(valid),
+        "missing_elapsed_intervals": missing, "status": state}
+
+
 def download_french(config, *, dry_run=False, refresh=False, max_requests=None,
                     transport=None, progress=None):
     """Fetch one RTE JSON export per month and publish immutable normalized snapshots."""
@@ -148,13 +173,18 @@ def download_french(config, *, dry_run=False, refresh=False, max_requests=None,
     limit = requests_left if max_requests is None else min(requests_left, max_requests)
     result = {"status": "planned" if dry_run else "partial", "database": selected["database_path"],
               "cached_requests": cached, "pending_requests": requests_left,
-              "completed_requests": cached, "errors": [], "months": []}
+              "completed_requests": cached, "errors": [], "months": [],
+              "status_definition": "request completion; inspect each month's coverage for data completeness"}
     if dry_run:
         return result
     client = transport or SecureTransport(**config["api"]["http"])
     used = 0
     for first, end, key, existing in planned:
         if existing is not None:
+            coverage = _rte_coverage(existing[0], first, end, pd.Timestamp.now(tz="UTC"))
+            result["months"].append({"start": first.isoformat(), "end": end.isoformat(),
+                "records": len(existing[0]), "snapshot_id": existing[1]["snapshot_id"],
+                "unchanged": True, "coverage": coverage})
             continue
         retained = store.load_unparsed(key) if not refresh else None
         if retained is None and used >= limit:
@@ -164,6 +194,7 @@ def download_french(config, *, dry_run=False, refresh=False, max_requests=None,
         where = (f"date_heure >= '{start_local}' AND date_heure < '{end_local}'")
         request = ApiRequest(france["endpoint"], params={"where": where, "order_by": france["timestamp_field"]})
         raw = retained[0] if retained is not None else None
+        previous = None
         try:
             if raw is None:
                 raw = client.get(request)
@@ -177,10 +208,29 @@ def download_french(config, *, dry_run=False, refresh=False, max_requests=None,
                     result["cached_requests"] += 1
                     result["completed_requests"] += 1
                     result["months"].append({"start": first.isoformat(), "end": end.isoformat(),
-                        "records": len(previous[0]), "snapshot_id": previous[1]["snapshot_id"], "unchanged": True})
+                        "records": len(previous[0]), "snapshot_id": previous[1]["snapshot_id"], "unchanged": True,
+                        "coverage": _rte_coverage(previous[0], first, end, pd.Timestamp.now(tz="UTC"))})
+                    if progress:
+                        progress(f"RTE {france['dataset']} {first.tz_convert(france['timezone']):%Y-%m}: unchanged, {len(previous[0])} records")
                     continue
             frame = parse_french_export(raw, start=first, end=end, config=selected)
             frame["provider"], frame["dataset"], frame["zone"] = "rte", france["dataset"], "FR"
+            # A partial or empty refresh must not replace previously available intervals.
+            if previous is not None and not previous[0].empty:
+                before = pd.DatetimeIndex(pd.to_datetime(previous[0].product_start, utc=True))
+                after = (pd.DatetimeIndex(pd.to_datetime(frame.product_start, utc=True)) if not frame.empty
+                         else pd.DatetimeIndex([], tz="UTC"))
+                lost = before.difference(after)
+                if len(lost):
+                    error = f"Refreshed response omitted {len(lost)} previously stored intervals; retained prior snapshot"
+                    result["errors"].append({"month": first.tz_convert(france["timezone"]).strftime("%Y-%m"), "error": error})
+                    result["months"].append({"start": first.isoformat(), "end": end.isoformat(),
+                        "records": len(previous[0]), "snapshot_id": previous[1]["snapshot_id"],
+                        "preserved_previous": True,
+                        "coverage": _rte_coverage(previous[0], first, end, pd.Timestamp.now(tz="UTC"))})
+                    if progress:
+                        progress(f"RTE {france['dataset']} {first.tz_convert(france['timezone']):%Y-%m}: {error}")
+                    continue
             metadata = {"source_kind": "rte_public_json", "native_interval_minutes": 30,
                 "native_timezone": france["timezone"], "balance_definition": "adjusted_consumption_minus_total_generation",
                 "consumption_definition": "RTE national consumption; pumping adjustment configurable; excludes pumping and auxiliary own-use in source definition",
@@ -191,22 +241,31 @@ def download_french(config, *, dry_run=False, refresh=False, max_requests=None,
                 manifest = store.save(key, raw, frame, metadata)
                 store.verify_native_snapshot(key, snapshot_id=manifest["snapshot_id"])
             if frame.empty:
-                result["errors"].append({"month": first.strftime("%Y-%m"),
+                result["errors"].append({"month": first.tz_convert(france["timezone"]).strftime("%Y-%m"),
                     "error": "Provider returned no usable source records; month remains incomplete"})
                 result["months"].append({"start": first.isoformat(), "end": end.isoformat(), "records": 0,
-                                         "snapshot_id": manifest["snapshot_id"]})
+                    "snapshot_id": manifest["snapshot_id"],
+                    "coverage": _rte_coverage(frame, first, end, pd.Timestamp.now(tz="UTC"))})
+                if progress:
+                    progress(f"RTE {france['dataset']} {first.tz_convert(france['timezone']):%Y-%m}: no usable records")
                 continue
             result["completed_requests"] += 1
             result["months"].append({"start": first.isoformat(), "end": end.isoformat(), "records": len(frame),
-                                     "snapshot_id": manifest["snapshot_id"]})
+                "snapshot_id": manifest["snapshot_id"],
+                "coverage": _rte_coverage(frame, first, end, pd.Timestamp.now(tz="UTC"))})
             if progress:
                 progress(f"RTE national balance {first.tz_convert(france['timezone']):%Y-%m}: {len(frame)} native records")
         except Exception as error:
             if raw is not None:
                 store.save_unparsed(key, raw, datetime.now(timezone.utc))
-            result["errors"].append({"month": first.strftime("%Y-%m"), "error": str(error)[:300]})
+            result["errors"].append({"month": first.tz_convert(france["timezone"]).strftime("%Y-%m"), "error": str(error)[:300]})
+            if progress:
+                progress(f"RTE {france['dataset']} {first.tz_convert(france['timezone']):%Y-%m}: failed")
     result["remaining_requests"] = len(planned) - result["completed_requests"]
     result["status"] = "complete" if result["remaining_requests"] == 0 and not result["errors"] else "partial"
+    result["coverage_status"] = ("incomplete" if result["remaining_requests"] or
+        any(month["coverage"]["missing_elapsed_intervals"] for month in result["months"])
+        else "complete_through_as_of")
     return result
 
 

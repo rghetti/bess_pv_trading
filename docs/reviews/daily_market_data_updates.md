@@ -43,6 +43,18 @@ reimporting the same payload every day. Provider failures or missing credentials
 are reported individually; a completed request does not prove every product
 has already been published.
 
+RTE requests use stable full-month boundaries, including for the currently open
+month. This does not require the future part of the month to exist: the report
+separately counts expected and observed half-hours through the last completed
+interval, using the source timezone and preserving DST. It reports both the
+number of timestamped source rows and rows with a finite balance; it does not
+assert that every generation or border feature is populated. The provider's
+`status` indicates whether requests completed; `coverage_status` and each
+month's `coverage` indicate whether elapsed intervals are present. A refresh
+that omits previously stored intervals preserves the earlier snapshot and is
+reported as partial. An upstream empty final response can reflect a delayed
+release and is not proof that a real-time month is absent.
+
 GME IDA is not supplied by the Energy Charts DA endpoint. If GME credentials are
 unavailable, download native NORD 15-minute MI-A1, MI-A2 and MI-A3 workbooks to
 `data/api/`, then stage them with:

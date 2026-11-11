@@ -140,7 +140,7 @@ def main():
                 if provider == "france_realtime":
                     config["country_balances"]["france"].update(
                         endpoint=settings["france_realtime_endpoint"], dataset=settings["france_realtime_dataset"])
-                result = download_french(config, refresh=True)
+                result = download_french(config, refresh=True, progress=lambda message: print(message, flush=True))
             elif provider == "swissgrid_energy":
                 config = load_config(settings["swissgrid_energy_config"])
                 section = config["swissgrid_energy"]
@@ -189,7 +189,9 @@ def main():
             results.append({"provider": provider, "status": "failed", "error": _redacted(error, secrets)})
         # Persist progress after each provider, including failures and missing credentials.
         report_path.write_text(json.dumps({"plan": plan, "results": results}, indent=2, default=str) + "\n")
-        print(f"{provider}: {results[-1]['status']}", flush=True)
+        coverage = results[-1].get("details", {}).get("coverage_status")
+        suffix = f"; coverage {coverage}" if coverage else ""
+        print(f"{provider}: {results[-1]['status']}{suffix}", flush=True)
     print(f"Report: {report_path}", flush=True)
     if any(item["status"] not in {"complete", "cached"} for item in results):
         raise SystemExit(2)

@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 
 from bess_pv_trading.data.swiss_border import discover_swiss_csv, download_swiss_border, parse_swiss_border
-from bess_pv_trading.data.country_balances import download_french, parse_french_export
+from bess_pv_trading.data.country_balances import _rte_coverage, download_french, parse_french_export
 
 
 def _payload():
@@ -74,6 +74,33 @@ def test_empty_rte_month_is_incomplete_and_retried(tmp_path):
     assert transport.calls == 2
 
 
+def test_rte_open_month_coverage_stops_at_last_completed_half_hour():
+    """An unfinished month is not reported as missing its future intervals."""
+    start = pd.Timestamp("2026-11-01", tz="Europe/Paris").tz_convert("UTC")
+    end = pd.Timestamp("2026-12-01", tz="Europe/Paris").tz_convert("UTC")
+    now = pd.Timestamp("2026-11-02T11:17Z")
+    expected = pd.date_range(start, now.floor("30min"), freq="30min", inclusive="left")
+    frame = pd.DataFrame({"product_start": expected, "value": 1.0})
+    result = _rte_coverage(frame, start, end, now)
+    assert result["window_open"] is True
+    assert result["expected_full_window_intervals"] == 1440
+    assert result["expected_elapsed_intervals"] == 72
+    assert result["status"] == "complete_through_as_of"
+    missing = _rte_coverage(frame.iloc[:-1], start, end, now)
+    assert missing["missing_elapsed_intervals"] == 1
+    assert missing["status"] == "missing_elapsed_intervals"
+
+
+def test_rte_coverage_counts_autumn_dst_fold():
+    """A 25-hour local day has 50 distinct elapsed half-hours."""
+    start = pd.Timestamp("2026-10-25", tz="Europe/Paris").tz_convert("UTC")
+    end = pd.Timestamp("2026-10-26", tz="Europe/Paris").tz_convert("UTC")
+    grid = pd.date_range(start, end, freq="30min", inclusive="left")
+    result = _rte_coverage(pd.DataFrame({"product_start": grid, "value": 1.0}), start, end, end)
+    assert result["expected_full_window_intervals"] == 50
+    assert result["status"] == "complete_window"
+
+
 def test_discovery_rejects_unofficial_or_ambiguous_annual_files():
     page_url = "https://www.swissgrid.ch/en/home/operation/grid-data/cross-border-load-flows.html"
     official = b'<a href="/dam/jcr:x/Grenzfluesse-2026.csv">file</a>'
@@ -134,3 +161,40 @@ def test_french_refresh_reuses_an_unchanged_nonempty_snapshot(tmp_path):
     assert first["status"] == second["status"] == "complete"
     assert second["months"][0]["unchanged"] is True
     assert first["months"][0]["snapshot_id"] == second["months"][0]["snapshot_id"]
+
+
+def test_french_refresh_preserves_existing_intervals_if_response_shrinks(tmp_path):
+    """An empty or truncated refresh cannot replace an existing usable snapshot."""
+    france = {"dataset": "electricity_balance", "endpoint": "https://odre.opendatasoft.com/api/export",
+        "date_field": "date", "hour_field": "heure", "timestamp_field": "date_heure",
+        "timezone": "Europe/Paris", "generation_fields": ["nucleaire", "hydraulique"],
+        "optional_generation_fields": [], "optional_consumption_fields": [], "consumption_field": "consommation",
+        "pumping_field": "pompage", "pumping_multiplier": 1.0}
+    config = {"api": {"database_threads": 1}, "country_balances": {"database_path": str(tmp_path / "market.duckdb"),
+        "start": "2026-01-01", "end_exclusive": "2026-02-01", "france": france}}
+    record = {"date": "2026-01-15", "heure": "12:00", "date_heure": "2026-01-15T11:00:00Z",
+              "consommation": 20, "pompage": -1, "nucleaire": 10, "hydraulique": 4}
+
+    class Transport:
+        def __init__(self, records):
+            self.raw = json.dumps(records).encode()
+
+        def get(self, request):
+            return self.raw
+
+    first = download_french(config, transport=Transport([record]), refresh=True)
+    empty = download_french(config, transport=Transport([]), refresh=True)
+    assert empty["status"] == "partial"
+    assert empty["coverage_status"] == "incomplete"
+    assert empty["months"][0]["preserved_previous"] is True
+    assert empty["months"][0]["snapshot_id"] == first["months"][0]["snapshot_id"]
+    repeat = download_french(config, transport=Transport([record]), refresh=True)
+    assert repeat["months"][0]["unchanged"] is True
+    assert repeat["months"][0]["snapshot_id"] == first["months"][0]["snapshot_id"]
+    later = {**record, "heure": "12:30", "date_heure": "2026-01-15T11:30:00Z"}
+    longer = download_french(config, transport=Transport([record, later]), refresh=True)
+    truncated = download_french(config, transport=Transport([later]), refresh=True)
+    assert longer["status"] == "complete"
+    assert truncated["status"] == "partial"
+    assert truncated["months"][0]["preserved_previous"] is True
+    assert truncated["months"][0]["snapshot_id"] == longer["months"][0]["snapshot_id"]
