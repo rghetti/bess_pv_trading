@@ -154,3 +154,32 @@ separately from unexplained missing or partial days.
 
 The earlier prepared snapshot has a different feature contract and cannot be
 reused for this cancellation-aware search.
+
+## Inspect a saved DA winner before the search finishes
+
+The inner-search checkpoints store aggregated scores, not per-day predictions.
+To inspect the current best completed DA candidate on one matched cohort and
+compare its expanded holiday features with the original holiday flag, run:
+
+```bash
+/home/rghetti/miniforge3/envs/bess/bin/python -m scripts.diagnose_price_holiday_winner \
+  --search outputs/price_feature_search_full_year_2026_cancellations_v2 \
+  --cohort full_history --run
+```
+
+It performs two serial one-thread CPU fits using the same selected candidate,
+hyperparameters and chronological inner-training rows. One fit uses all 27
+expanded holiday indicators; the other removes those indicators while retaining
+the original national-holiday flag. It writes `daily_mae.csv`,
+`predictions.parquet` and `summary.json` in
+`outputs/price_holiday_winner_diagnostic`. The current winner may change while
+the full search runs, and the output directory is not overwritten. Use
+`--cohort swiss_commercial_2026 --output <new-directory>` to examine that
+cohort instead; its matched dates differ from `full_history`.
+
+Inner-validation scores were used to select the candidate and are exploratory.
+The default 1 May 2026 diagnostic is scored on rows that were used to train
+both fitted models, so its error and holiday-feature comparison are in-sample;
+they do not establish performance on a new holiday year. No holiday-specific
+hyperparameter retuning is performed. The diagnostic does not modify or lock
+the running search's immutable matrices or atomic trial checkpoints.
