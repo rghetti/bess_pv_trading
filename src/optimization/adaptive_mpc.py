@@ -8,7 +8,6 @@ after the first action. The representative path is a shadow projection.
 from __future__ import annotations
 
 from time import perf_counter
-from types import SimpleNamespace
 
 import numpy as np
 
@@ -16,7 +15,8 @@ from ..domain import SolverSettings
 from .degradation import evaluate_xu_dispatch
 from .model import classify_status
 from .physical import add_battery_controls, build_battery_degradation, energy_transition
-from .mpc import MpcAction, MpcPlan, MpcResult, MpcValidationError
+from .mpc import (MpcAction, MpcPlan, MpcResult, MpcValidationError,
+    degradation_context, validate_naumann_plan)
 
 
 def control_history_nodes(inputs):
@@ -57,7 +57,7 @@ def weighted_loss_cvar(losses, weights, alpha):
     return float(np.dot(tail_mass, values[order]) / (1 - alpha))
 
 
-def _terminal_cost(model, inputs, terminal_energy, scenario, gp):
+def _terminal_cost(model, inputs, terminal_energy, scenario, gp, capacity=None):
     """Represent each path's configured inventory cost exactly, in EUR."""
     settings = inputs.settings
     mode = settings.terminal_inventory_mode
@@ -66,7 +66,9 @@ def _terminal_cost(model, inputs, terminal_energy, scenario, gp):
     if mode == "linear_value":
         return -settings.terminal_inventory_value_eur_per_mwh * terminal_energy
     if mode == "soft_target":
-        target = inputs.plant.battery.capacity_mwh * settings.terminal_soc_target_percent / 100
+        if capacity is None:
+            capacity = inputs.plant.battery.capacity_mwh
+        target = capacity * settings.terminal_soc_target_percent / 100
         deviation = model.addVar(name=f"terminal_deviation[s{scenario}]")
         model.addConstr(deviation >= terminal_energy - target)
         model.addConstr(deviation >= target - terminal_energy)
@@ -100,7 +102,8 @@ def build_research_model(inputs):
     # Battery state depends only on the actual initial state and the history of
     # shared controls. Scenarios in one node therefore have exactly the same
     # next SOC. Alias that state rather than creating duplicate path equations.
-    initial = model.addVar(lb=battery.energy_min_mwh, ub=battery.maximum_energy, name="energy[initial]")
+    lower_energy = 0.0 if inputs.degradation.mode == "naumann_lfp" else battery.energy_min_mwh
+    initial = model.addVar(lb=lower_energy, ub=battery.maximum_energy, name="energy[initial]")
     model.addConstr(initial == inputs.state.energy_mwh)
     for s in range(count):
         energy[s, 0] = initial
@@ -111,7 +114,7 @@ def build_research_model(inputs):
             # A node must never recombine different prior control histories.
             if any(energy[int(s), t] is not energy[representative, t] for s in members):
                 raise ValueError("Adaptive control nodes merge distinct battery histories")
-            next_energy = model.addVar(lb=battery.energy_min_mwh, ub=battery.maximum_energy,
+            next_energy = model.addVar(lb=lower_energy, ub=battery.maximum_energy,
                 name=f"energy[t{t + 1},n{owner}]")
             model.addConstr(next_energy == energy_transition(energy[representative, t],
                 charge[t, int(owner)], discharge[t, int(owner)], battery, duration))
@@ -124,9 +127,8 @@ def build_research_model(inputs):
                     model.addConstr(next_energy >= inputs.hard_terminal_minimum_mwh)
     variables = {"charge": charge, "discharge": discharge, "energy": energy,
         "utilization": utilization, "mode": mode, "nodes": nodes}
-    context = SimpleNamespace(plant=inputs.plant, state=inputs.state, grid=inputs.grid,
-        degradation=inputs.degradation, tree=SimpleNamespace(control_nodes=nodes),
-        scenarios=SimpleNamespace(scenario_ids=inputs.scenario_ids, pv_ac_mw=inputs.pv_ac_mw))
+    context = degradation_context(inputs, nodes)
+    variables["degradation_context"] = context
     wear = build_battery_degradation(model, context, variables, gp)
     forecasts = inputs.price_forecast
     price_positive = None if forecasts is None else forecasts.positive_eur_per_mwh
@@ -163,7 +165,17 @@ def build_research_model(inputs):
                 imports[s] += inputs.import_fee_eur_per_mwh * duration * imported
             if forecasts is not None:
                 settlement[s] += price_positive[s, t] * positive[s, t] - price_negative[s, t] * negative[s, t]
-        terminal[s] = _terminal_cost(model, inputs, energy[s, length], s, gp)
+        capacity = (variables["naumann_capacity_mwh"][s, length]
+            if inputs.degradation.mode == "naumann_lfp" else battery.capacity_mwh)
+        if inputs.hard_terminal_target_soc_percent is not None:
+            model.addConstr(energy[s, length] == capacity
+                * inputs.hard_terminal_target_soc_percent / 100,
+                name=f"terminal_available_capacity_soc[s{s}]")
+        if inputs.hard_terminal_minimum_soc_percent is not None:
+            model.addConstr(energy[s, length] >= capacity
+                * inputs.hard_terminal_minimum_soc_percent / 100,
+                name=f"terminal_available_capacity_floor[s{s}]")
+        terminal[s] = _terminal_cost(model, inputs, energy[s, length], s, gp, capacity)
         # Risk concerns pathwise monetary operating loss. Artificial imbalance
         # penalties and terminal salvage are deliberately excluded from this score.
         losses[s] = wear[s] + imports[s] - settlement[s]
@@ -201,11 +213,16 @@ def _extract_plan(inputs, variables, expressions):
     imbalance = grid * inputs.grid.delta_hours - inputs.planning_position_mwh
     actions = [MpcAction(product, inputs.cutoff.isoformat(), *commands[0, t])
         for t, product in enumerate(inputs.grid.interval_ids)]
-    return MpcPlan(inputs.cutoff.isoformat(), actions, energy[0].copy(), grid, imbalance,
+    plan = MpcPlan(inputs.cutoff.isoformat(), actions, energy[0].copy(), grid, imbalance,
         inputs.weights @ np.abs(imbalance), inputs.weights @ np.maximum(-imbalance, 0),
         {name: float(value.getValue()) for name, value in expressions.items()},
         scenario_actions=commands, scenario_energy_mwh=energy,
         control_nodes=tuple(tuple(int(n) for n in row) for row in nodes), representative_path_index=0)
+    if inputs.degradation.mode == "naumann_lfp":
+        from .naumann_milp import extract_naumann_arrays
+
+        plan.aging_arrays = extract_naumann_arrays(variables["degradation_context"], variables)
+    return plan
 
 
 def validate_research_plan(inputs, plan, tolerance=1e-6):
@@ -261,10 +278,27 @@ def validate_research_plan(inputs, plan, tolerance=1e-6):
         residuals["terminal_target"] = np.max(np.abs(energy[:, -1] - inputs.hard_terminal_target_mwh))
     if inputs.hard_terminal_minimum_mwh is not None:
         residuals["terminal_floor"] = np.max(inputs.hard_terminal_minimum_mwh - energy[:, -1])
+    if inputs.degradation.mode == "naumann_lfp":
+        wear, health_residuals = validate_naumann_plan(inputs, plan, charge, discharge,
+            energy, nodes=nodes, tolerance=tolerance)
+        residuals.update(health_residuals)
+        # Capacity and power constraints are checked against scenario health by
+        # the shared validator, including the first boundary after midnight.
+        residuals["energy_lower"] = 0.0
+        residuals["energy_upper"] = 0.0
+        if inputs.hard_terminal_target_soc_percent is not None:
+            targets = plan.aging_arrays["naumann_capacity_mwh"][:, -1]
+            targets = targets * inputs.hard_terminal_target_soc_percent / 100
+            residuals["terminal_available_capacity_soc"] = np.max(np.abs(energy[:, -1] - targets))
+        if inputs.hard_terminal_minimum_soc_percent is not None:
+            minima = plan.aging_arrays["naumann_capacity_mwh"][:, -1]
+            minima = minima * inputs.hard_terminal_minimum_soc_percent / 100
+            residuals["terminal_available_capacity_floor"] = np.max(minima - energy[:, -1])
     if not all(np.isfinite(value) for value in residuals.values()) or max(residuals.values()) > tolerance:
         raise MpcValidationError("Research MPC physical validation failed", residuals, tolerance)
-    wear = inputs.degradation.cost_eur_per_mwh_throughput * np.sum(
-        (charge + discharge) * inputs.grid.delta_hours, axis=1)
+    if inputs.degradation.mode != "naumann_lfp":
+        wear = inputs.degradation.cost_eur_per_mwh_throughput * np.sum(
+            (charge + discharge) * inputs.grid.delta_hours, axis=1)
     if inputs.degradation.mode == "xu_segmented":
         wear = np.array([evaluate_xu_dispatch(battery=battery, settings=inputs.degradation,
             state=inputs.state, charge_mw=charge[s], discharge_mw=discharge[s],
@@ -279,7 +313,9 @@ def validate_research_plan(inputs, plan, tolerance=1e-6):
     settings = inputs.settings
     terminal = np.zeros(count)
     if settings.terminal_inventory_mode == "soft_target":
-        target = battery.capacity_mwh * settings.terminal_soc_target_percent / 100
+        capacity = (plan.aging_arrays["naumann_capacity_mwh"][:, -1]
+            if inputs.degradation.mode == "naumann_lfp" else battery.capacity_mwh)
+        target = capacity * settings.terminal_soc_target_percent / 100
         terminal = settings.terminal_inventory_penalty_eur_per_mwh * np.abs(energy[:, -1] - target)
     elif settings.terminal_inventory_mode == "linear_value":
         terminal = -settings.terminal_inventory_value_eur_per_mwh * energy[:, -1]
@@ -395,6 +431,8 @@ def solve_research_mpc(inputs, solver=None):
             recomputed_components=components, planning_objective_value=float(recomputed),
             accepted_action_source="minimum_expected_absolute_imbalance" if imbalance_only else (
                 "causal_forecast_economics" if inputs.price_forecast is not None else "adaptive_price_blind"))
+        if plan.aging_diagnostics:
+            diagnostics["battery_aging"] = dict(plan.aging_diagnostics)
     except Exception as error:
         result.status = "invalid_or_failed_solve"
         diagnostics["failure_reason"] = str(error)

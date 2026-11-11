@@ -27,6 +27,10 @@ from ..transaction_fees import TransactionFeeState, account_trade_fees, transact
 from .continuous_inputs import prepare_continuous_inputs
 from .events import Event, EventEngine, EventKind
 from .replay import execute_interval
+from .battery_health import (
+    BatteryEndOfLifeReached, at_battery_end_of_life, health_summary,
+    forecast_health_record, initialize_physical_health, relative_terminal_soc, restore_battery_health,
+)
 from .synthetic import json_default, write_json
 from .validation_diagnostics import auction_validation_record
 from ..optimization.mpc import MPC_POLICIES, CAUSAL_TRACKER, MpcControllerState
@@ -111,6 +115,8 @@ def _physical_state(value):
     # Restore Xu degradation segment energies to the immutable tuple required by PhysicalState.
     if values.get("cycle_segment_energy_mwh") is not None:
         values["cycle_segment_energy_mwh"] = tuple(values["cycle_segment_energy_mwh"])
+    if values.get("battery_health") is not None:
+        values["battery_health"] = restore_battery_health(values["battery_health"])
     return PhysicalState(**values)
 
 
@@ -164,6 +170,10 @@ class ContinuousReplay:
         self.config_fingerprint = config_fingerprint or _configuration_fingerprint(config)
         self.identity = {"policy_version": CONTINUOUS_POLICY_VERSION + ("-mpc-v2-provisional-ida3" if self.realtime else ""), "strategy": strategy,
             "config_fingerprint": self.config_fingerprint, "input_fingerprint": prepared["input_fingerprint"]}
+        # Existing modes retain their checkpoint identity; health adds new state
+        # and therefore cannot resume a legacy replay under its old policy.
+        if self.aging.mode == "naumann_lfp":
+            self.identity["policy_version"] += "-naumann-lfp-v1"
         # Enforce the input contract: Continuous strategy output exists: `self.destination`.
         if self.destination.exists() and not resume:
             raise FileExistsError(f"Continuous strategy output exists: {self.destination}")
@@ -185,6 +195,10 @@ class ContinuousReplay:
         self.state = PhysicalState(self.grid.starts[0], prepared["initial_energy_mwh"],
             origin="known_delivery_start_assumption",
             cycle_segment_energy_mwh=config["state"].get("cycle_segment_energy_mwh"))
+        if self.aging.mode == "naumann_lfp":
+            self.state = replace(self.state, battery_health=restore_battery_health(
+                config["state"].get("battery_health")))
+            self.state = initialize_physical_health(self.state, self.plant.battery, self.aging)
         self.market = MarketState(transaction_fee_state=self.fees.initial_state)
         self.submitted = {day: {} for day in self.book_days}
         self.known = {day: [] for day in self.book_days}
@@ -585,20 +599,40 @@ class ContinuousReplay:
         # Keep the legacy final-day scope unless a study explicitly requests
         # the same hard target for every auction delivery book.
         terminal_scope = self.config["continuous_optimization"].get("terminal_soc_scope", "final_replay_day")
+        configured_target_soc, configured_minimum_soc = relative_terminal_soc(
+            self.config["state"], self.aging.mode)
+        terminal_soc = (configured_target_soc
+            if terminal_scope == "each_delivery_day" or day == self.days[-1] else None)
         terminal = (self.prepared["terminal_energy_mwh"]
                     if terminal_scope == "each_delivery_day" or day == self.days[-1] else None)
         terminal_minimum = self.prepared["terminal_minimum_energy_mwh"]
+        if terminal_soc is not None:
+            terminal = None
+        if configured_minimum_soc is not None:
+            terminal_minimum = None
         indexed_minimum = {}
         indexed_target = {}
+        indexed_minimum_soc = {}
+        indexed_target_soc = {}
         if self.config["continuous_optimization"].get("ida3_next_day_horizon", False):
             configured_target = self.prepared["terminal_energy_mwh"]
-            if configured_target is not None and terminal_minimum is not None:
+            configured_minimum = self.prepared["terminal_minimum_energy_mwh"]
+            if ((configured_target is not None or configured_target_soc is not None)
+                    and (configured_minimum is not None or configured_minimum_soc is not None)):
                 raise ValueError("Extended IDA3 requires either a midnight SOC target or minimum")
-            if configured_target is not None:
+            if configured_target_soc is not None:
+                indexed_target_soc = {len(grid.interval_ids): configured_target_soc}
+                terminal_soc = None
+            elif configured_target is not None:
                 # A projected initial state is already fixed; require equality
                 # only at future midnights that the model can still influence.
                 indexed_target = {len(grid.interval_ids): configured_target}
                 terminal = None
+            elif configured_minimum_soc is not None:
+                indexed_minimum_soc = {len(grid.interval_ids): configured_minimum_soc}
+                local_start = pd.Timestamp(grid.starts[0]).tz_convert(self.prepared["calendar"].timezone)
+                if local_start.hour == 0 and local_start.minute == 0:
+                    indexed_minimum_soc[0] = configured_minimum_soc
             elif terminal_minimum is not None:
                 # Keep the existing floor policy, including its starting
                 # midnight, so historical 40% studies remain reproducible.
@@ -609,6 +643,7 @@ class ContinuousReplay:
             else:
                 raise ValueError("Extended IDA3 requires a configured midnight SOC target or minimum")
             terminal_minimum = None
+            configured_minimum_soc = None
         native = daily.get("native_interval_minutes_by_auction")
         # Project retained operation, then construct only the target day's MILP when `native is None`.
         if native is None:
@@ -621,6 +656,8 @@ class ContinuousReplay:
             imbalance_penalty_eur_per_mwh=(ensemble_settings["planning_imbalance_penalty_eur_per_mwh"]
                 if stochastic else self.trading["imbalance_penalty_eur_per_mwh"]),
             terminal_target_mwh=terminal, terminal_minimum_mwh=terminal_minimum,
+            terminal_target_soc_percent=terminal_soc,
+            terminal_minimum_soc_percent=configured_minimum_soc,
             degradation=self.aging,
             grid_import_fee_eur_per_mwh=self.trading["grid_import_fee_eur_per_mwh"],
             optimize_imbalances=True if stochastic else self.trading.get("optimize_imbalances", True),
@@ -635,7 +672,9 @@ class ContinuousReplay:
             transaction_fees=self.fees,
             auction_submission_times={item.auction: item.submission_at for item in schedule},
             minimum_energy_mwh_by_boundary=indexed_minimum,
-            target_energy_mwh_by_boundary=indexed_target)
+            target_energy_mwh_by_boundary=indexed_target,
+            minimum_soc_percent_by_boundary=indexed_minimum_soc,
+            target_soc_percent_by_boundary=indexed_target_soc)
         diagnostic = {"delivery_day": day, "current_auction": event.auction, "cutoff": cutoff.isoformat(),
             "cutoff_utc": cutoff.isoformat(), "strategy": self.strategy,
             "auction_planning_mode": "current_auction_only" if self.current_only else "integrated",
@@ -645,6 +684,10 @@ class ContinuousReplay:
             "planning_start_utc": str(grid.starts[0]), "planning_end_utc": str(grid.ends[-1]),
             "physical_planning_intervals": len(grid.interval_ids), "terminal_target_mwh": terminal,
             "terminal_minimum_mwh": terminal_minimum,
+            "terminal_target_soc_percent": terminal_soc,
+            "terminal_minimum_soc_percent": configured_minimum_soc,
+            "minimum_soc_percent_by_boundary": indexed_minimum_soc,
+            "target_soc_percent_by_boundary": indexed_target_soc,
             "minimum_energy_mwh_by_boundary": indexed_minimum,
             "target_energy_mwh_by_boundary": indexed_target,
             "projected_boundary_energy_mwh": boundary.energy_mwh, "locked_prefix_projection": projection,
@@ -656,6 +699,9 @@ class ContinuousReplay:
             "boundary_kind": "ida3_noon" if first else "delivery_midnight",
             "predicted_initial_energy_mwh": boundary.energy_mwh,
             "actual_initial_energy_mwh": None, "prediction_error_mwh": None,
+            **({"predicted_initial_battery_health": asdict(boundary.battery_health),
+                "actual_initial_battery_health": None, "soh_prediction_error": None}
+               if self.aging.mode == "naumann_lfp" else {}),
             **({"projection_mode": "projected_soc_mpc_deterministic",
                 "mpc_plan_cutoff_utc": next(iter(self.realtime.state.latest_plan.values()), {}).get("issued_at"),
                 "projection_fallback_intervals": sum(bool(row.get("projection_fallback")) for row in projection),
@@ -717,7 +763,12 @@ class ContinuousReplay:
                         for key, mask in masks.items()}, "price_information": "actual_future_clearing_price_oracle"})
         floor = self.prepared["terminal_minimum_energy_mwh"]
         target = self.prepared["terminal_energy_mwh"]
-        if (floor is None) == (target is None):
+        target_soc, floor_soc = relative_terminal_soc(self.config["state"], self.aging.mode)
+        if target_soc is not None:
+            target = None
+        if floor_soc is not None:
+            floor = None
+        if (floor is None and floor_soc is None) == (target is None and target_soc is None):
             raise ValueError("Extended IDA3 requires exactly one midnight SOC target or minimum")
         # The optional look-ahead policy leaves the first midnight free while
         # retaining the configured target or floor at the final midnight.
@@ -725,17 +776,24 @@ class ContinuousReplay:
         boundaries = (current_len, total) if enforce_intermediate else (total,)
         floor_boundaries = {} if floor is None else {index: floor for index in boundaries}
         target_boundaries = {} if target is None else {index: target for index in boundaries}
+        floor_soc_boundaries = {} if floor_soc is None else {index: floor_soc for index in boundaries}
+        target_soc_boundaries = {} if target_soc is None else {index: target_soc for index in boundaries}
         pending = np.concatenate((np.asarray(initial.pending_position_mwh, dtype=float),
                                   np.zeros(len(future_grid.interval_ids))))
         inputs = replace(initial, grid=grid, scenarios=scenarios, tree=tree, auction_eligibility=masks,
             terminal_target_mwh=None, terminal_minimum_mwh=None,
+            terminal_target_soc_percent=None, terminal_minimum_soc_percent=None,
             minimum_energy_mwh_by_boundary=floor_boundaries,
             target_energy_mwh_by_boundary=target_boundaries,
+            minimum_soc_percent_by_boundary=floor_soc_boundaries,
+            target_soc_percent_by_boundary=target_soc_boundaries,
             pending_position_mwh=pending, native_interval_minutes_by_auction=resolutions,
             auction_submission_times=submission_times)
         diagnostic.update(planning_end_utc=str(grid.ends[-1]), physical_planning_intervals=total,
             modeled_auctions=list(masks), minimum_energy_mwh_by_boundary=floor_boundaries,
             target_energy_mwh_by_boundary=target_boundaries,
+            minimum_soc_percent_by_boundary=floor_soc_boundaries,
+            target_soc_percent_by_boundary=target_soc_boundaries,
             modeled_midnight_boundary_indices=[current_len, total],
             ida3_enforce_intermediate_soc=enforce_intermediate,
             target_delivery_days=[day, following], extended_ida3=True,
@@ -895,6 +953,8 @@ class ContinuousReplay:
             raise RuntimeError(f"Continuous solution validation failed: {validation.violations}")
         midnight_boundaries = (set(inputs.minimum_energy_mwh_by_boundary)
             | set(inputs.target_energy_mwh_by_boundary)
+            | set(inputs.minimum_soc_percent_by_boundary)
+            | set(inputs.target_soc_percent_by_boundary)
             | set(diagnostic.get("modeled_midnight_boundary_indices", ())))
         if midnight_boundaries:
             diagnostic["planned_midnight_energy_mwh"] = {
@@ -937,6 +997,9 @@ class ContinuousReplay:
                 "soc_start_mwh": float(result.arrays["energy_mwh"][0, index]),
                 "soc_end_mwh": float(result.arrays["energy_mwh"][0, index + 1]),
                 "auction_trade_mwh": quantities.get(product, 0.0), "snapshot_scenario_count": len(inputs.scenarios.scenario_ids)}
+            row.update(forecast_health_record(result.arrays, index, 0, self.plant.battery,
+                self.aging, energy_start=result.arrays["energy_mwh"][0, index],
+                energy_end=result.arrays["energy_mwh"][0, index + 1]))
             # Submit one immutable order and scope every change to its delivery book for each `planned` in `self.daily[day]['schedule']`.
             for planned in self.daily[product_day]["schedule"]:
                 model_auction = (f"{product_day}:{planned.auction}"
@@ -1000,6 +1063,12 @@ class ContinuousReplay:
             if prediction["actual_initial_energy_mwh"] is None and pd.Timestamp(prediction["planning_start_utc"]) == self.state.timestamp:
                 prediction["actual_initial_energy_mwh"] = self.state.energy_mwh
                 prediction["prediction_error_mwh"] = self.state.energy_mwh - prediction["predicted_initial_energy_mwh"]
+                if self.aging.mode == "naumann_lfp":
+                    actual_health = asdict(self.state.battery_health)
+                    prediction["actual_initial_battery_health"] = actual_health
+                    prediction["soh_prediction_error"] = (
+                        actual_health["committed_soh"]
+                        - prediction["predicted_initial_battery_health"]["committed_soh"])
 
     def _control(self, event):
         """Issue baseline retained commands or the first validated physical MPC action."""
@@ -1045,6 +1114,9 @@ class ContinuousReplay:
             "pv_forecast_vintage_utc": detail.get("pv_forecast_vintage_utc"),
             "pv_forecast_available_at_utc": detail.get("pv_forecast_available_at_utc"),
             "planned_energy_end_mwh": detail.get("soc_end_mwh"),
+            **({"planned_available_capacity_end_mwh": detail.get("forecast_available_capacity_end_mwh"),
+                "planned_health_lower_end": detail.get("forecast_health_lower_end")}
+               if self.aging.mode == "naumann_lfp" else {}),
             **({"controller": self.dispatch_policy, "mpc_solve_id": detail.get("mpc_solve_id"),
                 "pv_utilization_fraction": fraction, "mpc_fallback": detail.get("mpc_fallback", False),
                 "mpc_failure_reason": detail.get("mpc_failure_reason"),
@@ -1089,11 +1161,16 @@ class ContinuousReplay:
         handlers = {EventKind.AUCTION_SUBMISSION: self._submit, EventKind.AUCTION_RESULTS: self._publish,
             EventKind.PHYSICAL_CONTROL: self._control, EventKind.OBSERVATION_AVAILABLE: self._observe,
             EventKind.SETTLEMENT: self._settle}
-        detail = handlers[event.kind](event)
+        # A midnight observation may reach EOL before same-time new controls or
+        # submissions. Finish the old settlement without creating a new action.
+        stopped_action = (at_battery_end_of_life(getattr(self, "state", None), getattr(self, "aging", None))
+            and event.kind in {EventKind.AUCTION_SUBMISSION, EventKind.PHYSICAL_CONTROL})
+        detail = ({"battery_health_action": "skipped_at_end_of_life"}
+            if stopped_action else handlers[event.kind](event))
         # Update `detail` when this condition is met.
         if event.kind == EventKind.AUCTION_SUBMISSION:
             detail = {"auction": event.payload.event.auction,
-                "optimization_performed": True, **(detail or {})}
+                "optimization_performed": not stopped_action, **(detail or {})}
         self.event_trace.append({"at": event.at.isoformat(), "kind": event.kind.name, "sequence": event.sequence,
             "delivery_day": event.payload.delivery_day if isinstance(event.payload, ContinuousAuction)
                 else self.day_for_product[self.grid.interval_ids[event.payload]], **(detail or {})})
@@ -1104,10 +1181,15 @@ class ContinuousReplay:
             if self.progress:
                 day = self.day_for_product[self.grid.interval_ids[event.payload]]
                 capacity = self.plant.battery.capacity_mwh
+                if self.aging.mode == "naumann_lfp":
+                    capacity *= self.state.battery_health.committed_soh
                 soc = f"{100 * self.state.energy_mwh / capacity:.2f}%" if capacity else "not applicable"
                 self.progress(f"Continuous {self.strategy}: completed {day}; "
-                    f"SOC {soc}; "
+                    f"SOC {soc}" + (f" of available capacity; SOH {100 * self.state.battery_health.committed_soh:.3f}%"
+                        if self.aging.mode == "naumann_lfp" else "") + "; "
                     f"{len(self.solves)} auction solves")
+            if at_battery_end_of_life(getattr(self, "state", None), getattr(self, "aging", None)):
+                raise BatteryEndOfLifeReached(self.state)
 
     def _final_dispatch_and_ledger(self):
         """Reconcile the global ledger and allocate increments to delivery products."""
@@ -1149,6 +1231,10 @@ class ContinuousReplay:
     def run(self):
         """Run or resume one continuous trajectory and finalize its typed outputs."""
         started = perf_counter()
+        # EOL checkpoints remain reviewable and cannot silently start another
+        # delivery day with outstanding contractual commitments.
+        if at_battery_end_of_life(getattr(self, "state", None), getattr(self, "aging", None)):
+            raise BatteryEndOfLifeReached(self.state)
         events = self.events
         # When `self.cursor is not None`, set `key` using `tuple(self.cursor)`.
         if self.cursor is not None:
@@ -1162,6 +1248,24 @@ class ContinuousReplay:
             engine.run({kind: self._handle for kind in (EventKind.AUCTION_SUBMISSION, EventKind.AUCTION_RESULTS,
                 EventKind.PHYSICAL_CONTROL, EventKind.OBSERVATION_AVAILABLE, EventKind.SETTLEMENT)})
         except BaseException as error:
+            if isinstance(error, BatteryEndOfLifeReached):
+                write_json(self.destination / "json/battery_end_of_life.json", {
+                    "status": error.status, "stopped_at": self.state.timestamp,
+                    "final_state": asdict(self.state),
+                    "accepted_trades": [asdict(trade) for trade in self.market.accepted_trades],
+                    "submitted_quantities": self.submitted,
+                    "unpriced_commitments": {day: {auction: quantities
+                        for auction, quantities in submitted.items() if auction not in self.known[day]}
+                        for day, submitted in self.submitted.items()},
+                    "completed_intervals": len(self.records),
+                    "requested_intervals": len(self.grid.interval_ids),
+                    "cashflow_booked_eur": self.market.cashflow_eur,
+                    "commitments_policy": "accepted quantities retained; no automatic replacement or new orders"})
+                completed = [self.records[product] for product in self.grid.interval_ids
+                             if product in self.records]
+                pd.DataFrame(completed).to_csv(
+                    self.destination / "csv/realized_dispatch_until_end_of_life.csv", index=False)
+                write_json(self.destination / "json/event_trace.json", self.event_trace)
             # Preserve completed solve diagnostics for ordinary errors and
             # interrupts, even when restart checkpoints were disabled.
             if not self.checkpoint_enabled:
@@ -1187,6 +1291,13 @@ class ContinuousReplay:
         if not self.resume or not saved_config.exists():
             write_json(saved_config, self.config)
         pd.DataFrame(self.forecast_inputs).to_csv(self.destination / "csv/pv_forecast_inputs.csv", index=False)
+        final_target_soc, final_minimum_soc = relative_terminal_soc(self.config["state"], self.aging.mode)
+        final_capacity = (self.plant.battery.capacity_mwh * self.state.battery_health.committed_soh
+            if self.aging.mode == "naumann_lfp" else self.plant.battery.capacity_mwh)
+        final_target = (self.prepared["terminal_energy_mwh"] if final_target_soc is None
+            else final_capacity * final_target_soc / 100)
+        final_minimum = (self.prepared["terminal_minimum_energy_mwh"] if final_minimum_soc is None
+            else final_capacity * final_minimum_soc / 100)
         from ..reporting.continuous_outputs import save_continuous_strategy_outputs
         summary = save_continuous_strategy_outputs(self.config, self.destination, self.strategy,
             dispatch, pd.DataFrame(plans), ledger, self.solves, self.projections,
@@ -1200,12 +1311,15 @@ class ContinuousReplay:
                 "policy_version": self.identity["policy_version"], "input_fingerprint": self.prepared["input_fingerprint"],
                 "numerical_tolerances": asdict(self.numerical_tolerances),
                 "final_state": asdict(self.state), "final_fee_state": asdict(self.market.transaction_fee_state),
-                "terminal_target_mwh": self.prepared["terminal_energy_mwh"],
+                **health_summary(self.state, self.plant.battery, self.aging),
+                "terminal_target_mwh": final_target,
+                "terminal_target_soc_percent": final_target_soc,
                 "auction_terminal_soc_scope": self.config["continuous_optimization"].get(
                     "terminal_soc_scope", "final_replay_day"),
-                "terminal_minimum_mwh": self.prepared["terminal_minimum_energy_mwh"],
-                "terminal_error_mwh": (None if self.prepared["terminal_energy_mwh"] is None else
-                    self.state.energy_mwh - self.prepared["terminal_energy_mwh"]),
+                "terminal_minimum_mwh": final_minimum,
+                "terminal_minimum_soc_percent": final_minimum_soc,
+                "terminal_error_mwh": (None if final_target is None else
+                    self.state.energy_mwh - final_target),
                 "replay_wall_seconds_this_invocation": perf_counter() - started,
                 "comparison_scope": ("Continuous physical MPC execution, deterministic open-loop boundary projection; configured terminal inventory treatment"
                     if self.realtime else "Continuous greedy tracking; IDA3 extends through the following day" if
@@ -1267,6 +1381,8 @@ def run_continuous_experiment(config, *, progress=None):
             resume=resume, preserve=("run.lock",))
         identity = {"policy_version": CONTINUOUS_POLICY_VERSION,
             "config_fingerprint": _configuration_fingerprint(config), "input_fingerprint": prepared["input_fingerprint"]}
+        if config.get("degradation", {}).get("model") == "naumann_lfp":
+            identity["policy_version"] += "-naumann-lfp-v1"
         manifest_path = destination / "json/manifest.json"
         # When `manifest_path.exists()`, set `previous` using `json.loads(manifest_path.read_text())`.
         if manifest_path.exists():
@@ -1328,7 +1444,9 @@ def run_continuous_experiment(config, *, progress=None):
                     for key, value in summaries.items()})
             _atomic_json(manifest_path, manifest)
         except BaseException as error:
-            manifest.update(status="interrupted" if isinstance(error, KeyboardInterrupt) else "failed",
+            status = (error.status if isinstance(error, BatteryEndOfLifeReached)
+                else "interrupted" if isinstance(error, KeyboardInterrupt) else "failed")
+            manifest.update(status=status,
                 error=str(error) or type(error).__name__)
             _atomic_json(manifest_path, manifest)
             raise

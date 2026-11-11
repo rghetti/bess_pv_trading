@@ -31,6 +31,10 @@ def build_battery_degradation(model, inputs, variables, gp):
     """Cost new common/node-owned dispatch using the existing degradation model."""
     from .degradation import build_xu_degradation
 
+    if inputs.degradation.mode == "naumann_lfp":
+        from .naumann_milp import build_naumann_degradation
+
+        return build_naumann_degradation(model, inputs, variables, gp)
     if inputs.degradation.mode == "xu_segmented":
         return build_xu_degradation(model, inputs, variables, gp)
     # Ownership defines sharing; scenario mass is applied by the caller, once.

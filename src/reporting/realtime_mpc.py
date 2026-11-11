@@ -98,6 +98,28 @@ def controller_metrics(config, frame, solves):
         "solver_runtime_max_seconds": float(np.max(runtimes)) if runtimes else None,
         "solver_runtime_total_seconds": float(np.sum(runtimes)),
     }
+    # Health-aware reports distinguish falling usable capacity from nominal
+    # depth coordinates, which remain fixed in the cycle-memory banks.
+    if "available_capacity_mwh_start" in frame:
+        start_soc = 100 * frame.energy_start_mwh / frame.available_capacity_mwh_start
+        end_soc = 100 * frame.energy_end_mwh / frame.available_capacity_mwh_end
+        all_soc = np.r_[start_soc.iloc[0], end_soc]
+        end_capacity = frame.available_capacity_mwh_end.to_numpy(float)
+        lower = end_capacity * config["battery"]["soc_min_percent"] / 100
+        upper = end_capacity * config["battery"]["soc_max_percent"] / 100
+        result.update(soc_min_percent=float(all_soc.min()), soc_max_percent=float(all_soc.max()),
+            soc_mean_percent=float(np.dot((start_soc + end_soc) / 2, hours) / hours.sum()),
+            soc_final_percent=float(end_soc.iloc[-1]),
+            soc_reporting_basis="committed_available_capacity",
+            initial_soh=float(frame.battery_soh_start.iloc[0]),
+            final_soh=float(frame.battery_soh_end.iloc[-1]),
+            final_available_capacity_mwh=float(end_capacity[-1]),
+            soc_boundary_events=int((np.isclose(energies[1:], lower, atol=tolerance, rtol=0)
+                | np.isclose(energies[1:], upper, atol=tolerance, rtol=0)).sum()),
+            power_boundary_events=int((((frame.charge_power_limit_mw > tolerance)
+                & (frame.charge_mw >= frame.charge_power_limit_mw - tolerance))
+                | ((frame.discharge_power_limit_mw > tolerance)
+                   & (frame.discharge_mw >= frame.discharge_power_limit_mw - tolerance))).sum()))
     return result
 
 
@@ -243,9 +265,11 @@ def _comparison_plots(config, destination, daily, frames, summaries, oracle_valu
             times = pd.to_datetime(selected.start, utc=True).dt.tz_convert(timezone)
             ends = pd.to_datetime(selected.end, utc=True).dt.tz_convert(timezone)
             capacity = config["battery"]["capacity_mwh"]
-            scale = 100 / capacity if capacity else 1
-            plot_boundary_series(axes[0], times, ends, selected.energy_start_mwh * scale,
-                                 selected.energy_end_mwh * scale, label=controller)
+            start_capacity = selected.get("available_capacity_mwh_start", capacity)
+            end_capacity = selected.get("available_capacity_mwh_end", capacity)
+            start_soc = 100 * selected.energy_start_mwh / start_capacity if capacity else selected.energy_start_mwh
+            end_soc = 100 * selected.energy_end_mwh / end_capacity if capacity else selected.energy_end_mwh
+            plot_boundary_series(axes[0], times, ends, start_soc, end_soc, label=controller)
             plot_interval_series(axes[1], times, ends, selected.executed_battery_mw, label=controller)
             plot_interval_series(axes[1], times, ends, selected.planned_battery_mw, linestyle="--", alpha=0.5)
         axes[0].set_ylabel("Actual SOC (%)")

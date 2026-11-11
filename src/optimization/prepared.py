@@ -90,8 +90,18 @@ def _terminal_target(settings: Mapping[str, Any]) -> float | None:
     return None if target is None else float(target)
 
 
-def terminal_minimum_energy_mwh(settings: Mapping[str, Any], battery: BatteryParameters) -> float | None:
+def terminal_minimum_energy_mwh(settings: Mapping[str, Any], battery: BatteryParameters,
+                                *, available_capacity_mwh: float | None = None) -> float | None:
     """Convert an optional terminal SOC floor percentage to stored energy."""
+    # An explicit absolute floor, including null, overrides inherited SOC fields.
+    if "terminal_minimum_mwh" in settings:
+        explicit = settings["terminal_minimum_mwh"]
+        if explicit is None:
+            return None
+        value = float(explicit)
+        if not np.isfinite(value) or not battery.energy_min_mwh <= value <= battery.maximum_energy:
+            raise PreparedInputError("state.terminal_minimum_mwh lies outside battery energy bounds")
+        return value
     percentage = settings.get("terminal_soc_min_percent")
     # Return `None` when `percentage is None`.
     if percentage is None:
@@ -103,7 +113,8 @@ def terminal_minimum_energy_mwh(settings: Mapping[str, Any], battery: BatteryPar
     # Enforce the input contract: state.terminal_soc_min_percent must be a finite percentage between 0 and 100.
     if not np.isfinite(value) or not 0 <= value <= 100:
         raise PreparedInputError("state.terminal_soc_min_percent must be a finite percentage between 0 and 100")
-    energy = battery.capacity_mwh * value / 100.0
+    capacity = battery.capacity_mwh if available_capacity_mwh is None else available_capacity_mwh
+    energy = capacity * value / 100.0
     # Enforce the input contract: state.terminal_soc_min_percent lies outside battery SOC bounds.
     if not battery.energy_min_mwh <= energy <= battery.maximum_energy:
         raise PreparedInputError("state.terminal_soc_min_percent lies outside battery SOC bounds")
@@ -305,15 +316,40 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
     from .degradation import degradation_settings_from_config
     _require(degradation, ("assumptions",), "degradation assumptions")
     fees = transaction_fees_from_config(config)
-    terminal_minimum = terminal_minimum_energy_mwh(state_config, battery)
+    degradation_settings = degradation_settings_from_config(config)
+    physical_state = PhysicalState(grid.starts[0], float(state_config["initial_energy_mwh"]),
+        origin=state_config["origin"],
+        cycle_segment_energy_mwh=state_config.get("cycle_segment_energy_mwh"))
+    operating_battery = battery
+    available_capacity = battery.capacity_mwh
+    if degradation_settings.mode == "naumann_lfp":
+        from .naumann import available_capacity_mwh, effective_battery, health_state_from_config
+
+        # Prepared feeds may resume an explicit complete health checkpoint. A
+        # fresh prior is initialized only through the selected health settings.
+        physical_state = health_state_from_config(config, physical_state, battery, degradation_settings)
+        operating_battery = effective_battery(physical_state, battery, degradation_settings)
+        available_capacity = available_capacity_mwh(physical_state, battery, degradation_settings)
+    relative_basis = state_config.get("terminal_soc_basis",
+        state_config.get("initial_soc_basis", "nominal_capacity"))
+    relative_targets = degradation_settings.mode == "naumann_lfp" and relative_basis == "available_capacity"
+    target_soc = (state_config.get("terminal_soc_percent")
+        if relative_targets and "terminal_target_mwh" not in state_config else None)
+    minimum_soc = (state_config.get("terminal_soc_min_percent")
+        if relative_targets and "terminal_minimum_mwh" not in state_config else None)
+    terminal_target = (None if relative_targets and "terminal_target_mwh" not in state_config
+        and "terminal_soc_percent" in state_config else _terminal_target(state_config))
+    terminal_minimum = (None if minimum_soc is not None else terminal_minimum_energy_mwh(
+        state_config, operating_battery, available_capacity_mwh=available_capacity))
     return OptimizationInput(grid, plant,
-        PhysicalState(grid.starts[0], float(state_config["initial_energy_mwh"]), origin=state_config["origin"],
-                      cycle_segment_energy_mwh=state_config.get("cycle_segment_energy_mwh")),
+        physical_state,
         MarketState(transaction_fee_state=fees.initial_state), scenarios, tree, masks,
-        float(trading["imbalance_penalty_eur_per_mwh"]), _terminal_target(state_config),
-        degradation_settings_from_config(config),
+        float(trading["imbalance_penalty_eur_per_mwh"]), terminal_target,
+        degradation_settings,
         float(trading["grid_import_fee_eur_per_mwh"]), imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
         transaction_fees=fees, auction_submission_times={event.auction: event.submission_at for event in schedule},
         terminal_minimum_mwh=terminal_minimum,
+        terminal_target_soc_percent=target_soc,
+        terminal_minimum_soc_percent=minimum_soc,
         planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
         optimize_imbalances=trading.get("optimize_imbalances", True))

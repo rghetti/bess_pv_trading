@@ -13,6 +13,9 @@ from bess_pv_trading.domain import (
 )
 from bess_pv_trading.optimization.degradation import advance_degradation_state
 from bess_pv_trading.optimization.physical import energy_transition, retained_energy
+from .battery_health import (
+    health_execution_record, initialize_physical_health, protect_midnight_health,
+)
 
 
 def condition_and_slice(inputs: OptimizationInput, *, first_interval: int,
@@ -81,8 +84,15 @@ def condition_and_slice(inputs: OptimizationInput, *, first_interval: int,
         scenario.origin, {**scenario.provenance, "conditioned_on": list(observed_prices)})
     grid = DeliveryGrid(inputs.grid.interval_ids[first_interval:],
                         inputs.grid.starts[first_interval:], inputs.grid.ends[first_interval:])
+    # Boundary-indexed inventory requirements follow the residual grid. Past
+    # boundaries are already executed and cannot constrain future decisions.
+    boundary_maps = {name: {index - first_interval: value for index, value in getattr(inputs, name).items()
+                           if index >= first_interval}
+        for name in ("minimum_energy_mwh_by_boundary", "target_energy_mwh_by_boundary",
+                     "minimum_soc_percent_by_boundary", "target_soc_percent_by_boundary")}
     return replace(inputs, grid=grid, state=state, market=market, tree=tree,
                    scenarios=conditional,
+                   **boundary_maps,
                    pending_position_mwh=(tuple(inputs.pending_position_mwh[first_interval:])
                                          if inputs.pending_position_mwh is not None else None),
                    auction_eligibility={a: inputs.auction_eligibility[a][first_interval:]
@@ -134,15 +144,27 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
     if degradation_settings is not None and degradation_eur_per_mwh:
         raise ValueError("Specify degradation_settings or a legacy throughput coefficient, not both")
     aging_settings = degradation_settings or DegradationSettings(degradation_eur_per_mwh)
-    battery = plant.battery
+    nominal_battery = plant.battery
+    state = initialize_physical_health(state, nominal_battery, aging_settings)
+    battery = nominal_battery
+    charge_power_limit = battery.max_power_mw
+    discharge_power_limit = battery.max_power_mw
+    # Health changes accessible energy and directional cell-rate power limits;
+    # the nominal equipment stays unchanged for cycle-depth calibration.
+    if aging_settings.mode == "naumann_lfp":
+        from ..optimization.naumann import effective_battery, power_limits
+
+        battery = effective_battery(state, nominal_battery, aging_settings)
+        charge_power_limit, discharge_power_limit = power_limits(
+            state, nominal_battery, aging_settings)
     # Enforce the input contract: Execution starts outside battery energy bounds.
     if not battery.energy_min_mwh <= state.energy_mwh <= battery.maximum_energy:
         raise ValueError("Execution starts outside battery energy bounds")
     duration = (end - start).total_seconds() / 3600
     retained = retained_energy(state.energy_mwh, battery, duration)
-    charge = max(0.0, min(requested_charge_mw, battery.max_power_mw,
+    charge = max(0.0, min(requested_charge_mw, charge_power_limit,
         max(0.0, battery.maximum_energy - retained) / (duration * battery.eta_charge)))
-    discharge = max(0.0, min(requested_discharge_mw, battery.max_power_mw,
+    discharge = max(0.0, min(requested_discharge_mw, discharge_power_limit,
         max(0.0, retained - battery.energy_min_mwh) * battery.eta_discharge / duration))
     # Enforce the input contract: Execution cannot charge and discharge simultaneously.
     if charge > 1e-8 and discharge > 1e-8:
@@ -158,9 +180,9 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         available_grid = pv_ac_mw - curtailment + discharge - charge
         curtailment -= min(curtailment, max(0.0, grid_target_mw-available_grid))
         required_battery = grid_target_mw - pv_ac_mw + curtailment
-        charge_limit = min(battery.max_power_mw,
+        charge_limit = min(charge_power_limit,
             max(0.0, battery.maximum_energy-retained) / (duration*battery.eta_charge))
-        discharge_limit = min(battery.max_power_mw,
+        discharge_limit = min(discharge_power_limit,
             max(0.0, retained-battery.energy_min_mwh)*battery.eta_discharge / duration)
         actual_battery = float(np.clip(required_battery, -charge_limit, discharge_limit))
         charge, discharge = max(0.0, -actual_battery), max(0.0, actual_battery)
@@ -193,7 +215,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
     # PV while changing battery power equally, preserving actual grid exchange.
     if dispatch_policy == "follow_battery_plan_recover_curtailment":
         before_recovery = (charge, discharge, curtailment)
-        charge_limit = min(battery.max_power_mw,
+        charge_limit = min(charge_power_limit,
             max(0.0, battery.maximum_energy - retained) / (duration * battery.eta_charge))
         actual_battery = discharge - charge
         recovered_curtailment = min(curtailment, max(0.0, actual_battery + charge_limit))
@@ -201,13 +223,25 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         actual_battery -= recovered_curtailment
         charge, discharge = max(0.0, -actual_battery), max(0.0, actual_battery)
         feedback_adjustment += sum(abs(a-b) for a,b in zip((charge,discharge,curtailment), before_recovery))
+    health_adjustment = 0.0
+    if aging_settings.mode == "naumann_lfp":
+        before_health_curtailment = curtailment
+        charge, discharge, curtailment, health_adjustment = protect_midnight_health(
+            state=state, battery=nominal_battery, settings=aging_settings, end=end,
+            charge_mw=charge, discharge_mw=discharge, curtailment_mw=curtailment,
+            pv_ac_mw=pv_ac_mw, poi_export_mw=plant.poi_export_mw,
+            numerical_tolerance=numerical_tolerance)
+        safety_adjustment += health_adjustment
+        recovered_curtailment = max(0.0, recovered_curtailment
+            - max(0.0, curtailment - before_health_curtailment))
+        grid = pv_ac_mw - curtailment + discharge - charge
     energy = energy_transition(state.energy_mwh, charge, discharge, battery, duration)
     # Enforce the input contract: Execution would violate battery energy bounds.
     if energy < battery.energy_min_mwh-numerical_tolerance or energy > battery.maximum_energy+numerical_tolerance:
         raise ValueError("Execution would violate battery energy bounds")
     energy = min(battery.maximum_energy, max(battery.energy_min_mwh, energy))
     throughput = (charge + discharge) * duration
-    next_state, aging = advance_degradation_state(state=state, battery=battery,
+    next_state, aging = advance_degradation_state(state=state, battery=nominal_battery,
         settings=aging_settings, end=end, energy_mwh=energy,
         charge_mw=charge, discharge_mw=discharge)
     record = {"pv_ac_mw": pv_ac_mw, "pv_injection_mw": pv_ac_mw - curtailment,
@@ -227,4 +261,16 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
     # When `next_state.cycle_segment_energy_mwh is not None`, set `record['cycle_segment_energy_end_mwh']` using `next_state.cycle_segment_energy_mwh`.
     if next_state.cycle_segment_energy_mwh is not None:
         record["cycle_segment_energy_end_mwh"] = next_state.cycle_segment_energy_mwh
+    record.update(health_execution_record(state, next_state, nominal_battery, aging_settings))
+    if aging_settings.mode == "naumann_lfp":
+        charge_internal = nominal_battery.eta_charge * charge
+        discharge_internal = discharge / nominal_battery.eta_discharge
+        available = nominal_battery.capacity_mwh * state.battery_health.committed_soh
+        record.update(charge_power_limit_mw=charge_power_limit,
+                      discharge_power_limit_mw=discharge_power_limit,
+                      health_protection_adjustment_mw=health_adjustment,
+                      charge_c_rate_nominal=charge_internal / nominal_battery.capacity_mwh,
+                      discharge_c_rate_nominal=discharge_internal / nominal_battery.capacity_mwh,
+                      charge_c_rate_effective=charge_internal / available,
+                      discharge_c_rate_effective=discharge_internal / available)
     return next_state, record

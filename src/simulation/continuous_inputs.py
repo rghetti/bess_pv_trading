@@ -18,6 +18,7 @@ from ..data.gme import native_price_resolution_minutes
 from ..domain import DeliveryGrid, PlantParameters, battery_parameters_from_config
 from ..markets import AuctionCalendar
 from ..optimization.prepared import terminal_minimum_energy_mwh
+from .battery_health import relative_terminal_soc
 from .gme_oracle import (_forecast_preflight_session, _load_auction_prices, _load_pv,
     _load_pv_forecast, _soc_energy_targets)
 from .settlement import load_realized_imbalance_prices
@@ -587,7 +588,23 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
     if plant.farm_id != int(config["forecast"]["farm_id"]):
         raise ValueError("Plant and PV forecast must identify the same farm")
     initial_energy, terminal_energy = _soc_energy_targets(config["state"], battery)
-    terminal_minimum = terminal_minimum_energy_mwh(config["state"], battery)
+    target_battery = battery
+    available_capacity = battery.capacity_mwh
+    supplied_health = config["state"].get("battery_health")
+    _, minimum_soc = relative_terminal_soc(config["state"], config.get("degradation", {}).get("model"))
+    if minimum_soc is not None and supplied_health is not None:
+        soh = float(supplied_health["committed_soh"])
+        available_capacity *= soh
+        target_battery = replace(battery, energy_min_mwh=battery.energy_min_mwh * soh,
+                                energy_max_mwh=battery.maximum_energy * soh)
+    if "terminal_minimum_mwh" in config["state"]:
+        value = config["state"]["terminal_minimum_mwh"]
+        terminal_minimum = None if value is None else float(value)
+    elif minimum_soc is not None:
+        terminal_minimum = terminal_minimum_energy_mwh(config["state"], target_battery,
+            available_capacity_mwh=available_capacity)
+    else:
+        terminal_minimum = terminal_minimum_energy_mwh(config["state"], battery)
     days_data: dict[str, dict[str, Any]] = {}
     all_grids = [calendar.delivery_grid(day).to_domain() for day in input_days]
     scored_grids = all_grids[:len(days)]

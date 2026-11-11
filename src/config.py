@@ -297,6 +297,9 @@ def validate_continuous_optimization(config: dict[str, Any], *, require_dates: b
                     or not 0 < confidence < 1):
                 raise ConfigurationError("Invalid imbalance CVaR settings")
     state, battery = config.get("state", {}), config.get("battery", {})
+    for name in ("initial_soc_basis", "terminal_soc_basis"):
+        if state.get(name, "nominal_capacity") not in {"nominal_capacity", "available_capacity"}:
+            raise ConfigurationError(f"state.{name} must be nominal_capacity or available_capacity")
     lower, upper = (float(battery.get(key, default)) for key, default in
                     (("soc_min_percent", 0.0), ("soc_max_percent", 100.0)))
     # Process each `key` in this collection.
@@ -465,8 +468,10 @@ def validate_config(config: dict[str, Any]) -> None:
     if "degradation" in config:
         from .optimization.degradation import degradation_settings_from_config
         section=config["degradation"]
+        if not isinstance(section, dict):
+            raise ConfigurationError("degradation must be a YAML mapping")
         # Enforce the input contract: Unknown degradation model.
-        if section.get("model","throughput") not in {"throughput","constant_throughput","xu_segmented"}:
+        if section.get("model","throughput") not in {"throughput","constant_throughput","xu_segmented","naumann_lfp"}:
             raise ConfigurationError("Unknown degradation model")
         # Example templates retain explicit missing values. Execution validates
         # their required inputs; loading a template must not invent coefficients.
@@ -474,6 +479,24 @@ def validate_config(config: dict[str, Any]) -> None:
         # Check common settings; specialized adapters validate their own inputs when `section.get('throughput_lifetime') is not None`.
         if section.get("throughput_lifetime") is not None:
             numeric_fields.remove("cost_eur_per_mwh_throughput")
+        if section.get("model") == "naumann_lfp":
+            from .domain import NaumannSettings
+
+            # Validate physical/numerical health settings even when a review
+            # template deliberately leaves replacement economics unspecified.
+            parameters = section.get("naumann")
+            if parameters is not None and not isinstance(parameters, dict):
+                raise ConfigurationError("degradation.naumann must be a YAML mapping")
+            try:
+                NaumannSettings(**(parameters or {}))
+            except (TypeError, ValueError, KeyError) as error:
+                raise ConfigurationError(str(error)) from None
+            if config.get("battery", {}).get("self_discharge_per_hour", 0):
+                raise ConfigurationError("Naumann aging requires zero self-discharge")
+            # A null inherited throughput coefficient means zero in this mode;
+            # Xu stress parameters are unused and cannot suppress validation.
+            numeric_fields = ({"replacement_cost_eur"}
+                if section.get("replacement_economics") is None else set())
         # Check common settings; specialized adapters validate their own inputs when `not any((section.get(key, 0) is None for key in numeric_fields))`.
         if not any(section.get(key,0) is None for key in numeric_fields):
             try:

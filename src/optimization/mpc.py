@@ -6,7 +6,7 @@ settlement forecasts and delayed-observation recourse, without market orders.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field, fields, replace
 from time import perf_counter
 from types import SimpleNamespace
 from typing import Any, Mapping
@@ -289,6 +289,9 @@ class MpcInput:
     price_forecast: ForecastPrices | None = None
     terminal_value: TerminalValueCurve | None = None
     provisional_ida3_mwh: np.ndarray | None = None
+    # These percentages refer to forecast available capacity at the horizon end.
+    hard_terminal_target_soc_percent: float | None = None
+    hard_terminal_minimum_soc_percent: float | None = None
     planning_position_mwh: np.ndarray = field(init=False, repr=False)
 
     def __post_init__(self):
@@ -335,7 +338,16 @@ class MpcInput:
                 or not np.all(self.pv_ac_mw[:, 0] == self.current_realized_pv_mw)):
             raise ValueError("Every scenario must use the disclosed realized PV in its first interval")
         battery = self.plant.battery
-        if not battery.energy_min_mwh <= self.state.energy_mwh <= battery.maximum_energy:
+        operating_battery = battery
+        if self.degradation.mode == "naumann_lfp":
+            from .naumann import effective_battery, initialize_health
+
+            # Initialize only an explicitly configured health prior, then retain
+            # its complete carried exposure and cycle-memory state.
+            health = initialize_health(self.state, battery, self.degradation)
+            object.__setattr__(self, "state", replace(self.state, battery_health=health))
+            operating_battery = effective_battery(self.state, battery, self.degradation)
+        if not operating_battery.energy_min_mwh <= self.state.energy_mwh <= operating_battery.maximum_energy:
             raise ValueError("MPC initial energy lies outside the battery box")
         if self.degradation.mode == "xu_segmented":
             if battery.self_discharge_per_hour or battery.capacity_mwh <= 0:
@@ -343,16 +355,43 @@ class MpcInput:
             initial_segment_energy(self.state, battery, self.degradation)
         elif self.state.cycle_segment_energy_mwh is not None:
             raise ValueError("MPC cannot discard Xu segment memory")
+        if self.degradation.mode != "naumann_lfp" and self.state.battery_health is not None:
+            raise ValueError("MPC cannot discard carried Naumann battery health")
+        # Relative health-aware targets and absolute MWh targets are distinct
+        # contracts. Neither silently replaces the other.
+        for relative_name, absolute_name in (
+                ("hard_terminal_target_soc_percent", "hard_terminal_target_mwh"),
+                ("hard_terminal_minimum_soc_percent", "hard_terminal_minimum_mwh")):
+            percentage = getattr(self, relative_name)
+            if percentage is None:
+                continue
+            if self.degradation.mode != "naumann_lfp":
+                raise ValueError("Available-capacity MPC SOC targets require naumann_lfp mode")
+            if (not np.isfinite(percentage) or not 0 <= percentage <= 100
+                    or not battery.energy_min_mwh <= battery.capacity_mwh * percentage / 100
+                    <= battery.maximum_energy):
+                raise ValueError(f"Invalid MPC {relative_name}")
+            if getattr(self, absolute_name) is not None:
+                raise ValueError(f"Specify {relative_name} or {absolute_name}, not both")
         # A configured daily target is a physical equality for every MPC horizon.
         if self.settings.terminal_inventory_mode == "hard_target":
-            target = battery.capacity_mwh * self.settings.terminal_soc_target_percent / 100
+            target = terminal_reference_capacity_mwh(self) * self.settings.terminal_soc_target_percent / 100
             if self.hard_terminal_target_mwh is not None and not np.isclose(
                     self.hard_terminal_target_mwh, target, rtol=0, atol=1e-9):
                 raise ValueError("Daily hard terminal SOC conflicts with the study terminal target")
-            object.__setattr__(self, "hard_terminal_target_mwh", target)
+            if self.degradation.mode == "naumann_lfp" and self.hard_terminal_target_mwh is None:
+                percentage = self.settings.terminal_soc_target_percent
+                if not battery.energy_min_mwh <= battery.capacity_mwh * percentage / 100 <= battery.maximum_energy:
+                    raise ValueError("Daily hard terminal SOC lies outside the battery SOC box")
+                if (self.hard_terminal_target_soc_percent is not None and not np.isclose(
+                        self.hard_terminal_target_soc_percent, percentage, rtol=0, atol=1e-9)):
+                    raise ValueError("Daily hard terminal SOC conflicts with the study terminal SOC target")
+                object.__setattr__(self, "hard_terminal_target_soc_percent", percentage)
+            else:
+                object.__setattr__(self, "hard_terminal_target_mwh", target)
         for name in ("hard_terminal_target_mwh", "hard_terminal_minimum_mwh"):
             value = getattr(self, name)
-            if value is not None and (not np.isfinite(value) or not battery.energy_min_mwh <= value <= battery.maximum_energy):
+            if value is not None and (not np.isfinite(value) or not operating_battery.energy_min_mwh <= value <= operating_battery.maximum_energy):
                 raise ValueError(f"Invalid MPC {name}")
         if not np.isfinite(self.import_fee_eur_per_mwh) or self.import_fee_eur_per_mwh < 0:
             raise ValueError("MPC import fee must be finite and nonnegative")
@@ -410,8 +449,8 @@ class MpcInput:
                 raise ValueError("piecewise_linear requires an eligible terminal_value curve")
             if self.terminal_value.available_at > cutoff:
                 raise ValueError("Continuation value is after the cutoff")
-            if (self.terminal_value.energy_mwh[0] > battery.energy_min_mwh
-                    or self.terminal_value.energy_mwh[-1] < battery.maximum_energy):
+            if (self.terminal_value.energy_mwh[0] > operating_battery.energy_min_mwh
+                    or self.terminal_value.energy_mwh[-1] < operating_battery.maximum_energy):
                 raise ValueError("Continuation curve must cover the entire battery operating range")
         elif self.terminal_value is not None:
             raise ValueError("A terminal_value curve requires piecewise_linear terminal mode")
@@ -449,6 +488,9 @@ class MpcPlan:
     scenario_energy_mwh: np.ndarray | None = None
     control_nodes: tuple[tuple[int, ...], ...] | None = None
     representative_path_index: int = 0
+    # Scenario-indexed health and memory forecasts; these never advance actual SOH.
+    aging_arrays: dict[str, np.ndarray] = field(default_factory=dict)
+    aging_diagnostics: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -468,6 +510,75 @@ class MpcControllerState:
     plans: list[dict] = field(default_factory=list)
     scenarios: list[dict] = field(default_factory=list)
     issued_actions: list[dict] = field(default_factory=list)
+
+
+def terminal_reference_capacity_mwh(inputs):
+    """Return the available capacity known at cutoff for an SOC-based target."""
+    battery = inputs.plant.battery
+    if inputs.degradation.mode != "naumann_lfp":
+        return battery.capacity_mwh
+    from .naumann import available_capacity_mwh
+
+    return available_capacity_mwh(inputs.state, battery, inputs.degradation)
+
+
+def degradation_context(inputs, nodes=None):
+    """Adapt common or scenario-owned MPC controls to the shared aging builder."""
+    length = len(inputs.grid.interval_ids)
+    if nodes is None:
+        nodes = (tuple("mpc" for _ in range(length)),)
+        scenario_ids = ("common",)
+        pv = inputs.pv_ac_mw[:1]
+    else:
+        scenario_ids = inputs.scenario_ids
+        pv = inputs.pv_ac_mw
+    return SimpleNamespace(plant=inputs.plant, state=inputs.state, grid=inputs.grid,
+        degradation=inputs.degradation, tree=SimpleNamespace(control_nodes=nodes),
+        scenarios=SimpleNamespace(scenario_ids=scenario_ids, pv_ac_mw=pv))
+
+
+def validate_naumann_plan(inputs, plan, charge, discharge, energy, nodes=None, tolerance=1e-6):
+    """Check forecast health independently and retain distinct replay aging costs."""
+    from .naumann import evaluate_naumann_dispatch
+    from .naumann_milp import (naumann_degradation_from_arrays,
+        naumann_planner_error_bounds, validate_naumann_arrays)
+
+    context = degradation_context(inputs, nodes)
+    charge = np.atleast_2d(charge)
+    discharge = np.atleast_2d(discharge)
+    energy = np.atleast_2d(energy)
+    arrays = dict(plan.aging_arrays)
+    arrays.update(charge_mw=charge, discharge_mw=discharge, energy_mwh=energy)
+    residuals = validate_naumann_arrays(context, arrays, tolerance=tolerance)
+    forecast_wear = naumann_degradation_from_arrays(context, arrays)
+    # Planner interpolation error is checked against the same cutoff-known SOC
+    # normalization. Actual replay also commits capacity at subsequent midnights.
+    reference_capacity = terminal_reference_capacity_mwh(inputs)
+    replay_wear = []
+    reference_wear = []
+    for s in range(len(charge)):
+        arguments = dict(battery=inputs.plant.battery, settings=inputs.degradation,
+            state=inputs.state, charge_mw=charge[s], discharge_mw=discharge[s],
+            delta_hours=inputs.grid.delta_hours, starts=inputs.grid.starts)
+        replay_wear.append(evaluate_naumann_dispatch(**arguments)["degradation_eur"])
+        reference_wear.append(evaluate_naumann_dispatch(**arguments,
+            calendar_reference_capacity_mwh=reference_capacity)["degradation_eur"])
+    replay_wear = np.asarray(replay_wear)
+    reference_wear = np.asarray(reference_wear)
+    bounds = naumann_planner_error_bounds(context, arrays)
+    wear_bound = np.asarray(bounds["wear_eur"], dtype=float)
+    difference = np.abs(forecast_wear - reference_wear)
+    # A model approximation has its own certified bound; solver row tolerances
+    # remain separate and cannot conceal an arbitrary cost discrepancy.
+    residuals["naumann_replay_wear_bound_eur"] = float(np.max(
+        np.maximum(difference - wear_bound, 0), initial=0))
+    plan.aging_diagnostics = {
+        "forecast_degradation_eur": forecast_wear.tolist(),
+        "replay_degradation_eur": replay_wear.tolist(),
+        "frozen_reference_degradation_eur": reference_wear.tolist(),
+        "forecast_replay_error_bound_eur": wear_bound.tolist(),
+        "future_soc_normalization_difference_eur": (replay_wear - reference_wear).tolist()}
+    return forecast_wear, residuals
 
 
 def build_mpc_model(inputs: MpcInput):
@@ -492,7 +603,9 @@ def build_mpc_model(inputs: MpcInput):
         if np.all(inputs.pv_ac_mw[:, t] == 0):
             model.addConstr(utilization[t] == 1, name=f"zero_forecast_utilization[t{t}]")
     for t in range(length + 1):
-        energy[0, t] = model.addVar(lb=battery.energy_min_mwh, ub=battery.maximum_energy, name=f"energy[t{t}]")
+        # Daily health constraints replace the nominal SOC box in the new mode.
+        lower_energy = 0.0 if inputs.degradation.mode == "naumann_lfp" else battery.energy_min_mwh
+        energy[0, t] = model.addVar(lb=lower_energy, ub=battery.maximum_energy, name=f"energy[t{t}]")
     model.addConstr(energy[0, 0] == inputs.state.energy_mwh, name="observed_initial_energy")
     for t, duration in enumerate(inputs.grid.delta_hours):
         model.addConstr(energy[0, t + 1] == energy_transition(energy[0, t], charge[t, "mpc"],
@@ -502,12 +615,16 @@ def build_mpc_model(inputs: MpcInput):
     if inputs.hard_terminal_minimum_mwh is not None:
         model.addConstr(energy[0, length] >= inputs.hard_terminal_minimum_mwh, name="terminal_floor")
     # Reuse Xu's canonical segment ordering on the one common battery trajectory.
-    context = SimpleNamespace(plant=inputs.plant, state=inputs.state, grid=inputs.grid,
-        degradation=inputs.degradation,
-        tree=SimpleNamespace(control_nodes=(tuple("mpc" for _ in range(length)),)),
-        scenarios=SimpleNamespace(scenario_ids=("common",), pv_ac_mw=inputs.pv_ac_mw[:1]))
-    variables = {"charge": charge, "discharge": discharge, "energy": energy}
+    context = degradation_context(inputs)
+    variables = {"charge": charge, "discharge": discharge, "energy": energy,
+        "degradation_context": context}
     degradation = build_battery_degradation(model, context, variables, gp)[0]
+    if inputs.hard_terminal_target_soc_percent is not None:
+        model.addConstr(energy[0, length] == variables["naumann_capacity_mwh"][0, length]
+            * inputs.hard_terminal_target_soc_percent / 100, name="terminal_available_capacity_soc")
+    if inputs.hard_terminal_minimum_soc_percent is not None:
+        model.addConstr(energy[0, length] >= variables["naumann_capacity_mwh"][0, length]
+            * inputs.hard_terminal_minimum_soc_percent / 100, name="terminal_available_capacity_floor")
     grid, positive, negative, imported_power = {}, {}, {}, {}
     interval_support = {}
     absolute, first_absolute, imports, settlement = gp.LinExpr(), gp.LinExpr(), gp.LinExpr(), gp.LinExpr()
@@ -564,7 +681,9 @@ def build_mpc_model(inputs: MpcInput):
                                        - float(negative_curve[t]) * negative[s, t])
     terminal = gp.LinExpr()
     if settings.terminal_inventory_mode == "soft_target":
-        target = battery.capacity_mwh * settings.terminal_soc_target_percent / 100
+        capacity = (variables["naumann_capacity_mwh"][0, length]
+            if inputs.degradation.mode == "naumann_lfp" else battery.capacity_mwh)
+        target = capacity * settings.terminal_soc_target_percent / 100
         deviation = model.addVar(name="terminal_inventory_deviation_mwh")
         model.addConstr(deviation >= energy[0, length] - target)
         model.addConstr(deviation >= target - energy[0, length])
@@ -595,9 +714,14 @@ def _plan_from_solution(inputs, variables, expressions):
         for t, product in enumerate(inputs.grid.interval_ids)]
     grid = np.array([[variables["grid"][s, t].X for t in range(length)] for s in range(count)])
     imbalance = grid * inputs.grid.delta_hours - inputs.planning_position_mwh
-    return MpcPlan(cutoff, actions, np.array([variables["energy"][0, t].X for t in range(length + 1)]),
+    plan = MpcPlan(cutoff, actions, np.array([variables["energy"][0, t].X for t in range(length + 1)]),
         grid, imbalance, inputs.weights @ np.abs(imbalance), inputs.weights @ np.maximum(-imbalance, 0),
         {name: float(expression.getValue()) for name, expression in expressions.items()})
+    if inputs.degradation.mode == "naumann_lfp":
+        from .naumann_milp import extract_naumann_arrays
+
+        plan.aging_arrays = extract_naumann_arrays(variables["degradation_context"], variables)
+    return plan
 
 
 def validate_mpc_plan(inputs: MpcInput, plan: MpcPlan, tolerance=1e-6):
@@ -641,17 +765,37 @@ def validate_mpc_plan(inputs: MpcInput, plan: MpcPlan, tolerance=1e-6):
         residuals["study_terminal"] = abs(plan.energy_mwh[-1] - inputs.hard_terminal_target_mwh)
     if inputs.hard_terminal_minimum_mwh is not None:
         residuals["terminal_floor"] = inputs.hard_terminal_minimum_mwh - plan.energy_mwh[-1]
+    if inputs.degradation.mode == "naumann_lfp":
+        wear, health_residuals = validate_naumann_plan(inputs, plan, charge, discharge,
+            plan.energy_mwh, tolerance=tolerance)
+        residuals.update(health_residuals)
+        # The shared health validator checks the complete daily SOC box. Avoid
+        # rejecting valid aged trajectories with the original nominal lower bound.
+        residuals["energy_lower"] = 0.0
+        residuals["energy_upper"] = 0.0
+        if inputs.hard_terminal_target_soc_percent is not None:
+            target = plan.aging_arrays["naumann_capacity_mwh"][0, -1]
+            target *= inputs.hard_terminal_target_soc_percent / 100
+            residuals["terminal_available_capacity_soc"] = abs(plan.energy_mwh[-1] - target)
+        if inputs.hard_terminal_minimum_soc_percent is not None:
+            minimum = plan.aging_arrays["naumann_capacity_mwh"][0, -1]
+            minimum *= inputs.hard_terminal_minimum_soc_percent / 100
+            residuals["terminal_available_capacity_floor"] = minimum - plan.energy_mwh[-1]
     if max(residuals.values()) > tolerance:
         raise MpcValidationError("MPC physical validation failed", residuals, tolerance)
     degradation = inputs.degradation.cost_eur_per_mwh_throughput * np.sum((charge + discharge) * inputs.grid.delta_hours)
     if inputs.degradation.mode == "xu_segmented":
         degradation = evaluate_xu_dispatch(battery=battery, settings=inputs.degradation, state=inputs.state,
             charge_mw=charge, discharge_mw=discharge, delta_hours=inputs.grid.delta_hours)["degradation_eur"]
+    elif inputs.degradation.mode == "naumann_lfp":
+        degradation = wear[0]
     settings = inputs.settings
     terminal = 0.0
     if settings.terminal_inventory_mode == "soft_target":
+        capacity = (plan.aging_arrays["naumann_capacity_mwh"][0, -1]
+            if inputs.degradation.mode == "naumann_lfp" else battery.capacity_mwh)
         terminal = settings.terminal_inventory_penalty_eur_per_mwh * abs(plan.energy_mwh[-1]
-            - battery.capacity_mwh * settings.terminal_soc_target_percent / 100)
+            - capacity * settings.terminal_soc_target_percent / 100)
     elif settings.terminal_inventory_mode == "linear_value":
         terminal = -settings.terminal_inventory_value_eur_per_mwh * plan.energy_mwh[-1]
     elif settings.terminal_inventory_mode == "piecewise_linear":
@@ -961,6 +1105,8 @@ def solve_mpc(inputs: MpcInput, solver: SolverSettings | None = None):
         diagnostics["oracle_stage2_used"] = bool(oracle and result.plan is not first_plan)
         components, residuals = validate_mpc_plan(inputs, result.plan, max(1e-7, 2 * model.Params.FeasibilityTol))
         diagnostics.update(physical_residuals=residuals, recomputed_components=components)
+        if result.plan.aging_diagnostics:
+            diagnostics["battery_aging"] = dict(result.plan.aging_diagnostics)
         # Stage 1 ignores economic epigraphs: validate their tightness only in an economic stage.
         economic_stage = ((not oracle and not imbalance_only and not imbalance_then_costs and
             (not lexicographic or diagnostics["first_interval_refinement_used"]))

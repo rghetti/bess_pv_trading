@@ -53,7 +53,10 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
     for s, scenario in enumerate(inputs.scenarios.scenario_ids):
         # Include one extra energy boundary for the end of the delivery horizon.
         for t in range(intervals + 1):
-            energy[s, t] = model.addVar(lb=battery.energy_min_mwh, ub=battery.maximum_energy, name=f"energy[s{scenario},boundary{t}]")
+            # The health builder supplies daily SOC bounds for the fading-capacity
+            # mode. A nominal lower bound here would forbid its valid aged states.
+            lower_energy = 0.0 if inputs.degradation.mode == "naumann_lfp" else battery.energy_min_mwh
+            energy[s, t] = model.addVar(lb=lower_energy, ub=battery.maximum_energy, name=f"energy[s{scenario},boundary{t}]")
         model.addConstr(energy[s, 0] == inputs.state.energy_mwh, name=f"initial_energy[s{scenario}]")
         # Enforce an exact terminal target only when the study requests one.
         if inputs.terminal_target_mwh is not None:
@@ -242,7 +245,29 @@ def _imbalance_interval(model, inputs, variables, gp, s, t, duration,
 
 def _degradation(model: Any, inputs: OptimizationInput, variables: dict[str, Any], gp: Any) -> dict[int, Any]:
     """Cost new throughput or depth-dependent discharge; carried aging is sunk."""
-    return build_battery_degradation(model, inputs, variables, gp)
+    costs = build_battery_degradation(model, inputs, variables, gp)
+    if inputs.degradation.mode == "naumann_lfp":
+        last = len(inputs.grid.interval_ids)
+        # Percentages stay relative to each scenario's forecast capacity. Turning
+        # them into MWh at study initialization would become stale as SOH falls.
+        targets = dict(inputs.target_soc_percent_by_boundary)
+        minima = dict(inputs.minimum_soc_percent_by_boundary)
+        if inputs.terminal_target_soc_percent is not None:
+            if last in targets and targets[last] != inputs.terminal_target_soc_percent:
+                raise ValueError("Conflicting terminal and boundary SOC targets")
+            targets[last] = inputs.terminal_target_soc_percent
+        if inputs.terminal_minimum_soc_percent is not None:
+            minima[last] = max(minima.get(last, 0), inputs.terminal_minimum_soc_percent)
+        for s in range(len(inputs.scenarios.scenario_ids)):
+            for boundary, percentage in targets.items():
+                model.addConstr(variables["energy"][s, boundary]
+                    == variables["naumann_capacity_mwh"][s, boundary] * percentage / 100,
+                    name=f"available_capacity_soc_target[s{s},boundary{boundary}]")
+            for boundary, percentage in minima.items():
+                model.addConstr(variables["energy"][s, boundary]
+                    >= variables["naumann_capacity_mwh"][s, boundary] * percentage / 100,
+                    name=f"available_capacity_soc_floor[s{s},boundary{boundary}]")
+    return costs
 
 
 def build_model(inputs: OptimizationInput, *, reduce_exact_pv_scenarios: bool = True) -> BuiltModel:
@@ -420,6 +445,11 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
         # Process each `(source, destination)` in this collection.
         for source, destination in (("xu_segment_charge", "xu_segment_charge_mw"), ("xu_segment_discharge", "xu_segment_discharge_mw")):
             result.arrays[destination] = np.array([[[variable[source][t, inputs.tree.control_nodes[s][t], j].X for j in range(segments)] for t in range(intervals)] for s in range(count)])
+    elif inputs.degradation.mode == "naumann_lfp":
+        from .naumann_milp import extract_naumann_arrays
+
+        # Forecast health is retained separately from realized execution health.
+        result.arrays.update(extract_naumann_arrays(inputs, variable))
     result.arrays["imbalance_mwh"] = result.arrays["grid_mw"] * inputs.grid.delta_hours - result.arrays["net_position_mwh"]
     diagnostics["imbalance_cvar_confidence"] = inputs.imbalance_cvar_confidence
     diagnostics["imbalance_cvar_weight_eur_per_mwh"] = inputs.imbalance_cvar_weight_eur_per_mwh

@@ -209,6 +209,35 @@ class PlantParameters:
 
 
 @dataclass(frozen=True)
+class BatteryHealthState:
+    """Persistent LFP exposures and depth memory; SOH is committed at midnight only."""
+
+    calendar_exposure: float
+    cycle_exposure: float
+    committed_soh: float
+    active_day: str
+    discharge_segment_energy_mwh: tuple[float, ...]
+    charge_segment_energy_mwh: tuple[float, ...]
+    calibration_id: str
+
+    def __post_init__(self) -> None:
+        # Check scalar history before accepting a checkpoint or supplied used battery.
+        from datetime import date
+
+        date.fromisoformat(self.active_day)
+        for name in ("calendar_exposure", "cycle_exposure", "committed_soh"):
+            finite_nonnegative(getattr(self, name), name)
+        if not 0 < self.committed_soh <= 1 or not self.calibration_id:
+            raise ValueError("Health requires SOH in (0,1] and a calibration identity")
+        # Preserve immutable bank vectors without reconstructing their common prehistory.
+        for name in ("discharge_segment_energy_mwh", "charge_segment_energy_mwh"):
+            values = tuple(float(value) for value in getattr(self, name))
+            if not values or any(not np.isfinite(value) or value < 0 for value in values):
+                raise ValueError("Health segment energies must be finite nonnegative vectors")
+            object.__setattr__(self, name, values)
+
+
+@dataclass(frozen=True)
 class PhysicalState:
     """Timestamped boundary state and carried cumulative degradation accounting."""
     timestamp: datetime
@@ -218,6 +247,7 @@ class PhysicalState:
     origin: str = "known_delivery_start_assumption"
     # Segment energies retain the battery's state for depth-dependent degradation.
     cycle_segment_energy_mwh: tuple[float, ...] | None = None
+    battery_health: BatteryHealthState | None = None
 
     def __post_init__(self) -> None:
         aware(self.timestamp, "physical state")
@@ -235,6 +265,15 @@ class PhysicalState:
             if not np.isclose(sum(values), self.energy_mwh, rtol=0, atol=1e-8):
                 raise ValueError("Cycle segment energies must sum to physical battery energy")
             object.__setattr__(self, "cycle_segment_energy_mwh", values)
+        # New health history and legacy Xu memory have separate, explicit meanings.
+        if self.battery_health is not None:
+            if not isinstance(self.battery_health, BatteryHealthState):
+                raise ValueError("battery_health must be a BatteryHealthState")
+            if self.cycle_segment_energy_mwh is not None:
+                raise ValueError("Cannot combine legacy Xu memory with LFP health memory")
+            if not np.isclose(sum(self.battery_health.discharge_segment_energy_mwh),
+                              self.energy_mwh, rtol=0, atol=1e-8):
+                raise ValueError("Discharge health bank must sum to stored energy")
 
 
 @dataclass(frozen=True)
@@ -405,6 +444,73 @@ class InformationTree:
 
 
 @dataclass(frozen=True)
+class NaumannSettings:
+    """Configurable 25 C LFP calibration and numerical resolution, in capacity fractions."""
+
+    reference_temperature_c: float = 25.0
+    calendar_reference_coefficient: float = 1.2571e-5
+    calendar_soc_cubic: float = 2.8575
+    calendar_soc_intercept: float = 0.60225
+    cycle_rate_slope: float = 0.063
+    cycle_rate_intercept: float = 0.0971
+    cycle_depth_cubic: float = 4.0253
+    cycle_depth_offset: float = 0.6
+    cycle_depth_intercept: float = 1.0923
+    depth_knots: tuple[float, ...] = (0, .005, .01, .025, .05, .075, .10, .15,
+                                    .20, .30, .40, .50, .60, .70, .80, .90, 1)
+    c_rate_bin_width: float = 0.025
+    nominal_c_rate_max: float = 1.0
+    effective_c_rate_limit: float = 1.0
+    end_of_life_soh: float = 0.8
+    sqrt_loss_error_budget: float = 1e-5
+    calendar_annual_soh_error_budget: float = 1e-4
+    calendar_initial_soc_segments: int = 16
+    max_loss_fraction: float = 0.3
+    calendar_year_seconds: float = 31557600.0
+    max_graph_points: int = 4097
+    timezone: str = "Europe/Rome"
+    calibration_id: str = "naumann_lfp_2018_2020_independent_exposure_v1"
+    provenance: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # Published coefficients describe this reference temperature, not a thermal model.
+        from zoneinfo import ZoneInfo
+
+        if self.reference_temperature_c != 25.0:
+            raise ValueError("The Naumann bundle is calibrated at fixed 25 C")
+        ZoneInfo(self.timezone)
+        for name in ("calendar_reference_coefficient", "calendar_soc_cubic",
+                     "calendar_soc_intercept", "cycle_rate_slope", "cycle_rate_intercept",
+                     "cycle_depth_cubic", "cycle_depth_intercept", "c_rate_bin_width",
+                     "nominal_c_rate_max", "effective_c_rate_limit", "sqrt_loss_error_budget",
+                     "calendar_annual_soh_error_budget", "max_loss_fraction", "calendar_year_seconds"):
+            value = getattr(self, name)
+            if not np.isfinite(value) or value <= 0:
+                raise ValueError(f"Naumann {name} must be finite and positive")
+        if not 0 < self.end_of_life_soh < 1 or not 0 < self.max_loss_fraction < 1:
+            raise ValueError("Naumann health thresholds must be fractions in (0,1)")
+        if not np.isfinite(self.cycle_depth_offset) or not 0 <= self.cycle_depth_offset <= 1:
+            raise ValueError("Naumann depth offset must be in [0,1]")
+        for name in ("calendar_initial_soc_segments", "max_graph_points"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 2:
+                raise ValueError(f"Naumann {name} must be an integer of at least two")
+        knots = tuple(float(value) for value in self.depth_knots)
+        if (len(knots) < 2 or knots[0] != 0 or knots[-1] != 1
+                or not np.all(np.isfinite(knots)) or np.any(np.diff(knots) <= 0)):
+            raise ValueError("Naumann depth knots must increase strictly from zero to one")
+        object.__setattr__(self, "depth_knots", knots)
+        if not self.calibration_id or self.c_rate_bin_width > self.nominal_c_rate_max:
+            raise ValueError("Invalid Naumann calibration identity or rate-bin width")
+        if self.calendar_soc_intercept - self.calendar_soc_cubic / 8 <= 0:
+            raise ValueError("Naumann calendar coefficient must be positive on SOC [0,1]")
+        if self.cycle_depth_intercept - self.cycle_depth_cubic * self.cycle_depth_offset ** 3 <= 0:
+            raise ValueError("Naumann depth factor must be positive on depth [0,1]")
+        if self.calendar_initial_soc_segments + 1 > self.max_graph_points:
+            raise ValueError("Initial calendar graph exceeds max_graph_points")
+
+
+@dataclass(frozen=True)
 class DegradationSettings:
     """Select AC throughput or Xu discharge-only cycle-depth accounting.
 
@@ -418,12 +524,22 @@ class DegradationSettings:
     stress_coefficient: float = 5.24e-4
     stress_exponent: float = 2.03
     segment_count: int = 16
+    naumann: NaumannSettings | None = None
 
     def __post_init__(self) -> None:
         finite_nonnegative(self.cost_eur_per_mwh_throughput, "degradation cost")
         # Enforce the input contract: Unknown degradation mode; use constant_throughput or Xu xu_segmented.
-        if self.mode not in {"constant_throughput", "xu_segmented"}:
-            raise ValueError("Unknown degradation mode; use constant_throughput or Xu xu_segmented")
+        if self.mode not in {"constant_throughput", "xu_segmented", "naumann_lfp"}:
+            raise ValueError("Unknown degradation mode; use constant_throughput, Xu xu_segmented, or naumann_lfp")
+        # Attach the published opt-in prior without changing legacy mode defaults.
+        if isinstance(self.naumann, Mapping):
+            object.__setattr__(self, "naumann", NaumannSettings(**self.naumann))
+        if self.mode == "naumann_lfp" and self.naumann is None:
+            object.__setattr__(self, "naumann", NaumannSettings())
+        if self.naumann is not None and not isinstance(self.naumann, NaumannSettings):
+            raise ValueError("naumann must contain NaumannSettings")
+        if self.mode != "naumann_lfp" and self.naumann is not None:
+            raise ValueError("Naumann settings require naumann_lfp mode")
         # Enforce the input contract: Cycle segment_count must be a positive integer.
         if not isinstance(self.segment_count, int) or isinstance(self.segment_count, bool) or self.segment_count < 1:
             raise ValueError("Cycle segment_count must be a positive integer")
@@ -444,6 +560,11 @@ class DegradationSettings:
             # Enforce the input contract: Xu segmented aging cannot also charge a throughput coefficient.
             if self.cost_eur_per_mwh_throughput:
                 raise ValueError("Xu segmented aging cannot also charge a throughput coefficient")
+        if self.mode == "naumann_lfp":
+            if self.replacement_cost_eur is None or self.replacement_cost_eur <= 0:
+                raise ValueError("Naumann aging requires positive net replacement cost")
+            if self.cost_eur_per_mwh_throughput:
+                raise ValueError("Naumann health loss cannot also charge throughput wear")
 
 
 @dataclass(frozen=True)
@@ -505,6 +626,12 @@ class OptimizationInput:
     # Exact stored-energy targets at explicitly indexed physical boundaries.
     # Boundary zero is the supplied initial state; the last is the horizon end.
     target_energy_mwh_by_boundary: Mapping[int, float] = field(default_factory=dict)
+    # Relative targets use the capacity of the relevant forecast calendar day.
+    # Explicit MWh contracts retain their distinct absolute-energy meaning.
+    terminal_target_soc_percent: float | None = None
+    terminal_minimum_soc_percent: float | None = None
+    target_soc_percent_by_boundary: Mapping[int, float] = field(default_factory=dict)
+    minimum_soc_percent_by_boundary: Mapping[int, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         # Validate fee state only when the optimization includes transaction fees.
@@ -550,8 +677,40 @@ class OptimizationInput:
         if self.state.timestamp != self.grid.starts[0]:
             raise ValueError("Physical state timestamp must equal residual delivery start")
         battery = self.plant.battery
+        # Validate against today's committed health without replacing nominal E0.
+        validation_battery = battery
+        if self.degradation.mode == "naumann_lfp":
+            from .optimization.naumann import effective_battery
+
+            validation_battery = effective_battery(self.state, battery, self.degradation)
+        elif self.state.battery_health is not None:
+            raise ValueError("Carried battery health requires naumann_lfp mode")
+        # A relative target is a new-mode interface, never an implicit rewrite of MWh.
+        relative = (self.terminal_target_soc_percent, self.terminal_minimum_soc_percent)
+        if self.degradation.mode != "naumann_lfp" and (any(value is not None for value in relative)
+                or self.target_soc_percent_by_boundary or self.minimum_soc_percent_by_boundary):
+            raise ValueError("Available-capacity SOC targets require naumann_lfp mode")
+        if ((self.terminal_target_mwh is not None and self.terminal_target_soc_percent is not None)
+                or (self.terminal_minimum_mwh is not None and self.terminal_minimum_soc_percent is not None)):
+            raise ValueError("Specify an absolute MWh target or an available-capacity SOC target, not both")
+        for mapping, absolute in ((self.target_soc_percent_by_boundary, self.target_energy_mwh_by_boundary),
+                                  (self.minimum_soc_percent_by_boundary, self.minimum_energy_mwh_by_boundary)):
+            if set(mapping) & set(absolute):
+                raise ValueError("A physical boundary cannot have conflicting MWh and SOC targets")
+            for boundary in mapping:
+                if isinstance(boundary, bool) or not isinstance(boundary, int) or not 0 <= boundary <= len(self.grid.interval_ids):
+                    raise ValueError("SOC target boundary must be an integer within the delivery grid")
+        percentages = [value for value in relative if value is not None]
+        percentages.extend(self.target_soc_percent_by_boundary.values())
+        percentages.extend(self.minimum_soc_percent_by_boundary.values())
+        for percentage in percentages:
+            if (isinstance(percentage, bool) or not np.isfinite(percentage)
+                    or not 0 <= percentage <= 100 or battery.capacity_mwh <= 0
+                    or not battery.energy_min_mwh / battery.capacity_mwh * 100 <= percentage
+                    <= battery.maximum_energy / battery.capacity_mwh * 100):
+                raise ValueError("Available-capacity SOC target lies outside the configured SOC box")
         # Enforce the input contract: Initial battery energy is outside its bounds.
-        if not battery.energy_min_mwh <= self.state.energy_mwh <= battery.maximum_energy:
+        if not validation_battery.energy_min_mwh <= self.state.energy_mwh <= validation_battery.maximum_energy:
             raise ValueError("Initial battery energy is outside its bounds")
         # Validate every explicit physical boundary without assuming that the
         # floor is reachable: the solver and fallback handle infeasible plans.
@@ -559,14 +718,14 @@ class OptimizationInput:
             if isinstance(boundary, bool) or not isinstance(boundary, int) or not 0 <= boundary <= len(self.grid.interval_ids):
                 raise ValueError("Energy floor boundary must be an integer within the delivery grid")
             finite_nonnegative(minimum, "boundary minimum energy")
-            if not battery.energy_min_mwh <= minimum <= battery.maximum_energy:
+            if not validation_battery.energy_min_mwh <= minimum <= validation_battery.maximum_energy:
                 raise ValueError("Boundary minimum energy outside battery bounds")
         # Leave reachability to the solver so auction fallback remains possible.
         for boundary, target in self.target_energy_mwh_by_boundary.items():
             if isinstance(boundary, bool) or not isinstance(boundary, int) or not 0 <= boundary <= len(self.grid.interval_ids):
                 raise ValueError("Energy target boundary must be an integer within the delivery grid")
             finite_nonnegative(target, "boundary target energy")
-            if not battery.energy_min_mwh <= target <= battery.maximum_energy:
+            if not validation_battery.energy_min_mwh <= target <= validation_battery.maximum_energy:
                 raise ValueError("Boundary target energy outside battery bounds")
         # Segmented degradation requires a compatible battery state and segment layout.
         if self.degradation.mode == "xu_segmented":
@@ -709,14 +868,14 @@ class OptimizationInput:
         if self.terminal_target_mwh is not None:
             target = self.terminal_target_mwh
             # Enforce the input contract: Terminal target outside battery bounds.
-            if not battery.energy_min_mwh <= target <= battery.maximum_energy:
+            if not validation_battery.energy_min_mwh <= target <= validation_battery.maximum_energy:
                 raise ValueError("Terminal target outside battery bounds")
             lower = upper = self.state.energy_mwh
             # Propagate reachable energy bounds over the whole delivery horizon.
             for duration in self.grid.delta_hours:
                 retention = (1 - battery.self_discharge_per_hour) ** duration
-                lower = max(battery.energy_min_mwh, lower * retention - battery.max_power_mw * duration / battery.eta_discharge)
-                upper = min(battery.maximum_energy, upper * retention + battery.max_power_mw * duration * battery.eta_charge)
+                lower = max(validation_battery.energy_min_mwh, lower * retention - battery.max_power_mw * duration / battery.eta_discharge)
+                upper = min(validation_battery.maximum_energy, upper * retention + battery.max_power_mw * duration * battery.eta_charge)
             # Enforce the input contract: Terminal target is unreachable within battery power/energy limits.
             if not lower - 1e-9 <= target <= upper + 1e-9:
                 raise ValueError("Terminal target is unreachable within battery power/energy limits")
@@ -725,13 +884,13 @@ class OptimizationInput:
             finite_nonnegative(self.terminal_minimum_mwh, "terminal minimum energy")
             minimum = float(self.terminal_minimum_mwh)
             # Enforce the input contract: Terminal minimum outside battery bounds.
-            if not battery.energy_min_mwh <= minimum <= battery.maximum_energy:
+            if not validation_battery.energy_min_mwh <= minimum <= validation_battery.maximum_energy:
                 raise ValueError("Terminal minimum outside battery bounds")
             reachable_upper = self.state.energy_mwh
             # Propagate the largest possible stored energy to check reachability.
             for duration in self.grid.delta_hours:
                 retention = (1 - battery.self_discharge_per_hour) ** duration
-                reachable_upper = min(battery.maximum_energy,
+                reachable_upper = min(validation_battery.maximum_energy,
                     reachable_upper * retention + battery.max_power_mw * duration * battery.eta_charge)
             # Enforce the input contract: Terminal minimum is unreachable within battery power/energy limits.
             if minimum > reachable_upper + 1e-9:

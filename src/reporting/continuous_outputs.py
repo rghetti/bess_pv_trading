@@ -93,7 +93,74 @@ def _financial_dispatch(config, dispatch):
         - frame.degradation_eur - frame.import_fee_eur - frame.transaction_fee_eur
         - frame.imbalance_penalty_eur)
     frame["cumulative_net_profit_eur"] = frame.net_profit_eur.cumsum()
+    if "battery_soh_end" in frame:
+        frame["noncash_degradation_cost_eur"] = frame.degradation_eur
+        frame["realized_market_cashflow_eur"] = (frame.auction_revenue_eur
+            + frame.imbalance_cashflow_eur - frame.import_fee_eur - frame.transaction_fee_eur)
     return frame
+
+
+def _save_battery_health(config, destination, frame):
+    """Persist the actual daily capacity handoff and its separate wear valuation."""
+    if "battery_soh_end" not in frame:
+        return {}
+    health_columns = [name for name in frame if name.startswith("naumann_")
+        or name.startswith("battery_soh_") or name.startswith("available_capacity_mwh_")]
+    health_timezone = (config.get("degradation", {}).get("naumann") or {}).get("timezone",
+        config.get("market", {}).get("timezone", "Europe/Rome"))
+    # A daily row records the last physical boundary, while financial wear sums
+    # only that day's executed increments rather than repeated forecast costs.
+    rows = []
+    for day, selected in frame.groupby("delivery_day", sort=True):
+        last = selected.iloc[-1]
+        observed_through = pd.Timestamp(selected.end.iloc[-1])
+        committed_at = pd.Timestamp(str(last.naumann_active_day_end), tz=health_timezone).tz_convert("UTC")
+        day_start = pd.Timestamp(day, tz=health_timezone).tz_convert("UTC")
+        day_end = (pd.Timestamp(day) + pd.DateOffset(days=1)).tz_localize(health_timezone).tz_convert("UTC")
+        row = {"delivery_day": day, "committed_at_utc": committed_at,
+            "observed_through_utc": observed_through,
+            "completed_calendar_day": (pd.Timestamp(selected.start.iloc[0]) == day_start
+                                       and observed_through == day_end),
+            **{name: selected.iloc[-1][name] for name in health_columns},
+            "initial_soh": float(selected.battery_soh_start.iloc[0]),
+            "final_soh": float(selected.battery_soh_end.iloc[-1]),
+            "noncash_degradation_cost_eur": float(selected.degradation_eur.sum()),
+            "realized_market_cashflow_eur": float(selected.realized_market_cashflow_eur.sum())}
+        rows.append(row)
+    daily = pd.DataFrame(rows)
+    daily.to_csv(destination / "csv/battery_health_daily.csv", index=False)
+    summary = {"initial_soh": float(frame.battery_soh_start.iloc[0]),
+        "final_soh": float(frame.battery_soh_end.iloc[-1]),
+        "initial_available_capacity_mwh": float(frame.available_capacity_mwh_start.iloc[0]),
+        "final_available_capacity_mwh": float(frame.available_capacity_mwh_end.iloc[-1]),
+        "noncash_degradation_cost_eur": float(frame.degradation_eur.sum()),
+        "realized_market_cashflow_eur": float(frame.realized_market_cashflow_eur.sum()),
+        "soc_reporting_basis": "committed_available_capacity"}
+    _write_json(destination / "json/battery_health.json", summary)
+    if config.get("experiment_outputs", {}).get("plots", True):
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        timezone = config.get("market", {}).get("timezone", "Europe/Rome")
+        starts = frame.start.dt.tz_convert(timezone)
+        ends = frame.end.dt.tz_convert(timezone)
+        folder = destination / "plots"
+        folder.mkdir(exist_ok=True)
+        figure, axes = plt.subplots(2, 1, sharex=True, figsize=(12, 7), layout="constrained")
+        plot_boundary_series(axes[0], starts, ends, 100 * frame.battery_soh_start,
+            100 * frame.battery_soh_end, label="Committed physical SOH", drawstyle="steps-post")
+        plot_boundary_series(axes[1], starts, ends, frame.available_capacity_mwh_start,
+            frame.available_capacity_mwh_end, label="Available energy capacity", drawstyle="steps-post")
+        axes[0].set_ylabel("SOH (%)")
+        axes[1].set_ylabel("Capacity (MWh)")
+        axes[1].set_xlabel(f"Delivery time ({timezone})")
+        for axis in axes:
+            axis.grid(alpha=0.2)
+            axis.legend()
+        figure.savefig(folder / "battery_health.png", dpi=140)
+        plt.close(figure)
+    return summary
 
 
 def _daily_kpis(config, strategy, frame, solves, initial_expected):
@@ -126,6 +193,35 @@ def _daily_kpis(config, strategy, frame, solves, initial_expected):
             "auction_revenue_eur", "imbalance_cashflow_eur", "degradation_eur",
             "import_fee_eur", "transaction_fee_eur", "imbalance_penalty_eur",
             "illustrative_imbalance_penalty_eur")})
+        # Aging-aware SOC uses that boundary's committed available capacity;
+        # retain the nominal percentages explicitly for comparison with legacy runs.
+        if "available_capacity_mwh_start" in daily:
+            initial_capacity = float(daily.available_capacity_mwh_start.iloc[0])
+            final_capacity = float(daily.available_capacity_mwh_end.iloc[-1])
+            state_settings = config.get("state", {})
+            floor_basis = state_settings.get("terminal_soc_basis",
+                state_settings.get("initial_soc_basis", "available_capacity"))
+            if "terminal_minimum_mwh" in state_settings:
+                required_floor = state_settings["terminal_minimum_mwh"]
+                floor_basis = "absolute_mwh"
+            else:
+                floor_capacity = final_capacity if floor_basis == "available_capacity" else capacity
+                required_floor = None if minimum_soc is None else floor_capacity * float(minimum_soc) / 100
+            row.update(initial_nominal_soc_percent=row["initial_soc_percent"],
+                final_nominal_soc_percent=row["final_soc_percent"],
+                initial_soc_percent=100 * initial / initial_capacity,
+                final_soc_percent=100 * final / final_capacity,
+                initial_available_capacity_mwh=initial_capacity,
+                final_available_capacity_mwh=final_capacity,
+                initial_soh=float(daily.battery_soh_start.iloc[0]),
+                final_soh=float(daily.battery_soh_end.iloc[-1]),
+                terminal_soc_min_percent=minimum_soc if floor_basis != "absolute_mwh" else None,
+                terminal_minimum_required_energy_mwh=required_floor,
+                terminal_soc_min_basis=floor_basis,
+                terminal_soc_minimum_shortfall_percent=(None if required_floor is None else
+                    100 * max(0.0, float(required_floor) - final) / final_capacity),
+                terminal_soc_minimum_shortfall_basis="committed_available_capacity",
+                soc_reporting_basis="committed_available_capacity")
         row.update({f"{name}_mwh": float(np.dot(daily[f"{name}_mw"], duration))
             for name in ("charge", "discharge", "curtailment")})
         row["throughput_mwh"] = row["charge_mwh"] + row["discharge_mwh"]
@@ -167,8 +263,10 @@ def _plot_strategy(config, destination, strategy, frame, plans, *, daily_plots=T
             continue
         fig, axis = plt.subplots(figsize=(13, 4), layout="constrained")
         if kind == "soc":
-            plot_boundary_series(axis, starts, ends, frame.energy_start_mwh / capacity * 100,
-                frame.energy_end_mwh / capacity * 100, label="Realized SOC")
+            initial_capacity = frame.get("available_capacity_mwh_start", capacity)
+            final_capacity = frame.get("available_capacity_mwh_end", capacity)
+            plot_boundary_series(axis, starts, ends, frame.energy_start_mwh / initial_capacity * 100,
+                frame.energy_end_mwh / final_capacity * 100, label="Realized SOC")
             for key in ("soc_min_percent", "soc_max_percent"):
                 if key in config["battery"]:
                     axis.axhline(config["battery"][key], color="gray", linestyle=":", linewidth=0.7)
@@ -406,6 +504,9 @@ def save_continuous_strategy_outputs(config, destination, strategy, dispatch, pl
         "charge_mwh", "discharge_mwh", "throughput_mwh", "curtailment_mwh",
         "absolute_imbalance_mwh", "signed_imbalance_mwh", "pv_realized_energy_mwh",
         "grid_import_mwh", "grid_export_mwh")})
+    health = _save_battery_health(config, destination, frame)
+    if health:
+        summary["battery_health_summary"] = health
     frame.to_csv(destination / "csv/realized_dispatch.csv", index=False)
     daily.to_csv(destination / "csv/daily_kpis.csv", index=False)
     plans.to_csv(destination / "csv/expected_dispatch_plans.csv", index=False)

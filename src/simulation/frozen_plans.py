@@ -12,6 +12,7 @@ from ..domain import PhysicalState
 from ..optimization.degradation import degradation_settings_from_config
 from ..transaction_fees import account_trade_fees, transaction_fees_from_config
 from .replay import execute_interval
+from .battery_health import restore_battery_health
 from .settlement import settle_realized_dispatch
 
 
@@ -65,6 +66,15 @@ def _actual_boundary(config, grid, dispatch, first):
         # When `isinstance(segments, str)`, set `segments` using `ast.literal_eval(segments)`.
         if isinstance(segments, str):
             segments = ast.literal_eval(segments)
+    health = None
+    # Frozen counterfactuals start with actual health and both residual-cycle
+    # memories; reconstructing health from aggregate SOC would erase aging.
+    if config.get("degradation", {}).get("model") == "naumann_lfp":
+        column = "battery_health_end" if first else "battery_health_start"
+        selected = prefix.iloc[-1] if first else dispatch.iloc[first]
+        if column not in selected:
+            raise ValueError("Frozen Naumann plans require complete actual battery health snapshots")
+        health = restore_battery_health(selected[column])
     return PhysicalState(
         timestamp=grid.starts[first],
         energy_mwh=float(dispatch.iloc[first].energy_start_mwh),
@@ -72,7 +82,8 @@ def _actual_boundary(config, grid, dispatch, first):
         cumulative_degradation_eur=float(prefix.degradation_eur.sum()),
         origin=("frozen_plan_carried_actual_boundary" if first else
                 config["state"].get("origin", "known_delivery_start_assumption")),
-        cycle_segment_energy_mwh=None if segments is None else tuple(segments))
+        cycle_segment_energy_mwh=None if segments is None else tuple(segments),
+        battery_health=health)
 
 
 def simulate_frozen_auction_plans(config, grid, plant, schedule, actual_prices,

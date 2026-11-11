@@ -307,8 +307,30 @@ def conditional_terminal_value(replay, daily, cutoff, horizon_end):
     settings = dict(replay.config.get("continuation_value", {}).get("settings", {}))
     settings.setdefault("throughput_cost_eur_per_mwh", replay.aging.cost_eur_per_mwh_throughput)
     settings.setdefault("import_fee_eur_per_mwh", replay.trading["grid_import_fee_eur_per_mwh"])
-    return build_continuation_value(cutoff=cutoff, available_at=cutoff, grid=grid, plant=replay.plant,
+    plant = replay.plant
+    health_approximation = {}
+    if replay.aging.mode == "naumann_lfp":
+        from ..optimization.naumann import available_capacity_mwh, effective_battery, power_limits
+
+        if settings["throughput_cost_eur_per_mwh"] != 0:
+            raise ValueError("Naumann energy-only continuation does not add a throughput wear penalty")
+        operating_battery = effective_battery(replay.state, plant.battery, replay.aging)
+        charge_limit, discharge_limit = power_limits(replay.state, plant.battery, replay.aging)
+        operating_battery = replace(operating_battery, max_power_mw=min(charge_limit, discharge_limit))
+        plant = replace(plant, battery=operating_battery)
+        # This existing continuation DP has energy as its only state. Freeze
+        # only observed capacity, disclose omitted tail health and cycle memory,
+        # and retain Naumann wear inside the physical optimization horizon.
+        health_approximation = {"capacity_reference": "committed_observed_at_cutoff",
+            "capacity_mwh": available_capacity_mwh(replay.state, replay.plant.battery, replay.aging),
+            "observed_soh": replay.state.battery_health.committed_soh,
+            "symmetric_power_limit_mw": operating_battery.max_power_mw,
+            "future_capacity_fade_modelled": False, "cycle_memory_modelled": False,
+            "calendar_and_cycle_wear_modelled": False,
+            "wear_scope": "Naumann wear is charged in the physical horizon; continuation values energy only"}
+    return build_continuation_value(cutoff=cutoff, available_at=cutoff, grid=grid, plant=plant,
         positive_eur_per_mwh=forecast.positive_eur_per_mwh[0], pv_ac_mw=pv, committed_mwh=commitments,
         negative_eur_per_mwh=None if forecast.negative_eur_per_mwh is None else forecast.negative_eur_per_mwh[0],
         settings=ContinuationSettings(**settings), provenance={"pv": provenance, "prices": forecast.provenance,
-            "actual_degradation_mode": replay.aging.mode, "forecast_is_oracle": False})
+            "actual_degradation_mode": replay.aging.mode, "forecast_is_oracle": False,
+            **({"battery_health_approximation": health_approximation} if health_approximation else {})})

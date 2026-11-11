@@ -26,6 +26,10 @@ from ..scenarios import synthetic_price_tree
 from ..transaction_fees import account_trade_fees, transaction_fees_from_config
 from .events import Event, EventEngine, EventKind
 from .replay import execute_interval
+from .battery_health import (
+    forecast_health_record, health_summary, initialize_physical_health,
+    relative_terminal_soc, restore_battery_health,
+)
 from .settlement import expected_realized_kpis, settle_realized_dispatch
 
 
@@ -134,6 +138,17 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             if fixture.get("forecast_available_at") is not None else None),
     }
     aging = degradation_settings_from_config(config)
+    if aging.mode == "naumann_lfp":
+        state = replace(state, battery_health=restore_battery_health(
+            config["state"].get("battery_health")))
+        state = initialize_physical_health(state, plant.battery, aging)
+    target_soc, minimum_soc = relative_terminal_soc(config["state"], aging.mode)
+    target_soc = fixture.get("terminal_target_soc_percent", target_soc)
+    minimum_soc = fixture.get("terminal_minimum_soc_percent", minimum_soc)
+    terminal_mwh = config["state"]["terminal_target_mwh"] if target_soc is None else None
+    terminal_minimum_mwh = (config["state"].get("terminal_minimum_mwh")
+        if "terminal_minimum_mwh" in config["state"] else
+        terminal_minimum_energy_mwh(config["state"], plant.battery)) if minimum_soc is None else None
     settings = SolverSettings(**config["solver"])
     trading = config["trading"]
     dispatch_policy = config.get("execution", {}).get("dispatch_policy", "follow_battery_plan")
@@ -284,7 +299,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
                                     for auction,offer in submitted.items() if auction not in known)
                                   for product in residual.interval_ids)
         inputs = OptimizationInput(residual, plant, boundary, market, bundle, tree, masks,
-            trading["imbalance_penalty_eur_per_mwh"], config["state"]["terminal_target_mwh"],
+            trading["imbalance_penalty_eur_per_mwh"], terminal_mwh,
             aging, trading["grid_import_fee_eur_per_mwh"],
             imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
             planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
@@ -296,7 +311,9 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
                 in config.get("native_interval_minutes_by_auction", {}).items()
                 if auction in masks}, transaction_fees=fees,
             auction_submission_times={event.auction: event.submission_at for event in schedule},
-            terminal_minimum_mwh=terminal_minimum_energy_mwh(config["state"], plant.battery))
+            terminal_minimum_mwh=terminal_minimum_mwh,
+            terminal_target_soc_percent=target_soc,
+            terminal_minimum_soc_percent=minimum_soc)
         built = build_model(inputs)
         planning_diagnostics = {"auction_planning_mode": "current_auction_only" if current_only else "integrated",
             "auction_dispatch_scope": AUCTION_DISPATCH_SCOPE,
@@ -471,6 +488,9 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
                 "soc_start_mwh": float(result.arrays["energy_mwh"][0, local_t]),
                 "soc_end_mwh": float(result.arrays["energy_mwh"][0, local_t + 1]),
                 "optimizer_cutoff_utc": event.at.isoformat()}
+            row.update(forecast_health_record(result.arrays, local_t, 0, plant.battery, aging,
+                energy_start=result.arrays["energy_mwh"][0, local_t],
+                energy_end=result.arrays["energy_mwh"][0, local_t + 1]))
             # Retain the complete deterministic trading plan, including fixed
             # earlier commitments, so frozen-plan replay never borrows later bids.
             for planned_event in schedule:
@@ -663,12 +683,15 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
         "realized_operating_profit_status": "legacy_assumed_settlement_and_model_penalty_not_final_cash_profit",
         "auction_cashflows_eur":auction_cash,"realized_operating_profit_eur":profit,
         "initial_expected_profit_eur":initial_expected_profit,"final_state":asdict(state),
+        **health_summary(state, plant.battery, aging),
         "initial_residual_objective_eur": first_solve.get("objective_eur"),
         "initial_expected_prefix_cost_eur": (first_solve["pre_horizon_degradation_eur"] + first_solve["pre_horizon_import_fee_eur"]) if solves else None,
         "pre_participation_intervals": int(frame.active_plan_auction.eq("pre_participation").sum()),
-        "terminal_constraint_enabled":config["state"]["terminal_target_mwh"] is not None,
-        "terminal_error_mwh":(None if config["state"]["terminal_target_mwh"] is None
-            else abs(state.energy_mwh-config["state"]["terminal_target_mwh"])),
+        "terminal_constraint_enabled":terminal_mwh is not None or target_soc is not None,
+        "terminal_target_soc_percent": target_soc,
+        "terminal_error_mwh":(None if terminal_mwh is None and target_soc is None else
+            abs(state.energy_mwh - (terminal_mwh if target_soc is None else
+                plant.battery.capacity_mwh * state.battery_health.committed_soh * target_soc / 100))),
         "max_safety_adjustment_mw":float(frame.safety_adjustment_mw.max()),
         "solves":len(solves)+len(infeasible_decisions),"runtime_seconds":perf_counter()-started,
         "auction_decision_solves":sum(item["solve_trigger"] == "auction_submission" for item in solves)+len(infeasible_decisions),

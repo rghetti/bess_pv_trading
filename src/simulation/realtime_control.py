@@ -14,6 +14,7 @@ from ..reporting.mpc_history import archive_completed_history, validate_mpc_hist
 from .energy_price_inputs import (settlement_forecasts, transform_mpc_scenarios,
     conditional_terminal_value)
 from .replay import execute_interval
+from .battery_health import forecast_health_record, relative_terminal_soc
 from .validation_diagnostics import mpc_validation_record
 
 
@@ -92,6 +93,8 @@ class RealtimeControl:
         local = index - replay.day_offsets[day]
         grid = DeliveryGrid(daily["grid"].interval_ids[local:], daily["grid"].starts[local:], daily["grid"].ends[local:])
         deterministic, provenance = self.forecast(cutoff, pd.DatetimeIndex(grid.starts), "realtime_mpc")
+        if replay.aging.mode == "naumann_lfp":
+            provenance["battery_health_observed_at_cutoff"] = asdict(replay.state.battery_health)
         commands, detail, _, target = replay._commands(product)
         # The optional information-matched tracker uses forecast feedback once, at issuance.
         if replay.dispatch_policy == CAUSAL_TRACKER:
@@ -150,18 +153,27 @@ class RealtimeControl:
                  "settlement": {**replay.prepared["provenance"].get("settlement", {}),
                      "status": "explicitly_disclosed_noncausal_mpc_oracle",
                      "supplied_to_optimizer": True}})
+        target_soc, minimum_soc = relative_terminal_soc(replay.config.get("state", {}), replay.aging.mode)
+        target_mwh = replay.prepared["terminal_energy_mwh"] if day == replay.days[-1] else None
+        if target_soc is not None:
+            target_mwh = None
+        if day != replay.days[-1]:
+            target_soc = None
+        minimum_mwh = replay.prepared["terminal_minimum_energy_mwh"] if minimum_soc is None else None
         inputs = MpcInput(cutoff, grid, replay.plant, replay.state,
             commitments, values, ids, probabilities,
             replay.aging, policy=replay.dispatch_policy, settings=self.settings,
             import_fee_eur_per_mwh=replay.trading["grid_import_fee_eur_per_mwh"],
-            hard_terminal_target_mwh=(replay.prepared["terminal_energy_mwh"] if day == replay.days[-1] else None),
-            hard_terminal_minimum_mwh=replay.prepared["terminal_minimum_energy_mwh"],
+            hard_terminal_target_mwh=target_mwh,
+            hard_terminal_minimum_mwh=minimum_mwh,
+            hard_terminal_target_soc_percent=target_soc,
+            hard_terminal_minimum_soc_percent=minimum_soc,
             forecast_provenance=provenance, oracle=oracle, current_realized_pv_mw=current_pv,
             price_forecast=prices,
             terminal_value=conditional_terminal_value(replay, daily, cutoff, grid.ends[-1]),
             provisional_ida3_mwh=provisional_ida3)
         result = solve_mpc(inputs, SolverSettings(**replay.config["solver"]))
-        validation_mode = replay.config["continuous_optimization"].get("validation_diagnostics", "full")
+        validation_mode = replay.config.get("continuous_optimization", {}).get("validation_diagnostics", "full")
         validation_record = mpc_validation_record(result.diagnostics, validation_mode, has_plan=result.plan is not None)
         diagnostic = {**validation_record, "delivery_day": day, "interval_id": product,
                       "current_pv_observation_source": ("initial_frozen_forecast_fallback"
@@ -201,6 +213,9 @@ class RealtimeControl:
                 "future_plan_role": ("representative_shadow_path" if plan.scenario_actions is not None
                     else "common_open_loop_controls"),
                 "representative_scenario_id": ids[plan.representative_path_index], **provenance}
+            row.update(forecast_health_record(plan.aging_arrays, t, plan.representative_path_index,
+                replay.plant.battery, replay.aging, energy_start=plan.energy_mwh[t],
+                energy_end=plan.energy_mwh[t + 1]))
             current_plan[action.interval_id] = row
             self.state.plans.append(row)
             for s, scenario in enumerate(ids):
@@ -223,14 +238,23 @@ class RealtimeControl:
                     **({"forecast_positive_price_eur_per_mwh": float(prices.positive_eur_per_mwh[s, t]),
                         "forecast_negative_price_eur_per_mwh": float((prices.positive_eur_per_mwh
                             if prices.negative_eur_per_mwh is None else prices.negative_eur_per_mwh)[s, t])}
-                       if prices is not None else {})})
+                       if prices is not None else {}),
+                    **forecast_health_record(plan.aging_arrays, t, s, replay.plant.battery,
+                        replay.aging,
+                        energy_start=(plan.scenario_energy_mwh[s, t] if plan.scenario_energy_mwh is not None
+                                      else plan.energy_mwh[t]),
+                        energy_end=(plan.scenario_energy_mwh[s, t + 1] if plan.scenario_energy_mwh is not None
+                                    else plan.energy_mwh[t + 1]))})
         self.state.latest_plan = current_plan
         self._pending(plan.actions[0], {**provenance, "pv_ac_forecast_mw": float(deterministic[0])}, current_plan[product], diagnostic)
 
     def _pending(self, action, provenance, planned, diagnostic):
         """Freeze the physical action independently of subsequent auction events."""
         replay = self.replay
+        health_forecast = ({} if planned is None else {key: value for key, value in planned.items()
+            if key.startswith("forecast_") or key.startswith("nominal_soc_") or key == "battery_health_role"})
         detail = {"auction": "realtime_mpc", "optimizer_cutoff_utc": action.issued_at, **provenance,
+                  **health_forecast,
                   "pv_utilization_fraction": action.pv_utilization_fraction,
                   "mpc_solve_id": None if diagnostic is None else diagnostic["solve_id"],
                   "current_realized_pv_mw": None if diagnostic is None else diagnostic.get("current_realized_pv_mw"),
@@ -243,7 +267,7 @@ class RealtimeControl:
         self.state.outstanding_action = asdict(action)
         self.state.issued_actions.append({**asdict(action), "dispatch_policy": self.mpc_execution_policy,
             "grid_target_mw": replay.pending[action.interval_id]["target"],
-            "solve_id": detail["mpc_solve_id"], **provenance})
+            "solve_id": detail["mpc_solve_id"], **provenance, **health_forecast})
 
     def projection_commands(self, product, pv):
         """Replay a locked action or the last MPC plan, never solve hypothetical MPCs."""

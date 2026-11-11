@@ -35,6 +35,7 @@ from ..participation import auction_subset, profile_id
 from .synthetic import _replay_strategy, write_json
 from ..reporting.optimization_timing import optimization_timing_report, solve_timing
 from .replay import execute_interval
+from .battery_health import forecast_health_record, initialize_physical_health, relative_terminal_soc, restore_battery_health
 from .frozen_plans import plot_frozen_plan_comparison, simulate_frozen_auction_plans
 from .settlement import expected_realized_kpis, load_realized_imbalance_prices, settle_realized_dispatch
 
@@ -176,7 +177,8 @@ def _counterfactual_reoptimization_settlement(plans, dispatch, realized_pv,
 def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_prices,
                                         effective_pv, initial_energy, destination,
                                         *, artifact_name="perfect_pv_counterfactual",
-                                        degradation_settings=None, timing_records=None):
+                                        degradation_settings=None, timing_records=None,
+                                        terminal_target_soc_percent=None, terminal_minimum_soc_percent=None):
     """Solve the ex-post market MILP with effective PV and clearing prices known.
 
     The single deterministic scenario is intentionally clairvoyant. It retains
@@ -217,8 +219,14 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
         nodes=(root,), leaf_nodes=(root.node_id,),
         bid_nodes={event.auction: (root.node_id,) for event in schedule},
         control_nodes=(tuple([root.node_id] * intervals),))
+    aging = (degradation_settings if degradation_settings is not None
+             else degradation_settings_from_config(config))
     state = PhysicalState(grid.starts[0], initial_energy,
         origin=config["state"].get("origin", "known_delivery_start_assumption"))
+    if aging.mode == "naumann_lfp":
+        state = replace(state, battery_health=restore_battery_health(
+            config["state"].get("battery_health")))
+        state = initialize_physical_health(state, plant.battery, aging)
     study = config["gme_oracle_experiment"]
     trade = config["trading"]
     fees = transaction_fees_from_config(config)
@@ -230,10 +238,12 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
         grid=grid, plant=plant, state=state, market=MarketState(transaction_fee_state=fees.initial_state),
         scenarios=scenario, tree=tree, auction_eligibility=eligibility,
         imbalance_penalty_eur_per_mwh=float(trade["imbalance_penalty_eur_per_mwh"]),
-        terminal_target_mwh=config["state"]["terminal_target_mwh"],
-        terminal_minimum_mwh=terminal_minimum,
-        degradation=(degradation_settings if degradation_settings is not None
-                     else degradation_settings_from_config(config)),
+        terminal_target_mwh=(config["state"]["terminal_target_mwh"]
+            if terminal_target_soc_percent is None else None),
+        terminal_minimum_mwh=terminal_minimum if terminal_minimum_soc_percent is None else None,
+        terminal_target_soc_percent=terminal_target_soc_percent,
+        terminal_minimum_soc_percent=terminal_minimum_soc_percent,
+        degradation=aging,
         grid_import_fee_eur_per_mwh=float(trade["grid_import_fee_eur_per_mwh"]),
         imbalance_limit_mwh=trade.get("imbalance_limit_mwh"),
         decision_resolution_minutes=int(study["decision_resolution_minutes"]),
@@ -289,6 +299,9 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
                                       + result.arrays["discharge_mw"][0, index])
                                      * grid.delta_hours[index]),
         }
+        row.update(forecast_health_record(result.arrays, index, 0, plant.battery, aging,
+            energy_start=result.arrays["energy_mwh"][0, index],
+            energy_end=result.arrays["energy_mwh"][0, index + 1]))
         # Solve the ex-post market MILP with effective PV and clearing prices known for each `auction` in `actual_prices`.
         for auction in actual_prices:
             quantity = result.trades.get((auction, root.node_id, interval_id), 0.0)
@@ -352,11 +365,20 @@ def _plot_perfect_information_schedule(destination, grid, feedback, perfect,
         perfect.soc_end_mwh.to_numpy(dtype=float) * scale,
         color="tab:blue", linewidth=1.6, linestyle="--",
         label="Full-information SOC")
-    axes[2].axhline(battery.energy_min_mwh / battery.capacity_mwh * 100,
-                    color="grey", linewidth=0.8, linestyle=":")
-    axes[2].axhline(battery.maximum_energy / battery.capacity_mwh * 100,
-                    color="grey", linewidth=0.8, linestyle=":")
-    axes[2].set_ylabel("SOC (%)")
+    if "available_capacity_mwh_start" in feedback:
+        for fraction in (battery.energy_min_mwh / battery.capacity_mwh,
+                         battery.maximum_energy / battery.capacity_mwh):
+            plot_boundary_series(axes[2], starts, ends,
+                100 * fraction * feedback.available_capacity_mwh_start / battery.capacity_mwh,
+                100 * fraction * feedback.available_capacity_mwh_end / battery.capacity_mwh,
+                color="grey", linewidth=.8, linestyle=":", drawstyle="steps-post")
+        axes[2].set_ylabel("SOC (% nominal)")
+    else:
+        axes[2].axhline(battery.energy_min_mwh / battery.capacity_mwh * 100,
+                        color="grey", linewidth=0.8, linestyle=":")
+        axes[2].axhline(battery.maximum_energy / battery.capacity_mwh * 100,
+                        color="grey", linewidth=0.8, linestyle=":")
+        axes[2].set_ylabel("SOC (%)")
     axes[2].set_ylim(0, 100)
 
     axes[3].bar(starts, difference, width=ends - starts, align="edge",
@@ -1007,7 +1029,15 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
     starts = pd.to_datetime(dispatch.start, utc=True).dt.tz_convert(timezone)
     ends = pd.to_datetime(dispatch.end, utc=True).dt.tz_convert(timezone)
     scale = 100 / battery_capacity_mwh if battery_capacity_mwh > 0 else 0.0
-    axis.axhspan(*soc_bounds_percent, color="grey", alpha=0.08, label="Configured SOC box")
+    if "available_capacity_mwh_start" in dispatch:
+        for fraction in soc_bounds_percent:
+            plot_boundary_series(axis, starts, ends,
+                dispatch.available_capacity_mwh_start * fraction / battery_capacity_mwh,
+                dispatch.available_capacity_mwh_end * fraction / battery_capacity_mwh,
+                color="grey", linestyle=":", linewidth=.8, drawstyle="steps-post",
+                label="Faded limits on nominal SOC basis" if fraction == soc_bounds_percent[1] else None)
+    else:
+        axis.axhspan(*soc_bounds_percent, color="grey", alpha=0.08, label="Configured SOC box")
     plot_boundary_series(axis, starts, ends, dispatch.energy_start_mwh * scale,
               dispatch.energy_end_mwh * scale, color="black", linewidth=2.2,
               label="Executed SOC")
@@ -1060,18 +1090,41 @@ def _plot_experiment(destination: Path, grid, prices: Mapping[str, np.ndarray],
 
 def _soc_energy_targets(state: Mapping[str, Any], battery: BatteryParameters
                         ) -> tuple[float, float | None]:
-    """Translate configured SOC percentages; an explicit null disables the target."""
-    initial = float(state["initial_soc_percent"])
-    terminal = state["terminal_soc_percent"]
-    percentages = [initial] + ([] if terminal is None else [float(terminal)])
-    # Enforce the input contract: Initial/terminal SOC percentages must be finite and between 0 and 100.
-    if any(not np.isfinite(value) or not 0 <= value <= 100 for value in percentages):
-        raise ValueError("Initial/terminal SOC percentages must be finite and between 0 and 100")
-    initial_energy = battery.capacity_mwh * initial / 100.0
-    terminal_energy = None if terminal is None else battery.capacity_mwh * float(terminal) / 100.0
+    """Translate declared SOC bases while preserving explicit absolute MWh targets."""
+    health = state.get("battery_health")
+    committed_soh = 1.0 if health is None else float(health["committed_soh"])
+    if not np.isfinite(committed_soh) or not 0 < committed_soh <= 1:
+        raise ValueError("Configured battery health requires committed SOH in (0,1]")
+    available_capacity = battery.capacity_mwh * committed_soh
+    default_basis = "available_capacity" if health is not None else "nominal_capacity"
+
+    def from_percentage(name, basis_name):
+        """Convert one explicit SOC percentage using its documented energy basis."""
+        value = state[name]
+        if value is None:
+            return None
+        percentage = float(value)
+        if not np.isfinite(percentage) or not 0 <= percentage <= 100:
+            raise ValueError("Initial/terminal SOC percentages must be finite and between 0 and 100")
+        basis = state.get(basis_name, state.get("initial_soc_basis", default_basis))
+        if basis not in {"nominal_capacity", "available_capacity"}:
+            raise ValueError(f"Unknown state.{basis_name}: {basis!r}")
+        capacity = battery.capacity_mwh if basis == "nominal_capacity" else available_capacity
+        return capacity * percentage / 100.0
+
+    # Absolute targets deliberately override inherited percentage defaults.
+    initial_energy = (float(state["initial_energy_mwh"])
+        if "initial_energy_mwh" in state else from_percentage("initial_soc_percent", "initial_soc_basis"))
+    if "terminal_target_mwh" in state:
+        target = state["terminal_target_mwh"]
+        terminal_energy = None if target is None else float(target)
+    else:
+        terminal_energy = from_percentage("terminal_soc_percent", "terminal_soc_basis")
     targets = [initial_energy] + ([] if terminal_energy is None else [terminal_energy])
     # Enforce the input contract: Configured initial/terminal SOC lies outside battery energy bounds.
-    if any(not battery.energy_min_mwh <= value <= battery.maximum_energy for value in targets):
+    if any(value is None or not np.isfinite(value)
+            or not battery.energy_min_mwh * committed_soh <= value <= battery.maximum_energy * committed_soh
+            for value in targets):
         raise ValueError("Configured initial/terminal SOC lies outside battery energy bounds")
     return initial_energy, terminal_energy
 
@@ -1116,6 +1169,8 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     if plant.farm_id != int(config["forecast"]["farm_id"]):
         raise ValueError("Plant and PV forecast must identify the same farm")
     study_state = config["state"]
+    target_soc, minimum_soc = relative_terminal_soc(study_state,
+        config.get("degradation", {}).get("model"))
     initial_energy, terminal_energy = _soc_energy_targets(study_state, battery)
     terminal_minimum = terminal_minimum_energy_mwh(study_state, battery)
     config["state"] = {**study_state, "initial_energy_mwh": initial_energy,
@@ -1144,6 +1199,7 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
     fixture = {"calendar": calendar, "grid": grid, "schedule": schedule, "pv": forecast,
         "realized_pv": realized_pv, "base": base_prices, "plant": plant,
         "tree": tree, "scenarios": scenarios, "realized": 0, "actual_prices": actual_prices,
+        "terminal_target_soc_percent": target_soc, "terminal_minimum_soc_percent": minimum_soc,
         "auction_planning_mode": study.get("auction_planning_mode", "integrated"),
         "kwargs": kwargs, "forecast_available_at": pv_bundle.available_at,
         "pv_forecast_vintage": pv_bundle.forecast_vintage, "pv_forecast_policy": pv_policy,
@@ -1229,7 +1285,10 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
             day_output / "reoptimization_imbalance_intervals.csv", index=False)
     perfect_schedule, perfect_diagnostics = _solve_perfect_information_schedule(
         config, grid, plant, schedule, actual_prices, realized_pv,
-        initial_energy, day_output, timing_records=timing_records)
+        initial_energy, day_output, timing_records=timing_records,
+        **({"terminal_target_soc_percent": target_soc,
+            "terminal_minimum_soc_percent": minimum_soc}
+           if target_soc is not None or minimum_soc is not None else {}))
     include_pv_only = bool(config["experiment_outputs"].get("pv_only_baseline", True))
     pv_only_schedule = None
     pv_only_diagnostics = None
@@ -1531,6 +1590,16 @@ def run_gme_oracle_experiment(config: dict[str, Any]) -> dict[str, Any]:
         "reoptimization_imbalance_settlements": reoptimization_settlements.to_dict("records"),
         "pv_provenance": pv_provenance,
         "objective_status": "clearing-price oracle benchmark; not an executable forecast-based strategy"}
+    if "battery_health" in summary:
+        available = capacity * summary["final_state"]["battery_health"]["committed_soh"]
+        kpis.update(final_nominal_soc_percent=kpis["final_soc_percent"],
+            final_soc_percent=100 * summary["final_state"]["energy_mwh"] / available,
+            final_available_capacity_mwh=available, soc_reporting_basis="committed_available_capacity",
+            nominal_soc_tracking_error_percentage_points=kpis["max_soc_deviation_from_active_plan_percentage_points"],
+            battery_health=summary["battery_health"],
+            battery_health_calibration=summary["battery_health_calibration"],
+            battery_health_approximation=summary["battery_health_approximation"],
+            degradation_cost_accounting=summary["degradation_cost_accounting"])
     write_json(day_output / "kpis.json", kpis)
     pd.DataFrame([{"kpi": key, "value": str(value)} for key, value in kpis.items()
                   if isinstance(value, (str, int, float, bool)) or value is None]).to_csv(day_output / "kpis.csv", index=False)

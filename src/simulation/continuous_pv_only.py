@@ -13,6 +13,7 @@ def pv_only_inputs(config, prepared):
     child["battery"].update(capacity_mwh=0.0, max_power_mw=0.0)
     child["state"].update(terminal_soc_percent=None, terminal_soc_min_percent=None,
                           cycle_segment_energy_mwh=None)
+    child["state"].pop("battery_health", None)
     child["degradation"] = {"model": "throughput", "cost_eur_per_mwh_throughput": 0.0}
     source = dict(prepared)
     source["plant"] = replace(prepared["plant"], battery=battery_parameters_from_config(child["battery"]))

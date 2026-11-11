@@ -1,8 +1,10 @@
 # Battery lifetime modeling for annual operations
 
-Research and implementation proposal, 10 November 2026. This document is a design,
-not an implemented or calibrated health model. No annual simulation or model
-experiment has been run for this research.
+Initial research and implementation proposal, 10 November 2026. The opt-in
+[Naumann LFP implementation](naumann_lfp_aging.md) now specifies the selected
+model, its chronological execution and its numerical verification. The broader
+alternatives below are research context, not descriptions of that implementation.
+No annual simulation or model experiment has been run for this research.
 
 ## Findings and recommendation
 
@@ -56,9 +58,10 @@ or duration does not make its lifetime data a calibration of these assets.
    and auction solves. The existing implementation already does this.
 2. [Analytical Model of Rainflow-Based Cyclic Aging, 2024](https://ieeexplore.ieee.org/abstract/document/10552058):
    a MILP-compatible rainflow model considers both depth and average SOC of a
-   cycle. Its reported average error below 5% is for two tested batteries, not a
-   general accuracy guarantee. It is a promising later alternative when cycle
-   aging measurements and a computational budget justify it.
+   cycle. Its benchmark uses two assumed aging-stress shapes rather than two new
+   physical cell-aging experiments. Its compact `hh` approximation is additive
+   across absolute SOC bands and cannot represent an arbitrary depth-only stress
+   curve; its numerical errors are not physical lifetime-validation errors.
 3. [Optimal V2G Scheduling with Calendar and Cycle Aging, 2024](https://ieeexplore.ieee.org/document/10488452/):
    a MILP includes calendar effects from SOC, age and temperature and cycle
    effects from temperature, C-rate and throughput. Its EV application supports

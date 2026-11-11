@@ -8,6 +8,10 @@ in Electricity Markets*. The author preprint is available at
 The existing `throughput` YAML option remains the AC charge-plus-discharge
 throughput baseline.
 
+The separate opt-in [Naumann LFP health mode](naumann_lfp_aging.md) reuses cycle
+memory with an LFP exposure curve, symmetric dual banks and daily capacity fade.
+It does not change this legacy mode's NMC parameters or discharge-only convention.
+
 ## Equations and electrical basis
 
 Use nameplate internal energy `E = battery.capacity_mwh`, total battery-pack

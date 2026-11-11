@@ -10,7 +10,8 @@ from ..transaction_fees import scenario_fee_details
 
 
 def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray], trades: dict[tuple[str, str, str], float],
-                        *, use_imbalance_split: bool = False) -> dict[str, np.ndarray]:
+                        *, use_imbalance_split: bool = False,
+                        use_aging_surrogate: bool = False) -> dict[str, np.ndarray]:
     """Evaluate actual signed settlement and AC throughput without solver expressions."""
     count = len(inputs.scenarios.scenario_ids)
     revenue = np.zeros(count)
@@ -46,6 +47,21 @@ def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray]
             settings=inputs.degradation, state=inputs.state, charge_mw=arrays["charge_mw"][s],
             discharge_mw=arrays["discharge_mw"][s], delta_hours=inputs.grid.delta_hours)["degradation_eur"]
             for s in range(count)])
+    elif inputs.degradation.mode == "naumann_lfp":
+        from .naumann import evaluate_naumann_dispatch
+        from .naumann_milp import naumann_degradation_from_arrays
+
+        # Check the selected PWL forecast objective against its own graph. Actual
+        # replay aging is a separate estimate and may differ within its error bound.
+        if use_aging_surrogate:
+            aging = naumann_degradation_from_arrays(inputs, arrays)
+        else:
+            aging = np.array([evaluate_naumann_dispatch(
+                battery=inputs.plant.battery, settings=inputs.degradation,
+                state=inputs.state, charge_mw=arrays["charge_mw"][s],
+                discharge_mw=arrays["discharge_mw"][s],
+                delta_hours=inputs.grid.delta_hours,
+                starts=inputs.grid.starts)["degradation_eur"] for s in range(count)])
     fees = np.sum(np.maximum(-arrays["grid_mw"], 0) * inputs.grid.delta_hours, axis=1) * inputs.grid_import_fee_eur_per_mwh
     transaction_fees = (np.zeros(count) if inputs.transaction_fees.mode == "none" else
         np.array([item["transaction_fee_eur"] for item in scenario_fee_details(inputs, trades)]))
@@ -143,8 +159,45 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     # Check every target using the independently reconstructed energy values.
     for boundary, target in inputs.target_energy_mwh_by_boundary.items():
         equality(f"boundary_target_energy_mwh_{boundary}", energy[:, boundary] - target)
-    upper("energy_upper_mwh", energy - battery.maximum_energy)
-    upper("energy_lower_mwh", battery.energy_min_mwh - energy)
+    if inputs.degradation.mode == "naumann_lfp":
+        from .naumann import available_capacity_mwh, evaluate_naumann_dispatch
+        from .naumann_milp import (naumann_degradation_from_arrays,
+            naumann_planner_error_bounds, validate_naumann_arrays)
+
+        # This also checks each day's physical capacity and directional C-rate
+        # limits using independent bank replay and exposure reconstruction.
+        try:
+            errors.update(validate_naumann_arrays(inputs, arrays, tolerance=tolerance))
+            frozen_capacity = available_capacity_mwh(inputs.state, battery, inputs.degradation)
+            reference_wear = np.array([evaluate_naumann_dispatch(battery=battery,
+                settings=inputs.degradation, state=inputs.state, charge_mw=charge[s],
+                discharge_mw=discharge[s], delta_hours=delta, starts=inputs.grid.starts,
+                calendar_reference_capacity_mwh=frozen_capacity)["degradation_eur"]
+                for s in range(count)])
+            forecast_wear = naumann_degradation_from_arrays(inputs, arrays)
+            bounds = naumann_planner_error_bounds(inputs, arrays)
+            wear_bound = np.asarray(bounds["wear_eur"], dtype=float)
+            upper("naumann_replay_wear_bound_eur", np.abs(forecast_wear - reference_wear) - wear_bound)
+            result.diagnostics["naumann_frozen_reference_degradation_eur"] = reference_wear.tolist()
+            result.diagnostics["naumann_forecast_replay_error_bound_eur"] = wear_bound.tolist()
+            capacity = arrays["naumann_capacity_mwh"]
+            if inputs.terminal_target_soc_percent is not None:
+                equality("terminal_available_capacity_soc", energy[:, -1]
+                    - capacity[:, -1] * inputs.terminal_target_soc_percent / 100)
+            if inputs.terminal_minimum_soc_percent is not None:
+                upper("terminal_available_capacity_floor", capacity[:, -1]
+                    * inputs.terminal_minimum_soc_percent / 100 - energy[:, -1])
+            for boundary, percentage in inputs.target_soc_percent_by_boundary.items():
+                equality(f"boundary_available_capacity_soc_{boundary}", energy[:, boundary]
+                    - capacity[:, boundary] * percentage / 100)
+            for boundary, percentage in inputs.minimum_soc_percent_by_boundary.items():
+                upper(f"boundary_available_capacity_floor_{boundary}", capacity[:, boundary]
+                    * percentage / 100 - energy[:, boundary])
+        except (KeyError, TypeError, ValueError) as error:
+            return ValidationReport(False, errors, None, (f"Cannot validate Naumann health: {error}",))
+    else:
+        upper("energy_upper_mwh", energy - battery.maximum_energy)
+        upper("energy_lower_mwh", battery.energy_min_mwh - energy)
     upper("charge_lower_mw", -charge)
     upper("discharge_lower_mw", -discharge)
     upper("charge_power_mw", charge - battery.max_power_mw)
@@ -271,6 +324,9 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
             # When `inputs.degradation.mode == 'xu_segmented'`, set `physical_names` using `('xu_segment_charge_mw', 'xu_segment_discharge_mw')`.
             if inputs.degradation.mode == "xu_segmented":
                 physical_names += ("xu_segment_charge_mw", "xu_segment_discharge_mw")
+            elif inputs.degradation.mode == "naumann_lfp":
+                physical_names += ("naumann_bank_in_mwh", "naumann_bank_out_mwh",
+                    "naumann_rate_bin", "naumann_depth_dose")
             # Recompute balances, signs, sharing and accounting independently of Gurobi for each `name` in `physical_names`.
             for name in physical_names:
                 equality(f"nonanticipativity_{name}_{t}_{owner}", arrays[name][descendants, t] - arrays[name][descendants[0], t])
@@ -288,7 +344,8 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
                     observed[float(value)] = s
     try:
         physical_components = evaluate_components(inputs, arrays, result.trades)
-        components = evaluate_components(inputs, arrays, result.trades, use_imbalance_split=True)
+        components = evaluate_components(inputs, arrays, result.trades,
+            use_imbalance_split=True, use_aging_surrogate=True)
     except ValueError as error:
         return ValidationReport(False, errors, None, (f"Cannot evaluate degradation: {error}",))
     # Recompute balances, signs, sharing and accounting independently of Gurobi for each `(name, values)` in `result.components.items()`.
@@ -356,5 +413,12 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
         and (component_violations[name] if name in component_violations else error > allowed_error(name)))
     accounting_differences = {name: float(np.max(np.abs(components[name] - physical_components[name]), initial=0))
         for name in ("imbalance_cashflow", "imbalance_penalty", "operating_profit")}
+    if inputs.degradation.mode == "naumann_lfp":
+        # Report modeled opportunity cost separately from numerical execution
+        # aging; neither quantity is an additional market cash payment.
+        accounting_differences["battery_degradation_cost"] = float(np.max(np.abs(
+            components["battery_degradation_cost"] - physical_components["battery_degradation_cost"]), initial=0))
+        result.diagnostics["naumann_forecast_degradation_eur"] = components["battery_degradation_cost"].tolist()
+        result.diagnostics["naumann_replay_degradation_eur"] = physical_components["battery_degradation_cost"].tolist()
     return ValidationReport(not violations, errors, objective, violations, accounting_differences,
                             objective_tolerance, component_tolerances, warnings)
