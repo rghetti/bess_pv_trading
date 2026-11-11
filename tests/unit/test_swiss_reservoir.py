@@ -53,3 +53,7 @@ def test_cached_public_csv_snapshot(tmp_path):
     assert first["snapshot"]["raw_file"] == "response.csv"
     assert second["status"] == "cached"
     assert transport.calls == 1
+    refreshed = download_reservoir_levels(config, transport=transport, refresh=True)
+    assert refreshed["status"] == "cached"
+    assert refreshed["snapshot"]["snapshot_id"] == first["snapshot"]["snapshot_id"]
+    assert transport.calls == 2

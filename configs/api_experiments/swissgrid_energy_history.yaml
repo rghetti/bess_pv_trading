@@ -11,6 +11,8 @@ swissgrid_energy:
   plot_cache_directory: outputs/data_imports/swissgrid_energy_history/matplotlib_cache
   source_page: https://www.swissgrid.ch/en/home/customers/topics/energy-data-ch.html
   timezone: Europe/Zurich
+  # Future annual workbooks are validated against the same timestamp/header contract.
+  future_source_defaults: {timestamp_label: interval_start, require_complete_year: false}
   interval_minutes: 15
   sheet_name: Zeitreihen0h15
   header_row: 1

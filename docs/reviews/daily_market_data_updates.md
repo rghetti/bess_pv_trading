@@ -5,12 +5,17 @@ From the repository root, run this after any other database writer has finished:
 ```bash
 /home/rghetti/miniforge3/envs/bess/bin/python -m scripts.update_price_market_data \
   --database /home/rghetti/bess_pv_trading_features/data/api/market.duckdb \
-  --since 2026-09-01 --run
+  --providers energy_charts entsoe france_final france_realtime \
+    swissgrid_energy swissgrid_border bfe --run
 ```
 
-The end date defaults to tomorrow in Europe/Rome, so all source data available
-through the current local date can be requested. Omit `--since` on later runs
-to refresh the configured 14-day lookback, or provide an earlier date to backfill.
+The end date defaults to tomorrow in Europe/Rome, so available source data
+through the current local date can be requested. The default 14-day lookback
+supports routine daily runs. If the updater has not run for longer, add
+`--since YYYY-MM-DD` to request an earlier backfill. This command excludes GME
+API credentials because the GME workbooks are imported manually.
+ENTSO-E requests within the requested window are refreshed so that a previously
+partial daily response does not permanently mask later published records.
 The ENTSO-E token is requested with hidden input only when absent from the
 environment and the process has a terminal. It is kept in the process environment,
 not saved in YAML or DuckDB. For unattended execution use a securely provisioned
@@ -23,8 +28,20 @@ GME-specific credentials are available, RTE consolidated and provisional real-
 time observations, Swissgrid physical data and border data, and BFE reservoirs.
 Source publication and historical availability remain distinct from retrieval.
 RTE's real-time dataset is a separate provisional source and does not silently
-replace consolidated values. Swissgrid sources may be published monthly rather
-than daily. Provider failures or missing credentials are reported individually.
+replace consolidated values. To capture delayed RTE consolidated/final releases
+and revisions, `france_final` refreshes a configured 550-day window by month;
+the real-time source uses the normal request window. RTE can publish empty
+consolidated months until its release, so inspect the result status and keep the
+real-time fallback distinct. Swissgrid physical data are published monthly;
+the updater discovers each current official workbook URL instead of using a
+stale link, and also refreshes the preceding year during its configured revision
+window. Swissgrid border files are discovered by year and the preceding year is
+refreshed around New Year. If a new annual workbook is not yet published, the
+report marks discovery as incomplete. Unchanged nonempty RTE files and
+unchanged Swissgrid/BFE downloads reuse their existing snapshots rather than
+reimporting the same payload every day. Provider failures or missing credentials
+are reported individually; a completed request does not prove every product
+has already been published.
 
 GME IDA is not supplied by the Energy Charts DA endpoint. If GME credentials are
 unavailable, download native NORD 15-minute MI-A1, MI-A2 and MI-A3 workbooks to

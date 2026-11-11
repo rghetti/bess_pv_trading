@@ -5,6 +5,11 @@ daily_price_market_update:
   database_path: data/api/market.duckdb
   timezone: Europe/Rome
   lookback_days: 14
+  entsoe_refresh_recent_requests: true
+  # RTE consolidated/final files may be revised during the following year.
+  france_final_lookback_days: 550
+  swissgrid_energy_previous_year_refresh_months: 7
+  swissgrid_border_previous_year_refresh_months: 1
   output_directory: outputs/data_updates/price_market
   energy_charts_config: configs/research/energy_charts_nord_fall2026.yaml
   entsoe_config: configs/api_experiments/entsoe_api.yaml

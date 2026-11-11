@@ -168,6 +168,17 @@ def download_french(config, *, dry_run=False, refresh=False, max_requests=None,
             if raw is None:
                 raw = client.get(request)
                 used += 1
+            # Repeated daily refreshes should not duplicate unchanged monthly snapshots.
+            if refresh:
+                previous = store.load(key)
+                if (previous is not None and not previous[0].empty
+                        and previous[1].get("raw_sha256") == hashlib.sha256(raw).hexdigest()
+                        and previous[1].get("metadata", {}).get("normalizer_revision") == "country-balance-v5"):
+                    result["cached_requests"] += 1
+                    result["completed_requests"] += 1
+                    result["months"].append({"start": first.isoformat(), "end": end.isoformat(),
+                        "records": len(previous[0]), "snapshot_id": previous[1]["snapshot_id"], "unchanged": True})
+                    continue
             frame = parse_french_export(raw, start=first, end=end, config=selected)
             frame["provider"], frame["dataset"], frame["zone"] = "rte", france["dataset"], "FR"
             metadata = {"source_kind": "rte_public_json", "native_interval_minutes": 30,

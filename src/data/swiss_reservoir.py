@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+import hashlib
 
 import numpy as np
 import pandas as pd
@@ -60,6 +61,11 @@ def download_reservoir_levels(config, *, transport=None, refresh=False):
         return {"status": "cached", "rows": len(cached[0]), "snapshot": cached[1]}
     client = transport or SecureTransport(**config["api"]["http"])
     raw = client.get(ApiRequest(settings["url"]))
+    # Unchanged weekly downloads should not create another immutable snapshot.
+    if refresh:
+        previous = store.load(identity)
+        if previous is not None and previous[1].get("raw_sha256") == hashlib.sha256(raw).hexdigest():
+            return {"status": "cached", "rows": len(previous[0]), "snapshot": previous[1]}
     frame = parse_reservoir_levels(raw, timezone=settings["timezone"],
                                    publication_delay_days=settings["publication_delay_days"])
     metadata = {"source_kind": "bfe_public_csv", "source_url": settings["url"],

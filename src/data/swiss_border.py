@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from html.parser import HTMLParser
+import hashlib
 from io import BytesIO
 from urllib.parse import urljoin, urlsplit
 import re
@@ -92,6 +93,11 @@ def download_swiss_border(config, *, transport=None, refresh=False):
     page = client.get(ApiRequest(settings["page_url"]))
     url = discover_swiss_csv(page, settings["page_url"], year)
     raw = client.get(ApiRequest(url))
+    # Preserve the current snapshot if the public annual export is unchanged.
+    if refresh:
+        previous = store.load(identity)
+        if previous is not None and previous[1].get("raw_sha256") == hashlib.sha256(raw).hexdigest():
+            return {"status": "cached", "rows": len(previous[0]), "snapshot": previous[1]}
     frame = parse_swiss_border(raw, year=year, timezone=settings["timezone"], columns=settings["columns"])
     metadata = {"source_kind": "swissgrid_public_csv", "source_url": url,
         "source_page": settings["page_url"], "native_interval_minutes": 15,

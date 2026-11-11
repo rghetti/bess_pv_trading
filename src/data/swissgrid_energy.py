@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from html.parser import HTMLParser
+import hashlib
 from io import BytesIO
 import json
 import os
 from pathlib import Path
 import posixpath
+import re
 from typing import Any, Mapping
+from urllib.parse import urljoin, urlsplit
 import zipfile
 import xml.etree.ElementTree as ET
 
@@ -23,6 +27,37 @@ from .gme_workbooks import _shared_strings
 _NS = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 _RELATIONSHIP_ID = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}id"
 PARSER_REVISION = "swissgrid-energy-statistics-v1"
+
+
+class _WorkbookLinks(HTMLParser):
+    """Collect provider workbook links without executing page content."""
+
+    def __init__(self):
+        super().__init__()
+        self.hrefs = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() == "a":
+            href = dict(attrs).get("href")
+            if href:
+                self.hrefs.append(href)
+
+
+def discover_energy_workbook(page: bytes, page_url: str, year: int) -> str:
+    """Resolve exactly one official annual XLSX, rejecting untrusted links."""
+    parser = _WorkbookLinks()
+    parser.feed(page.decode("utf-8"))
+    suffix = re.compile(rf"/EnergieUebersichtCH-{int(year)}\.xlsx$", re.IGNORECASE)
+    urls = set()
+    for href in parser.hrefs:
+        url = urljoin(page_url, href)
+        parts = urlsplit(url)
+        if (parts.scheme == "https" and parts.hostname == "www.swissgrid.ch"
+                and not parts.query and not parts.fragment and suffix.search(parts.path)):
+            urls.add(url)
+    if len(urls) != 1:
+        raise ValueError(f"Expected one official Swissgrid energy workbook for {year}; found {len(urls)}")
+    return urls.pop()
 
 
 def _cell_text(cell: ET.Element, strings: list[str]) -> str:
@@ -266,6 +301,13 @@ def acquire_energy_statistics(config: Mapping[str, Any], *, offline: bool = Fals
             payload = client.get(ApiRequest(source["url"]))
             raw_path.parent.mkdir(parents=True, exist_ok=True)
             raw_path.write_bytes(payload)
+        # Do not re-import an unchanged workbook on every daily refresh.
+        if refresh:
+            previous = store.load(identity)
+            if (previous is not None and previous[1].get("raw_sha256") == hashlib.sha256(payload).hexdigest()
+                    and previous[1].get("metadata", {}).get("normalizer_revision") == PARSER_REVISION):
+                report["sources"].append({"year": source["year"], "status": "cached", "manifest": previous[1]})
+                continue
         frame, metadata = parse_energy_statistics(payload, settings, source)
         staged.append((identity, payload, frame, metadata, source))
         report["sources"].append({"year": source["year"], "status": "prepared", "metadata": metadata})

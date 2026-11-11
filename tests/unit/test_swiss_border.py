@@ -107,3 +107,30 @@ def test_download_caches_and_verifies_raw_csv_snapshot(tmp_path):
     assert first["snapshot"]["raw_file"] == "response.csv"
     assert second["status"] == "cached"
     assert len(transport.calls) == 2
+    refreshed = download_swiss_border(config, transport=transport, refresh=True)
+    assert refreshed["status"] == "cached"
+    assert refreshed["snapshot"]["snapshot_id"] == first["snapshot"]["snapshot_id"]
+    assert len(transport.calls) == 4
+
+
+def test_french_refresh_reuses_an_unchanged_nonempty_snapshot(tmp_path):
+    """Repeated RTE refreshes do not write identical monthly data again."""
+    france = {"dataset": "electricity_balance", "endpoint": "https://odre.opendatasoft.com/api/export",
+        "date_field": "date", "hour_field": "heure", "timestamp_field": "date_heure",
+        "timezone": "Europe/Paris", "generation_fields": ["nucleaire", "hydraulique"],
+        "optional_generation_fields": [], "optional_consumption_fields": [], "consumption_field": "consommation",
+        "pumping_field": "pompage", "pumping_multiplier": 1.0}
+    config = {"api": {"database_threads": 1}, "country_balances": {"database_path": str(tmp_path / "market.duckdb"),
+        "start": "2026-01-01", "end_exclusive": "2026-02-01", "france": france}}
+    record = {"date": "2026-01-15", "heure": "12:00", "date_heure": "2026-01-15T11:00:00Z",
+              "consommation": 20, "pompage": -1, "nucleaire": 10, "hydraulique": 4}
+
+    class Transport:
+        def get(self, request):
+            return json.dumps([record]).encode()
+
+    first = download_french(config, transport=Transport(), refresh=True)
+    second = download_french(config, transport=Transport(), refresh=True)
+    assert first["status"] == second["status"] == "complete"
+    assert second["months"][0]["unchanged"] is True
+    assert first["months"][0]["snapshot_id"] == second["months"][0]["snapshot_id"]
