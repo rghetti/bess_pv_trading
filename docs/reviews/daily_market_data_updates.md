@@ -16,6 +16,11 @@ supports routine daily runs. If the updater has not run for longer, add
 API credentials because the GME workbooks are imported manually.
 ENTSO-E requests within the requested window are refreshed so that a previously
 partial daily response does not permanently mask later published records.
+Energy Charts is also requested again, but unchanged daily prices reuse their
+existing snapshots; only new or revised days are written together in a batch.
+If a response drops previously stored products for a day, the earlier snapshot
+is preserved and that provider reports a partial result. The terminal shows
+progress as delivery days are checked and when changed days are written.
 The ENTSO-E token is requested with hidden input only when absent from the
 environment and the process has a terminal. It is kept in the process environment,
 not saved in YAML or DuckDB. For unattended execution use a securely provisioned

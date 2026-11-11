@@ -115,8 +115,9 @@ def main():
                 command = [sys.executable, "-m", "scripts.cache_energy_charts_prices", "--fetch",
                     "--config", settings["energy_charts_config"], "--database", database,
                     "--start", str(first.date()), "--end-exclusive", str(stop.date())]
-                completed = subprocess.run(command, text=True, capture_output=True, check=True)
-                result = {"status": "complete", "acquisition": json.loads(completed.stdout)}
+                completed = subprocess.run(command, text=True, stdout=subprocess.PIPE, check=True)
+                acquisition = json.loads(completed.stdout)
+                result = {"status": acquisition["status"], "acquisition": acquisition}
             elif provider in {"entsoe", "gme"}:
                 required = ([settings["entsoe_token_env"]] if provider == "entsoe" else
                             [settings["gme_username_env"], settings["gme_password_env"]])
