@@ -378,20 +378,20 @@ degradation:
   stress_coefficient: 0.000524
   stress_exponent: 2.03
   segment_count: 8
-  assumptions: Generic 2024 BNEF pack-price replacement proxy converted at the 2024-12-31 ECB FX rate; excludes
+  assumptions: 2025 BNEF stationary-storage pack-price replacement proxy converted at the 2025-12-09 ECB FX rate; excludes
     labor, inverter, BOS and salvage. Reference LFP cycle life is 2500 cycles at 80% DoD to 80% residual capacity
     (Victron Lithium NG). Constant nominal-energy lifetime approximation; no calendar aging or battery-specific
     lifetime calibration. Cost applies to charge plus discharge AC throughput, normalized using the configured
     charge/discharge efficiencies.
   replacement_economics:
-    pack_price_usd_per_kwh: 115.0
-    cost_year: 2024
-    price_scope: global_generic_lithium_ion_pack_average_not_installed_BESS
-    price_source: https://about.bnef.com/insights/commodities/lithium-ion-battery-pack-prices-see-largest-drop-since-2017-falling-to-115-per-kilowatt-hour-bloombergnef/
-    price_publication_date: '2024-12-10'
-    usd_per_eur: 1.0389
-    fx_date: '2024-12-31'
-    fx_source: https://www.ecb.europa.eu/stats/exchange/eurofxref/shared/pdf/2024/12/20241231.pdf
+    pack_price_usd_per_kwh: 70.0
+    cost_year: 2025
+    price_scope: global_stationary_storage_pack_average_not_installed_BESS
+    price_source: https://about.bnef.com/insights/clean-transport/lithium-ion-battery-pack-prices-fall-to-108-per-kilowatt-hour-despite-rising-metal-prices-bloombergnef/
+    price_publication_date: '2025-12-09'
+    usd_per_eur: 1.1637
+    fx_date: '2025-12-09'
+    fx_source: https://eur-lex.europa.eu/legal-content/EN/TXT/PDF/?uri=OJ%3AC_202506387
     additional_replacement_eur_per_kwh: 0.0
     salvage_fraction: 0.0
     retrieved_on: '2026-10-19'
