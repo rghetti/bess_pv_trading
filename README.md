@@ -391,7 +391,7 @@ The current farm-910 study uses `degradation.model: throughput`. It charges the 
 
 The inherited example uses a historical generic pack-price proxy and 2,500 cycles at 80% depth; these are editable study assumptions, not a battery-specific installed cost or lifetime calibration. End-of-life capacity metadata does not dynamically reduce usable capacity. `xu_segmented` is a separate optional model with cycle-depth memory, marginal discharge costs and additional priority binaries; see the mathematical document and [Xu implementation notes](docs/xu_degradation.md).
 
-The opt-in `naumann_lfp` mode adds daily SOH/capacity updates, calendar aging throughout SOC transitions, symmetric depth memory and C-rate stress using a documented LFP prior. See the [model and limitations](docs/naumann_lfp_aging.md) and [study configuration](configs/full_experiments/naumann_lfp.yaml). Actual capacity changes only at chronological Europe/Rome midnight; existing degradation defaults stay unchanged. The study leaves IDA3 next-day planning and intermediate midnight SOC constraints disabled.
+The opt-in `naumann_lfp` mode adds daily SOH/capacity updates, calendar aging throughout SOC transitions, symmetric depth memory and C-rate stress using a documented LFP prior. See the [model and limitations](docs/naumann_lfp_aging.md) and [study configuration](configs/full_experiments/naumann_lfp.yaml). Actual capacity changes only at chronological Europe/Rome midnight; existing degradation defaults stay unchanged. Each day's auction plan retains its 50% terminal SOC target, and IDA3 does not extend into the next delivery day.
 
 The battery-value comparison is
 

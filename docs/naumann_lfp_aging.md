@@ -119,9 +119,11 @@ ends. DST days contribute their actual 23 or 25 elapsed hours. Partial days
 retain uncommitted exposure in checkpoints. At midnight the previous interval
 finishes before the new day's control or auction actions.
 
-The selected study does not extend IDA3 through the following delivery day and
-does not impose an intermediate midnight SOC target. Its sole end-of-day health
-handoff is independent of optional legacy multi-day planning support.
+The selected study does not extend IDA3 through the following delivery day. Each
+auction plan targets 50% SOC at the end of its delivery day, using that day's
+forecast available capacity. This is the single terminal constraint for that
+delivery day, separate from the chronological health handoff. The grid-tracking
+executor reacts to actual PV and may finish at a different realized SOC.
 
 The optimizer predicts future loss without mutating actual health. Its current
 day capacity is a parameter. Future midnight capacity bounds depend on forecast
@@ -171,8 +173,8 @@ self-discharge is rejected until its bank-memory treatment is defined.
 Available-capacity percentage targets are represented separately from absolute
 MWh targets, including boundaries inside multi-day horizons. Explicit MWh
 configuration entries take precedence, including an explicit null that disables
-the corresponding target. The synthetic example supplies absolute MWh values;
-remove those entries when selecting percentage-only targets for a used battery.
+the corresponding target. The synthetic example uses a percentage-only target,
+so its 50% target follows the forecast available capacity.
 
 The optional energy-only continuation-value approximation conditions its energy
 range and power cap on health known at cutoff. It freezes that health and omits

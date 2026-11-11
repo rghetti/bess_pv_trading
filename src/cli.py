@@ -19,6 +19,7 @@ def _optimization_inputs(config: dict):
     from .domain import MarketState, OptimizationInput, PhysicalState
     from .optimization.degradation import degradation_settings_from_config
     from .optimization.prepared import terminal_minimum_energy_mwh
+    from .simulation.battery_health import relative_terminal_soc
     from .simulation.synthetic import synthetic_inputs
     # Construct validated inputs without creating a solver model when `'synthetic' not in config`.
     if "synthetic" not in config:
@@ -30,21 +31,25 @@ def _optimization_inputs(config: dict):
     fixture = synthetic_inputs(config)
     fees = transaction_fees_from_config(config)
     grid, trading = fixture["grid"], config["trading"]
+    aging = degradation_settings_from_config(config)
+    target_soc, minimum_soc = relative_terminal_soc(config["state"], aging.mode)
     masks = {event.auction:tuple(t in event.eligible_intervals for t in range(len(grid.interval_ids)))
              for event in fixture["schedule"]}
     inputs = OptimizationInput(grid,fixture["plant"],PhysicalState(grid.starts[0],config["state"]["initial_energy_mwh"],
         cycle_segment_energy_mwh=config["state"].get("cycle_segment_energy_mwh")),
         MarketState(transaction_fee_state=fees.initial_state),fixture["scenarios"],fixture["tree"],masks,
         trading["imbalance_penalty_eur_per_mwh"],
-        config["state"]["terminal_target_mwh"],
-        degradation_settings_from_config(config),
+        config["state"].get("terminal_target_mwh") if target_soc is None else None,
+        aging,
         trading["grid_import_fee_eur_per_mwh"],
         imbalance_limit_mwh=trading.get("imbalance_limit_mwh"),
         optimize_imbalances=trading.get("optimize_imbalances", True),
         planned_delivery_balance_resolution_minutes=trading.get("planned_delivery_balance_resolution_minutes"),
         transaction_fees=fees,
         auction_submission_times={event.auction: event.submission_at for event in fixture["schedule"]},
-        terminal_minimum_mwh=terminal_minimum_energy_mwh(config["state"], fixture["plant"].battery))
+        terminal_minimum_mwh=(terminal_minimum_energy_mwh(config["state"], fixture["plant"].battery)
+                              if minimum_soc is None else None),
+        terminal_target_soc_percent=target_soc, terminal_minimum_soc_percent=minimum_soc)
     return inputs
 
 

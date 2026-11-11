@@ -103,6 +103,18 @@ def test_opt_in_naumann_yaml_loads_without_starting_an_experiment():
     # The selected workflow ends at one midnight and does not restore the removed IDA3 policy.
     assert config["continuous_optimization"]["ida3_next_day_horizon"] is False
     assert config["continuous_optimization"]["ida3_enforce_intermediate_soc"] is False
+    assert config["continuous_optimization"]["terminal_soc_scope"] == "each_delivery_day"
+
+
+def test_naumann_synthetic_cli_uses_available_capacity_for_daily_terminal_soc():
+    """The single-day CLI must not turn an available-capacity target into fixed MWh."""
+    from bess_pv_trading.cli import _optimization_inputs
+
+    config = load_config(Path(__file__).resolve().parents[2]
+        / "configs/full_experiments/naumann_lfp.yaml")
+    inputs = _optimization_inputs(config)
+    assert inputs.terminal_target_soc_percent == 50.0
+    assert inputs.terminal_target_mwh is None
 
 
 @pytest.mark.parametrize("overrides,match", [

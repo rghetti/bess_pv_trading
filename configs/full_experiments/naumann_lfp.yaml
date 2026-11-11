@@ -15,7 +15,6 @@ state:
   initial_energy_mwh: 0.5
   terminal_soc_percent: 50.0
   terminal_soc_basis: available_capacity
-  terminal_target_mwh: 0.5
   origin: known_delivery_start_assumption
 degradation:
   model: naumann_lfp
@@ -89,7 +88,7 @@ continuous_optimization:
   # The active workflow has one delivery-day end, without the removed IDA3 look-ahead policy.
   ida3_next_day_horizon: false
   ida3_enforce_intermediate_soc: false
-  terminal_soc_scope: final_replay_day
+  terminal_soc_scope: each_delivery_day
 solver:
   threads: 1
   time_limit_seconds: 60.0
