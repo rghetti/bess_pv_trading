@@ -18,7 +18,7 @@ continuous_optimization:
   - integrated
   perfect_pv_reference: false
   resume: false
-  output_root: outputs/energy_research/grid_tracking_2026_naumann_coarse
+  output_root: outputs/energy_research/grid_tracking_2026_naumann_coarser
   run_id: naumann_lfp
   pv_ensemble:
     enabled: false
@@ -146,20 +146,16 @@ degradation:
     cycle_depth_intercept: 1.0923
     depth_knots:
     - 0
-    - 0.025
     - 0.05
-    - 0.1
     - 0.2
-    - 0.4
-    - 0.6
-    - 0.8
+    - 0.5
     - 1
-    c_rate_bin_width: 0.1
+    c_rate_bin_width: 0.25
     nominal_c_rate_max: 1.0
     effective_c_rate_limit: 1.0
     end_of_life_soh: 0.8
-    sqrt_loss_error_budget: 0.0001
-    calendar_annual_soh_error_budget: 0.0005
+    sqrt_loss_error_budget: 0.0002
+    calendar_annual_soh_error_budget: 0.001
     calendar_initial_soc_segments: 16
     max_loss_fraction: 0.3
     calendar_year_seconds: 31557600.0
