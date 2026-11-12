@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from bess_pv_trading.domain import NaumannSettings
 from bess_pv_trading.optimization.degradation import rainflow_discharge_depths
-from bess_pv_trading.optimization.naumann import cycle_rate_factor, depth_exposure
+from bess_pv_trading.optimization.naumann import cycle_rate_factor, depth_exposure, rate_bin
 
 
 def rainflow_benchmark(energy_mwh, capacity_mwh, settings, reference_rate):
@@ -43,6 +43,20 @@ def rainflow_benchmark(energy_mwh, capacity_mwh, settings, reference_rate):
         "rainflow_analytic_cycle_loss_fraction": float(np.sqrt(analytic)),
         "rainflow_pwl_cycle_loss_fraction": float(np.sqrt(piecewise)),
     }
+
+
+def unbinned_local_rate_exposure(frame, settings):
+    """Revalue recorded interval doses at actual rates, holding the path fixed."""
+    increments = (frame.naumann_cycle_exposure_end.to_numpy(dtype=float)
+                  - frame.naumann_cycle_exposure_start.to_numpy(dtype=float))
+    rates = (frame.charge_c_rate_nominal.to_numpy(dtype=float)
+             + frame.discharge_c_rate_nominal.to_numpy(dtype=float))
+    if not np.isfinite(increments).all() or not np.isfinite(rates).all() or np.min(increments) < -1e-12:
+        raise ValueError("Invalid interval cycling exposure or rate")
+    # Divide out the recorded upper-edge factor and apply the analytical rate.
+    factors = np.asarray([rate_bin(rate, settings)[1] for rate in rates])
+    exact = cycle_rate_factor(rates, settings) ** 2
+    return float(np.sum(np.maximum(increments, 0) * exact / factors))
 
 
 def summarize_run(directory, reference_rate):
@@ -86,6 +100,8 @@ def summarize_run(directory, reference_rate):
         "initial_soh": float(frame.battery_soh_start.iloc[0]),
         "final_soh": float(frame.battery_soh_end.iloc[-1]),
         "recorded_cycle_loss_fraction": float(frame.naumann_cycle_loss_fraction_end.iloc[-1] - frame.naumann_cycle_loss_fraction_start.iloc[0]),
+        "recorded_cycle_exposure": float(frame.naumann_cycle_exposure_end.iloc[-1] - frame.naumann_cycle_exposure_start.iloc[0]),
+        "local_unbinned_rate_cycle_exposure": unbinned_local_rate_exposure(frame, settings),
         "recorded_calendar_loss_fraction": float(frame.naumann_calendar_loss_fraction_end.iloc[-1] - frame.naumann_calendar_loss_fraction_start.iloc[0]),
         "throughput_mwh": float(frame.throughput_mwh.sum()),
         "market_cashflow_eur": float(frame.realized_market_cashflow_eur.sum()),

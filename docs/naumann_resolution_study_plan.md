@@ -37,7 +37,11 @@ calendar and cycle loss, actual throughput and market cash, estimated noncash
 wear, imbalance, and total wall time. Independent rainflow on the full executed
 path with carried residues must compare piecewise and analytic depth stress at a
 common reference C-rate; it does not validate cell calibration or the variable-rate
-model. Check whether any fixed-capacity baseline trajectory violates faded bounds.
+model. The report also reweights recorded interval exposure by the actual
+interval rate to isolate the upper-bin approximation on the same path. This is a
+local-rate surrogate, not completed-cycle mean-rate rainflow aging; it neither
+reoptimizes dispatch nor updates the original capacity trajectory. Check whether
+any fixed-capacity baseline trajectory violates faded bounds.
 
 Selection criterion: prefer the least computationally expensive setting that finds
 validated solutions and has acceptable health and economic deviations against a
