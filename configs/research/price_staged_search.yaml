@@ -1,0 +1,21 @@
+include: ../standard.yaml
+
+# This workflow inherits the established full-year data and estimator contract.
+price_staged_search:
+  base_config: configs/research/price_feature_selection_full_year.yaml
+  output_directory: outputs/price_staged_search_full_year
+  workers: 5
+  configurations_per_family: 4
+  promoted_families: 4
+  snapshot_end_exclusive: '2027-01-01'
+  initial_blocks: [nord_forecasts, gas, france, switzerland]
+  retrospective_features:
+    - ch_it_physical_same_day
+    - ch_fr_physical_same_day
+    - ch_generation_same_day
+    - ch_consumption_same_day
+    - fr_physical_all_borders_same_day
+    - fr_nuclear_same_day
+    - fr_hydro_same_day
+    - fr_generation_same_day
+    - fr_consumption_same_day

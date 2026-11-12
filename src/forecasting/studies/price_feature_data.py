@@ -253,7 +253,9 @@ def prepare_matrices(settings, source_root, destination):
         duration = (native.product_end - native.product_start).dt.total_seconds() / 60
         local = pd.DatetimeIndex(native.product_start).tz_convert(settings["timezone"])
         days = local.strftime("%Y-%m-%d").to_numpy()
-        selected = duration.eq(minutes).to_numpy() & (days >= group["train_start"]) & (days < group["test_end"])
+        # Retain additional observed targets for proxy export without extending the test split.
+        native_end = group.get("native_end_exclusive", group["test_end"])
+        selected = duration.eq(minutes).to_numpy() & (days >= group["train_start"]) & (days < native_end)
         native = native.loc[selected].reset_index(drop=True)
         if native.empty:
             raise ValueError(f"No native target rows for {group_name}")

@@ -1,0 +1,8 @@
+include: ../standard.yaml
+
+# Export the selected annual price proxies from one completed staged search.
+price_staged_proxy_refit:
+  source_search: outputs/price_staged_search_full_year
+  output_directory: outputs/price_staged_proxies_2026
+  prediction_start: '2026-01-01'
+  prediction_end_exclusive: '2027-01-01'
