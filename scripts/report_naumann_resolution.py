@@ -102,7 +102,8 @@ def main():
     parser.add_argument("--reference-rate", type=float, default=0.5, help="Fixed reference C-rate")
     arguments = parser.parse_args()
     rows = [summarize_run(path, arguments.reference_rate) for path in arguments.runs]
-    print(pd.DataFrame(rows).to_string(index=False))
+    # Tiny squared-loss exposures must not be rounded to identical values.
+    print(pd.DataFrame(rows).to_string(index=False, float_format=lambda value: f"{value:.9g}"))
 
 
 if __name__ == "__main__":
