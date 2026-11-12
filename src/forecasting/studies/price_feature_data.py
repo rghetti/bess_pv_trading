@@ -120,7 +120,32 @@ def _profiles(history, starts, cutoffs, lag_days, minutes, hours, timezone):
     grouped = history.assign(day=local.strftime("%Y-%m-%d"), hour=local.hour).groupby(["day", "hour"])
     table = grouped.agg(price=("price_eur_per_mwh", "mean"), count=("price_eur_per_mwh", "size"),
                         publication=("available_at", "max"))
-    table.loc[table["count"].ne(60 // minutes), "price"] = np.nan
+    # A repeated autumn hour has two full sets of products; keep its mean.
+    # All other incomplete or unexpectedly duplicated hours remain missing.
+    expected = 60 // minutes
+    table.loc[table["count"].ne(expected), "price"] = np.nan
+    for day in table.index.get_level_values("day").unique():
+        start = pd.Timestamp(day).tz_localize(timezone)
+        end = (pd.Timestamp(day) + pd.Timedelta(days=1)).tz_localize(timezone)
+        day_hours = pd.date_range(start, end, freq="h", inclusive="left")
+        if len(day_hours) == 24:
+            continue
+        local_hours = day_hours.hour
+        for hour in hours:
+            key = (day, hour)
+            occurrences = int((local_hours == hour).sum())
+            if occurrences == 2 and key in table.index and table.loc[key, "count"] == 2 * expected:
+                table.loc[key, "price"] = grouped["price_eur_per_mwh"].mean().loc[key]
+            # Spring has no local 02:00; interpolate only when both adjacent hours
+            # are complete, and require both prices to be published at the cutoff.
+            if occurrences == 0 and 0 < hour < 23:
+                previous, following = (day, hour - 1), (day, hour + 1)
+                if previous in table.index and following in table.index:
+                    neighbors = table.loc[[previous, following]]
+                    if neighbors["price"].notna().all() and neighbors["publication"].notna().all():
+                        table.loc[key, ["price", "count", "publication"]] = [
+                            neighbors["price"].mean(), 0, neighbors["publication"].max()
+                        ]
     prices = table.price.unstack("hour").reindex(columns=hours)
     clocks = table.publication.unstack("hour").reindex(index=prices.index, columns=hours)
     arrays, names = [], []
