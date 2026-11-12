@@ -204,6 +204,27 @@ def test_auction_idle_health_forecasts_cross_midnight_and_share_scenario_cost_on
     np.testing.assert_allclose(wear, wear[0])
     assert result.objective_eur == pytest.approx(-wear[0])
     assert inputs.state.battery_health.calendar_exposure == 0
+    # A tiny solver bound residual is projected for replay while raw arrays stay
+    # unchanged and remain subject to the ordinary physical checks.
+    result.arrays["charge_mw"][0, 0] = -1e-10
+    projected = validate_solution(inputs, result, tolerance=1e-6)
+    assert projected.valid, projected.violations
+    assert result.arrays["charge_mw"][0, 0] == -1e-10
+    assert result.diagnostics["naumann_replay_command_projection"]["maximum_adjustment_mw"] == pytest.approx(1e-10)
+    assert any("replay projected commands" in warning for warning in projected.warnings)
+    result.arrays["charge_mw"][0, 0] = 5e-7
+    result.arrays["discharge_mw"][0, 0] = 3e-7
+    simultaneous = validate_solution(inputs, result, tolerance=1e-6)
+    assert simultaneous.valid, simultaneous.violations
+    projection = result.diagnostics["naumann_replay_command_projection"]
+    assert projection["projected_charge_mw"] - projection["projected_discharge_mw"] == pytest.approx(2e-7)
+    result.arrays["discharge_mw"][0, 0] = 0
+    # Material command corrections must remain errors with a precise location.
+    result.arrays["charge_mw"][0, 0] = -1e-3
+    rejected = validate_solution(inputs, result, tolerance=1e-6)
+    assert not rejected.valid
+    assert "scenario 0, interval 0" in rejected.violations[0]
+    result.arrays["charge_mw"][0, 0] = 0
     result.arrays["naumann_cycle_exposure"][0, -1] += .001
     assert not validate_solution(inputs, result).valid
 

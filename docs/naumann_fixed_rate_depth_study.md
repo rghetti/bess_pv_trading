@@ -22,6 +22,13 @@ limit, 1e-4 relative MIP gap, 1e-5 solver feasibility and integrality tolerances
 and 1e-4 ordinary validation tolerance. The fixed reference-rate model is not a
 bound on actual-rate aging. Validation tolerances have mixed physical and scaled
 exposure units; inspect violations, replay bounds, and solver feasibility.
+For numerical command residuals within the ordinary validation tolerance,
+independent health replay projects the raw charge/discharge pair to an exclusive
+pair with the same internal-energy rate. Raw solver arrays remain unchanged and
+are checked independently; maximum adjustment and location are recorded and
+material adjustments are rejected. The replay is an approximate diagnostic,
+not the actual executed command. The replay_v2 configurations use a separate
+output root to preserve the earlier interrupted and failed cases.
 
 Run cases sequentially in separate directories. Report every solve status, gap,
 model size, runtime, numerical residual and any failure. On completed cases,

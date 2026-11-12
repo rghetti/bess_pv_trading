@@ -134,6 +134,34 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     curtailment, energy, grid = arrays["curtailment_mw"], arrays["energy_mwh"], arrays["grid_mw"]
     pv_injection = arrays["pv_injection_mw"]
     delta = inputs.grid.delta_hours
+    # Record raw commands before health replay can raise on a numerical residual.
+    upper("charge_lower_mw", -charge)
+    upper("discharge_lower_mw", -discharge)
+    upper("simultaneous_battery_mw", np.minimum(charge, discharge))
+    replay_arrays = arrays
+    if inputs.degradation.mode == "naumann_lfp":
+        # Project only the independent replay, retaining the exact internal
+        # energy rate. All solver constraints remain checked on raw values.
+        net_internal = battery.eta_charge * charge - discharge / battery.eta_discharge
+        replay_charge = np.maximum(net_internal, 0) / battery.eta_charge
+        replay_discharge = np.maximum(-net_internal, 0) * battery.eta_discharge
+        correction = np.maximum(np.abs(replay_charge - charge), np.abs(replay_discharge - discharge))
+        index = np.unravel_index(np.argmax(correction), correction.shape)
+        max_correction = float(correction[index])
+        result.diagnostics["naumann_replay_command_projection"] = {
+            "maximum_adjustment_mw": max_correction,
+            "scenario_index": int(index[0]), "interval_index": int(index[1]),
+            "charge_mw": float(charge[index]), "discharge_mw": float(discharge[index]),
+            "projected_charge_mw": float(replay_charge[index]),
+            "projected_discharge_mw": float(replay_discharge[index]),
+            "validation_tolerance_mw": tolerance,
+        }
+        # Reject material corrections rather than silently changing a plan.
+        if max_correction > tolerance:
+            return ValidationReport(False, errors, None,
+                (f"Naumann replay command adjustment {max_correction:.6g} MW exceeds tolerance {tolerance:.6g} MW at scenario {index[0]}, interval {index[1]}",))
+        replay_arrays = dict(arrays)
+        replay_arrays.update(charge_mw=replay_charge, discharge_mw=replay_discharge)
     equality("pv_plant_balance_mw", inputs.scenarios.pv_ac_mw - curtailment - pv_injection)
     equality("poi_power_balance_mw", pv_injection + discharge - charge - grid)
     upper("pv_injection_lower_mw", -pv_injection)
@@ -170,8 +198,8 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
             errors.update(validate_naumann_arrays(inputs, arrays, tolerance=tolerance))
             frozen_capacity = available_capacity_mwh(inputs.state, battery, inputs.degradation)
             reference_wear = np.array([evaluate_naumann_dispatch(battery=battery,
-                settings=inputs.degradation, state=inputs.state, charge_mw=charge[s],
-                discharge_mw=discharge[s], delta_hours=delta, starts=inputs.grid.starts,
+                settings=inputs.degradation, state=inputs.state, charge_mw=replay_arrays["charge_mw"][s],
+                discharge_mw=replay_arrays["discharge_mw"][s], delta_hours=delta, starts=inputs.grid.starts,
                 calendar_reference_capacity_mwh=frozen_capacity)["degradation_eur"]
                 for s in range(count)])
             forecast_wear = naumann_degradation_from_arrays(inputs, arrays)
@@ -343,7 +371,7 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
                 else:
                     observed[float(value)] = s
     try:
-        physical_components = evaluate_components(inputs, arrays, result.trades)
+        physical_components = evaluate_components(inputs, replay_arrays, result.trades)
         components = evaluate_components(inputs, arrays, result.trades,
             use_imbalance_split=True, use_aging_surrogate=True)
     except ValueError as error:
@@ -402,14 +430,20 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
         return integrality_tolerance if discrete else tolerance
 
     warnings = ()
+    projection = result.diagnostics.get("naumann_replay_command_projection")
+    if projection is not None and projection["maximum_adjustment_mw"] > 0:
+        warnings += (f"Naumann health replay projected commands by at most "
+                     f"{projection['maximum_adjustment_mw']:.6g} MW at scenario "
+                     f"{projection['scenario_index']}, interval {projection['interval_index']}",)
     objective_discrepancy = errors["expected_objective_eur"] > objective_tolerance
     expression_verified = (expression_objective is not None
                            and not component_violations.get("objective_expression_eur", True))
-    if allow_reported_objective_warning and objective_discrepancy and expression_verified:
-        warnings = (f"reported solver objective differs from validated extracted objective by "
-                    f"{errors['expected_objective_eur']:.6g} EUR (tolerance {objective_tolerance:.6g} EUR)",)
+    objective_warning = allow_reported_objective_warning and objective_discrepancy and expression_verified
+    if objective_warning:
+        warnings += (f"reported solver objective differs from validated extracted objective by "
+                     f"{errors['expected_objective_eur']:.6g} EUR (tolerance {objective_tolerance:.6g} EUR)",)
     violations = tuple(f"{name}: {component_violation_details.get(name, f'{error:.6g}')}" for name, error in errors.items()
-        if not (name == "expected_objective_eur" and warnings)
+        if not (name == "expected_objective_eur" and objective_warning)
         and (component_violations[name] if name in component_violations else error > allowed_error(name)))
     accounting_differences = {name: float(np.max(np.abs(components[name] - physical_components[name]), initial=0))
         for name in ("imbalance_cashflow", "imbalance_penalty", "operating_profit")}

@@ -940,6 +940,9 @@ class ContinuousReplay:
             component_absolute_tolerance=tolerances.money_absolute_eur,
             component_relative_tolerance=tolerances.relative,
             allow_reported_objective_warning=True)
+        # Persist replay corrections even when validation stops the study.
+        if "naumann_replay_command_projection" in result.diagnostics:
+            diagnostic["naumann_replay_command_projection"] = result.diagnostics["naumann_replay_command_projection"]
         diagnostic["solution_validation_tolerance"] = validation_tolerance
         diagnostic["solution_validation_integrality_tolerance"] = validation_integrality_tolerance
         diagnostic["solution_validation_objective_relative_tolerance"] = objective_relative_tolerance
