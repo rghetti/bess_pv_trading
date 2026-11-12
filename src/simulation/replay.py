@@ -134,8 +134,10 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         raise ValueError("Grid tracking requires a committed grid_target_mw")
     magnitudes = (requested_charge_mw, requested_discharge_mw,
                   requested_curtailment_mw, degradation_eur_per_mwh)
-    # Enforce the input contract: Execution commands and degradation must be finite and nonnegative.
-    if any(not np.isfinite(value) or value < 0 for value in magnitudes):
+    # Battery commands can contain solver-sized numerical residuals; all other
+    # inputs remain strictly nonnegative.
+    if (any(not np.isfinite(value) for value in magnitudes)
+            or min(requested_curtailment_mw, degradation_eur_per_mwh) < 0):
         raise ValueError("Execution commands and degradation must be finite and nonnegative")
     # Enforce the input contract: Execution needs eligible nonnegative AC availability.
     if not np.isfinite(pv_ac_mw) or pv_ac_mw < 0:
@@ -145,6 +147,17 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         raise ValueError("Specify degradation_settings or a legacy throughput coefficient, not both")
     aging_settings = degradation_settings or DegradationSettings(degradation_eur_per_mwh)
     nominal_battery = plant.battery
+    # Preserve internal energy rate when removing tiny solver overlaps or
+    # negative bound residuals. Reject material changes, and retain the raw
+    # request for reporting and the existing safety-adjustment calculation.
+    internal_rate = (nominal_battery.eta_charge * requested_charge_mw
+                     - requested_discharge_mw / nominal_battery.eta_discharge)
+    normalized_charge = max(0.0, internal_rate) / nominal_battery.eta_charge
+    normalized_discharge = max(0.0, -internal_rate) * nominal_battery.eta_discharge
+    command_projection = max(abs(normalized_charge - requested_charge_mw),
+                             abs(normalized_discharge - requested_discharge_mw))
+    if command_projection > numerical_tolerance:
+        raise ValueError(f"Execution command projection {command_projection:.6g} MW exceeds tolerance {numerical_tolerance:.6g} MW")
     state = initialize_physical_health(state, nominal_battery, aging_settings)
     battery = nominal_battery
     charge_power_limit = battery.max_power_mw
@@ -162,9 +175,9 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         raise ValueError("Execution starts outside battery energy bounds")
     duration = (end - start).total_seconds() / 3600
     retained = retained_energy(state.energy_mwh, battery, duration)
-    charge = max(0.0, min(requested_charge_mw, charge_power_limit,
+    charge = max(0.0, min(normalized_charge, charge_power_limit,
         max(0.0, battery.maximum_energy - retained) / (duration * battery.eta_charge)))
-    discharge = max(0.0, min(requested_discharge_mw, discharge_power_limit,
+    discharge = max(0.0, min(normalized_discharge, discharge_power_limit,
         max(0.0, retained - battery.energy_min_mwh) * battery.eta_discharge / duration))
     # Enforce the input contract: Execution cannot charge and discharge simultaneously.
     if charge > 1e-8 and discharge > 1e-8:
@@ -252,6 +265,9 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         "degradation_eur": aging,
         "requested_charge_mw": requested_charge_mw,
         "requested_discharge_mw": requested_discharge_mw,
+        "command_projection_mw": command_projection,
+        "command_projection_grid_delta_mw": ((normalized_discharge - normalized_charge)
+            - (requested_discharge_mw - requested_charge_mw)),
         "requested_curtailment_mw": requested_curtailment_mw,
         "curtailment_recovered_mw": recovered_curtailment,
         "dispatch_policy": dispatch_policy, "grid_target_mw": grid_target_mw,

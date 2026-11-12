@@ -354,6 +354,27 @@ def test_midnight_protection_fails_explicitly_when_no_export_can_remove_energy()
             degradation_settings=aging)
 
 
+def test_execution_projects_only_tolerance_sized_command_residuals():
+    """Record tiny overlap and preserve the requested internal energy rate."""
+    equipment, aging = _equipment(), _aging()
+    instant = pd.Timestamp("2026-01-01T12:00:00Z").to_pydatetime()
+    state = initialize_physical_health(PhysicalState(instant, .5), equipment, aging)
+    values = dict(state=state, start=instant, end=instant + timedelta(minutes=15),
+                  pv_ac_mw=0, requested_charge_mw=4e-6, requested_discharge_mw=2e-6,
+                  requested_curtailment_mw=0, plant=PlantParameters(1, 1, 1, equipment),
+                  degradation_settings=aging, numerical_tolerance=1e-4)
+    updated, record = execute_interval(**values)
+    expected_rate = .9 * 4e-6 - 2e-6 / .8
+    assert updated.energy_mwh == pytest.approx(.5 + .25 * expected_rate)
+    assert record["discharge_mw"] == 0
+    assert record["command_projection_mw"] > 0
+    assert record["command_projection_grid_delta_mw"] == pytest.approx(
+        record["discharge_mw"] - record["charge_mw"] - (2e-6 - 4e-6))
+    assert record["safety_adjustment_mw"] > 0
+    with pytest.raises(ValueError, match="command projection"):
+        execute_interval(**{**values, "requested_charge_mw": .01, "requested_discharge_mw": .01})
+
+
 def test_eol_finishes_settlement_and_checkpoint_before_stopping_new_actions(monkeypatch):
     # The old day's accepted commitments remain present when EOL prevents
     # the next physical action and the replay explicitly stops after settlement.

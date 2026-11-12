@@ -18,7 +18,7 @@ continuous_optimization:
   - integrated
   perfect_pv_reference: false
   resume: false
-  output_root: outputs/energy_research/naumann_fixed_rate_depth_six_threads_2026
+  output_root: outputs/energy_research/naumann_fixed_rate_depth_execution_v3_2026
   run_id: depth_4
   pv_ensemble:
     enabled: false

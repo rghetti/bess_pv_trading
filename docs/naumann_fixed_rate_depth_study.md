@@ -30,7 +30,11 @@ material adjustments are rejected. The replay is an approximate diagnostic,
 not the actual executed command. The replay_v2 configurations use a separate
 output root to preserve the earlier interrupted and failed cases. The initial
 eight-thread replay_v2 queue was interrupted and restarted with six threads in
-the `naumann_fixed_rate_depth_six_threads_2026` output root.
+the `naumann_fixed_rate_depth_six_threads_2026` output root. That run exposed
+a separate strict execution overlap check. The execution_v3 run uses the same
+energy-preserving projection within the physical tolerance for execution,
+records its magnitude and grid-power effect, and rejects larger corrections.
+All prior results remain in their original directories.
 
 Run cases sequentially in separate directories. Report every solve status, gap,
 model size, runtime, numerical residual and any failure. On completed cases,
