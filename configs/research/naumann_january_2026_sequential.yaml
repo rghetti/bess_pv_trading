@@ -36,7 +36,7 @@ solver:
   threads: 10
   time_limit_seconds: 180.0
   mip_gap: 0.0001
-  output_flag: true
+  output_flag: false
   feasibility_tolerance: 1.0e-08
   integrality_tolerance: 1.0e-08
 pv:
