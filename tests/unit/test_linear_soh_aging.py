@@ -65,3 +65,21 @@ def test_history_requires_matching_calibration():
     with pytest.raises(ValueError, match="calibration identity"):
         advance_linear_health(state=saved, battery=battery, settings=changed,
             end=saved.timestamp + timedelta(hours=1), energy_mwh=.5, charge_mw=0., discharge_mw=0.)
+
+
+def test_fixed_capacity_baseline_matches_cycling_cost_in_both_directions():
+    """The fixed-capacity comparator values the same internal throughput once."""
+    from bess_pv_trading.optimization.degradation import advance_degradation_state
+    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    battery, settings, state = example(start)
+    battery = replace(battery, combined_charge_efficiency=.8, combined_discharge_efficiency=.9)
+    settings = replace(settings, linear_soh=replace(settings.linear_soh, calendar_loss_per_year=0.))
+    baseline = replace(settings, mode="linear_soh_fixed")
+    for charge, discharge in ((.3, 0.), (0., .3)):
+        energy = state.energy_mwh + battery.eta_charge * charge - discharge / battery.eta_discharge
+        _, health_cost = advance_degradation_state(state=state, battery=battery, settings=settings,
+            end=start + timedelta(hours=1), energy_mwh=energy, charge_mw=charge, discharge_mw=discharge)
+        fixed, fixed_cost = advance_degradation_state(state=state, battery=battery, settings=baseline,
+            end=start + timedelta(hours=1), energy_mwh=energy, charge_mw=charge, discharge_mw=discharge)
+        assert fixed_cost == pytest.approx(health_cost)
+        assert fixed.battery_health is None

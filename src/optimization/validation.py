@@ -41,6 +41,12 @@ def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray]
         settlement, penalty = np.zeros(count), np.zeros(count)
     throughput = np.sum((arrays["charge_mw"] + arrays["discharge_mw"]) * inputs.grid.delta_hours, axis=1)
     aging = throughput * inputs.degradation.cost_eur_per_mwh_throughput
+    if inputs.degradation.mode == "linear_soh_fixed":
+        from .linear_soh import cycle_loss_per_internal_mwh, linear_wear_value
+        battery = inputs.plant.battery
+        internal = np.sum((battery.eta_charge * arrays["charge_mw"]
+                           + arrays["discharge_mw"] / battery.eta_discharge) * inputs.grid.delta_hours, axis=1)
+        aging = internal * cycle_loss_per_internal_mwh(battery, inputs.degradation) * linear_wear_value(inputs.degradation)
     # Update `aging` when this condition is met.
     if inputs.degradation.mode == "xu_segmented":
         aging = np.array([evaluate_xu_dispatch(battery=inputs.plant.battery,

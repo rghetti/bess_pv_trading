@@ -1,4 +1,4 @@
-# Matched fixed-capacity linear throughput baseline.
+# Fixed-capacity matched cycling-cost baseline.
 include: ../standard.yaml
 farm_id: 1
 forecast:
@@ -33,7 +33,7 @@ state:
   initial_soc_basis: available_capacity
   terminal_soc_basis: available_capacity
 solver:
-  threads: 3
+  threads: 2
   time_limit_seconds: 60.0
   mip_gap: 0.0001
   feasibility_tolerance: 1.0e-05
@@ -127,7 +127,20 @@ realtime_scenarios:
   dependence: raw
   reduce_to: null
 degradation:
-  model: throughput
+  model: linear_soh_fixed
+  cost_eur_per_mwh_throughput: null
+  throughput_lifetime: null
+  assumptions: Fixed-capacity baseline using the same internal-throughput cycling
+    calibration and pack economics as linear SOH; no calendar charge or capacity fade.
+  linear_soh:
+    calendar_loss_per_year: 0.01
+    cycle_life: 6000
+    reference_depth_of_discharge: 1.0
+    cycle_capacity_loss_at_reference_life: 0.17
+    end_of_life_soh: 0.8
+    calendar_year_seconds: 31557600.0
+    timezone: Europe/Rome
+    calibration_id: lfp_6000_full_cycles_17pct_plus_1pct_calendar_v1
 battery:
   daily_cycle_limit_efc: 2.0
   daily_cycle_timezone: Europe/Rome

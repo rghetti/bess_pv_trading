@@ -298,7 +298,7 @@ class MpcInput:
         if self.plant.battery.daily_cycle_limit_efc is not None:
             raise ValueError("Daily cycle limits are not yet supported by MPC; use grid tracking")
         # Do not solve against nominal capacity when this health model is active.
-        if self.degradation.mode == "linear_soh":
+        if self.degradation.mode in {"linear_soh", "linear_soh_fixed"}:
             raise ValueError("linear_soh is not yet supported by MPC; use the grid-tracking controller")
         count, length = len(self.scenario_ids), len(self.grid.interval_ids)
         cutoff = pd.Timestamp(self.cutoff)

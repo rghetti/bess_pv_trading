@@ -63,3 +63,24 @@ def test_synthetic_auction_replay_carries_linear_health(tmp_path):
     dispatch = pd.read_csv(tmp_path / "replay" / "dispatch.csv")
     assert summary["final_state"]["battery_health"]["calendar_loss"] > 0
     assert summary["final_state"]["cumulative_degradation_eur"] == pytest.approx(dispatch.degradation_eur.sum())
+
+
+@pytest.mark.solver
+def test_fixed_capacity_baseline_uses_same_directional_cycle_cost():
+    """Independent and MILP cost calculations agree for the fixed baseline."""
+    pytest.importorskip("gurobipy")
+    b = replace(battery(), energy_min_mwh=0.)
+    inputs = example_inputs(prices=((0., 0.),), pv=np.zeros((1, 2)), battery=b, hours=1.)
+    settings = DegradationSettings(mode="linear_soh_fixed", replacement_cost_eur=1000.,
+        linear_soh=LinearSOHSettings(.01, 6000, 1., .17, .8, 31557600., "Europe/Rome", "test"))
+    inputs = replace(inputs, state=replace(inputs.state, energy_mwh=.5), degradation=settings,
+                     terminal_target_mwh=.5)
+    built = build_model(inputs)
+    owner = inputs.tree.control_nodes[0][0]
+    built.model.addConstr(built.variables["charge"][0, owner] == .1)
+    result = solve_model(built, SolverSettings())
+    assert result.has_incumbent and validate_solution(inputs, result).valid
+    from bess_pv_trading.optimization.linear_soh import cycle_loss_per_internal_mwh, linear_wear_value
+    internal = np.sum((b.eta_charge * result.arrays["charge_mw"] + result.arrays["discharge_mw"] / b.eta_discharge) * inputs.grid.delta_hours)
+    assert result.components["battery_degradation_cost"][0] == pytest.approx(
+        internal * cycle_loss_per_internal_mwh(b, settings) * linear_wear_value(settings))

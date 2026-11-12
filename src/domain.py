@@ -600,8 +600,8 @@ class DegradationSettings:
     def __post_init__(self) -> None:
         finite_nonnegative(self.cost_eur_per_mwh_throughput, "degradation cost")
         # Enforce the input contract: Unknown degradation mode; use constant_throughput or Xu xu_segmented.
-        if self.mode not in {"constant_throughput", "xu_segmented", "naumann_lfp", "linear_soh"}:
-            raise ValueError("Unknown degradation mode; use constant_throughput, Xu xu_segmented, or naumann_lfp")
+        if self.mode not in {"constant_throughput", "xu_segmented", "naumann_lfp", "linear_soh", "linear_soh_fixed"}:
+            raise ValueError("Unknown degradation mode")
         # Attach the published opt-in prior without changing legacy mode defaults.
         if isinstance(self.naumann, Mapping):
             object.__setattr__(self, "naumann", NaumannSettings(**self.naumann))
@@ -613,10 +613,10 @@ class DegradationSettings:
             raise ValueError("Naumann settings require naumann_lfp mode")
         if isinstance(self.linear_soh, Mapping):
             object.__setattr__(self, "linear_soh", LinearSOHSettings(**self.linear_soh))
-        if self.mode == "linear_soh" and not isinstance(self.linear_soh, LinearSOHSettings):
+        if self.mode in {"linear_soh", "linear_soh_fixed"} and not isinstance(self.linear_soh, LinearSOHSettings):
             raise ValueError("linear_soh mode requires explicit linear SOH calibration")
-        if self.mode != "linear_soh" and self.linear_soh is not None:
-            raise ValueError("linear_soh settings require linear_soh mode")
+        if self.mode not in {"linear_soh", "linear_soh_fixed"} and self.linear_soh is not None:
+            raise ValueError("linear_soh settings require a linear SOH or fixed-capacity mode")
         # Enforce the input contract: Cycle segment_count must be a positive integer.
         if not isinstance(self.segment_count, int) or isinstance(self.segment_count, bool) or self.segment_count < 1:
             raise ValueError("Cycle segment_count must be a positive integer")
@@ -642,7 +642,7 @@ class DegradationSettings:
                 raise ValueError("Naumann aging requires positive net replacement cost")
             if self.cost_eur_per_mwh_throughput:
                 raise ValueError("Naumann health loss cannot also charge throughput wear")
-        if self.mode == "linear_soh":
+        if self.mode in {"linear_soh", "linear_soh_fixed"}:
             if self.replacement_cost_eur is None or self.replacement_cost_eur <= 0:
                 raise ValueError("Linear SOH requires positive replacement cost")
             if self.cost_eur_per_mwh_throughput:

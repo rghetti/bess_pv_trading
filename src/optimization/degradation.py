@@ -20,7 +20,8 @@ def degradation_settings_from_config(config: Mapping[str, Any]) -> DegradationSe
     section = dict(config.get("degradation", config))
     model = section.pop("model", "throughput")
     mode = {"throughput": "constant_throughput", "constant_throughput": "constant_throughput",
-            "xu_segmented": "xu_segmented", "naumann_lfp": "naumann_lfp", "linear_soh": "linear_soh"}.get(model)
+            "xu_segmented": "xu_segmented", "naumann_lfp": "naumann_lfp", "linear_soh": "linear_soh",
+            "linear_soh_fixed": "linear_soh_fixed"}.get(model)
     # Enforce the input contract: Unknown degradation model `model`.
     if mode is None:
         raise ValueError(f"Unknown degradation model {model!r}")
@@ -74,7 +75,7 @@ def degradation_settings_from_config(config: Mapping[str, Any]) -> DegradationSe
                            * (1 / battery.eta_charge + battery.eta_discharge))
         section["cost_eur_per_mwh_throughput"] = float(replacement) / lifetime_ac_mwh
     # A null inherited baseline coefficient is not a second wear charge.
-    if mode in {"naumann_lfp", "linear_soh"} and section.get("cost_eur_per_mwh_throughput") is None:
+    if mode in {"naumann_lfp", "linear_soh", "linear_soh_fixed"} and section.get("cost_eur_per_mwh_throughput") is None:
         section["cost_eur_per_mwh_throughput"] = 0.0
     return DegradationSettings(mode=mode, **section)
 
@@ -237,7 +238,12 @@ def advance_degradation_state(*, state: PhysicalState, battery: BatteryParameter
         # Enforce the input contract: Xu cycle segment history cannot be silently discarded by a throughput model.
         if state.cycle_segment_energy_mwh is not None:
             raise ValueError("Xu cycle segment history cannot be silently discarded by a throughput model")
-        aging = throughput * settings.cost_eur_per_mwh_throughput
+        if settings.mode == "linear_soh_fixed":
+            from .linear_soh import cycle_loss_per_internal_mwh, linear_wear_value
+            internal = hours * (battery.eta_charge * charge_mw + discharge_mw / battery.eta_discharge)
+            aging = internal * cycle_loss_per_internal_mwh(battery, settings) * linear_wear_value(settings)
+        else:
+            aging = throughput * settings.cost_eur_per_mwh_throughput
     return PhysicalState(end, energy_mwh, state.cumulative_throughput_mwh + throughput,
                          state.cumulative_degradation_eur + aging, origin, segments), aging
 

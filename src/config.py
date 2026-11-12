@@ -471,7 +471,7 @@ def validate_config(config: dict[str, Any]) -> None:
         if not isinstance(section, dict):
             raise ConfigurationError("degradation must be a YAML mapping")
         # Enforce the input contract: Unknown degradation model.
-        if section.get("model","throughput") not in {"throughput","constant_throughput","xu_segmented","naumann_lfp", "linear_soh"}:
+        if section.get("model","throughput") not in {"throughput","constant_throughput","xu_segmented","naumann_lfp", "linear_soh", "linear_soh_fixed"}:
             raise ConfigurationError("Unknown degradation model")
         # Example templates retain explicit missing values. Execution validates
         # their required inputs; loading a template must not invent coefficients.

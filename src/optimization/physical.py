@@ -34,6 +34,15 @@ def build_battery_degradation(model, inputs, variables, gp):
     if inputs.degradation.mode == "linear_soh":
         from .linear_soh import build_linear_health
         return build_linear_health(model, inputs, variables, gp)
+    if inputs.degradation.mode == "linear_soh_fixed":
+        from .linear_soh import cycle_loss_per_internal_mwh, linear_wear_value
+        battery = inputs.plant.battery
+        coefficient = cycle_loss_per_internal_mwh(battery, inputs.degradation) * linear_wear_value(inputs.degradation)
+        return {s: coefficient * gp.quicksum(
+            (battery.eta_charge * variables["charge"][t, inputs.tree.control_nodes[s][t]]
+             + variables["discharge"][t, inputs.tree.control_nodes[s][t]] / battery.eta_discharge) * duration
+            for t, duration in enumerate(inputs.grid.delta_hours))
+            for s in range(len(inputs.scenarios.scenario_ids))}
     if inputs.degradation.mode == "naumann_lfp":
         from .naumann_milp import build_naumann_degradation
 

@@ -8,9 +8,9 @@ by twice that day's committed available capacity, the
 same 2025 BNEF stationary-pack price proxy, 50% planned terminal SOC, integrated
 auction planning and grid tracking. The SOH case uses the separate provisional
 calendar and cycling calibration in `linear_soh_calibration.md`; the throughput
-baseline uses the standard 2,500 cycles at 80% DoD reference. These distinct
-wear coefficients and aging assumptions are intentional. The baseline charges
-throughput wear but does not shrink capacity. The SOH model uses internal energy
+baseline uses exactly the same internal-throughput cycling coefficient. The
+baseline charges cycling wear but does not shrink capacity or charge calendar
+wear. The SOH model uses internal energy
 after efficiency losses for physical aging; the common cap uses AC throughput.
 The baseline's denominator stays at nominal capacity, while the SOH case's
 denominator shrinks daily. The same two-cycle limit therefore permits different

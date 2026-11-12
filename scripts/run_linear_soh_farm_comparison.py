@@ -413,8 +413,12 @@ def main(argv=None):
     batch = ROOT / "outputs/energy_research" / args.run_id
     jobs = resolve_jobs(batch)
     plan = {"period": ["2026-01-01", "2026-08-29"], "farms": FARMS,
-            "cases": list(CASES), "jobs": len(jobs), "workers": args.workers, "solver_threads_per_job": 3,
-            "native_threads_at_worker_start": 1, "pv_inference_threads_per_worker": 3,
+            "cases": list(CASES), "jobs": len(jobs), "workers": args.workers,
+            "solver_threads_per_job": {mode: next(job["config"]["solver"]["threads"]
+                for job in jobs if job["mode"] == mode) for mode in CASES},
+            "native_threads_at_worker_start": 1,
+            "pv_inference_threads_per_worker": {mode: next(job["config"]["solver"]["threads"]
+                for job in jobs if job["mode"] == mode) for mode in CASES},
             "daily_limit_efc": 2.0,
             "daily_limit_basis": "AC charge plus discharge / (2 * daily committed available MWh); baseline fixed, SOH case fading",
             "solve_time_limit_seconds": 60, "relative_mip_gap": 1e-4,
@@ -426,7 +430,7 @@ def main(argv=None):
             "input": "reviewed farm PV with historical replacements plus read-only DuckDB GME/TERNA snapshots",
             "missing_auction_policy": "skip entirely absent products, reject partial gaps",
             "model_training_and_selection": "none in this study; previously selected artifacts are retrospective",
-            "calibration": "2025 $70/kWh pack price; 6000 EFC/17% cycling plus 1%/year calendar for SOH; baseline 2500 cycles at 80% depth",
+            "calibration": "Both cases: 2025 $70/kWh pack price and 6000 EFC/17% cycling; SOH case additionally has 1%/year calendar aging and shrinking capacity",
             "metrics": "realized cash, own-model wear, throughput, SOH, solver status and common linear aging proxy revaluation",
             "output_directory": str(batch)}
     print(json.dumps(plan, indent=2), flush=True)
