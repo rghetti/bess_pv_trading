@@ -17,7 +17,7 @@ model fitting or split occurs. These are retrospective experiments, not a
 prospective forecast evaluation. No automatic replacement is modeled.
 
 All cases use the 2025 stationary pack cost proxy, 80% reporting EOL, same
-calendar and square-root resolution, eight Gurobi threads, a 240-second per-solve
+calendar and square-root resolution, six Gurobi threads, a 240-second per-solve
 limit, 1e-4 relative MIP gap, 1e-5 solver feasibility and integrality tolerances,
 and 1e-4 ordinary validation tolerance. The fixed reference-rate model is not a
 bound on actual-rate aging. Validation tolerances have mixed physical and scaled
@@ -28,7 +28,9 @@ pair with the same internal-energy rate. Raw solver arrays remain unchanged and
 are checked independently; maximum adjustment and location are recorded and
 material adjustments are rejected. The replay is an approximate diagnostic,
 not the actual executed command. The replay_v2 configurations use a separate
-output root to preserve the earlier interrupted and failed cases.
+output root to preserve the earlier interrupted and failed cases. The initial
+eight-thread replay_v2 queue was interrupted and restarted with six threads in
+the `naumann_fixed_rate_depth_six_threads_2026` output root.
 
 Run cases sequentially in separate directories. Report every solve status, gap,
 model size, runtime, numerical residual and any failure. On completed cases,

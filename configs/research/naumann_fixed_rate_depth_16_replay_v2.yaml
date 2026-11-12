@@ -18,7 +18,7 @@ continuous_optimization:
   - integrated
   perfect_pv_reference: false
   resume: false
-  output_root: outputs/energy_research/naumann_fixed_rate_depth_replay_v2_2026
+  output_root: outputs/energy_research/naumann_fixed_rate_depth_six_threads_2026
   run_id: depth_16
   pv_ensemble:
     enabled: false
@@ -33,7 +33,7 @@ state:
   initial_soc_basis: available_capacity
   terminal_soc_basis: available_capacity
 solver:
-  threads: 8
+  threads: 6
   time_limit_seconds: 240.0
   mip_gap: 0.0001
   feasibility_tolerance: 1.0e-05
