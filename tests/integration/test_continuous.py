@@ -162,6 +162,31 @@ def test_linear_soh_continuous_checkpoint_resume(continuous_config, tmp_path):
     assert restored.state.timestamp == replay.state.timestamp
 
 
+@pytest.mark.parametrize("linear_health", [False, True])
+def test_daily_cycle_limit_is_carried_through_continuous_replay(continuous_config, tmp_path, linear_health):
+    """The real grid tracker and checkpoint preserve daily executed EFC usage."""
+    config = continuous_config
+    config["battery"]["daily_cycle_limit_efc"] = 2.
+    config["experiment_outputs"]["plots"] = False
+    if linear_health:
+        config["degradation"] = {"model": "linear_soh", "replacement_cost_eur": 1000.,
+            "cost_eur_per_mwh_throughput": 0., "assumptions": "unit test",
+            "linear_soh": {"calendar_loss_per_year": .01, "cycle_life": 6000,
+                "reference_depth_of_discharge": 1., "cycle_capacity_loss_at_reference_life": .17,
+                "end_of_life_soh": .8, "calendar_year_seconds": 31557600.,
+                "timezone": "Europe/Rome", "calibration_id": "unit"}}
+    prepared, _ = _prepared(config, one_day=True)
+    destination = tmp_path / "cycle_replay"
+    replay, _ = _run(config, prepared, "integrated", destination)
+    records = pd.DataFrame(replay.records.values())
+    assert records.daily_cycle_ac_throughput_mwh.max() <= 4 * prepared["plant"].battery.capacity_mwh + 1e-9
+    assert replay.state.daily_ac_throughput_mwh == 0.
+    restored = _module().ContinuousReplay(config, prepared, "integrated", destination, resume=True)
+    assert restored.state.daily_cycle_day == replay.state.daily_cycle_day
+    daily = pd.read_csv(destination / "csv/daily_kpis.csv")
+    assert daily.daily_cycle_efc.iloc[0] <= 2. + 1e-9
+
+
 def test_ida3_extends_next_day_and_keeps_future_orders_provisional(continuous_config, tmp_path):
     """One real-time replay trades context gates but scores the requested day only."""
     config = continuous_config

@@ -307,6 +307,9 @@ def build_model(inputs: OptimizationInput, *, reduce_exact_pv_scenarios: bool = 
     variables.update({key: settlement[key] for key in ("imbalance_positive", "imbalance_negative", "imbalance_sign")})
     components = {"auction_revenue": commercial["auction_revenue"], "imbalance_cashflow": settlement["imbalance_cashflow"], "imbalance_penalty": settlement["imbalance_penalty"], "battery_degradation_cost": _degradation(model, inputs, variables, gp), "other_costs": settlement["other_costs"],
         "transaction_fees": build_transaction_fees(model, inputs, variables, gp)}
+    # Health construction above supplies future daily capacity expressions.
+    from .daily_cycle_limit import add_daily_cycle_constraints
+    add_daily_cycle_constraints(model, inputs, variables, gp)
     profit = {s: components["auction_revenue"][s] + components["imbalance_cashflow"][s] - components["imbalance_penalty"][s] - components["battery_degradation_cost"][s] - components["other_costs"][s] - components["transaction_fees"][s] for s in range(len(inputs.scenarios.scenario_ids))}
     components["operating_profit"] = profit
     objective = gp.quicksum(float(probability) * profit[s] for s, probability in enumerate(inputs.scenarios.probabilities))

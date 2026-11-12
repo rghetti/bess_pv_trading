@@ -141,6 +141,9 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
     upper("charge_lower_mw", -charge)
     upper("discharge_lower_mw", -discharge)
     upper("simultaneous_battery_mw", np.minimum(charge, discharge))
+    if battery.daily_cycle_limit_efc is not None:
+        from .daily_cycle_limit import daily_cycle_excess
+        upper("daily_cycle_limit_mwh", daily_cycle_excess(inputs, charge, discharge, arrays))
     replay_arrays = arrays
     if inputs.degradation.mode == "naumann_lfp":
         # Project only the independent replay, retaining the exact internal

@@ -96,6 +96,8 @@ def simulate_frozen_auction_plans(config, grid, plant, schedule, actual_prices,
     helpers handle measured PV, SOC protection, executed wear and gross trade fees.
     No solver, forecast provider, API, or database is called by this simulation.
     """
+    if plant.battery.daily_cycle_limit_efc is not None:
+        raise ValueError("Daily cycle limits are not yet supported for frozen-plan counterfactuals")
     # Return `(pd.DataFrame(), pd.DataFrame(), pd.DataFrame())` when `len(schedule) < 2`.
     if len(schedule) < 2:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()

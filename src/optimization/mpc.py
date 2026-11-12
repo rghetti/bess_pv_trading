@@ -295,6 +295,8 @@ class MpcInput:
     planning_position_mwh: np.ndarray = field(init=False, repr=False)
 
     def __post_init__(self):
+        if self.plant.battery.daily_cycle_limit_efc is not None:
+            raise ValueError("Daily cycle limits are not yet supported by MPC; use grid tracking")
         # Do not solve against nominal capacity when this health model is active.
         if self.degradation.mode == "linear_soh":
             raise ValueError("linear_soh is not yet supported by MPC; use the grid-tracking controller")

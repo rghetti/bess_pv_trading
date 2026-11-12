@@ -206,6 +206,15 @@ def _daily_kpis(config, strategy, frame, solves, initial_expected):
                        "calendar_degradation_eur", "cycle_degradation_eur"):
             if column in daily:
                 row[column] = float(daily[column].sum())
+        if "daily_cycle_ac_throughput_mwh" in daily:
+            # The execution column is cumulative within the day, so use its last value.
+            ac_throughput = float(daily.daily_cycle_ac_throughput_mwh.iloc[-1])
+            daily_capacity = float(daily.daily_cycle_capacity_mwh.iloc[-1])
+            row["daily_cycle_efc"] = ac_throughput / (2 * daily_capacity)
+            row["daily_cycle_capacity_mwh"] = daily_capacity
+            row["daily_cycle_limit_efc"] = float(daily.daily_cycle_limit_efc.iloc[-1])
+            row["daily_cycle_protection_adjustment_mwh"] = float(
+                (daily.daily_cycle_protection_adjustment_mw * duration).sum())
         # Aging-aware SOC uses that boundary's committed available capacity;
         # retain the nominal percentages explicitly for comparison with legacy runs.
         if "available_capacity_mwh_start" in daily:

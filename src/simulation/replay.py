@@ -147,6 +147,10 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         raise ValueError("Specify degradation_settings or a legacy throughput coefficient, not both")
     aging_settings = degradation_settings or DegradationSettings(degradation_eur_per_mwh)
     nominal_battery = plant.battery
+    if nominal_battery.daily_cycle_limit_efc is not None and aging_settings.mode in {"linear_soh", "naumann_lfp"}:
+        parameters = aging_settings.linear_soh if aging_settings.mode == "linear_soh" else aging_settings.naumann
+        if nominal_battery.daily_cycle_timezone != parameters.timezone:
+            raise ValueError("Daily cycle and battery health timezones must match")
     # Preserve internal energy rate when removing tiny solver overlaps or
     # negative bound residuals. Reject material changes, and retain the raw
     # request for reporting and the existing safety-adjustment calculation.
@@ -240,6 +244,29 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         actual_battery -= recovered_curtailment
         charge, discharge = max(0.0, -actual_battery), max(0.0, actual_battery)
         feedback_adjustment += sum(abs(a-b) for a,b in zip((charge,discharge,curtailment), before_recovery))
+    cycle_limit_adjustment = 0.0
+    cycle_budget = None
+    if nominal_battery.daily_cycle_limit_efc is not None:
+        from ..optimization.daily_cycle_limit import cycle_interval_day, daily_cycle_budget, daily_cycle_capacity
+        cycle_interval_day(start, end, nominal_battery.daily_cycle_timezone)
+        cycle_budget = daily_cycle_budget(state, nominal_battery)
+        cycle_capacity_mwh = daily_cycle_capacity(state, nominal_battery)
+        ac_throughput = duration * (charge + discharge)
+        if ac_throughput > cycle_budget:
+            before_cycle = (charge, discharge, curtailment)
+            scale = cycle_budget / ac_throughput
+            charge *= scale
+            discharge *= scale
+            # Restore POI feasibility after cycle protection changes battery power.
+            grid = pv_ac_mw - curtailment + discharge - charge
+            if grid > plant.poi_export_mw:
+                curtailment += min(pv_ac_mw - curtailment, grid - plant.poi_export_mw)
+            elif grid < -plant.poi_import_mw:
+                curtailment -= min(curtailment, -plant.poi_import_mw - grid)
+            grid = pv_ac_mw - curtailment + discharge - charge
+            cycle_limit_adjustment = sum(abs(a - b) for a, b in zip(
+                (charge, discharge, curtailment), before_cycle))
+            safety_adjustment += cycle_limit_adjustment
     health_adjustment = 0.0
     if aging_settings.mode in {"naumann_lfp", "linear_soh"}:
         before_health_curtailment = curtailment
@@ -252,6 +279,10 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         recovered_curtailment = max(0.0, recovered_curtailment
             - max(0.0, curtailment - before_health_curtailment))
         grid = pv_ac_mw - curtailment + discharge - charge
+    if cycle_budget is not None:
+        ac_throughput = duration * (charge + discharge)
+        if ac_throughput > cycle_budget + 1e-10:
+            raise ValueError("Midnight health protection conflicts with the remaining daily cycle budget")
     energy = energy_transition(state.energy_mwh, charge, discharge, battery, duration)
     # Enforce the input contract: Execution would violate battery energy bounds.
     if energy < battery.energy_min_mwh-numerical_tolerance or energy > battery.maximum_energy+numerical_tolerance:
@@ -261,6 +292,18 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
     next_state, aging = advance_degradation_state(state=state, battery=nominal_battery,
         settings=aging_settings, end=end, energy_mwh=energy,
         charge_mw=charge, discharge_mw=discharge)
+    if cycle_budget is not None:
+        from zoneinfo import ZoneInfo
+        from datetime import time
+        zone = ZoneInfo(nominal_battery.daily_cycle_timezone)
+        local_end = end.astimezone(zone)
+        start_day = start.astimezone(zone).date().isoformat()
+        limit = 2 * cycle_capacity_mwh * nominal_battery.daily_cycle_limit_efc
+        used = limit - cycle_budget + ac_throughput
+        next_day = local_end.time() == time.min and local_end.date().isoformat() != start_day
+        next_state = replace(next_state,
+            daily_cycle_day=local_end.date().isoformat() if next_day else start_day,
+            daily_ac_throughput_mwh=0.0 if next_day else used)
     record = {"pv_ac_mw": pv_ac_mw, "pv_injection_mw": pv_ac_mw - curtailment,
         "charge_mw": charge,
         "discharge_mw": discharge, "curtailment_mw": curtailment,
@@ -278,6 +321,12 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         "grid_tracking_error_mw": None if grid_target_mw is None else grid-grid_target_mw,
         "feedback_adjustment_mw": feedback_adjustment,
         "safety_adjustment_mw": safety_adjustment}
+    if cycle_budget is not None:
+        record.update(daily_cycle_limit_efc=nominal_battery.daily_cycle_limit_efc,
+                      daily_cycle_ac_throughput_mwh=used,
+                      daily_cycle_capacity_mwh=cycle_capacity_mwh,
+                      daily_cycle_budget_remaining_mwh=max(0.0, limit - used),
+                      daily_cycle_protection_adjustment_mw=cycle_limit_adjustment)
     # When `next_state.cycle_segment_energy_mwh is not None`, set `record['cycle_segment_energy_end_mwh']` using `next_state.cycle_segment_energy_mwh`.
     if next_state.cycle_segment_energy_mwh is not None:
         record["cycle_segment_energy_end_mwh"] = next_state.cycle_segment_energy_mwh

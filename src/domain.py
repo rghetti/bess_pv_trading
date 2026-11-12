@@ -119,6 +119,9 @@ class BatteryParameters:
     combined_charge_efficiency: float | None = None
     combined_discharge_efficiency: float | None = None
     self_discharge_per_hour: float = 0.0
+    # Daily EFC cap uses AC-side charge plus discharge and daily available capacity.
+    daily_cycle_limit_efc: float | None = None
+    daily_cycle_timezone: str = "Europe/Rome"
 
     def __post_init__(self) -> None:
         # Check battery capacity, power, minimum energy and self-discharge together.
@@ -130,6 +133,12 @@ class BatteryParameters:
         # Enforce the input contract: Hourly self discharge must be below one.
         if self.self_discharge_per_hour >= 1:
             raise ValueError("Hourly self discharge must be below one")
+        if self.daily_cycle_limit_efc is not None:
+            finite_nonnegative(self.daily_cycle_limit_efc, "daily cycle limit")
+            if self.capacity_mwh <= 0:
+                raise ValueError("A daily cycle limit requires positive nominal capacity")
+            from zoneinfo import ZoneInfo
+            ZoneInfo(self.daily_cycle_timezone)
         # Enforce the input contract: A no-BESS plant must have zero battery power.
         if self.capacity_mwh == 0 and self.max_power_mw:
             raise ValueError("A no-BESS plant must have zero battery power")
@@ -269,6 +278,9 @@ class PhysicalState:
     # Segment energies retain the battery's state for depth-dependent degradation.
     cycle_segment_energy_mwh: tuple[float, ...] | None = None
     battery_health: BatteryHealthState | LinearHealthState | None = None
+    # Carried actual AC-side throughput for the active chronological day.
+    daily_cycle_day: str | None = None
+    daily_ac_throughput_mwh: float = 0.0
 
     def __post_init__(self) -> None:
         aware(self.timestamp, "physical state")
@@ -276,6 +288,12 @@ class PhysicalState:
         # Carried energy, throughput and degradation costs must remain nonnegative.
         for key in ("energy_mwh", "cumulative_throughput_mwh", "cumulative_degradation_eur"):
             finite_nonnegative(getattr(self, key), key)
+        finite_nonnegative(self.daily_ac_throughput_mwh, "daily AC throughput")
+        if self.daily_cycle_day is not None:
+            from datetime import date
+            date.fromisoformat(self.daily_cycle_day)
+        elif self.daily_ac_throughput_mwh:
+            raise ValueError("Daily AC throughput requires an active calendar day")
         # When `self.cycle_segment_energy_mwh is not None`, set `values` using `tuple((float(value) for value in self.cycle_segment_energy_mwh))`.
         if self.cycle_segment_energy_mwh is not None:
             values = tuple(float(value) for value in self.cycle_segment_energy_mwh)
@@ -744,6 +762,12 @@ class OptimizationInput:
         if self.state.timestamp != self.grid.starts[0]:
             raise ValueError("Physical state timestamp must equal residual delivery start")
         battery = self.plant.battery
+        # The budget and SOH must roll over at the same physical midnight.
+        if battery.daily_cycle_limit_efc is not None and self.degradation.mode in {"linear_soh", "naumann_lfp"}:
+            health_parameters = (self.degradation.linear_soh if self.degradation.mode == "linear_soh"
+                                 else self.degradation.naumann)
+            if battery.daily_cycle_timezone != health_parameters.timezone:
+                raise ValueError("Daily cycle and battery health timezones must match")
         # Validate against today's committed health without replacing nominal E0.
         validation_battery = battery
         if self.degradation.mode == "naumann_lfp":
