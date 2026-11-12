@@ -43,6 +43,7 @@ Selection criterion: prefer the least computationally expensive setting that fin
 validated solutions and has acceptable health and economic deviations against a
 common replay benchmark; no acceptable error threshold is presumed. Solver gaps,
 three winter days, model calibration uncertainty, and historical look-ahead limit
-generalization. Structural changes such as evaluating square-root graphs only at
-boundaries where health is used require separate implementation, verification and
-controlled experiments; this comparison does not measure them.
+generalization. All cases use the structural simplification that evaluates
+square-root graphs only at endpoints and local midnights. This comparison does
+not isolate its runtime effect against the earlier formulation. Fixed-path and
+midnight software checks do not replace an economic-dispatch comparison.

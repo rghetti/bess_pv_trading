@@ -166,6 +166,20 @@ def test_capacity_changes_at_midnight_and_stays_committed_during_the_next_day():
     assert capacity[1] == pytest.approx(expected)
 
 
+def test_health_graphs_exist_only_at_endpoints_and_midnight():
+    """Keep exact graph constraints at every boundary that affects optimization."""
+    inputs, arrays, variables, model = _solve_path(
+        [.5, .51, .52, .51, .5], hours=1, start="2026-01-01T21:00:00Z")
+    # The second boundary is local midnight; intermediate values are readouts.
+    for name in ("naumann_calendar_loss", "naumann_cycle_loss"):
+        assert [variables[name][0, t] is not None for t in range(5)] == [True, False, True, False, True]
+    # Four SOC-stress graphs per interval plus endpoint and midnight loss graphs.
+    assert model.NumGenConstrs == 23
+    knots, values, _ = sqrt_graph(inputs.degradation)
+    np.testing.assert_allclose(arrays["naumann_cycle_loss_pwl"][0],
+                               np.interp(arrays["naumann_cycle_exposure"][0], knots, values), atol=1e-8)
+
+
 def test_midnight_capacity_guard_rejects_energy_that_would_need_silent_clipping():
     import gurobipy as gp
 

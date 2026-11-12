@@ -137,6 +137,9 @@ provides future starting states; subsequently realized health is never supplied
 to earlier auctions. Outputs distinguish that normalization approximation from
 PWL and rate-bin error bounds.
 
+Square-root equality graphs are built at horizon endpoints and local midnights,
+where they affect wear or capacity. Other reporting values are reconstructed
+after solving from the same piecewise graph; exposures remain interval states.
 Square-root equality graphs use configurable chord-error bounds. Forecast
 capacity guards subtract both maximum loss-underestimation errors; current
 physical state uses exact square roots. Internal solver exposures and stress

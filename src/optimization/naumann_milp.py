@@ -200,10 +200,16 @@ def build_naumann_degradation(model: Any, inputs: OptimizationInput,
                 name=f"naumann_calendar_exposure[{suffix}]")
             cycle_exposure[s, boundary] = model.addVar(ub=float(exposure_x[-1]) * _EXPOSURE_SCALE,
                 name=f"naumann_cycle_exposure[{suffix}]")
-            calendar_loss[s, boundary] = _graph(model, calendar_exposure[s, boundary],
+            # Only endpoints price wear; midnight boundaries also set capacity.
+            # Intermediate loss readouts are reconstructed after optimization.
+            needs_loss = (boundary in (0, intervals) or
+                          days[boundary] != days[boundary - 1])
+            calendar_loss[s, boundary] = (_graph(model, calendar_exposure[s, boundary],
                 exposure_x * _EXPOSURE_SCALE, loss_y, f"naumann_calendar_loss[{suffix}]")
-            cycle_loss[s, boundary] = _graph(model, cycle_exposure[s, boundary],
+                if needs_loss else None)
+            cycle_loss[s, boundary] = (_graph(model, cycle_exposure[s, boundary],
                 exposure_x * _EXPOSURE_SCALE, loss_y, f"naumann_cycle_loss[{suffix}]")
+                if needs_loss else None)
             # During the cutoff's current day the forecast and physical guard
             # have identical exposures, so alias them instead of duplicating an
             # entire PWL graph.  The first midnight still closes that same day.
@@ -216,9 +222,9 @@ def build_naumann_degradation(model: Any, inputs: OptimizationInput,
                     name=f"naumann_calendar_guard_exposure[{suffix}]")
                 calendar_guard_loss[s, boundary] = _graph(model,
                     calendar_guard_exposure[s, boundary], exposure_x * _EXPOSURE_SCALE,
-                    loss_y, f"naumann_calendar_guard_loss[{suffix}]")
-            health_lower[s, boundary] = (1 - calendar_guard_loss[s, boundary]
-                - cycle_loss[s, boundary] - 2 * sqrt_error)
+                    loss_y, f"naumann_calendar_guard_loss[{suffix}]") if needs_loss else None
+            health_lower[s, boundary] = ((1 - calendar_guard_loss[s, boundary]
+                - cycle_loss[s, boundary] - 2 * sqrt_error) if needs_loss else None)
             for bank in range(2):
                 for j, width in enumerate(capacities):
                     bank_energy[s, boundary, bank, j] = model.addVar(ub=float(width),
@@ -318,10 +324,22 @@ def extract_naumann_arrays(inputs: OptimizationInput, variables: dict[str, Any])
                      "naumann_capacity_mwh": "naumann_capacity_mwh"}
     for output, source in boundary_maps.items():
         arrays[output] = np.array([[_value(variables[source][s, t])
-            for t in range(intervals + 1)] for s in range(count)])
+            if variables[source][s, t] is not None else np.nan
+            for t in range(intervals + 1)] for s in range(count)], dtype=float)
         if output in ("naumann_calendar_exposure", "naumann_cycle_exposure",
                       "naumann_calendar_guard_exposure"):
             arrays[output] /= _EXPOSURE_SCALE
+    # Fill diagnostic-only loss values using the identical piecewise graph.
+    exposure_x, loss_y, sqrt_error = sqrt_graph(inputs.degradation)
+    for loss, exposure in (("naumann_calendar_loss_pwl", "naumann_calendar_exposure"),
+                           ("naumann_cycle_loss_pwl", "naumann_cycle_exposure"),
+                           ("naumann_calendar_guard_loss_pwl", "naumann_calendar_guard_exposure")):
+        missing = np.isnan(arrays[loss])
+        arrays[loss][missing] = np.interp(arrays[exposure][missing], exposure_x, loss_y)
+    missing = np.isnan(arrays["naumann_health_lower"])
+    reconstructed = (1 - arrays["naumann_calendar_guard_loss_pwl"]
+                     - arrays["naumann_cycle_loss_pwl"] - 2 * sqrt_error)
+    arrays["naumann_health_lower"][missing] = reconstructed[missing]
     arrays["naumann_bank_energy_mwh"] = np.array([[[[
         _value(variables["naumann_bank_energy"][s, t, bank, j])
         for j in range(segments)] for bank in range(2)]
