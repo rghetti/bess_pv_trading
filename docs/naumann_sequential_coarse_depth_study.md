@@ -24,6 +24,14 @@ Each solve uses seven Gurobi threads, 240 seconds, a relative MIP gap of 1e-4,
 solver feasibility and integrality tolerances of 1e-5, and ordinary solution
 validation of 1e-4. Carry exposures and memory across days and preserve raw
 solver errors; tolerance-sized replay/physical command corrections are recorded.
+The square-root graph permits 0.0005 absolute loss error per graph (26 points),
+and the calendar graph permits 0.002 absolute annual SOH error (17 points).
+These are approximation bounds, not solver feasibility tolerances. Execution
+uses analytical calendar integration and square roots; the budgets govern the
+optimization's forecast and economic valuation. Compare the coarse graph to a
+100-segment depth graph and the analytical depth curve on the same independently
+rainflow-counted executed trajectory; this does not rerun the optimization or
+measure how a finer model would change the resulting schedule.
 Run cases sequentially in separate output directories. Record statuses,
 violations, optimality gaps, model size, runtime, daily SOH, calendar and cycle
 losses, market cash, wear cost, throughput and imbalance. Use independent

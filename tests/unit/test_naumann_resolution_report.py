@@ -33,6 +33,17 @@ def test_out_of_capacity_path_is_rejected():
         report.rainflow_benchmark([.5, 1.1], 1., NaumannSettings(), .5)
 
 
+def test_fine_depth_graph_agrees_with_analytical_stress():
+    """Finer post-processing approaches analytical loss on the same cycles."""
+    settings = NaumannSettings(depth_knots=(0, .2, 1))
+    result = report.rainflow_benchmark([.1, .47, .1], 1., settings, .5, 100)
+    assert result["rainflow_fine_segments"] == 100
+    assert result["rainflow_fine_cycle_loss_fraction"] == pytest.approx(
+        result["rainflow_analytic_cycle_loss_fraction"], abs=1e-12)
+    with pytest.raises(ValueError, match="at least one"):
+        report.rainflow_benchmark([.1, .47], 1., settings, .5, 0)
+
+
 def test_local_rate_replay_removes_only_upper_bin_factor():
     """A rate inside a bin is reweighted while an edge is unchanged."""
     settings = NaumannSettings(c_rate_bin_width=.25)

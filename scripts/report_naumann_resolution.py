@@ -20,7 +20,7 @@ from bess_pv_trading.optimization.degradation import rainflow_discharge_depths
 from bess_pv_trading.optimization.naumann import cycle_rate_factor, depth_exposure, rate_bin
 
 
-def rainflow_benchmark(energy_mwh, capacity_mwh, settings, reference_rate):
+def rainflow_benchmark(energy_mwh, capacity_mwh, settings, reference_rate, fine_segments=100):
     """Evaluate complete and residual half-cycles with one common fixed rate."""
     energy = np.asarray(energy_mwh, dtype=float)
     if capacity_mwh <= 0 or np.any(energy < -1e-8) or np.any(energy > capacity_mwh + 1e-8):
@@ -34,6 +34,11 @@ def rainflow_benchmark(energy_mwh, capacity_mwh, settings, reference_rate):
     multiplier = float(cycle_rate_factor(reference_rate, settings) ** 2)
     analytic = float(.5 * np.sum(depth_exposure(depths, settings)) * multiplier)
     piecewise = float(.5 * np.sum(np.interp(depths, knots, depth_exposure(knots, settings))) * multiplier)
+    # Re-evaluate the same counted cycles on a finer graph and analytically.
+    if fine_segments < 1:
+        raise ValueError("Fine depth graph requires at least one segment")
+    fine_knots = np.linspace(0., 1., fine_segments + 1)
+    fine = float(.5 * np.sum(np.interp(depths, fine_knots, depth_exposure(fine_knots, settings))) * multiplier)
     return {
         "reference_rate_c": reference_rate,
         "counted_half_cycles": int(len(depths)),
@@ -42,6 +47,8 @@ def rainflow_benchmark(energy_mwh, capacity_mwh, settings, reference_rate):
         "rainflow_pwl_cycle_exposure": piecewise,
         "rainflow_analytic_cycle_loss_fraction": float(np.sqrt(analytic)),
         "rainflow_pwl_cycle_loss_fraction": float(np.sqrt(piecewise)),
+        "rainflow_fine_segments": fine_segments,
+        "rainflow_fine_cycle_loss_fraction": float(np.sqrt(fine)),
     }
 
 
@@ -59,7 +66,7 @@ def unbinned_local_rate_exposure(frame, settings):
     return float(np.sum(np.maximum(increments, 0) * exact / factors))
 
 
-def summarize_run(directory, reference_rate):
+def summarize_run(directory, reference_rate, fine_segments=100):
     """Report solver evidence for every case and aging only for complete runs."""
     directory = Path(directory)
     if not (directory / "json/manifest.json").exists():
@@ -117,7 +124,7 @@ def summarize_run(directory, reference_rate):
     if not np.allclose(frame.energy_start_mwh.iloc[1:], frame.energy_end_mwh.iloc[:-1], atol=1e-7, rtol=0):
         raise ValueError(f"Non-contiguous energy states: {directory}")
     energy = np.r_[frame.energy_start_mwh.iloc[0], frame.energy_end_mwh.to_numpy()]
-    result.update(rainflow_benchmark(energy, capacity, settings, reference_rate))
+    result.update(rainflow_benchmark(energy, capacity, settings, reference_rate, fine_segments))
     result.update({
         "rate_bin_width_c": settings.c_rate_bin_width,
         "intervals": len(frame),
@@ -132,6 +139,14 @@ def summarize_run(directory, reference_rate):
         "recorded_wear_eur": float(frame.noncash_degradation_cost_eur.sum()),
         "absolute_imbalance_mwh": float(frame.imbalance_mwh.abs().sum()),
     })
+    # The execution calendar exposure already integrates the analytical stress;
+    # isolate cycle-curve differences on the identical realized trajectory.
+    result["rainflow_fine_total_soh"] = (result["initial_soh"]
+        - result["recorded_calendar_loss_fraction"]
+        - result["rainflow_fine_cycle_loss_fraction"])
+    result["rainflow_analytic_total_soh"] = (result["initial_soh"]
+        - result["recorded_calendar_loss_fraction"]
+        - result["rainflow_analytic_cycle_loss_fraction"])
     return result
 
 
@@ -140,8 +155,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("runs", nargs="+", help="Continuous experiment output directories")
     parser.add_argument("--reference-rate", type=float, default=0.5, help="Fixed reference C-rate")
+    parser.add_argument("--fine-segments", type=int, default=100, help="Depth segments for the fine post-processing graph")
     arguments = parser.parse_args()
-    rows = [summarize_run(path, arguments.reference_rate) for path in arguments.runs]
+    rows = [summarize_run(path, arguments.reference_rate, arguments.fine_segments) for path in arguments.runs]
     # Tiny squared-loss exposures must not be rounded to identical values.
     print(pd.DataFrame(rows).to_string(index=False, float_format=lambda value: f"{value:.9g}"))
 
