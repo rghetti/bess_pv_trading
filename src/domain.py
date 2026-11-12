@@ -238,6 +238,27 @@ class BatteryHealthState:
 
 
 @dataclass(frozen=True)
+class LinearHealthState:
+    """Cumulative fractional capacity losses and health committed at local midnight."""
+
+    calendar_loss: float
+    cycle_loss: float
+    committed_soh: float
+    active_day: str
+    calibration_id: str
+
+    def __post_init__(self):
+        from datetime import date
+        date.fromisoformat(self.active_day)
+        for name in ("calendar_loss", "cycle_loss", "committed_soh"):
+            finite_nonnegative(getattr(self, name), name)
+        if not 0 < self.committed_soh <= 1 or not self.calibration_id:
+            raise ValueError("Linear health requires SOH in (0,1] and calibration identity")
+        if 1 - self.calendar_loss - self.cycle_loss > self.committed_soh + 1e-10:
+            raise ValueError("Linear health cannot heal during a day")
+
+
+@dataclass(frozen=True)
 class PhysicalState:
     """Timestamped boundary state and carried cumulative degradation accounting."""
     timestamp: datetime
@@ -247,7 +268,7 @@ class PhysicalState:
     origin: str = "known_delivery_start_assumption"
     # Segment energies retain the battery's state for depth-dependent degradation.
     cycle_segment_energy_mwh: tuple[float, ...] | None = None
-    battery_health: BatteryHealthState | None = None
+    battery_health: BatteryHealthState | LinearHealthState | None = None
 
     def __post_init__(self) -> None:
         aware(self.timestamp, "physical state")
@@ -267,11 +288,11 @@ class PhysicalState:
             object.__setattr__(self, "cycle_segment_energy_mwh", values)
         # New health history and legacy Xu memory have separate, explicit meanings.
         if self.battery_health is not None:
-            if not isinstance(self.battery_health, BatteryHealthState):
-                raise ValueError("battery_health must be a BatteryHealthState")
+            if not isinstance(self.battery_health, (BatteryHealthState, LinearHealthState)):
+                raise ValueError("battery_health must be a supported health state")
             if self.cycle_segment_energy_mwh is not None:
                 raise ValueError("Cannot combine legacy Xu memory with LFP health memory")
-            if not np.isclose(sum(self.battery_health.discharge_segment_energy_mwh),
+            if isinstance(self.battery_health, BatteryHealthState) and not np.isclose(sum(self.battery_health.discharge_segment_energy_mwh),
                               self.energy_mwh, rtol=0, atol=1e-8):
                 raise ValueError("Discharge health bank must sum to stored energy")
 
@@ -517,6 +538,31 @@ class NaumannSettings:
 
 
 @dataclass(frozen=True)
+class LinearSOHSettings:
+    """Linear calendar and internal-throughput cycle loss calibration."""
+    calendar_loss_per_year: float
+    cycle_life: float
+    reference_depth_of_discharge: float
+    cycle_capacity_loss_at_reference_life: float
+    end_of_life_soh: float
+    calendar_year_seconds: float
+    timezone: str
+    calibration_id: str
+
+    def __post_init__(self):
+        from zoneinfo import ZoneInfo
+        ZoneInfo(self.timezone)
+        for key in ("calendar_loss_per_year", "cycle_life", "reference_depth_of_discharge",
+                    "cycle_capacity_loss_at_reference_life", "end_of_life_soh", "calendar_year_seconds"):
+            finite_nonnegative(getattr(self, key), key)
+        if (self.cycle_life <= 0 or self.calendar_year_seconds <= 0 or
+            not 0 < self.reference_depth_of_discharge <= 1 or
+            not 0 < self.cycle_capacity_loss_at_reference_life < 1 or
+            not 0 < self.end_of_life_soh < 1 or not self.calibration_id):
+            raise ValueError("Invalid linear SOH calibration")
+
+
+@dataclass(frozen=True)
 class DegradationSettings:
     """Select AC throughput or Xu discharge-only cycle-depth accounting.
 
@@ -531,11 +577,12 @@ class DegradationSettings:
     stress_exponent: float = 2.03
     segment_count: int = 16
     naumann: NaumannSettings | None = None
+    linear_soh: LinearSOHSettings | None = None
 
     def __post_init__(self) -> None:
         finite_nonnegative(self.cost_eur_per_mwh_throughput, "degradation cost")
         # Enforce the input contract: Unknown degradation mode; use constant_throughput or Xu xu_segmented.
-        if self.mode not in {"constant_throughput", "xu_segmented", "naumann_lfp"}:
+        if self.mode not in {"constant_throughput", "xu_segmented", "naumann_lfp", "linear_soh"}:
             raise ValueError("Unknown degradation mode; use constant_throughput, Xu xu_segmented, or naumann_lfp")
         # Attach the published opt-in prior without changing legacy mode defaults.
         if isinstance(self.naumann, Mapping):
@@ -546,6 +593,12 @@ class DegradationSettings:
             raise ValueError("naumann must contain NaumannSettings")
         if self.mode != "naumann_lfp" and self.naumann is not None:
             raise ValueError("Naumann settings require naumann_lfp mode")
+        if isinstance(self.linear_soh, Mapping):
+            object.__setattr__(self, "linear_soh", LinearSOHSettings(**self.linear_soh))
+        if self.mode == "linear_soh" and not isinstance(self.linear_soh, LinearSOHSettings):
+            raise ValueError("linear_soh mode requires explicit linear SOH calibration")
+        if self.mode != "linear_soh" and self.linear_soh is not None:
+            raise ValueError("linear_soh settings require linear_soh mode")
         # Enforce the input contract: Cycle segment_count must be a positive integer.
         if not isinstance(self.segment_count, int) or isinstance(self.segment_count, bool) or self.segment_count < 1:
             raise ValueError("Cycle segment_count must be a positive integer")
@@ -571,6 +624,11 @@ class DegradationSettings:
                 raise ValueError("Naumann aging requires positive net replacement cost")
             if self.cost_eur_per_mwh_throughput:
                 raise ValueError("Naumann health loss cannot also charge throughput wear")
+        if self.mode == "linear_soh":
+            if self.replacement_cost_eur is None or self.replacement_cost_eur <= 0:
+                raise ValueError("Linear SOH requires positive replacement cost")
+            if self.cost_eur_per_mwh_throughput:
+                raise ValueError("Linear SOH cost is derived from health loss; duplicate wear is forbidden")
 
 
 @dataclass(frozen=True)
@@ -692,11 +750,17 @@ class OptimizationInput:
             from .optimization.naumann import effective_battery
 
             validation_battery = effective_battery(self.state, battery, self.degradation)
+        elif self.degradation.mode == "linear_soh":
+            from dataclasses import replace
+            from .optimization.linear_soh import initialize_linear_health
+            h = initialize_linear_health(self.state, battery, self.degradation).committed_soh
+            validation_battery = replace(battery, energy_min_mwh=battery.energy_min_mwh * h,
+                                         energy_max_mwh=battery.maximum_energy * h)
         elif self.state.battery_health is not None:
             raise ValueError("Carried battery health requires naumann_lfp mode")
         # A relative target is a new-mode interface, never an implicit rewrite of MWh.
         relative = (self.terminal_target_soc_percent, self.terminal_minimum_soc_percent)
-        if self.degradation.mode != "naumann_lfp" and (any(value is not None for value in relative)
+        if self.degradation.mode not in {"naumann_lfp", "linear_soh"} and (any(value is not None for value in relative)
                 or self.target_soc_percent_by_boundary or self.minimum_soc_percent_by_boundary):
             raise ValueError("Available-capacity SOC targets require naumann_lfp mode")
         if ((self.terminal_target_mwh is not None and self.terminal_target_soc_percent is not None)

@@ -22,6 +22,9 @@ class RealtimeControl:
     """Retain issued actions and common plans without owning any market ledger."""
 
     def __init__(self, replay):
+        # The real-time controller has not yet been adapted to the new health state.
+        if replay.aging.mode == "linear_soh":
+            raise ValueError("linear_soh is not yet supported by real-time MPC; use the grid-tracking controller")
         self.replay = replay
         self.settings = MpcSettings.from_config(replay.config)
         self.state = MpcControllerState()

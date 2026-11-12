@@ -223,7 +223,7 @@ def _solve_perfect_information_schedule(config, grid, plant, schedule, actual_pr
              else degradation_settings_from_config(config))
     state = PhysicalState(grid.starts[0], initial_energy,
         origin=config["state"].get("origin", "known_delivery_start_assumption"))
-    if aging.mode == "naumann_lfp":
+    if aging.mode in {"naumann_lfp", "linear_soh"}:
         state = replace(state, battery_health=restore_battery_health(
             config["state"].get("battery_health")))
         state = initialize_physical_health(state, plant.battery, aging)

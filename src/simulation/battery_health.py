@@ -26,12 +26,14 @@ def restore_battery_health(value):
     """Restore typed health and both cycle memories from JSON or a CSV cell."""
     if value is None:
         return None
-    from ..domain import BatteryHealthState
+    from ..domain import BatteryHealthState, LinearHealthState
 
-    if isinstance(value, BatteryHealthState):
+    if isinstance(value, (BatteryHealthState, LinearHealthState)):
         return value
     # CSV snapshots contain only literal scalar values and segment tuples.
     values = ast.literal_eval(value) if isinstance(value, str) else dict(value)
+    if "calendar_loss" in values:
+        return LinearHealthState(**values)
     for name in ("discharge_segment_energy_mwh", "charge_segment_energy_mwh"):
         if values.get(name) is not None:
             values[name] = tuple(values[name])
@@ -40,6 +42,9 @@ def restore_battery_health(value):
 
 def initialize_physical_health(state, battery, settings):
     """Initialize once; an existing health state remains authoritative."""
+    if settings.mode == "linear_soh":
+        from ..optimization.linear_soh import initialize_linear_health
+        return replace(state, battery_health=initialize_linear_health(state, battery, settings))
     if settings.mode != "naumann_lfp":
         return state
     from ..optimization.naumann import initialize_health
@@ -49,7 +54,7 @@ def initialize_physical_health(state, battery, settings):
 
 def relative_terminal_soc(state_settings, degradation_mode):
     """Keep available-capacity percentages distinct from explicit MWh overrides."""
-    if degradation_mode != "naumann_lfp":
+    if degradation_mode not in {"naumann_lfp", "linear_soh"}:
         return None, None
     basis = state_settings.get("terminal_soc_basis",
         state_settings.get("initial_soc_basis", "available_capacity"))
@@ -65,6 +70,24 @@ def relative_terminal_soc(state_settings, degradation_mode):
 
 def health_execution_record(state, next_state, battery, settings):
     """Expose physical loss separately from its economic valuation and cash."""
+    if settings.mode == "linear_soh":
+        from ..optimization.linear_soh import linear_wear_value
+        record = {}
+        for suffix, boundary in (("start", state), ("end", next_state)):
+            h = boundary.battery_health
+            capacity = battery.capacity_mwh * h.committed_soh
+            record.update({f"battery_health_{suffix}": asdict(h), f"battery_soh_{suffix}": h.committed_soh,
+                f"available_capacity_mwh_{suffix}": capacity,
+                f"nominal_soc_{suffix}_percent": 100 * boundary.energy_mwh / battery.capacity_mwh,
+                f"available_soc_{suffix}_percent": 100 * boundary.energy_mwh / capacity,
+                f"linear_active_day_{suffix}": h.active_day,
+                f"linear_calendar_loss_fraction_{suffix}": h.calendar_loss,
+                f"linear_cycle_loss_fraction_{suffix}": h.cycle_loss})
+        for mode in ("calendar", "cycle"):
+            loss = record[f"linear_{mode}_loss_fraction_end"] - record[f"linear_{mode}_loss_fraction_start"]
+            record[f"{mode}_capacity_loss_fraction"] = loss
+            record[f"{mode}_degradation_eur"] = linear_wear_value(settings) * loss
+        return record
     if settings.mode != "naumann_lfp":
         return {}
     from ..optimization.naumann import health_diagnostics, wear_value
@@ -92,13 +115,17 @@ def health_execution_record(state, next_state, battery, settings):
 
 def at_battery_end_of_life(state, settings):
     """Check the committed physical health, never an optimizer's projection."""
-    if settings is None or settings.mode != "naumann_lfp" or state is None or state.battery_health is None:
+    if settings is None or settings.mode not in {"naumann_lfp", "linear_soh"} or state is None or state.battery_health is None:
         return False
-    return state.battery_health.committed_soh <= settings.naumann.end_of_life_soh
+    threshold = settings.linear_soh.end_of_life_soh if settings.mode == "linear_soh" else settings.naumann.end_of_life_soh
+    return state.battery_health.committed_soh <= threshold
 
 
 def health_summary(state, battery, settings):
     """Keep calibration assumptions and final health in persisted results."""
+    if settings.mode == "linear_soh":
+        return {"battery_health": asdict(state.battery_health), "battery_health_calibration": asdict(settings.linear_soh),
+                "degradation_cost_accounting": "noncash wear valuation; excluded from market cash flow"}
     if settings.mode != "naumann_lfp":
         return {}
     from ..optimization.naumann import approximation_diagnostics, health_diagnostics
@@ -111,6 +138,12 @@ def health_summary(state, battery, settings):
 
 def forecast_health_record(arrays, interval, scenario, battery, settings, *, energy_start, energy_end):
     """Label optimizer health forecasts separately from committed physical health."""
+    if settings.mode == "linear_soh" and arrays:
+        capacity = np.asarray(arrays["linear_capacity_mwh"])
+        owner = 0 if len(capacity) == 1 else scenario
+        return {"forecast_available_capacity_start_mwh": float(capacity[owner, interval]),
+                "forecast_available_capacity_end_mwh": float(capacity[owner, interval + 1]),
+                "battery_health_role": "forecast_only_linear_throughput"}
     if settings.mode != "naumann_lfp" or not arrays:
         return {}
     from ..optimization.naumann import wear_value
@@ -153,10 +186,13 @@ def protect_midnight_health(*, state, battery, settings, end, charge_mw, dischar
     planner's health guard. Previewing immutable candidate states allows the
     executor to reduce charging or discharge, accounting for every physical MWh.
     """
-    if (settings.mode != "naumann_lfp"
-            or end.astimezone(ZoneInfo(settings.naumann.timezone)).time() != time.min):
+    if settings.mode not in {"naumann_lfp", "linear_soh"}:
+        return charge_mw, discharge_mw, curtailment_mw, 0.0
+    parameters = settings.linear_soh if settings.mode == "linear_soh" else settings.naumann
+    if end.astimezone(ZoneInfo(parameters.timezone)).time() != time.min:
         return charge_mw, discharge_mw, curtailment_mw, 0.0
     from ..optimization.naumann import power_limits, preview_naumann_state
+    from ..optimization.linear_soh import advance_linear_health
 
     hours = (end - state.timestamp).total_seconds() / 3600
 
@@ -166,8 +202,12 @@ def protect_midnight_health(*, state, battery, settings, end, charge_mw, dischar
         discharge = max(0.0, net_discharge)
         energy = state.energy_mwh + hours * (
             battery.eta_charge * charge - discharge / battery.eta_discharge)
-        projected, _ = preview_naumann_state(state=state, battery=battery, settings=settings,
-            end=end, energy_mwh=energy, charge_mw=charge, discharge_mw=discharge)
+        if settings.mode == "linear_soh":
+            projected, _ = advance_linear_health(state=state, battery=battery, settings=settings,
+                end=end, energy_mwh=energy, charge_mw=charge, discharge_mw=discharge)
+        else:
+            projected, _ = preview_naumann_state(state=state, battery=battery, settings=settings,
+                end=end, energy_mwh=energy, charge_mw=charge, discharge_mw=discharge)
         upper = battery.maximum_energy * projected.battery_health.committed_soh
         return energy <= upper, charge, discharge
 
@@ -175,7 +215,8 @@ def protect_midnight_health(*, state, battery, settings, end, charge_mw, dischar
     safe, _, _ = preview(net)
     if safe:
         return charge_mw, discharge_mw, curtailment_mw, 0.0
-    _, discharge_limit = power_limits(state, battery, settings)
+    discharge_limit = (battery.max_power_mw if settings.mode == "linear_soh"
+                       else power_limits(state, battery, settings)[1])
     floor = battery.energy_min_mwh * state.battery_health.committed_soh
     available_discharge = max(0.0, state.energy_mwh - floor) * battery.eta_discharge / hours
     # Additional PV curtailment can create export headroom, but battery discharge

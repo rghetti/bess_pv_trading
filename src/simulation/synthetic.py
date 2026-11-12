@@ -138,7 +138,7 @@ def _replay_strategy(config: dict[str, Any], fixture: dict[str, Any], strategy: 
             if fixture.get("forecast_available_at") is not None else None),
     }
     aging = degradation_settings_from_config(config)
-    if aging.mode == "naumann_lfp":
+    if aging.mode in {"naumann_lfp", "linear_soh"}:
         state = replace(state, battery_health=restore_battery_health(
             config["state"].get("battery_health")))
         state = initialize_physical_health(state, plant.battery, aging)

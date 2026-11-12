@@ -82,6 +82,9 @@ def _terminal_cost(model, inputs, terminal_energy, scenario, gp, capacity=None):
 
 def build_research_model(inputs):
     """Build node-owned physical controls, pathwise losses and monetary CVaR."""
+    # Protect direct callers even if they bypass the typed MPC input contract.
+    if inputs.degradation.mode == "linear_soh":
+        raise ValueError("linear_soh is not yet supported by adaptive MPC; use the grid-tracking controller")
     import gurobipy as gp
 
     model = gp.Model("causal_adaptive_mpc")

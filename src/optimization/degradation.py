@@ -20,7 +20,7 @@ def degradation_settings_from_config(config: Mapping[str, Any]) -> DegradationSe
     section = dict(config.get("degradation", config))
     model = section.pop("model", "throughput")
     mode = {"throughput": "constant_throughput", "constant_throughput": "constant_throughput",
-            "xu_segmented": "xu_segmented", "naumann_lfp": "naumann_lfp"}.get(model)
+            "xu_segmented": "xu_segmented", "naumann_lfp": "naumann_lfp", "linear_soh": "linear_soh"}.get(model)
     # Enforce the input contract: Unknown degradation model `model`.
     if mode is None:
         raise ValueError(f"Unknown degradation model {model!r}")
@@ -74,7 +74,7 @@ def degradation_settings_from_config(config: Mapping[str, Any]) -> DegradationSe
                            * (1 / battery.eta_charge + battery.eta_discharge))
         section["cost_eur_per_mwh_throughput"] = float(replacement) / lifetime_ac_mwh
     # A null inherited baseline coefficient is not a second wear charge.
-    if mode == "naumann_lfp" and section.get("cost_eur_per_mwh_throughput") is None:
+    if mode in {"naumann_lfp", "linear_soh"} and section.get("cost_eur_per_mwh_throughput") is None:
         section["cost_eur_per_mwh_throughput"] = 0.0
     return DegradationSettings(mode=mode, **section)
 
@@ -215,6 +215,11 @@ def advance_degradation_state(*, state: PhysicalState, battery: BatteryParameter
         from .naumann import advance_naumann_state
 
         return advance_naumann_state(state=state, battery=battery, settings=settings,
+            end=end, energy_mwh=energy_mwh, charge_mw=charge_mw,
+            discharge_mw=discharge_mw, origin=origin)
+    if settings.mode == "linear_soh":
+        from .linear_soh import advance_linear_health
+        return advance_linear_health(state=state, battery=battery, settings=settings,
             end=end, energy_mwh=energy_mwh, charge_mw=charge_mw,
             discharge_mw=discharge_mw, origin=origin)
     if state.battery_health is not None:

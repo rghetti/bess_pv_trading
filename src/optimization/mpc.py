@@ -295,6 +295,9 @@ class MpcInput:
     planning_position_mwh: np.ndarray = field(init=False, repr=False)
 
     def __post_init__(self):
+        # Do not solve against nominal capacity when this health model is active.
+        if self.degradation.mode == "linear_soh":
+            raise ValueError("linear_soh is not yet supported by MPC; use the grid-tracking controller")
         count, length = len(self.scenario_ids), len(self.grid.interval_ids)
         cutoff = pd.Timestamp(self.cutoff)
         if self.policy not in MPC_POLICIES or cutoff.tzinfo is None or cutoff != self.state.timestamp:

@@ -141,6 +141,27 @@ def _read(destination, filename):
     return json.loads((destination / "json" / filename).read_text())
 
 
+def test_linear_soh_continuous_checkpoint_resume(continuous_config, tmp_path):
+    """The grid-tracking pipeline commits health and restores the checkpoint."""
+    config = continuous_config
+    config["degradation"] = {"model": "linear_soh", "replacement_cost_eur": 1000.,
+        "cost_eur_per_mwh_throughput": 0., "assumptions": "unit test",
+        "linear_soh": {"calendar_loss_per_year": .01, "cycle_life": 6000,
+            "reference_depth_of_discharge": 1., "cycle_capacity_loss_at_reference_life": .17,
+            "end_of_life_soh": .8, "calendar_year_seconds": 31557600.,
+            "timezone": "Europe/Rome", "calibration_id": "unit"}}
+    config["experiment_outputs"]["plots"] = False
+    prepared, _ = _prepared(config, one_day=True)
+    destination = tmp_path / "linear_replay"
+    replay, _ = _run(config, prepared, "integrated", destination)
+    initial_end_health = replay.state.battery_health
+    assert initial_end_health.committed_soh < 1.
+    assert (destination / "json/checkpoint.json").exists()
+    restored = _module().ContinuousReplay(config, prepared, "integrated", destination, resume=True)
+    assert restored.state.battery_health == initial_end_health
+    assert restored.state.timestamp == replay.state.timestamp
+
+
 def test_ida3_extends_next_day_and_keeps_future_orders_provisional(continuous_config, tmp_path):
     """One real-time replay trades context gates but scores the requested day only."""
     config = continuous_config

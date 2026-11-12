@@ -296,6 +296,9 @@ def continuation_grid(config, horizon_end):
 
 def conditional_terminal_value(replay, daily, cutoff, horizon_end):
     """Value energy/headroom using available forecasts beyond the dispatch horizon."""
+    # An energy-only continuation must not silently assume nameplate capacity.
+    if replay.aging.mode == "linear_soh":
+        raise ValueError("linear_soh is not yet supported by MPC continuation values")
     if replay.config.get("realtime_mpc", {}).get("terminal_inventory_mode") != "piecewise_linear":
         return None
     grid = continuation_grid(replay.config, horizon_end)

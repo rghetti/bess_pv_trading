@@ -55,7 +55,7 @@ def _physical(model: Any, inputs: OptimizationInput, gp: Any) -> dict[str, Any]:
         for t in range(intervals + 1):
             # The health builder supplies daily SOC bounds for the fading-capacity
             # mode. A nominal lower bound here would forbid its valid aged states.
-            lower_energy = 0.0 if inputs.degradation.mode == "naumann_lfp" else battery.energy_min_mwh
+            lower_energy = 0.0 if inputs.degradation.mode in {"naumann_lfp", "linear_soh"} else battery.energy_min_mwh
             energy[s, t] = model.addVar(lb=lower_energy, ub=battery.maximum_energy, name=f"energy[s{scenario},boundary{t}]")
         model.addConstr(energy[s, 0] == inputs.state.energy_mwh, name=f"initial_energy[s{scenario}]")
         # Enforce an exact terminal target only when the study requests one.
@@ -246,7 +246,7 @@ def _imbalance_interval(model, inputs, variables, gp, s, t, duration,
 def _degradation(model: Any, inputs: OptimizationInput, variables: dict[str, Any], gp: Any) -> dict[int, Any]:
     """Cost new throughput or depth-dependent discharge; carried aging is sunk."""
     costs = build_battery_degradation(model, inputs, variables, gp)
-    if inputs.degradation.mode == "naumann_lfp":
+    if inputs.degradation.mode in {"naumann_lfp", "linear_soh"}:
         last = len(inputs.grid.interval_ids)
         # Percentages stay relative to each scenario's forecast capacity. Turning
         # them into MWh at study initialization would become stale as SOH falls.
@@ -258,14 +258,15 @@ def _degradation(model: Any, inputs: OptimizationInput, variables: dict[str, Any
             targets[last] = inputs.terminal_target_soc_percent
         if inputs.terminal_minimum_soc_percent is not None:
             minima[last] = max(minima.get(last, 0), inputs.terminal_minimum_soc_percent)
+        capacity = variables["naumann_capacity_mwh"] if inputs.degradation.mode == "naumann_lfp" else variables["linear_capacity_mwh"]
         for s in range(len(inputs.scenarios.scenario_ids)):
             for boundary, percentage in targets.items():
                 model.addConstr(variables["energy"][s, boundary]
-                    == variables["naumann_capacity_mwh"][s, boundary] * percentage / 100,
+                    == capacity[s, boundary] * percentage / 100,
                     name=f"available_capacity_soc_target[s{s},boundary{boundary}]")
             for boundary, percentage in minima.items():
                 model.addConstr(variables["energy"][s, boundary]
-                    >= variables["naumann_capacity_mwh"][s, boundary] * percentage / 100,
+                    >= capacity[s, boundary] * percentage / 100,
                     name=f"available_capacity_soc_floor[s{s},boundary{boundary}]")
     return costs
 
@@ -450,6 +451,10 @@ def solve_model(built: BuiltModel, settings: SolverSettings | None = None) -> Op
 
         # Forecast health is retained separately from realized execution health.
         result.arrays.update(extract_naumann_arrays(inputs, variable))
+    elif inputs.degradation.mode == "linear_soh":
+        result.arrays["linear_capacity_mwh"] = np.array([
+            [variable["linear_capacity_mwh"][s, t].getValue() for t in range(intervals + 1)]
+            for s in range(count)])
     result.arrays["imbalance_mwh"] = result.arrays["grid_mw"] * inputs.grid.delta_hours - result.arrays["net_position_mwh"]
     diagnostics["imbalance_cvar_confidence"] = inputs.imbalance_cvar_confidence
     diagnostics["imbalance_cvar_weight_eur_per_mwh"] = inputs.imbalance_cvar_weight_eur_per_mwh

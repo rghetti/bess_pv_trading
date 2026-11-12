@@ -47,6 +47,9 @@ def evaluate_components(inputs: OptimizationInput, arrays: dict[str, np.ndarray]
             settings=inputs.degradation, state=inputs.state, charge_mw=arrays["charge_mw"][s],
             discharge_mw=arrays["discharge_mw"][s], delta_hours=inputs.grid.delta_hours)["degradation_eur"]
             for s in range(count)])
+    elif inputs.degradation.mode == "linear_soh":
+        from .linear_soh import linear_forecast
+        _, aging = linear_forecast(inputs, arrays["charge_mw"], arrays["discharge_mw"])
     elif inputs.degradation.mode == "naumann_lfp":
         from .naumann import evaluate_naumann_dispatch
         from .naumann_milp import naumann_degradation_from_arrays
@@ -223,6 +226,20 @@ def validate_solution(inputs: OptimizationInput, result: OptimizationResult, tol
                     * percentage / 100 - energy[:, boundary])
         except (KeyError, TypeError, ValueError) as error:
             return ValidationReport(False, errors, None, (f"Cannot validate Naumann health: {error}",))
+    elif inputs.degradation.mode == "linear_soh":
+        from .linear_soh import linear_forecast
+        capacity, _ = linear_forecast(inputs, charge, discharge)
+        equality("linear_capacity_mwh", arrays["linear_capacity_mwh"] - capacity)
+        upper("energy_upper_mwh", energy - capacity * battery.maximum_energy / battery.capacity_mwh)
+        upper("energy_lower_mwh", capacity * battery.energy_min_mwh / battery.capacity_mwh - energy)
+        if inputs.terminal_target_soc_percent is not None:
+            equality("terminal_available_capacity_soc", energy[:, -1] - capacity[:, -1] * inputs.terminal_target_soc_percent / 100)
+        if inputs.terminal_minimum_soc_percent is not None:
+            upper("terminal_available_capacity_floor", capacity[:, -1] * inputs.terminal_minimum_soc_percent / 100 - energy[:, -1])
+        for boundary, percentage in inputs.target_soc_percent_by_boundary.items():
+            equality(f"boundary_available_capacity_soc_{boundary}", energy[:, boundary] - capacity[:, boundary] * percentage / 100)
+        for boundary, percentage in inputs.minimum_soc_percent_by_boundary.items():
+            upper(f"boundary_available_capacity_floor_{boundary}", capacity[:, boundary] * percentage / 100 - energy[:, boundary])
     else:
         upper("energy_upper_mwh", energy - battery.maximum_energy)
         upper("energy_lower_mwh", battery.energy_min_mwh - energy)

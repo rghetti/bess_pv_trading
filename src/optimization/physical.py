@@ -31,6 +31,9 @@ def build_battery_degradation(model, inputs, variables, gp):
     """Cost new common/node-owned dispatch using the existing degradation model."""
     from .degradation import build_xu_degradation
 
+    if inputs.degradation.mode == "linear_soh":
+        from .linear_soh import build_linear_health
+        return build_linear_health(model, inputs, variables, gp)
     if inputs.degradation.mode == "naumann_lfp":
         from .naumann_milp import build_naumann_degradation
 

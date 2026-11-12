@@ -471,7 +471,7 @@ def validate_config(config: dict[str, Any]) -> None:
         if not isinstance(section, dict):
             raise ConfigurationError("degradation must be a YAML mapping")
         # Enforce the input contract: Unknown degradation model.
-        if section.get("model","throughput") not in {"throughput","constant_throughput","xu_segmented","naumann_lfp"}:
+        if section.get("model","throughput") not in {"throughput","constant_throughput","xu_segmented","naumann_lfp", "linear_soh"}:
             raise ConfigurationError("Unknown degradation model")
         # Example templates retain explicit missing values. Execution validates
         # their required inputs; loading a template must not invent coefficients.
@@ -493,6 +493,8 @@ def validate_config(config: dict[str, Any]) -> None:
                 raise ConfigurationError(str(error)) from None
             if config.get("battery", {}).get("self_discharge_per_hour", 0):
                 raise ConfigurationError("Naumann aging requires zero self-discharge")
+        if section.get("model") == "linear_soh" and config.get("battery", {}).get("self_discharge_per_hour", 0):
+            raise ConfigurationError("Linear SOH aging requires zero self-discharge")
             # A null inherited throughput coefficient means zero in this mode;
             # Xu stress parameters are unused and cannot suppress validation.
             numeric_fields = ({"replacement_cost_eur"}

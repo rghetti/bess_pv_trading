@@ -170,6 +170,10 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         battery = effective_battery(state, nominal_battery, aging_settings)
         charge_power_limit, discharge_power_limit = power_limits(
             state, nominal_battery, aging_settings)
+    elif aging_settings.mode == "linear_soh":
+        soh = state.battery_health.committed_soh
+        battery = replace(battery, energy_min_mwh=battery.energy_min_mwh * soh,
+                          energy_max_mwh=battery.maximum_energy * soh)
     # Enforce the input contract: Execution starts outside battery energy bounds.
     if not battery.energy_min_mwh <= state.energy_mwh <= battery.maximum_energy:
         raise ValueError("Execution starts outside battery energy bounds")
@@ -237,7 +241,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
         charge, discharge = max(0.0, -actual_battery), max(0.0, actual_battery)
         feedback_adjustment += sum(abs(a-b) for a,b in zip((charge,discharge,curtailment), before_recovery))
     health_adjustment = 0.0
-    if aging_settings.mode == "naumann_lfp":
+    if aging_settings.mode in {"naumann_lfp", "linear_soh"}:
         before_health_curtailment = curtailment
         charge, discharge, curtailment, health_adjustment = protect_midnight_health(
             state=state, battery=nominal_battery, settings=aging_settings, end=end,
@@ -278,7 +282,7 @@ def execute_interval(*, state: PhysicalState, start, end, pv_ac_mw: float,
     if next_state.cycle_segment_energy_mwh is not None:
         record["cycle_segment_energy_end_mwh"] = next_state.cycle_segment_energy_mwh
     record.update(health_execution_record(state, next_state, nominal_battery, aging_settings))
-    if aging_settings.mode == "naumann_lfp":
+    if aging_settings.mode in {"naumann_lfp", "linear_soh"}:
         charge_internal = nominal_battery.eta_charge * charge
         discharge_internal = discharge / nominal_battery.eta_discharge
         available = nominal_battery.capacity_mwh * state.battery_health.committed_soh

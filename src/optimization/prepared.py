@@ -330,9 +330,17 @@ def load_prepared_inputs(config: Mapping[str, Any]) -> OptimizationInput:
         physical_state = health_state_from_config(config, physical_state, battery, degradation_settings)
         operating_battery = effective_battery(physical_state, battery, degradation_settings)
         available_capacity = available_capacity_mwh(physical_state, battery, degradation_settings)
+    elif degradation_settings.mode == "linear_soh":
+        from ..simulation.battery_health import initialize_physical_health, restore_battery_health
+        supplied_health = restore_battery_health(state_config.get("battery_health"))
+        physical_state = replace(physical_state, battery_health=supplied_health)
+        physical_state = initialize_physical_health(physical_state, battery, degradation_settings)
+        available_capacity = battery.capacity_mwh * physical_state.battery_health.committed_soh
+        operating_battery = replace(battery, energy_min_mwh=battery.energy_min_mwh * physical_state.battery_health.committed_soh,
+                                    energy_max_mwh=battery.maximum_energy * physical_state.battery_health.committed_soh)
     relative_basis = state_config.get("terminal_soc_basis",
         state_config.get("initial_soc_basis", "nominal_capacity"))
-    relative_targets = degradation_settings.mode == "naumann_lfp" and relative_basis == "available_capacity"
+    relative_targets = degradation_settings.mode in {"naumann_lfp", "linear_soh"} and relative_basis == "available_capacity"
     target_soc = (state_config.get("terminal_soc_percent")
         if relative_targets and "terminal_target_mwh" not in state_config else None)
     minimum_soc = (state_config.get("terminal_soc_min_percent")

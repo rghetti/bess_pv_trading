@@ -69,7 +69,7 @@ def _actual_boundary(config, grid, dispatch, first):
     health = None
     # Frozen counterfactuals start with actual health and both residual-cycle
     # memories; reconstructing health from aggregate SOC would erase aging.
-    if config.get("degradation", {}).get("model") == "naumann_lfp":
+    if config.get("degradation", {}).get("model") in {"naumann_lfp", "linear_soh"}:
         column = "battery_health_end" if first else "battery_health_start"
         selected = prefix.iloc[-1] if first else dispatch.iloc[first]
         if column not in selected:

@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -23,6 +24,24 @@ def oracle_inputs(length=29, scenarios=1):
         np.full(scenarios, 1 / scenarios), DegradationSettings(20),
         policy="ensemble_mpc_price_oracle", settings=mpc.MpcSettings(terminal_inventory_mode="none"),
         oracle=mpc.OraclePrices(np.linspace(100, 300, length)))
+
+
+def test_linear_soh_is_rejected_before_mpc_assumes_nominal_capacity():
+    """Unsupported controllers fail rather than silently dropping shrinking SOH."""
+    from bess_pv_trading.optimization.adaptive_mpc import build_research_model
+    from bess_pv_trading.simulation.energy_price_inputs import conditional_terminal_value
+    from bess_pv_trading.simulation.realtime_control import RealtimeControl
+
+    aging = SimpleNamespace(mode="linear_soh")
+    with pytest.raises(ValueError, match="not yet supported by MPC"):
+        replace(oracle_inputs(length=1), degradation=aging)
+    with pytest.raises(ValueError, match="not yet supported by adaptive MPC"):
+        build_research_model(SimpleNamespace(degradation=aging))
+    replay = SimpleNamespace(aging=aging)
+    with pytest.raises(ValueError, match="not yet supported by real-time MPC"):
+        RealtimeControl(replay)
+    with pytest.raises(ValueError, match="not yet supported by MPC continuation"):
+        conditional_terminal_value(replay, None, None, None)
 
 
 def test_currency_allowance_accumulates_horizon_but_not_duplicate_scenario_count():

@@ -104,17 +104,22 @@ def _save_battery_health(config, destination, frame):
     """Persist the actual daily capacity handoff and its separate wear valuation."""
     if "battery_soh_end" not in frame:
         return {}
-    health_columns = [name for name in frame if name.startswith("naumann_")
+    health_columns = [name for name in frame if name.startswith(("naumann_", "linear_"))
         or name.startswith("battery_soh_") or name.startswith("available_capacity_mwh_")]
-    health_timezone = (config.get("degradation", {}).get("naumann") or {}).get("timezone",
+    aging_mode = config.get("degradation", {}).get("model")
+    parameters = "linear_soh" if aging_mode == "linear_soh" else "naumann"
+    active_day_column = "linear_active_day_end" if aging_mode == "linear_soh" else "naumann_active_day_end"
+    health_timezone = (config.get("degradation", {}).get(parameters) or {}).get("timezone",
         config.get("market", {}).get("timezone", "Europe/Rome"))
+    component_columns = ("calendar_capacity_loss_fraction", "cycle_capacity_loss_fraction",
+                         "calendar_degradation_eur", "cycle_degradation_eur")
     # A daily row records the last physical boundary, while financial wear sums
     # only that day's executed increments rather than repeated forecast costs.
     rows = []
     for day, selected in frame.groupby("delivery_day", sort=True):
         last = selected.iloc[-1]
         observed_through = pd.Timestamp(selected.end.iloc[-1])
-        committed_at = pd.Timestamp(str(last.naumann_active_day_end), tz=health_timezone).tz_convert("UTC")
+        committed_at = pd.Timestamp(str(last[active_day_column]), tz=health_timezone).tz_convert("UTC")
         day_start = pd.Timestamp(day, tz=health_timezone).tz_convert("UTC")
         day_end = (pd.Timestamp(day) + pd.DateOffset(days=1)).tz_localize(health_timezone).tz_convert("UTC")
         row = {"delivery_day": day, "committed_at_utc": committed_at,
@@ -126,6 +131,8 @@ def _save_battery_health(config, destination, frame):
             "final_soh": float(selected.battery_soh_end.iloc[-1]),
             "noncash_degradation_cost_eur": float(selected.degradation_eur.sum()),
             "realized_market_cashflow_eur": float(selected.realized_market_cashflow_eur.sum())}
+        # Sum incremental loss and valuation, never cumulative health snapshots.
+        row.update({name: float(selected[name].sum()) for name in component_columns if name in selected})
         rows.append(row)
     daily = pd.DataFrame(rows)
     daily.to_csv(destination / "csv/battery_health_daily.csv", index=False)
@@ -136,6 +143,7 @@ def _save_battery_health(config, destination, frame):
         "noncash_degradation_cost_eur": float(frame.degradation_eur.sum()),
         "realized_market_cashflow_eur": float(frame.realized_market_cashflow_eur.sum()),
         "soc_reporting_basis": "committed_available_capacity"}
+    summary.update({name: float(frame[name].sum()) for name in component_columns if name in frame})
     _write_json(destination / "json/battery_health.json", summary)
     if config.get("experiment_outputs", {}).get("plots", True):
         import matplotlib
@@ -193,6 +201,11 @@ def _daily_kpis(config, strategy, frame, solves, initial_expected):
             "auction_revenue_eur", "imbalance_cashflow_eur", "degradation_eur",
             "import_fee_eur", "transaction_fee_eur", "imbalance_penalty_eur",
             "illustrative_imbalance_penalty_eur")})
+        # Expose executed component losses alongside the model-independent wear total.
+        for column in ("calendar_capacity_loss_fraction", "cycle_capacity_loss_fraction",
+                       "calendar_degradation_eur", "cycle_degradation_eur"):
+            if column in daily:
+                row[column] = float(daily[column].sum())
         # Aging-aware SOC uses that boundary's committed available capacity;
         # retain the nominal percentages explicitly for comparison with legacy runs.
         if "available_capacity_mwh_start" in daily:

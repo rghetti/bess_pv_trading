@@ -172,8 +172,8 @@ class ContinuousReplay:
             "config_fingerprint": self.config_fingerprint, "input_fingerprint": prepared["input_fingerprint"]}
         # Existing modes retain their checkpoint identity; health adds new state
         # and therefore cannot resume a legacy replay under its old policy.
-        if self.aging.mode == "naumann_lfp":
-            self.identity["policy_version"] += "-naumann-lfp-v1"
+        if self.aging.mode in {"naumann_lfp", "linear_soh"}:
+            self.identity["policy_version"] += ("-naumann-lfp-v1" if self.aging.mode == "naumann_lfp" else "-linear-soh-v1")
         # Enforce the input contract: Continuous strategy output exists: `self.destination`.
         if self.destination.exists() and not resume:
             raise FileExistsError(f"Continuous strategy output exists: {self.destination}")
@@ -195,7 +195,7 @@ class ContinuousReplay:
         self.state = PhysicalState(self.grid.starts[0], prepared["initial_energy_mwh"],
             origin="known_delivery_start_assumption",
             cycle_segment_energy_mwh=config["state"].get("cycle_segment_energy_mwh"))
-        if self.aging.mode == "naumann_lfp":
+        if self.aging.mode in {"naumann_lfp", "linear_soh"}:
             self.state = replace(self.state, battery_health=restore_battery_health(
                 config["state"].get("battery_health")))
             self.state = initialize_physical_health(self.state, self.plant.battery, self.aging)
@@ -711,7 +711,7 @@ class ContinuousReplay:
             "actual_initial_energy_mwh": None, "prediction_error_mwh": None,
             **({"predicted_initial_battery_health": asdict(boundary.battery_health),
                 "actual_initial_battery_health": None, "soh_prediction_error": None}
-               if self.aging.mode == "naumann_lfp" else {}),
+               if self.aging.mode in {"naumann_lfp", "linear_soh"} else {}),
             **({"projection_mode": "projected_soc_mpc_deterministic",
                 "mpc_plan_cutoff_utc": next(iter(self.realtime.state.latest_plan.values()), {}).get("issued_at"),
                 "projection_fallback_intervals": sum(bool(row.get("projection_fallback")) for row in projection),
@@ -1080,7 +1080,7 @@ class ContinuousReplay:
             if prediction["actual_initial_energy_mwh"] is None and pd.Timestamp(prediction["planning_start_utc"]) == self.state.timestamp:
                 prediction["actual_initial_energy_mwh"] = self.state.energy_mwh
                 prediction["prediction_error_mwh"] = self.state.energy_mwh - prediction["predicted_initial_energy_mwh"]
-                if self.aging.mode == "naumann_lfp":
+                if self.aging.mode in {"naumann_lfp", "linear_soh"}:
                     actual_health = asdict(self.state.battery_health)
                     prediction["actual_initial_battery_health"] = actual_health
                     prediction["soh_prediction_error"] = (
@@ -1133,7 +1133,7 @@ class ContinuousReplay:
             "planned_energy_end_mwh": detail.get("soc_end_mwh"),
             **({"planned_available_capacity_end_mwh": detail.get("forecast_available_capacity_end_mwh"),
                 "planned_health_lower_end": detail.get("forecast_health_lower_end")}
-               if self.aging.mode == "naumann_lfp" else {}),
+               if self.aging.mode in {"naumann_lfp", "linear_soh"} else {}),
             **({"controller": self.dispatch_policy, "mpc_solve_id": detail.get("mpc_solve_id"),
                 "pv_utilization_fraction": fraction, "mpc_fallback": detail.get("mpc_fallback", False),
                 "mpc_failure_reason": detail.get("mpc_failure_reason"),
@@ -1198,12 +1198,12 @@ class ContinuousReplay:
             if self.progress:
                 day = self.day_for_product[self.grid.interval_ids[event.payload]]
                 capacity = self.plant.battery.capacity_mwh
-                if self.aging.mode == "naumann_lfp":
+                if self.aging.mode in {"naumann_lfp", "linear_soh"}:
                     capacity *= self.state.battery_health.committed_soh
                 soc = f"{100 * self.state.energy_mwh / capacity:.2f}%" if capacity else "not applicable"
                 self.progress(f"Continuous {self.strategy}: completed {day}; "
                     f"SOC {soc}" + (f" of available capacity; SOH {100 * self.state.battery_health.committed_soh:.3f}%"
-                        if self.aging.mode == "naumann_lfp" else "") + "; "
+                        if self.aging.mode in {"naumann_lfp", "linear_soh"} else "") + "; "
                     f"{len(self.solves)} auction solves")
             if at_battery_end_of_life(getattr(self, "state", None), getattr(self, "aging", None)):
                 raise BatteryEndOfLifeReached(self.state)
@@ -1310,7 +1310,7 @@ class ContinuousReplay:
         pd.DataFrame(self.forecast_inputs).to_csv(self.destination / "csv/pv_forecast_inputs.csv", index=False)
         final_target_soc, final_minimum_soc = relative_terminal_soc(self.config["state"], self.aging.mode)
         final_capacity = (self.plant.battery.capacity_mwh * self.state.battery_health.committed_soh
-            if self.aging.mode == "naumann_lfp" else self.plant.battery.capacity_mwh)
+            if self.aging.mode in {"naumann_lfp", "linear_soh"} else self.plant.battery.capacity_mwh)
         final_target = (self.prepared["terminal_energy_mwh"] if final_target_soc is None
             else final_capacity * final_target_soc / 100)
         final_minimum = (self.prepared["terminal_minimum_energy_mwh"] if final_minimum_soc is None
@@ -1398,8 +1398,8 @@ def run_continuous_experiment(config, *, progress=None):
             resume=resume, preserve=("run.lock",))
         identity = {"policy_version": CONTINUOUS_POLICY_VERSION,
             "config_fingerprint": _configuration_fingerprint(config), "input_fingerprint": prepared["input_fingerprint"]}
-        if config.get("degradation", {}).get("model") == "naumann_lfp":
-            identity["policy_version"] += "-naumann-lfp-v1"
+        if config.get("degradation", {}).get("model") in {"naumann_lfp", "linear_soh"}:
+            identity["policy_version"] += ("-naumann-lfp-v1" if config["degradation"]["model"] == "naumann_lfp" else "-linear-soh-v1")
         manifest_path = destination / "json/manifest.json"
         # When `manifest_path.exists()`, set `previous` using `json.loads(manifest_path.read_text())`.
         if manifest_path.exists():
