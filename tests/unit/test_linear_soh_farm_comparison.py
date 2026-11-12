@@ -11,6 +11,34 @@ import run_linear_soh_farm_comparison as study
 from bess_pv_trading.optimization.degradation import degradation_settings_from_config
 
 
+def test_worker_interrupt_runs_job_cleanup(tmp_path, monkeypatch):
+    """An interrupted preflight still reaches the worker's cleanup clause."""
+    from bess_pv_trading.simulation import continuous, continuous_inputs
+    (tmp_path / "logs").mkdir()
+    monkeypatch.setattr(continuous_inputs, "_replacement_evidence", lambda config: {"status": "pinned", "checksums": {}})
+    def interrupt(config, *, progress):
+        raise KeyboardInterrupt()
+    collected = []
+    monkeypatch.setattr(continuous, "run_continuous_experiment", interrupt)
+    monkeypatch.setattr(study.gc, "collect", lambda: collected.append(True))
+    def exit_worker(code):
+        raise SystemExit(code)
+    monkeypatch.setattr(study.os, "_exit", exit_worker)
+    job = study.resolve_jobs(tmp_path)[0]
+    with pytest.raises(SystemExit, match="130"):
+        study.run_job(job, tmp_path)
+    assert collected == [True]
+
+
+def test_worker_term_handler_unwinds_and_prevents_repeated_interrupt(monkeypatch):
+    """Parent termination becomes one KeyboardInterrupt rather than abrupt exit."""
+    seen = []
+    monkeypatch.setattr(study.signal, "signal", lambda sig, handler: seen.append((sig, handler)))
+    with pytest.raises(KeyboardInterrupt):
+        study._interrupt_worker(study.signal.SIGTERM, None)
+    assert seen == [(study.signal.SIGTERM, study.signal.SIG_IGN)]
+
+
 def test_plan_defaults_to_eight_concurrent_jobs_and_allows_override(capsys):
     """The preview reports the actual requested worker count without launching jobs."""
     assert study.main(["--run-id", "worker_preview"]) == 0

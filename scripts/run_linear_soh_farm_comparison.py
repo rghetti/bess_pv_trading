@@ -11,8 +11,10 @@ import fcntl
 import gc
 import json
 import multiprocessing
+import os
 from pathlib import Path
 import re
+import signal
 import sys
 import traceback
 
@@ -27,6 +29,19 @@ from bess_pv_trading.simulation.continuous import _configuration_fingerprint
 FARMS = (1, 345, 901, 910)
 CASES = {"linear_soh": ROOT / "configs/research/linear_soh_all_farms_2026.yaml",
          "throughput": ROOT / "configs/research/throughput_all_farms_2026.yaml"}
+
+
+def _interrupt_worker(signum, frame):
+    """Unwind the active run once so its cache and file cleanup can execute."""
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    raise KeyboardInterrupt("Study worker interrupted")
+
+
+def initialize_worker():
+    """Let the parent coordinate Ctrl-C and convert termination into cleanup."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+    signal.signal(signal.SIGTERM, _interrupt_worker)
+    configure_worker_threads(1, True)
 
 
 def resolve_jobs(batch):
@@ -49,6 +64,7 @@ def run_job(job, batch, resume=False):
     farm, mode = job["farm"], job["mode"]
     log = Path(batch) / "logs" / f"farm_{farm}_{mode}.log"
     result = {"farm": farm, "mode": mode, "status": "failed", "log": str(log)}
+    interrupted = False
     with log.open("a" if resume else "w", buffering=1) as stream, redirect_stdout(stream), redirect_stderr(stream):
         try:
             def progress(message):
@@ -70,6 +86,10 @@ def run_job(job, batch, resume=False):
             result["forecast_model_checksums"] = initial_model["checksums"]
             result["status"] = "complete"
             progress("Finished")
+        except KeyboardInterrupt:
+            # Exit this worker after cleanup; it must not take a queued job.
+            interrupted = True
+            print("Interrupted; releasing run resources.", file=stream, flush=True)
         except Exception as error:
             result["status"] = getattr(error, "status", "failed")
             result["error"] = str(error)
@@ -81,6 +101,8 @@ def run_job(job, batch, resume=False):
             # A worker can receive another case; collect unreachable preflight
             # and replay objects once this run has returned or failed.
             gc.collect()
+    if interrupted:
+        os._exit(130)
     return result
 
 
@@ -445,7 +467,7 @@ def main(argv=None):
     write_manifest(manifest_path, manifest)
     # Eight independent jobs share a queue; each free slot takes the next job.
     pool = ProcessPoolExecutor(max_workers=args.workers, mp_context=multiprocessing.get_context("spawn"),
-                               initializer=configure_worker_threads, initargs=(1, True))
+                               initializer=initialize_worker)
     try:
         futures = {pool.submit(run_job, job, batch, args.resume): job for job in jobs}
         for future in as_completed(futures):
@@ -457,7 +479,8 @@ def main(argv=None):
             results.append(result)
             write_manifest(manifest_path, manifest)
     except KeyboardInterrupt:
-        # ProcessPoolExecutor otherwise waits for multi-hour trajectories on Ctrl-C.
+        # SIGTERM is converted to KeyboardInterrupt in workers, so preflight
+        # context managers and run_job's finally clause release their caches.
         for worker in tuple(pool._processes.values()):
             worker.terminate()
         pool.shutdown(wait=True, cancel_futures=True)

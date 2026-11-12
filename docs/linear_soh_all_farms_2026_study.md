@@ -112,3 +112,7 @@ Transient raw-vintage, PV-conversion and issue-context caches are cleared after
 preflight; the pinned forecasts needed for replay remain until the run finishes.
 The worker then collects unreachable objects before taking another job. Python
 and native allocators may retain freed memory for reuse.
+On Ctrl-C, the parent interrupts each worker so its active preflight context
+and worker cleanup can unwind before that worker exits. Native solver or
+inference calls may delay Python signal handling; an uncatchable force-kill
+cannot run cleanup handlers, though the operating system reclaims process memory.
