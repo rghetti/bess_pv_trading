@@ -150,16 +150,57 @@ def summarize_run(directory, reference_rate, fine_segments=100):
     return result
 
 
+def compare_schedules(directory, reference_directory):
+    """Compare matched realized controls and submitted positions interval by interval."""
+    def read_dispatch(run):
+        run = Path(run)
+        manifest = json.loads((run / "json/manifest.json").read_text())
+        if manifest.get("status") != "complete":
+            raise ValueError(f"Schedule comparison requires a complete run: {run}")
+        config = json.loads((run / "json/study_config.json").read_text())
+        modes = config["continuous_optimization"]["planning_modes"]
+        if len(modes) != 1:
+            raise ValueError("Schedule comparison requires exactly one planning mode")
+        return pd.read_csv(run / "strategies" / modes[0] / "csv/realized_dispatch.csv")
+
+    actual = read_dispatch(directory)
+    reference = read_dispatch(reference_directory)
+    # Require identical intervals rather than silently comparing only an overlap.
+    for column in ("start", "end"):
+        if not pd.to_datetime(actual[column], utc=True).equals(pd.to_datetime(reference[column], utc=True)):
+            raise ValueError(f"Dispatch {column} timestamps differ")
+    durations = pd.to_numeric(actual.duration_hours).to_numpy()
+    if not np.allclose(durations, pd.to_numeric(reference.duration_hours), atol=1e-10, rtol=0):
+        raise ValueError("Dispatch interval durations differ")
+    metrics = {"run": str(directory), "schedule_reference": str(reference_directory)}
+    for column in ("net_position_mwh", "grid_target_mw", "charge_mw", "discharge_mw", "energy_end_mwh"):
+        differences = np.abs(pd.to_numeric(actual[column]).to_numpy()
+                             - pd.to_numeric(reference[column]).to_numpy())
+        if not np.isfinite(differences).all():
+            raise ValueError(f"Missing or invalid values in {column}")
+        metrics[f"mean_absolute_{column}_difference"] = float(np.mean(differences))
+        if column.endswith("_mw"):
+            metrics[f"total_absolute_{column}_difference_mwh"] = float(np.dot(differences, durations))
+    return metrics
+
+
 def main():
     """Print one row per requested run, including failures and missing cases."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("runs", nargs="+", help="Continuous experiment output directories")
     parser.add_argument("--reference-rate", type=float, default=0.5, help="Fixed reference C-rate")
     parser.add_argument("--fine-segments", type=int, default=100, help="Depth segments for the fine post-processing graph")
+    parser.add_argument("--schedule-reference", help="Completed run used for matched schedule comparison")
     arguments = parser.parse_args()
     rows = [summarize_run(path, arguments.reference_rate, arguments.fine_segments) for path in arguments.runs]
     # Tiny squared-loss exposures must not be rounded to identical values.
     print(pd.DataFrame(rows).to_string(index=False, float_format=lambda value: f"{value:.9g}"))
+    if arguments.schedule_reference:
+        complete = [row["run"] for row in rows if row["run_status"] == "complete"]
+        comparisons = [compare_schedules(run, arguments.schedule_reference) for run in complete]
+        if comparisons:
+            print("\nMatched schedule differences:")
+            print(pd.DataFrame(comparisons).to_string(index=False, float_format=lambda value: f"{value:.9g}"))
 
 
 if __name__ == "__main__":

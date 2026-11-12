@@ -93,3 +93,23 @@ def test_incomplete_sequential_run_uses_its_actual_strategy_path(tmp_path):
     result = report.summarize_run(tmp_path, .5)
     assert result["planning_mode"] == "current_auction_only"
     assert result["auction_attempts"] == 1
+
+
+def test_schedule_comparison_aligns_intervals_and_integrates_power(tmp_path):
+    """Compare matched positions and compute the energy implied by power differences."""
+    paths = [tmp_path / "first", tmp_path / "reference"]
+    for index, run in enumerate(paths):
+        (run / "json").mkdir(parents=True)
+        (run / "json/manifest.json").write_text(json.dumps({"status": "complete"}))
+        (run / "json/study_config.json").write_text(json.dumps({
+            "continuous_optimization": {"planning_modes": ["current_auction_only"]}}))
+        output = run / "strategies/current_auction_only/csv"
+        output.mkdir(parents=True)
+        pd.DataFrame({"start": ["2026-01-01T00:00Z"], "end": ["2026-01-01T00:15Z"],
+                      "duration_hours": [.25], "net_position_mwh": [index * .1],
+                      "grid_target_mw": [index * .4], "charge_mw": [index * .2],
+                      "discharge_mw": [0.], "energy_end_mwh": [index * .05]}).to_csv(
+                          output / "realized_dispatch.csv", index=False)
+    result = report.compare_schedules(*paths)
+    assert result["mean_absolute_net_position_mwh_difference"] == pytest.approx(.1)
+    assert result["total_absolute_grid_target_mw_difference_mwh"] == pytest.approx(.1)
