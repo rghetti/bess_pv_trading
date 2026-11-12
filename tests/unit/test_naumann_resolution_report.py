@@ -66,3 +66,19 @@ def test_failed_run_reports_attempts_without_claiming_health(tmp_path):
     assert result["last_validation_failure"] == "depth dose"
     assert "final_soh" not in result
     assert report.summarize_run(tmp_path / "missing", .5)["run_status"] == "not_started_or_missing"
+
+
+def test_incomplete_sequential_run_uses_its_actual_strategy_path(tmp_path):
+    """Read the sequential strategy rather than misreporting an empty run."""
+    (tmp_path / "json").mkdir()
+    (tmp_path / "json/manifest.json").write_text(json.dumps({"status": "failed"}))
+    (tmp_path / "json/study_config.json").write_text(json.dumps({
+        "continuous_optimization": {"planning_modes": ["current_auction_only"]}}))
+    attempt_dir = tmp_path / "strategies/current_auction_only/json"
+    attempt_dir.mkdir(parents=True)
+    (attempt_dir / "optimization_attempts.json").write_text(json.dumps([
+        {"status": "optimal", "runtime_seconds": 3}
+    ]))
+    result = report.summarize_run(tmp_path, .5)
+    assert result["planning_mode"] == "current_auction_only"
+    assert result["auction_attempts"] == 1

@@ -65,7 +65,12 @@ def summarize_run(directory, reference_rate):
     if not (directory / "json/manifest.json").exists():
         return {"run": str(directory), "run_status": "not_started_or_missing"}
     manifest = json.loads((directory / "json/manifest.json").read_text())
-    output = directory / "strategies/integrated"
+    config_path = directory / "json/study_config.json"
+    config = json.loads(config_path.read_text()) if config_path.exists() else {}
+    modes = config.get("continuous_optimization", {}).get("planning_modes", ["integrated"])
+    if len(modes) != 1:
+        raise ValueError(f"Report requires exactly one planning mode: {directory}")
+    output = directory / "strategies" / modes[0]
     attempts_path = output / "json/optimization_attempts.json"
     attempts = json.loads(attempts_path.read_text()) if attempts_path.exists() else []
     times = [item["runtime_seconds"] for item in attempts if item.get("runtime_seconds") is not None]
@@ -77,6 +82,7 @@ def summarize_run(directory, reference_rate):
     result = {
         "run": str(directory),
         "run_status": manifest.get("status", "unknown"),
+        "planning_mode": modes[0],
         "run_error": manifest.get("error"),
         "auction_attempts": len(attempts),
         "optimal_solves": sum(item.get("status") == "optimal" for item in attempts),
@@ -93,7 +99,8 @@ def summarize_run(directory, reference_rate):
     # Never interpret a partial trajectory as a completed study's health result.
     if manifest.get("status") != "complete":
         return result
-    config = json.loads((directory / "json/study_config.json").read_text())
+    if not config:
+        raise ValueError(f"Completed run has no study configuration: {directory}")
     settings = NaumannSettings(**config["degradation"]["naumann"])
     capacity = float(config["battery"]["capacity_mwh"])
     frame = pd.read_csv(output / "csv/realized_dispatch.csv")
