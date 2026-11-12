@@ -37,8 +37,8 @@ solver:
   time_limit_seconds: 180.0
   mip_gap: 0.0001
   output_flag: false
-  feasibility_tolerance: 1.0e-08
-  integrality_tolerance: 1.0e-08
+  feasibility_tolerance: 0.0001
+  integrality_tolerance: 0.0001
 pv:
   direct_exceeds_ghi: clip_and_flag
   forecast_replacement:

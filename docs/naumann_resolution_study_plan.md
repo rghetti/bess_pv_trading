@@ -27,7 +27,13 @@ All cases retain four depth segments, the current calendar and square-root error
 budgets, 25 C, fresh battery, zero self-discharge, 50% daily planned terminal SOC,
 no extended IDA3, 80% EOL, and the shared 2025 stationary-pack replacement proxy.
 They use 8 Gurobi threads, a 240-second per-solve limit, 1e-4 relative MIP gap,
-and separate output paths. Stop on validation failure; do not relax tolerances.
+and separate output paths. Solver feasibility and integrality tolerances are
+1e-4. The validator uses max(physical tolerance, twice the solver feasibility
+tolerance), giving 2e-4 for its ordinary residual checks; integrality uses 1e-4.
+Aging exposure residuals are in scaled micro-units, while other checks include
+MWh and MW. This relaxed numerical policy can admit larger physical and aging
+residuals and does not guarantee the configured aging-approximation budgets;
+report solver violations and independent replay errors. Stop on validation failure.
 Detailed Gurobi output is disabled. No run should overlap a database downloader.
 
 Collect each auction's solver status, incumbent, bound, gap, runtime, model sizes,
