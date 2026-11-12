@@ -53,6 +53,10 @@ def test_comparison_checks_matching_inputs_and_separates_cash_and_wear(tmp_path)
             data["battery_soh_start"] = [1.]
             data["battery_soh_end"] = [.99]
         pd.DataFrame(data).to_csv(output / "realized_dispatch.csv", index=False)
+        pd.DataFrame({"interval_id": ["t", "t"], "auction": ["DA", "IDA1"],
+                      "cashflow_eur": [20., -10.], "purchased_mwh": [0., .1],
+                      "sold_mwh": [.2, 0.], "transaction_fee_eur": [0., 0.]}).to_csv(
+                          output / "accepted_trades.csv", index=False)
         results.append({"farm": 1, "mode": mode, "status": "complete"})
     output, count = study.paired_summary(tmp_path, results)
     result = pd.read_csv(output)
@@ -61,6 +65,9 @@ def test_comparison_checks_matching_inputs_and_separates_cash_and_wear(tmp_path)
     markdown = (tmp_path / "comparison.md").read_text()
     assert "Matched battery-aging comparison" in markdown
     assert "Excluded incomplete or unmatched farms" in markdown
+    assert "Booked auction cash flows" in markdown
+    auctions = pd.read_csv(tmp_path / "auction_comparison.csv")
+    assert auctions[(auctions["mode"] == "linear_soh") & (auctions.auction == "IDA1")].cashflow_eur.iloc[0] == -10.
     assert (result.market_cash_eur == 7.).all()
     assert (result.cash_minus_model_wear_eur == 4.).all()
     assert result.loc[result["mode"] == "linear_soh", "final_soh"].iloc[0] == pytest.approx(.99)

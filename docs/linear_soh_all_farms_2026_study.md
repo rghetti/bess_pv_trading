@@ -92,3 +92,9 @@ After the queue finishes, `summary.json` and `comparison.md` provide a
 machine-readable summary and a readable comparison. Incomplete farm pairs are
 excluded and listed explicitly; matching-input errors are recorded in the
 manifest rather than reported as a valid comparison.
+The Markdown, JSON and `auction_comparison.csv` also show booked DA, IDA1,
+IDA2 and IDA3 cash flows, gross purchased and sold MWh and transaction fees
+for each completed farm and case. Signed auction cash excludes fees and is
+reconciled to delivered-interval revenue. It describes booked trades rather
+than causally attributing profit; individual trades remain in each run's
+`accepted_trades.csv`.

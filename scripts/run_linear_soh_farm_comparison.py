@@ -229,6 +229,7 @@ def paired_summary(batch, results):
 
     completed = {(x["farm"], x["mode"]) for x in results if x["status"] == "complete"}
     rows = []
+    auction_rows = []
     health_by_farm = {}
     for farm in FARMS:
         if not all((farm, mode) in completed for mode in CASES):
@@ -283,6 +284,19 @@ def paired_summary(batch, results):
                 or not np.allclose(first.pv_ac_mw, second.pv_ac_mw, atol=1e-9, rtol=0)):
             raise ValueError(f"Farm {farm} has different interval or realized PV data")
         for mode, frame in frames.items():
+            # Attribute only booked trades belonging to the delivered intervals.
+            trade_path = roots[mode] / "strategies/integrated/csv/accepted_trades.csv"
+            trades = pd.read_csv(trade_path)
+            trades = trades[trades.interval_id.isin(set(frame.interval_id))].copy()
+            for auction in ("DA", "IDA1", "IDA2", "IDA3"):
+                selected = trades[trades.auction == auction]
+                auction_rows.append({"farm": farm, "mode": mode, "auction": auction,
+                    "cashflow_eur": float(selected.cashflow_eur.sum()),
+                    "purchased_mwh": float(selected.purchased_mwh.sum()),
+                    "sold_mwh": float(selected.sold_mwh.sum()),
+                    "transaction_fee_eur": float(selected.transaction_fee_eur.sum())})
+            if not np.isclose(trades.cashflow_eur.sum(), frame.auction_revenue_eur.sum(), atol=1e-6, rtol=1e-8):
+                raise ValueError(f"Farm {farm} {mode} auction cash does not reconcile with delivered dispatch")
             if "battery_soh_start" in frame and not np.isclose(frame.battery_soh_start.iloc[0], 1., atol=1e-10, rtol=0):
                 raise ValueError(f"Farm {farm} common wear proxy requires an initial SOH of 100%")
             cash = (frame.auction_revenue_eur + frame.imbalance_cashflow_eur
@@ -301,11 +315,12 @@ def paired_summary(batch, results):
                 health_by_farm[farm] = frame
     destination = Path(batch) / "comparison.csv"
     pd.DataFrame(rows).to_csv(destination, index=False)
+    pd.DataFrame(auction_rows).to_csv(Path(batch) / "auction_comparison.csv", index=False)
     # Persist a machine-readable summary and a compact report for complete pairs.
     summary = {"status": "complete" if len(rows) == 2 * len(FARMS) else "partial",
                "completed_farms": sorted({row["farm"] for row in rows}),
                "excluded_farms": sorted(set(FARMS) - {row["farm"] for row in rows}),
-               "cases": rows}
+               "cases": rows, "auctions": auction_rows}
     (Path(batch) / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
     lines = ["# Matched battery-aging comparison", "",
              f"Status: {summary['status']}. Completed farm pairs: {len(summary['completed_farms'])} of {len(FARMS)}.", "",
@@ -318,6 +333,13 @@ def paired_summary(batch, results):
         lines.append(f"| {row['farm']} | {row['mode']} | {row['days']} | {row['market_cash_eur']:.2f} | "
                      f"{row['model_wear_eur']:.2f} | {row['common_proxy_noncash_wear_eur']:.2f} | "
                      f"{row['throughput_mwh']:.3f} | {soh} |")
+    lines.extend(["", "## Booked auction cash flows", "",
+                  "Signed cash flow is sales less purchases, before transaction fees; volumes are gross.", "",
+                  "| Farm | Case | Auction | Cash flow (€) | Purchased (MWh) | Sold (MWh) | Fees (€) |",
+                  "| --- | --- | --- | ---: | ---: | ---: | ---: |"])
+    for row in auction_rows:
+        lines.append(f"| {row['farm']} | {row['mode']} | {row['auction']} | {row['cashflow_eur']:.2f} | "
+                     f"{row['purchased_mwh']:.3f} | {row['sold_mwh']:.3f} | {row['transaction_fee_eur']:.2f} |")
     lines.extend(["", "The common proxy is a counterfactual, not measured battery health; "
                   "the baseline dispatch was not rerun with fading capacity. Prices use a historical oracle."])
     if summary["excluded_farms"]:
@@ -420,6 +442,7 @@ def main(argv=None):
         manifest["comparison"], manifest["comparison_rows"] = paired_summary(batch, results)
         manifest["summary"] = str(batch / "summary.json")
         manifest["comparison_markdown"] = str(batch / "comparison.md")
+        manifest["auction_comparison"] = str(batch / "auction_comparison.csv")
         manifest["comparison_figures"] = sorted(str(path) for path in (batch / "figures").glob("*.png"))
     except Exception as error:
         manifest["status"] = "comparison_failed"
