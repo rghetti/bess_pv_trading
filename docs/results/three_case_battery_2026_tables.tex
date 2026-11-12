@@ -1,0 +1,118 @@
+% Requires \usepackage{graphicx} for \resizebox.
+
+\begin{table}[htbp]
+\centering
+\caption{Continuous integrated auction planning and greedy grid tracking, fixed capacity without degradation cost, 1 January--29 August 2026.}
+\label{tab:bess-three-case-no-wear}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrr}
+\hline
+Metric & Farm 1 & Farm 345 & Farm 901 & Farm 910 \\
+\hline
+Total installed PV capacity (MW) & 0.95328 & 1.52460 & 4.16000 & 6.63800 \\
+Forecasting model & BiGRU & BiGRU & TCN & TCN \\
+Battery nominal capacity (MWh) & 0.75 & 1.00 & 2.00 & 5.00 \\
+Realized market cash (EUR) & 172,979.14 & 274,888.90 & 978,109.81 & 1,585,512.74 \\
+Realized operating profit after model wear (EUR) & 172,979.14 & 274,888.90 & 978,109.81 & 1,585,512.74 \\
+Auction cash flow (EUR) & 180,720.18 & 291,117.78 & 1,040,918.14 & 1,718,451.19 \\
+DA cash flow (EUR) & 24,370.97 & 38,710.01 & 129,435.46 & 220,797.79 \\
+IDA1 cash flow (EUR) & -30,348.37 & -47,335.62 & -94,650.02 & -137,721.21 \\
+IDA2 cash flow (EUR) & 137,667.42 & 229,450.45 & 706,840.69 & 1,175,041.71 \\
+IDA3 cash flow (EUR) & 49,030.16 & 70,292.94 & 299,292.01 & 460,332.91 \\
+Signed imbalance settlement (EUR) & -7,741.04 & -16,228.88 & -62,808.33 & -132,938.45 \\
+Modeled degradation cost (EUR) & 0.00 & 0.00 & 0.00 & 0.00 \\
+Common proxy degradation cost (EUR) & 4,246.97 & 5,466.81 & 11,065.17 & 26,953.09 \\
+Gross PV production before curtailment (MWh) & 677.35 & 1,310.74 & 5,302.05 & 8,279.71 \\
+Absolute imbalance (MWh) & 52.56 & 101.82 & 416.26 & 851.94 \\
+Absolute imbalance / gross PV (\%) & 7.76 & 7.77 & 7.85 & 10.29 \\
+Signed net imbalance (MWh) & -41.43 & -89.50 & -370.27 & -785.75 \\
+PV curtailment (MWh) & 28.98 & 303.51 & 277.80 & 326.89 \\
+PV curtailment / gross PV (\%) & 4.28 & 23.16 & 5.24 & 3.95 \\
+Battery charge (MWh, AC) & 341.26 & 430.75 & 877.77 & 2,106.62 \\
+Battery discharge (MWh, AC) & 307.13 & 387.74 & 790.13 & 1,896.31 \\
+Final available-capacity SOC (\%) & 50.00 & 42.58 & 42.58 & 42.58 \\
+Final committed SOH (\%) & -- & -- & -- & -- \\
+\hline
+\end{tabular}%
+}
+\par\smallskip
+\parbox{0.98\textwidth}{\footnotesize\textit{Notes:} The 50\% SOC target is imposed in each delivery-day auction plan; the grid-tracking controller may finish at a different SOC. Market cash includes auction and imbalance cash less fees, while modeled wear is noncash; operating profit subtracts the case-specific wear and does not value terminal inventory. The common wear proxy revalues all executed trajectories with the same illustrative linear-SOH model; fixed-capacity cases were not rerun with fading capacity. Available-capacity SOC uses the committed end-of-day capacity; SOH is shown only for the aging-aware case. The daily two-EFC limit uses AC-side charge plus discharge divided by twice daily available capacity. Forecast models and realized PV are retrospective; actual auction prices are used as an oracle. Gross PV includes curated substitutions and precedes curtailment; PV percentages use gross PV as denominator. Negative imbalance indicates a shortfall.}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Continuous integrated auction planning and greedy grid tracking, fixed capacity with matched cycling cost, 1 January--29 August 2026.}
+\label{tab:bess-three-case-throughput}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrr}
+\hline
+Metric & Farm 1 & Farm 345 & Farm 901 & Farm 910 \\
+\hline
+Total installed PV capacity (MW) & 0.95328 & 1.52460 & 4.16000 & 6.63800 \\
+Forecasting model & BiGRU & BiGRU & TCN & TCN \\
+Battery nominal capacity (MWh) & 0.75 & 1.00 & 2.00 & 5.00 \\
+Realized market cash (EUR) & 172,778.36 & 274,709.29 & 978,492.12 & 1,584,360.66 \\
+Realized operating profit after model wear (EUR) & 170,526.83 & 271,821.02 & 972,575.31 & 1,570,635.04 \\
+Auction cash flow (EUR) & 180,253.16 & 289,462.22 & 1,039,033.35 & 1,710,176.83 \\
+DA cash flow (EUR) & 22,893.43 & 36,801.06 & 126,402.28 & 218,302.68 \\
+IDA1 cash flow (EUR) & -30,498.31 & -47,479.98 & -95,830.26 & -141,896.43 \\
+IDA2 cash flow (EUR) & 138,516.73 & 229,519.30 & 708,516.33 & 1,172,144.04 \\
+IDA3 cash flow (EUR) & 49,341.31 & 70,621.84 & 299,945.01 & 461,626.55 \\
+Signed imbalance settlement (EUR) & -7,474.79 & -14,752.94 & -60,541.23 & -125,816.17 \\
+Modeled degradation cost (EUR) & 2,251.53 & 2,888.26 & 5,916.80 & 13,725.63 \\
+Common proxy degradation cost (EUR) & 3,739.66 & 4,872.43 & 9,885.14 & 23,646.47 \\
+Gross PV production before curtailment (MWh) & 677.35 & 1,310.74 & 5,302.05 & 8,279.71 \\
+Absolute imbalance (MWh) & 44.70 & 88.48 & 376.49 & 786.50 \\
+Absolute imbalance / gross PV (\%) & 6.60 & 6.75 & 7.10 & 9.50 \\
+Signed net imbalance (MWh) & -40.45 & -80.96 & -360.15 & -749.69 \\
+PV curtailment (MWh) & 28.52 & 300.96 & 266.45 & 320.22 \\
+PV curtailment / gross PV (\%) & 4.21 & 22.96 & 5.03 & 3.87 \\
+Battery charge (MWh, AC) & 278.50 & 357.16 & 731.67 & 1,697.27 \\
+Battery discharge (MWh, AC) & 250.66 & 321.63 & 658.88 & 1,528.50 \\
+Final available-capacity SOC (\%) & 48.03 & 30.63 & 29.88 & 29.88 \\
+Final committed SOH (\%) & -- & -- & -- & -- \\
+\hline
+\end{tabular}%
+}
+\par\smallskip
+\parbox{0.98\textwidth}{\footnotesize\textit{Notes:} The 50\% SOC target is imposed in each delivery-day auction plan; the grid-tracking controller may finish at a different SOC. Market cash includes auction and imbalance cash less fees, while modeled wear is noncash; operating profit subtracts the case-specific wear and does not value terminal inventory. The common wear proxy revalues all executed trajectories with the same illustrative linear-SOH model; fixed-capacity cases were not rerun with fading capacity. Available-capacity SOC uses the committed end-of-day capacity; SOH is shown only for the aging-aware case. The daily two-EFC limit uses AC-side charge plus discharge divided by twice daily available capacity. Forecast models and realized PV are retrospective; actual auction prices are used as an oracle. Gross PV includes curated substitutions and precedes curtailment; PV percentages use gross PV as denominator. Negative imbalance indicates a shortfall.}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Continuous integrated auction planning and greedy grid tracking, daily SOH and fading capacity, 1 January--29 August 2026.}
+\label{tab:bess-three-case-linear-soh}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{lrrrr}
+\hline
+Metric & Farm 1 & Farm 345 & Farm 901 & Farm 910 \\
+\hline
+Total installed PV capacity (MW) & 0.95328 & 1.52460 & 4.16000 & 6.63800 \\
+Forecasting model & BiGRU & BiGRU & TCN & TCN \\
+Battery nominal capacity (MWh) & 0.75 & 1.00 & 2.00 & 5.00 \\
+Realized market cash (EUR) & 172,684.60 & 274,569.04 & 978,206.05 & 1,583,812.04 \\
+Realized operating profit after model wear (EUR) & 168,959.19 & 269,712.53 & 968,356.78 & 1,560,239.81 \\
+Auction cash flow (EUR) & 180,185.80 & 289,403.99 & 1,038,772.24 & 1,710,101.09 \\
+DA cash flow (EUR) & 22,952.17 & 37,131.01 & 126,050.98 & 218,393.31 \\
+IDA1 cash flow (EUR) & -30,663.05 & -47,596.03 & -94,859.50 & -141,188.13 \\
+IDA2 cash flow (EUR) & 138,903.88 & 230,481.11 & 707,517.84 & 1,172,815.94 \\
+IDA3 cash flow (EUR) & 48,992.79 & 69,387.89 & 300,062.92 & 460,079.97 \\
+Signed imbalance settlement (EUR) & -7,501.20 & -14,834.95 & -60,566.19 & -126,289.05 \\
+Modeled degradation cost (EUR) & 3,725.42 & 4,856.51 & 9,849.28 & 23,572.23 \\
+Common proxy degradation cost (EUR) & 3,725.42 & 4,856.51 & 9,849.28 & 23,572.23 \\
+Gross PV production before curtailment (MWh) & 677.35 & 1,310.74 & 5,302.05 & 8,279.71 \\
+Absolute imbalance (MWh) & 44.83 & 88.88 & 378.35 & 790.43 \\
+Absolute imbalance / gross PV (\%) & 6.62 & 6.78 & 7.14 & 9.55 \\
+Signed net imbalance (MWh) & -40.63 & -81.47 & -360.26 & -753.12 \\
+PV curtailment (MWh) & 28.35 & 301.27 & 269.69 & 320.46 \\
+PV curtailment / gross PV (\%) & 4.19 & 22.98 & 5.09 & 3.87 \\
+Battery charge (MWh, AC) & 276.73 & 355.19 & 727.24 & 1,688.10 \\
+Battery discharge (MWh, AC) & 249.08 & 319.86 & 654.89 & 1,520.22 \\
+Final available-capacity SOC (\%) & 47.99 & 30.96 & 30.97 & 30.92 \\
+Final committed SOH (\%) & 98.35 & 98.39 & 98.36 & 98.43 \\
+\hline
+\end{tabular}%
+}
+\par\smallskip
+\parbox{0.98\textwidth}{\footnotesize\textit{Notes:} The 50\% SOC target is imposed in each delivery-day auction plan; the grid-tracking controller may finish at a different SOC. Market cash includes auction and imbalance cash less fees, while modeled wear is noncash; operating profit subtracts the case-specific wear and does not value terminal inventory. The common wear proxy revalues all executed trajectories with the same illustrative linear-SOH model; fixed-capacity cases were not rerun with fading capacity. Available-capacity SOC uses the committed end-of-day capacity; SOH is shown only for the aging-aware case. The daily two-EFC limit uses AC-side charge plus discharge divided by twice daily available capacity. Forecast models and realized PV are retrospective; actual auction prices are used as an oracle. Gross PV includes curated substitutions and precedes curtailment; PV percentages use gross PV as denominator. Negative imbalance indicates a shortfall.}
+\end{table}
