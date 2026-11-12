@@ -45,3 +45,16 @@ losses, market cash, wear cost, throughput and imbalance. Use independent
 rainflow on complete executed paths with unfinished half-cycles and analytical
 versus segmented depth stress at 0.5C. Compare tradeoffs without claiming that
 any simulated trajectory is an empirical calibration of a commercial battery.
+
+For historical context, compare against the existing farm-1 four-cycle-neural
+grid-tracking throughput run with `scripts/compare_aging_baseline.py`. Compare
+realized market cash separately from noncash wear, then revalue both paths with
+the same analytical calendar and rainflow depth proxy, nominal SOC, fixed
+reference rate, replacement price and EOL. The baseline uses integrated rather
+than sequential auctions, an older cost assumption, and fixed capacity, so
+neither cash nor common-proxy wear differences isolate the aging formulation.
+Check input provenance, actual PV and interval matches. The counterfactual
+aging calculation does not rerun dispatch under shrinking capacity and cannot
+prove physical feasibility or predict real cell health. Objective validation of
+health accuracy requires held-out cell or pack capacity measurements under
+representative conditions, with rates, temperature and uncertainty documented.
