@@ -638,6 +638,8 @@ class OptimizationInput:
     terminal_minimum_soc_percent: float | None = None
     target_soc_percent_by_boundary: Mapping[int, float] = field(default_factory=dict)
     minimum_soc_percent_by_boundary: Mapping[int, float] = field(default_factory=dict)
+    # Allow only explicitly configured numerical residuals in carried commitments.
+    position_validation_tolerance_mwh: float = 1e-8
 
     def __post_init__(self) -> None:
         # Validate fee state only when the optimization includes transaction fees.
@@ -657,6 +659,7 @@ class OptimizationInput:
         for key in ("imbalance_penalty_eur_per_mwh", "grid_import_fee_eur_per_mwh"):
             finite_nonnegative(getattr(self, key), key)
         finite_nonnegative(self.imbalance_cvar_weight_eur_per_mwh, "imbalance CVaR weight")
+        finite_nonnegative(self.position_validation_tolerance_mwh, "position validation tolerance")
         if not 0 < self.imbalance_cvar_confidence < 1:
             raise ValueError("Imbalance CVaR confidence must be strictly between zero and one")
         if self.imbalance_cvar_weight_eur_per_mwh and not self.optimize_imbalances:
@@ -770,10 +773,16 @@ class OptimizationInput:
         # When `self.pending_position_mwh is not None`, set `fixed_positions` using `fixed_positions + np.asarray(self.pending_position_mwh)`.
         if self.pending_position_mwh is not None:
             fixed_positions = fixed_positions + np.asarray(self.pending_position_mwh)
-        # Enforce the input contract: Accepted plus pending submitted positions exceed POI energy bounds.
-        if (np.any(fixed_positions > self.plant.poi_export_mw * self.grid.delta_hours + 1e-8)
-                or np.any(fixed_positions < -self.plant.poi_import_mw * self.grid.delta_hours - 1e-8)):
-            raise ValueError("Accepted plus pending submitted positions exceed POI energy bounds")
+        # Keep accepted commitments intact; tolerate only the declared numerical residual.
+        export_excess = fixed_positions - self.plant.poi_export_mw * self.grid.delta_hours
+        import_excess = -fixed_positions - self.plant.poi_import_mw * self.grid.delta_hours
+        maximum_excess = max(0., float(np.max(export_excess)), float(np.max(import_excess)))
+        if maximum_excess > self.position_validation_tolerance_mwh:
+            index = int(np.argmax(np.maximum(export_excess, import_excess)))
+            raise ValueError("Accepted plus pending submitted positions exceed POI energy bounds: "
+                f"maximum excess {maximum_excess:.9g} MWh, "
+                f"tolerance {self.position_validation_tolerance_mwh:.9g} MWh, "
+                f"interval {self.grid.interval_ids[index]}, position {fixed_positions[index]:.9g} MWh")
         # Enforce the input contract: Auction masks and bid ownership must match.
         if set(self.auction_eligibility) != set(self.tree.bid_nodes):
             raise ValueError("Auction masks and bid ownership must match")

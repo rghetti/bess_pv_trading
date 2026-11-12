@@ -94,6 +94,20 @@ def test_ledger_cashflow_and_additive_position_without_energy_losses():
         ledger.accept(sold)
 
 
+def test_carried_position_respects_declared_tolerance_without_changing_orders():
+    """Accept only bounded numerical excess and preserve the submitted quantity."""
+    inputs = example_inputs(prices=((0, 0),), pv=np.zeros((1, 2)))
+    upper = inputs.plant.poi_export_mw * inputs.grid.delta_hours[0]
+    pending = (upper + 5e-5, 0.)
+    with pytest.raises(ValueError, match="maximum excess"):
+        replace(inputs, pending_position_mwh=pending)
+    carried = replace(inputs, pending_position_mwh=pending, position_validation_tolerance_mwh=1e-4)
+    assert carried.pending_position_mwh == pending
+    with pytest.raises(ValueError, match="tolerance"):
+        replace(inputs, pending_position_mwh=(upper + 2e-4, 0.),
+                position_validation_tolerance_mwh=1e-4)
+
+
 def test_state_timestamp_and_terminal_reachability_are_checked():
     inputs = example_inputs(battery=configured_battery("slow"))
     with pytest.raises(ValueError, match="timestamp"):

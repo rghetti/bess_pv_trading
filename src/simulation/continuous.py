@@ -651,6 +651,13 @@ class ContinuousReplay:
             native = {auction: native_price_resolution_minutes(
                 self.config["gme_oracle_experiment"]["auction_datasets"][auction]["dataset"],
                 pd.Timestamp(day).date()) for auction in masks}
+        # Apply the same numerical allowance to carried orders and solved positions.
+        feasibility_tolerance = float(self.config.get("solver", {}).get("feasibility_tolerance") or 1e-6)
+        position_tolerance = max(self.numerical_tolerances.physical_absolute, 2.0 * feasibility_tolerance)
+        fixed_positions = market.positions(grid) + np.asarray(pending_positions)
+        maximum_position_excess = max(0.,
+            float(np.max(fixed_positions - self.plant.poi_export_mw * grid.delta_hours)),
+            float(np.max(-fixed_positions - self.plant.poi_import_mw * grid.delta_hours)))
         inputs = OptimizationInput(grid=grid, plant=self.plant, state=boundary, market=market,
             scenarios=bundle, tree=tree, auction_eligibility=masks,
             imbalance_penalty_eur_per_mwh=(ensemble_settings["planning_imbalance_penalty_eur_per_mwh"]
@@ -666,6 +673,7 @@ class ContinuousReplay:
             imbalance_limit_mwh=self.trading.get("imbalance_limit_mwh"),
             planned_delivery_balance_resolution_minutes=self.trading.get("planned_delivery_balance_resolution_minutes"),
             pending_position_mwh=pending_positions,
+            position_validation_tolerance_mwh=position_tolerance,
             decision_resolution_minutes=int(self.config["gme_oracle_experiment"]["decision_resolution_minutes"]),
             market_timezone=self.prepared["calendar"].timezone,
             native_interval_minutes_by_auction={auction: native[auction] for auction in masks},
@@ -676,6 +684,8 @@ class ContinuousReplay:
             minimum_soc_percent_by_boundary=indexed_minimum_soc,
             target_soc_percent_by_boundary=indexed_target_soc)
         diagnostic = {"delivery_day": day, "current_auction": event.auction, "cutoff": cutoff.isoformat(),
+            "fixed_position_poi_max_excess_mwh": maximum_position_excess,
+            "fixed_position_poi_tolerance_mwh": position_tolerance,
             "cutoff_utc": cutoff.isoformat(), "strategy": self.strategy,
             "auction_planning_mode": "current_auction_only" if self.current_only else "integrated",
             "observed_state_timestamp": str(self.state.timestamp), "observed_energy_mwh": self.state.energy_mwh,
@@ -948,6 +958,10 @@ class ContinuousReplay:
         diagnostic["solution_validation_objective_relative_tolerance"] = objective_relative_tolerance
         diagnostic["solution_validation_component_absolute_tolerance_eur"] = tolerances.money_absolute_eur
         diagnostic["solution_validation_component_relative_tolerance"] = tolerances.relative
+        # Preserve the position residual even when compact validation output is selected.
+        position_errors = {name: value for name, value in validation.max_errors.items()
+                           if name.startswith(("cumulative_poi_", "final_poi_"))}
+        diagnostic["solution_position_poi_max_excess_mwh"] = max(position_errors.values(), default=0.)
         validation_mode = self.config["continuous_optimization"].get("validation_diagnostics", "full")
         diagnostic["validation"] = auction_validation_record(validation, validation_mode)
         # Enforce the input contract: Continuous solution validation failed: `validation.violations`.

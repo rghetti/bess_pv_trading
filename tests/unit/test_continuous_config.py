@@ -379,3 +379,12 @@ def test_cli_accepts_continuous_command_without_selecting_other_workflows(monkey
     assert selected[0][0] == "experiment-continuous"
     assert selected[0][1]["continuous_optimization"] == load_config(JANUARY)["continuous_optimization"]
     assert '"status": "complete"' in capsys.readouterr().out
+
+
+def test_cli_resume_only_changes_continuous_resume_flag(monkeypatch):
+    """Resume can be requested without editing the original study configuration."""
+    selected = []
+    monkeypatch.setattr(cli, "dispatch", lambda command, config: selected.append(config) or {})
+    assert cli.main(["experiment-continuous", "--config", str(JANUARY), "--resume"]) == 0
+    assert selected[0]["continuous_optimization"]["resume"] is True
+    assert cli.main(["optimize", "--config", str(JANUARY), "--resume"]) == 2
