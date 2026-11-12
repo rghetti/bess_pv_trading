@@ -32,3 +32,11 @@ half-cycle residues across midnight. Reweight interval cycle exposures by actual
 rate only as a sensitivity, not as an independent cycle-mean benchmark. Rank
 runtime and agreement without treating the finest case as empirical truth; high
 gaps, calibration uncertainty and three winter days limit all conclusions.
+
+The analytic worst absolute interpolation errors of the unscaled depth-dose
+function G(D), over D in [0, 1], are 3.23059e-5, 1.20269e-5 and 4.03827e-6
+for 4, 8 and 16 segments, respectively. These are per-depth-function errors
+before the squared C-rate factor and half-cycle weights; they are not annual
+SOH-error bounds. The measured square-root chord bound is 0.000195313 per
+component, and the annual calendar-interpolation bound is 0.000481687 SOH.
+Neither includes physical calibration uncertainty or solver feasibility errors.
