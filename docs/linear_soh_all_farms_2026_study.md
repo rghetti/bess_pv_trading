@@ -16,14 +16,19 @@ The baseline's denominator stays at nominal capacity, while the SOH case's
 denominator shrinks daily. The same two-cycle limit therefore permits different
 MWh budgets once health declines.
 
-Delivery is 1 January–31 August 2026 inclusive, the current end of the reviewed
-farm modeling datasets. The independent jobs use up to four workers at once,
+Delivery is 1 January–29 August 2026 inclusive, leaving the full 48-hour model
+forecast context inside the available weather data. The independent jobs use up to four workers at once,
 three Gurobi threads per solve and a 60-second per-solve limit. Native thread
 settings start at one per worker; PV inference configures PyTorch to use three
 threads per worker. A free worker takes the next queued trajectory until
 fewer than four remain. Failed cases are recorded and do not cancel the other
 cases. Gurobi logs are disabled; chronological progress is printed with a farm
 and case prefix and saved in the batch's `logs/` folder.
+
+The previous August 31 endpoint failed in preflight: the August 30 06:00 UTC
+weather vintage has missing values from September 1 00:00 UTC, while the neural
+model requires its complete 48-hour issue context. August 29 is the requested
+conservative endpoint; missing daytime data are not filled with zeros.
 
 No training, tuning or calibration is performed. PV is the latest eligible
 deterministic weather vintage with the configured six-hour availability lag and
@@ -37,7 +42,7 @@ downloaded. The independent per-job preflight checks all inputs before solving
 and records market snapshot IDs and checksums. Full dataset availability is not
 assumed from the aggregate checks below.
 
-A read-only catalog inspection found all 243 days for GME DA and TERNA NORD
+A read-only catalog inspection found all 241 selected days for GME DA and TERNA NORD
 imbalance. Entirely absent intraday-auction days are skipped according to the
 study's `skip_if_no_products_fail_if_partial` policy: IDA1 is absent 16 April,
 18 May, 16 July, 4, 5, 7 and 19 August; IDA2 is absent 16 and 22 April and
@@ -50,20 +55,20 @@ From the repository root, show the run plan without starting a simulation:
 
 ```sh
 conda activate bess
-python scripts/run_linear_soh_farm_comparison.py --run-id lfp_comparison_2026
+python scripts/run_linear_soh_farm_comparison.py --run-id lfp_comparison_2026_aug29
 ```
 
 Start the study from a terminal with:
 
 ```sh
-python -u scripts/run_linear_soh_farm_comparison.py --run-id lfp_comparison_2026 --run
+python -u scripts/run_linear_soh_farm_comparison.py --run-id lfp_comparison_2026_aug29 --run
 ```
 
 If interrupted, continue unfinished jobs from their checkpoints with the same
 run ID and unchanged configuration and inputs:
 
 ```sh
-python -u scripts/run_linear_soh_farm_comparison.py --run-id lfp_comparison_2026 --run --resume
+python -u scripts/run_linear_soh_farm_comparison.py --run-id lfp_comparison_2026_aug29 --run --resume
 ```
 
 Existing completed and EOL-stopped jobs are preserved and excluded from the

@@ -65,7 +65,7 @@ def test_eight_jobs_have_identical_operational_settings_and_current_pack_price(t
         assert left["battery"]["daily_cycle_limit_efc"] == 2
         assert left["execution"] == right["execution"]
         assert left["continuous_optimization"]["planning_modes"] == ["integrated"]
-        assert left["continuous_optimization"]["end_date"] == "2026-08-31"
+        assert left["continuous_optimization"]["end_date"] == "2026-08-29"
         assert degradation_settings_from_config(left).replacement_cost_eur == pytest.approx(
             degradation_settings_from_config(right).replacement_cost_eur)
         assert left["degradation"]["replacement_economics"]["pack_price_usd_per_kwh"] == 70

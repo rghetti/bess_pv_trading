@@ -7,8 +7,8 @@ forecast:
     dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
 continuous_optimization:
   start_date: '2026-01-01'
-  end_date: '2026-08-31'
-  context_end_date: '2026-08-31'
+  end_date: '2026-08-29'
+  context_end_date: '2026-08-29'
   ida3_next_day_horizon: false
   pin_tracker_forecast_replacement: true
   terminal_soc_scope: each_delivery_day

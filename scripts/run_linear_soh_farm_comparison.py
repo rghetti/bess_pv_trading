@@ -388,7 +388,7 @@ def main(argv=None):
         parser.error("run-id must contain letters, digits, underscores, hyphens or periods")
     batch = ROOT / "outputs/energy_research" / args.run_id
     jobs = resolve_jobs(batch)
-    plan = {"period": ["2026-01-01", "2026-08-31"], "farms": FARMS,
+    plan = {"period": ["2026-01-01", "2026-08-29"], "farms": FARMS,
             "cases": list(CASES), "jobs": len(jobs), "workers": 4, "solver_threads_per_job": 3,
             "native_threads_at_worker_start": 1, "pv_inference_threads_per_worker": 3,
             "daily_limit_efc": 2.0,
