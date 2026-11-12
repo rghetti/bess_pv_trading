@@ -39,6 +39,35 @@ Final committed SOH (\%) & -- & -- & -- & -- \\
 \parbox{0.98\textwidth}{\footnotesize\textit{Notes:} The 50\% SOC target is imposed in each delivery-day auction plan; the grid-tracking controller may finish at a different SOC. Market cash includes auction and imbalance cash less fees, while modeled wear is noncash; operating profit subtracts the case-specific wear and does not value terminal inventory. The common wear proxy revalues all executed trajectories with the same illustrative linear-SOH model; fixed-capacity cases were not rerun with fading capacity. Available-capacity SOC uses the committed end-of-day capacity; SOH is shown only for the aging-aware case. The daily two-EFC limit uses AC-side charge plus discharge divided by twice daily available capacity. Forecast models and realized PV are retrospective; actual auction prices are used as an oracle. Gross PV includes curated substitutions and precedes curtailment; PV percentages use gross PV as denominator. Negative imbalance indicates a shortfall.}
 \end{table}
 
+\section{Battery wear, control and realized accounting}
+\subsection{Linear SOH wear model}
+For replacement value $R$, nominal capacity $E_0$, reference cycle depth $d_0$,
+cycle life $N$, and committed state of health $h_d$ on delivery day $d$, the
+available capacity is $E_d=E_0h_d$. Calendar and cycling capacity losses are
+fractions of nominal capacity and accumulate as
+\begin{equation}
+\Delta q_{\rm cal}=\gamma_{\rm cal}\frac{\Delta t}{T_{\rm yr}},\qquad
+\Delta q_{\rm cyc}=\frac{\Delta E_{\rm int}}
+{2Nd_0E_0},\qquad
+h_{d+1}=1-q_{{\rm cal},d+1}-q_{{\rm cyc},d+1},
+\end{equation}
+where $\gamma_{\rm cal}$ is the calendar-loss fraction per year and
+$T_{\rm yr}=365\times24$ hours,
+$\Delta E_{\rm int}=(\eta_c c+d/\eta_d)\Delta t$ is internal charge-plus-
+discharge energy, and $c$ and $d$ are AC charge and discharge powers. The
+optimizer uses the current committed SOH for that delivery day, forecasts
+losses for future capacity constraints, and commits the updated SOH only at
+the end of each chronological day. Forecast damage is priced once as
+\begin{equation}
+C_{\rm wear}=\frac{R}{1-h_{\rm EOL}}
+\left(\Delta q_{\rm cal}+\Delta q_{\rm cyc}\right),
+\end{equation}
+where $h_{\rm EOL}$ is the end-of-life SOH threshold. This linear cycling
+approximation depends on internal throughput, not cycle depth. For the study
+calibration, $\gamma_{\rm cal}=0.01\,{\rm yr}^{-1}$, $N=6000$, $d_0=1$,
+and $h_{\rm EOL}=0.8$; the factor of two converts charge-plus-discharge
+energy to equivalent full cycles.
+
 \begin{table}[htbp]
 \centering
 \caption{Continuous integrated auction planning and greedy grid tracking, fixed capacity with matched cycling cost, 1 January--29 August 2026.}
