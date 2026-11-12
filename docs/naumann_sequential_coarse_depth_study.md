@@ -2,7 +2,7 @@
 
 The user requested sequential auction planning and seven Gurobi threads. This
 study supersedes the interrupted integrated-depth comparison. Farm 1, January
-1–3 2026, uses `current_auction_only`: each auction optimizes its own orders
+1–21 2026, uses `current_auction_only`: each auction optimizes its own orders
 against fixed earlier commitments without anticipating future auction decisions.
 It is a different policy from integrated planning, not just a solver setting.
 
@@ -18,12 +18,15 @@ assumption. PV models are retrospectively selected and actual clearing prices
 are used as an oracle. Curated realized PV, including reviewed substitutions, is
 the execution input. Missing auction products are skipped only if entirely
 absent; partial missing products fail preflight. There is no training, fitting,
-or train/test split; these three winter days do not establish annual performance.
+or train/test split; these 21 winter days do not establish annual performance.
 
 Each solve uses seven Gurobi threads, 300 seconds, a relative MIP gap of 1e-4,
 solver feasibility and integrality tolerances of 1e-5, and ordinary solution
 validation of 1e-4. Carry exposures and memory across days and preserve raw
 solver errors; tolerance-sized replay/physical command corrections are recorded.
+There can be more optimization attempts than the four daily auctions because
+the chronological controller also reoptimizes at other events; five minutes
+is a per-attempt limit, so total runtime may reach many hours.
 The coarse-to-fine cases respectively use square-root loss error budgets of
 0.002, 0.001, and 0.0005 (13, 18, and 26 graph points), and calendar annual
 SOH error budgets of 0.01, 0.005, and 0.002 (9, 17, and 17 points). The

@@ -7,8 +7,8 @@ forecast:
     dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
 continuous_optimization:
   start_date: '2026-01-01'
-  end_date: '2026-01-03'
-  context_end_date: '2026-01-03'
+  end_date: '2026-01-21'
+  context_end_date: '2026-01-21'
   ida3_next_day_horizon: false
   pin_tracker_forecast_replacement: true
   terminal_soc_scope: each_delivery_day
@@ -18,7 +18,7 @@ continuous_optimization:
   - current_auction_only
   perfect_pv_reference: false
   resume: false
-  output_root: outputs/energy_research/naumann_sequential_coarse_to_fine_2026
+  output_root: outputs/energy_research/naumann_sequential_coarse_to_fine_21days_2026
   run_id: depth_3
   pv_ensemble:
     enabled: false
