@@ -63,7 +63,12 @@ def common_proxy(frame, capacity_mwh, settings, replacement_eur):
 
 def compare(baseline, aging_run):
     """Require matched delivered intervals and compare both paths on one basis."""
-    aging_config, aging = load_run(aging_run, "current_auction_only")
+    config_path = Path(aging_run) / "json/study_config.json"
+    configured = json.loads(config_path.read_text())
+    modes = configured["continuous_optimization"]["planning_modes"]
+    if len(modes) != 1:
+        raise ValueError("Aging run must have exactly one planning mode")
+    aging_config, aging = load_run(aging_run, modes[0])
     baseline_config, historical = load_run(baseline)
     if baseline_config["degradation"]["model"] != "throughput":
         raise ValueError("Baseline must use linear throughput degradation")
@@ -93,7 +98,9 @@ def compare(baseline, aging_run):
             "baseline": common_proxy(historical, capacity, settings, replacement),
             "naumann": common_proxy(aging, capacity, settings, replacement),
             "reference_rate_c": settings.fixed_cycle_rate_c,
-            "limitations": "Historical integrated planning versus sequential; fixed-capacity baseline; "
+            "baseline_planning_mode": baseline_config["continuous_optimization"]["planning_modes"],
+            "naumann_planning_mode": modes,
+            "limitations": "Historical fixed-capacity baseline and different replacement-cost assumptions; "
                            "common nominal-SOC fixed-rate Naumann proxy, not measured health."}
 
 
