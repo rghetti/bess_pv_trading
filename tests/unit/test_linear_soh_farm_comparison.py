@@ -57,6 +57,10 @@ def test_comparison_checks_matching_inputs_and_separates_cash_and_wear(tmp_path)
     output, count = study.paired_summary(tmp_path, results)
     result = pd.read_csv(output)
     assert count == 2
+    assert json.loads((tmp_path / "summary.json").read_text())["status"] == "partial"
+    markdown = (tmp_path / "comparison.md").read_text()
+    assert "Matched battery-aging comparison" in markdown
+    assert "Excluded incomplete or unmatched farms" in markdown
     assert (result.market_cash_eur == 7.).all()
     assert (result.cash_minus_model_wear_eur == 4.).all()
     assert result.loc[result["mode"] == "linear_soh", "final_soh"].iloc[0] == pytest.approx(.99)

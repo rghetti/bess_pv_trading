@@ -301,6 +301,28 @@ def paired_summary(batch, results):
                 health_by_farm[farm] = frame
     destination = Path(batch) / "comparison.csv"
     pd.DataFrame(rows).to_csv(destination, index=False)
+    # Persist a machine-readable summary and a compact report for complete pairs.
+    summary = {"status": "complete" if len(rows) == 2 * len(FARMS) else "partial",
+               "completed_farms": sorted({row["farm"] for row in rows}),
+               "excluded_farms": sorted(set(FARMS) - {row["farm"] for row in rows}),
+               "cases": rows}
+    (Path(batch) / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
+    lines = ["# Matched battery-aging comparison", "",
+             f"Status: {summary['status']}. Completed farm pairs: {len(summary['completed_farms'])} of {len(FARMS)}.", "",
+             "Market cash includes auction and imbalance cash, less transaction and import fees. "
+             "Wear is a noncash model estimate; the common proxy revalues both executed trajectories.", "",
+             "| Farm | Case | Days | Market cash (€) | Model wear (€) | Common proxy wear (€) | Throughput (MWh) | Final SOH |",
+             "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+    for row in rows:
+        soh = "—" if row["final_soh"] is None else f"{100 * row['final_soh']:.3f}%"
+        lines.append(f"| {row['farm']} | {row['mode']} | {row['days']} | {row['market_cash_eur']:.2f} | "
+                     f"{row['model_wear_eur']:.2f} | {row['common_proxy_noncash_wear_eur']:.2f} | "
+                     f"{row['throughput_mwh']:.3f} | {soh} |")
+    lines.extend(["", "The common proxy is a counterfactual, not measured battery health; "
+                  "the baseline dispatch was not rerun with fading capacity. Prices use a historical oracle."])
+    if summary["excluded_farms"]:
+        lines.extend(["", "Excluded incomplete or unmatched farms: " + ", ".join(map(str, summary["excluded_farms"])) + "."])
+    (Path(batch) / "comparison.md").write_text("\n".join(lines) + "\n")
     write_comparison_figures(batch, rows, health_by_farm)
     return str(destination), len(rows)
 
@@ -396,6 +418,8 @@ def main(argv=None):
     manifest["status"] = "complete" if completed_pairs == required_pairs else "completed_with_failures"
     try:
         manifest["comparison"], manifest["comparison_rows"] = paired_summary(batch, results)
+        manifest["summary"] = str(batch / "summary.json")
+        manifest["comparison_markdown"] = str(batch / "comparison.md")
         manifest["comparison_figures"] = sorted(str(path) for path in (batch / "figures").glob("*.png"))
     except Exception as error:
         manifest["status"] = "comparison_failed"

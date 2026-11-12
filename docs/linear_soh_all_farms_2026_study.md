@@ -87,3 +87,8 @@ proxy wear, and throughput by farm, plus the daily committed SOH trajectories
 for completed SOH cases. Because the models use different aging coefficients,
 their own wear charges are not a common ground-truth valuation; interpret this
 comparison alongside physical aging benchmarks and sensitivity analysis.
+
+After the queue finishes, `summary.json` and `comparison.md` provide a
+machine-readable summary and a readable comparison. Incomplete farm pairs are
+excluded and listed explicitly; matching-input errors are recorded in the
+manifest rather than reported as a valid comparison.
