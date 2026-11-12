@@ -459,6 +459,8 @@ class NaumannSettings:
     depth_knots: tuple[float, ...] = (0, .005, .01, .025, .05, .075, .10, .15,
                                     .20, .30, .40, .50, .60, .70, .80, .90, 1)
     c_rate_bin_width: float = 0.025
+    # When set, cycle stress uses this reference C-rate and needs no rate bins.
+    fixed_cycle_rate_c: float | None = None
     nominal_c_rate_max: float = 1.0
     effective_c_rate_limit: float = 1.0
     end_of_life_soh: float = 0.8
@@ -502,6 +504,10 @@ class NaumannSettings:
         object.__setattr__(self, "depth_knots", knots)
         if not self.calibration_id or self.c_rate_bin_width > self.nominal_c_rate_max:
             raise ValueError("Invalid Naumann calibration identity or rate-bin width")
+        if self.fixed_cycle_rate_c is not None and (
+                not np.isfinite(self.fixed_cycle_rate_c)
+                or not 0 <= self.fixed_cycle_rate_c <= self.nominal_c_rate_max):
+            raise ValueError("Naumann fixed_cycle_rate_c must lie within the nominal rate range")
         if self.calendar_soc_intercept - self.calendar_soc_cubic / 8 <= 0:
             raise ValueError("Naumann calendar coefficient must be positive on SOC [0,1]")
         if self.cycle_depth_intercept - self.cycle_depth_cubic * self.cycle_depth_offset ** 3 <= 0:

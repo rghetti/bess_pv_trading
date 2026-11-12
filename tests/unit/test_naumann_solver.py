@@ -152,6 +152,19 @@ def test_zero_probability_path_shares_banks_rate_bins_and_exposure():
         np.testing.assert_allclose(arrays[name][0], arrays[name][1], atol=1e-9)
 
 
+def test_fixed_reference_rate_removes_rate_binaries_and_preserves_depth_accounting():
+    """A fixed cycling factor uses the same bank dose at every physical rate."""
+    fixed = DegradationSettings(mode="naumann_lfp", replacement_cost_eur=1000.,
+        naumann=NaumannSettings(fixed_cycle_rate_c=.5))
+    inputs, arrays, variables, model = _solve_path([.5, .7, .5], settings=fixed)
+    assert all(value == 1.0 for value in variables["naumann_rate_bins"].values())
+    assert not any(variable.VarName.startswith("naumann_rate_bin[") for variable in model.getVars())
+    factor = (.063 * .5 + .0971) ** 2
+    np.testing.assert_allclose(arrays["naumann_cycle_increment"],
+                               arrays["naumann_depth_dose"] * factor, atol=1e-12)
+    assert np.all(arrays["naumann_rate_bin"] == 0)
+
+
 def test_capacity_changes_at_midnight_and_stays_committed_during_the_next_day():
     inputs, arrays, _, _ = _solve_path([.7, .7, .7], hours=1,
                                       start="2026-01-01T22:00:00Z")

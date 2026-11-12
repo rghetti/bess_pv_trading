@@ -134,6 +134,13 @@ def _build_bank_commands(model, inputs, variables, gp, capacities, marginal):
                 float(marginal[j]) * bank_out[t, owner, bank, j]
                 for bank in range(2) for j in range(len(capacities))),
                 name=f"naumann_depth_dose_sum[{suffix}]")
+            # A fixed reference rate keeps depth aging without rate binaries.
+            if inputs.degradation.naumann.fixed_cycle_rate_c is not None:
+                bins[t, owner, 0] = 1.0
+                model.addConstr(internal_power <= battery.capacity_mwh * float(edges[-1]),
+                                name=f"naumann_nominal_rate_limit[{suffix}]")
+                cycle_increment[t, owner] = float(rate_factors[0]) * depth_dose[t, owner]
+                continue
             allocated = {}
             # Disaggregating one scalar avoids a segment-by-rate variable array.
             for k, multiplier in enumerate(rate_factors):
@@ -541,8 +548,9 @@ def naumann_planner_error_bounds(inputs: OptimizationInput,
     _, _, loss_error = sqrt_graph(inputs.degradation)
     edges, factors = rate_bin_parameters(inputs.degradation)
     rate_settings = inputs.degradation.naumann
-    lower_factors = (rate_settings.cycle_rate_slope * edges[:-1]
-                     + rate_settings.cycle_rate_intercept) ** 2
+    lower_factors = ((rate_settings.cycle_rate_slope * edges[:-1]
+                      + rate_settings.cycle_rate_intercept) ** 2
+                     if rate_settings.fixed_cycle_rate_c is None else factors)
     selected = np.asarray(arrays["naumann_rate_bin"], dtype=int)
     calendar_bound = np.full(len(inputs.scenarios.scenario_ids),
         float(np.sum(inputs.grid.delta_hours)) * 3600 * calendar_error)

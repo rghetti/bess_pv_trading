@@ -1,0 +1,188 @@
+# Integrated aging-resolution comparison; do not run before explicit approval.
+include: ../standard.yaml
+farm_id: 1
+forecast:
+  curated_realized:
+    enabled: true
+    dataset_root: data/farms/curated/reviewed_ghi_2025_to_2026_08
+continuous_optimization:
+  start_date: '2026-01-01'
+  end_date: '2026-01-03'
+  context_end_date: '2026-01-03'
+  ida3_next_day_horizon: false
+  pin_tracker_forecast_replacement: true
+  terminal_soc_scope: each_delivery_day
+  checkpoint_enabled: true
+  validation_diagnostics: failures_only
+  planning_modes:
+  - integrated
+  perfect_pv_reference: false
+  resume: false
+  output_root: outputs/energy_research/naumann_fixed_rate_depth_2026
+  run_id: depth_8
+  pv_ensemble:
+    enabled: false
+    zarr: null
+    member_count: null
+    planning_policy: deterministic
+  ida3_enforce_intermediate_soc: false
+state:
+  initial_soc_percent: 50.0
+  terminal_soc_percent: 50.0
+  terminal_soc_min_percent: null
+  initial_soc_basis: available_capacity
+  terminal_soc_basis: available_capacity
+solver:
+  threads: 8
+  time_limit_seconds: 240.0
+  mip_gap: 0.0001
+  feasibility_tolerance: 1.0e-05
+  integrality_tolerance: 1.0e-05
+pv:
+  direct_exceeds_ghi: clip_and_flag
+  forecast_replacement:
+    enabled: true
+    allow_retrospective_artifacts: true
+    models_by_farm:
+      '1':
+        name: four_cycle_bigru_extended_037
+        kind: reviewed_hpo
+        artifact_path: models/pv/reviewed_four_cycle_2026_selected/farm_1/result.json
+        available_at_utc: '2026-11-09T00:00:00Z'
+      '345':
+        name: four_cycle_bigru_core_025
+        kind: reviewed_hpo
+        artifact_path: models/pv/reviewed_four_cycle_2026_selected/farm_345/result.json
+        available_at_utc: '2026-11-09T00:00:00Z'
+      '901':
+        name: four_cycle_tcn_extended_021
+        kind: reviewed_hpo
+        artifact_path: models/pv/reviewed_four_cycle_2026_selected/farm_901/result.json
+        available_at_utc: '2026-11-09T00:00:00Z'
+      '910':
+        name: four_cycle_tcn_core_029
+        kind: reviewed_hpo
+        artifact_path: models/pv/reviewed_four_cycle_2026_selected/farm_910/result.json
+        available_at_utc: '2026-11-09T00:00:00Z'
+trading:
+  optimize_imbalances: false
+execution:
+  validation_physical_absolute_tolerance: 0.0001
+  dispatch_policy: track_committed_grid
+  infeasible_auction_policy: previous_plan
+  save_infeasibility_diagnostics: true
+  mpc_curtailment_recovery: false
+settlement:
+  enabled: true
+experiment_outputs:
+  overwrite_existing: false
+  plots: true
+  save_model_files: false
+gme_oracle_experiment:
+  study_id: null
+  delivery_day: null
+  timezone: Europe/Rome
+  price_database: data/api/market.duckdb
+  provider: gme
+  zone: NORD
+  auction_datasets:
+    DA:
+      dataset: day_ahead_prices
+      native_interval_minutes: null
+    IDA1:
+      dataset: ida1_prices
+      native_interval_minutes: 15
+    IDA2:
+      dataset: ida2_prices
+      native_interval_minutes: 15
+    IDA3:
+      dataset: ida3_prices
+      native_interval_minutes: 15
+  missing_auction_policy: skip_if_no_products_fail_if_partial
+  price_information: perfect_foresight_actual_clearing_curves
+  auction_planning_mode: integrated
+  decision_resolution_minutes: 15
+  price_display_resolution_minutes: 15
+  participating_auctions:
+  - DA
+  - IDA1
+  - IDA2
+  - IDA3
+realtime_mpc_comparison:
+  mode: continuous
+  controllers:
+  - track_committed_grid
+  frozen_source: null
+  check_only: false
+  representative_days: 2
+energy_price_forecast:
+  auction_enabled: false
+  settlement_enabled: false
+  artifacts: {}
+  seed: 17
+research_information:
+  pv_updates: latest
+  price_updates: latest
+realtime_scenarios:
+  dependence: raw
+  reduce_to: null
+degradation:
+  model: naumann_lfp
+  cost_eur_per_mwh_throughput: 0.0
+  throughput_lifetime: null
+  assumptions: Naumann 2018/2020 Sony/Murata LFP/graphite research prior. Independent
+    calendar and cycling squared-loss exposures with carried dual Xu banks; fixed
+    25 C. Capacity loss is an Ah-to-MWh proxy. No temperature, resistance, shallow-cycle
+    recovery, Huawei/BYD calibration, or automatic replacement is represented. Replacement
+    economics inherited from standard.yaml are a separate generic cost assumption.
+  naumann:
+    reference_temperature_c: 25.0
+    calendar_reference_coefficient: 1.2571e-05
+    calendar_soc_cubic: 2.8575
+    calendar_soc_intercept: 0.60225
+    cycle_rate_slope: 0.063
+    cycle_rate_intercept: 0.0971
+    cycle_depth_cubic: 4.0253
+    cycle_depth_offset: 0.6
+    cycle_depth_intercept: 1.0923
+    depth_knots:
+    - 0
+    - 0.025
+    - 0.05
+    - 0.1
+    - 0.2
+    - 0.4
+    - 0.6
+    - 0.8
+    - 1
+    c_rate_bin_width: 0.25
+    fixed_cycle_rate_c: 0.5
+    nominal_c_rate_max: 1.0
+    effective_c_rate_limit: 1.0
+    end_of_life_soh: 0.8
+    sqrt_loss_error_budget: 0.0002
+    calendar_annual_soh_error_budget: 0.001
+    calendar_initial_soc_segments: 16
+    max_loss_fraction: 0.3
+    calendar_year_seconds: 31557600.0
+    max_graph_points: 4097
+    timezone: Europe/Rome
+    calibration_id: naumann_lfp_2018_2020_independent_exposure_v1
+    provenance:
+      calendar_source: https://doi.org/10.1016/j.est.2018.01.019
+      cycle_source: https://doi.org/10.1016/j.jpowsour.2019.227666
+      cell: Sony_Murata_US26650FTC1_LFP_graphite_2.85Ah_rated_3Ah_measured
+      normalization: original_nominal_Ah_approximated_by_internal_MWh_at_fixed_voltage
+      calendar_time_unit: seconds
+      fitted_rate_range_c:
+      - 0.2
+      - 1.0
+      tested_depth_range:
+      - 0.01
+      - 1.0
+      depth_factor_fit_range:
+      - 0.05
+      - 1.0
+      dynamic_extension: independent_squared_loss_exposures_not_original_combined_virtual_FEC
+      variable_rate_extension: fixed_reference_0_5c_no_actual_rate_dependence
+      transfer_status: hypothetical_pack_not_verified_farm_or_manufacturer_parameters

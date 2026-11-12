@@ -33,7 +33,11 @@ def _settings(settings: DegradationSettings | NaumannSettings) -> NaumannSetting
 def calibration_identity(settings: DegradationSettings | NaumannSettings) -> str:
     """Bind carried memory to its physical calibration and numerical conventions."""
     parameters = _settings(settings)
-    encoded = json.dumps(asdict(parameters), sort_keys=True, separators=(",", ":"))
+    identity = asdict(parameters)
+    # Preserve existing checkpoint fingerprints when the new option is unused.
+    if identity["fixed_cycle_rate_c"] is None:
+        del identity["fixed_cycle_rate_c"]
+    encoded = json.dumps(identity, sort_keys=True, separators=(",", ":"))
     checksum = hashlib.sha256(encoded.encode()).hexdigest()[:20]
     return f"{parameters.calibration_id}:{checksum}"
 
@@ -174,6 +178,9 @@ def wear_value(settings):
 def rate_bin_parameters(settings):
     """Return nominal rate-bin edges and conservative squared upper-edge factors."""
     parameters = _settings(settings)
+    if parameters.fixed_cycle_rate_c is not None:
+        return (np.asarray([0., parameters.nominal_c_rate_max]),
+                np.asarray([float(cycle_rate_factor(parameters.fixed_cycle_rate_c, settings) ** 2)]))
     count = int(np.ceil(parameters.nominal_c_rate_max / parameters.c_rate_bin_width))
     edges = np.minimum(np.arange(count + 1) * parameters.c_rate_bin_width,
                        parameters.nominal_c_rate_max)
@@ -445,12 +452,16 @@ def approximation_diagnostics(settings):
         "calendar_annual_soh_error_bound": float(annual_calendar_bound),
         "sqrt_component_loss_error_bound": loss_error,
         "depth_curve_max_absolute_exposure_error": maximum_depth_error,
-        "rate_max_relative_exposure_overestimate": float(np.max(factors / lower - 1)),
-        "rate_max_relative_cycle_loss_overestimate": float(np.max(np.sqrt(factors / lower) - 1)),
+        "rate_max_relative_exposure_overestimate": (float(np.max(factors / lower - 1))
+            if parameters.fixed_cycle_rate_c is None else None),
+        "rate_max_relative_cycle_loss_overestimate": (float(np.max(np.sqrt(factors / lower) - 1))
+            if parameters.fixed_cycle_rate_c is None else None),
+        "fixed_cycle_rate_c": parameters.fixed_cycle_rate_c,
         "rate_below_0_2c_is_extrapolation": True,
         "depth_factor_fit_range": [0.05, 1.0],
         "depth_below_0_05_extrapolates_fitted_factor": True,
         "depth_below_0_01_is_extrapolation": True,
-        "variable_rate_attribution": "local half-cycle dose, not completed-cycle mean-rate aging",
+        "variable_rate_attribution": ("local half-cycle dose, not completed-cycle mean-rate aging"
+            if parameters.fixed_cycle_rate_c is None else "fixed reference rate; actual rate does not affect cycling aging"),
         "future_calendar_soc_normalization": "capacity known at optimization cutoff",
     }

@@ -1,7 +1,9 @@
 # Integrated Naumann resolution comparison
 
-Status: prepared, not approved or run. Run experiments only after explicit approval;
-the user starts them. This is an initial comparison, not a claim that the model is
+Status: abandoned at the user's request after the first case failed validation
+and the second was interrupted. The tolerance settings below describe the
+configurations after those runs, not the settings used in the abandoned run.
+This is an initial comparison, not a claim that the model is
 physically calibrated or that further structural simplification is unnecessary.
 
 ## Scope
@@ -28,8 +30,8 @@ budgets, 25 C, fresh battery, zero self-discharge, 50% daily planned terminal SO
 no extended IDA3, 80% EOL, and the shared 2025 stationary-pack replacement proxy.
 They use 8 Gurobi threads, a 240-second per-solve limit, 1e-4 relative MIP gap,
 and separate output paths. Solver feasibility and integrality tolerances are
-1e-4. The validator uses max(physical tolerance, twice the solver feasibility
-tolerance), giving 2e-4 for its ordinary residual checks; integrality uses 1e-4.
+1e-5. The validator uses max(physical tolerance, twice the solver feasibility
+tolerance), giving 1e-4 for its ordinary residual checks; integrality uses 1e-5.
 Aging exposure residuals are in scaled micro-units, while other checks include
 MWh and MW. This relaxed numerical policy can admit larger physical and aging
 residuals and does not guarantee the configured aging-approximation budgets;

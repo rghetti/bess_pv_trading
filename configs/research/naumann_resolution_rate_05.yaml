@@ -36,8 +36,8 @@ solver:
   threads: 8
   time_limit_seconds: 240.0
   mip_gap: 0.0001
-  feasibility_tolerance: 0.0001
-  integrality_tolerance: 0.0001
+  feasibility_tolerance: 1.0e-05
+  integrality_tolerance: 1.0e-05
 pv:
   direct_exceeds_ghi: clip_and_flag
   forecast_replacement:
@@ -67,6 +67,7 @@ pv:
 trading:
   optimize_imbalances: false
 execution:
+  validation_physical_absolute_tolerance: 0.0001
   dispatch_policy: track_committed_grid
   infeasible_auction_policy: previous_plan
   save_infeasibility_diagnostics: true

@@ -110,6 +110,12 @@ extrapolate the fitted rate range. Although a 1% test was performed, the publish
 depth-factor fit uses 5--100% endpoints; depths below 5% extrapolate that fit,
 and depths below 1% also fall below the experiment's characterized depths.
 
+The optional `fixed_cycle_rate_c` replaces rate bins with one fixed stress factor
+in both planning and execution. It removes rate-dependent cycling damage and its
+binary rate choices, while preserving the physical nominal and effective power
+limits. This changes the aging model; a fixed value is neither an upper nor a
+lower bound on variable-rate aging. The original bin mode remains the default.
+
 ## Chronological capacity updates and economics
 
 Executed commands accumulate exposures immediately. **Committed physical SOH
