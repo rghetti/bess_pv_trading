@@ -47,6 +47,27 @@ def test_plan_defaults_to_eight_concurrent_jobs_and_allows_override(capsys):
     assert json.loads(capsys.readouterr().out)["workers"] == 4
 
 
+def test_three_case_plan_uses_all_farms_and_zero_wear(capsys):
+    """The requested opt-in study has twelve cases and a zero-cost baseline."""
+    assert study.main(["--run-id", "three_case_preview", "--include-no-wear"]) == 0
+    plan = json.loads(capsys.readouterr().out)
+    assert plan["jobs"] == 12
+    assert set(plan["farms"]) == {1, 345, 901, 910}
+    assert set(plan["cases"]) == {"linear_soh", "throughput", "no_wear"}
+    assert len(set(plan["solver_threads_per_job"].values())) == 1
+    jobs = study.resolve_jobs(Path("/tmp/preview"))
+    study.validate_three_case_settings(jobs)
+    for job in jobs:
+        if job["mode"] == "no_wear":
+            wear = degradation_settings_from_config(job["config"])
+            assert wear.mode == "constant_throughput" and wear.cost_eur_per_mwh_throughput == 0
+    changed = next(job for job in jobs if job["mode"] == "throughput")
+    changed["config"]["degradation"]["linear_soh"]["cycle_life"] = 5000
+    with pytest.raises(ValueError, match="calibration"):
+        study.validate_three_case_settings(jobs)
+    study.CASES.pop("no_wear")
+
+
 def test_intraday_analysis_uses_only_complete_pairs(tmp_path, monkeypatch):
     """Forward both matching cases to the existing intraday reporting workflow."""
     from bess_pv_trading.reporting import k25_intraday_profiles
@@ -95,8 +116,9 @@ def test_eight_jobs_have_identical_operational_settings_and_current_pack_price(t
         selected = {job["mode"]: job["config"] for job in jobs if job["farm"] == farm}
         assert set(selected) == set(study.CASES)
         left, right = selected["linear_soh"], selected["throughput"]
-        assert left["solver"] == right["solver"]
-        assert left["solver"]["threads"] == 3
+        assert {k: v for k, v in left["solver"].items() if k != "threads"} == {
+            k: v for k, v in right["solver"].items() if k != "threads"}
+        assert left["solver"]["threads"] >= 1
         assert left["battery"] == right["battery"]
         assert left["battery"]["daily_cycle_limit_efc"] == 2
         assert left["execution"] == right["execution"]
@@ -109,8 +131,11 @@ def test_eight_jobs_have_identical_operational_settings_and_current_pack_price(t
         assert left["degradation"]["replacement_economics"]["pack_price_usd_per_kwh"] == 70
 
 
-def test_comparison_checks_matching_inputs_and_separates_cash_and_wear(tmp_path):
+@pytest.mark.parametrize("three_cases", [False, True])
+def test_comparison_checks_matching_inputs_and_separates_cash_and_wear(tmp_path, monkeypatch, three_cases):
     """Cash never subtracts noncash wear, and differing provenance is rejected."""
+    if three_cases:
+        monkeypatch.setitem(study.CASES, "no_wear", study.ROOT / "configs/research/no_wear_all_farms_2026.yaml")
     results = []
     provenance = {"days": {"2026-01-01": {"realized_pv_sha256": "pv", "auction_price_sha256": "price",
         "skipped_auctions": [], "price_provenance": {}}}, "settlement_values_sha256": "settlement",
@@ -126,7 +151,8 @@ def test_comparison_checks_matching_inputs_and_separates_cash_and_wear(tmp_path)
         data = {"interval_id": ["t"], "pv_ac_mw": [1.], "delivery_day": ["2026-01-01"],
             "auction_revenue_eur": [10.], "imbalance_cashflow_eur": [-2.], "import_fee_eur": [1.],
             "transaction_fee_eur": [0.], "degradation_eur": [3.], "throughput_mwh": [.4],
-            "charge_mw": [.4], "discharge_mw": [0.], "duration_hours": [1.]}
+            "charge_mw": [.4], "discharge_mw": [0.], "duration_hours": [1.],
+            "imbalance_mwh": [-.2], "curtailment_mw": [.3]}
         if mode == "linear_soh":
             data["battery_soh_start"] = [1.]
             data["battery_soh_end"] = [.99]
@@ -138,7 +164,7 @@ def test_comparison_checks_matching_inputs_and_separates_cash_and_wear(tmp_path)
         results.append({"farm": 1, "mode": mode, "status": "complete"})
     output, count = study.paired_summary(tmp_path, results)
     result = pd.read_csv(output)
-    assert count == 2
+    assert count == len(study.CASES)
     assert json.loads((tmp_path / "summary.json").read_text())["status"] == "partial"
     markdown = (tmp_path / "comparison.md").read_text()
     assert "Matched battery-aging comparison" in markdown
@@ -147,6 +173,9 @@ def test_comparison_checks_matching_inputs_and_separates_cash_and_wear(tmp_path)
     auctions = pd.read_csv(tmp_path / "auction_comparison.csv")
     assert auctions[(auctions["mode"] == "linear_soh") & (auctions.auction == "IDA1")].cashflow_eur.iloc[0] == -10.
     assert (result.market_cash_eur == 7.).all()
+    assert (result.absolute_imbalance_mwh == .2).all()
+    assert (result.curtailment_mwh == .3).all()
+    assert "Absolute imbalance (MWh)" in markdown and "Curtailment (MWh)" in markdown
     assert (result.cash_minus_model_wear_eur == 4.).all()
     assert result.loc[result["mode"] == "linear_soh", "final_soh"].iloc[0] == pytest.approx(.99)
     expected_internal_throughput = .4 * .9486832980505138
@@ -154,11 +183,12 @@ def test_comparison_checks_matching_inputs_and_separates_cash_and_wear(tmp_path)
     expected_cycle_loss = .17 * expected_internal_throughput / (2 * 6000 * .75)
     expected_total_loss = expected_calendar_loss + expected_cycle_loss
     expected_wear = (70 / 1.1637 * .75 * 1000 / .2) * expected_total_loss
-    assert result.common_proxy_internal_throughput_mwh.tolist() == pytest.approx([expected_internal_throughput] * 2)
-    assert result.common_proxy_total_soh_loss_fraction.tolist() == pytest.approx([expected_total_loss] * 2)
-    assert result.common_proxy_noncash_wear_eur.tolist() == pytest.approx([expected_wear] * 2)
-    assert result.market_cash_minus_common_proxy_wear_eur.tolist() == pytest.approx([7 - expected_wear] * 2)
-    for name in ("market_cash_eur.png", "market_cash_minus_common_proxy_wear_eur.png", "throughput_mwh.png", "daily_soh.png"):
+    assert result.common_proxy_internal_throughput_mwh.tolist() == pytest.approx([expected_internal_throughput] * count)
+    assert result.common_proxy_total_soh_loss_fraction.tolist() == pytest.approx([expected_total_loss] * count)
+    assert result.common_proxy_noncash_wear_eur.tolist() == pytest.approx([expected_wear] * count)
+    assert result.market_cash_minus_common_proxy_wear_eur.tolist() == pytest.approx([7 - expected_wear] * count)
+    for name in ("market_cash_eur.png", "market_cash_minus_common_proxy_wear_eur.png", "throughput_mwh.png",
+                 "daily_soh.png", "absolute_imbalance_mwh.png", "curtailment_mwh.png", "auction_cashflows.png"):
         assert (tmp_path / "figures" / name).stat().st_size > 0
     provenance["settlement_values_sha256"] = "changed"
     (tmp_path / "runs/farm_1/throughput/json/input_provenance.json").write_text(json.dumps(provenance))

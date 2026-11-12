@@ -1,4 +1,4 @@
-"""Run eight independent 2026 battery-aging trajectories concurrently.
+"""Run paired or three-case 2026 battery-aging trajectories concurrently.
 
 Without --run this prints the study plan and does not start a simulation.
 """
@@ -54,6 +54,27 @@ def resolve_jobs(batch):
             config["continuous_optimization"]["run_id"] = mode
             jobs.append({"farm": farm, "mode": mode, "config": config})
     return jobs
+
+
+def validate_three_case_settings(jobs):
+    """Prevent drift in the physical setup and cycling-cost comparison."""
+    from bess_pv_trading.optimization.degradation import degradation_settings_from_config
+
+    for farm in FARMS:
+        cases = {job["mode"]: job["config"] for job in jobs if job["farm"] == farm}
+        if set(cases) != {"linear_soh", "throughput", "no_wear"}:
+            raise ValueError(f"Farm {farm} must have all three requested cases")
+        if any(cases[name]["battery"] != cases["linear_soh"]["battery"] for name in ("throughput", "no_wear")):
+            raise ValueError(f"Farm {farm} has different battery or cycling-limit settings")
+        health = degradation_settings_from_config(cases["linear_soh"])
+        fixed = degradation_settings_from_config(cases["throughput"])
+        free = degradation_settings_from_config(cases["no_wear"])
+        if (health.mode != "linear_soh" or fixed.mode != "linear_soh_fixed"
+                or health.linear_soh != fixed.linear_soh
+                or health.replacement_cost_eur != fixed.replacement_cost_eur):
+            raise ValueError(f"Farm {farm} cycling calibration or replacement economics differ")
+        if free.mode != "constant_throughput" or free.cost_eur_per_mwh_throughput != 0:
+            raise ValueError(f"Farm {farm} no-wear case must have zero wear cost")
 
 
 def run_job(job, batch, resume=False):
@@ -163,7 +184,7 @@ def write_manifest(path, manifest):
     temporary.replace(path)
 
 
-def write_comparison_figures(batch, rows, health_by_farm):
+def write_comparison_figures(batch, rows, health_by_farm, auction_rows=None):
     """Plot comparable market cash, physical throughput and reported daily SOH."""
     if not rows:
         return []
@@ -182,12 +203,18 @@ def write_comparison_figures(batch, rows, health_by_farm):
     # Both panels use identical, matched delivery intervals for each farm pair.
     for field, ylabel, title in (("market_cash_eur", "EUR", "Realized market cash after imbalance"),
                                   ("market_cash_minus_common_proxy_wear_eur", "EUR", "Market cash minus common proxy wear"),
-                                  ("throughput_mwh", "AC charge + discharge (MWh)", "Battery throughput")):
+                                  ("throughput_mwh", "AC charge + discharge (MWh)", "Battery throughput"),
+                                  ("absolute_imbalance_mwh", "MWh", "Absolute imbalance"),
+                                  ("curtailment_mwh", "MWh", "PV curtailment")):
         figure, axis = plt.subplots(figsize=(9, 5), constrained_layout=True)
-        for offset, mode, label in ((-.2, "throughput", "Fixed capacity, throughput wear"),
-                                    (.2, "linear_soh", "Linear SOH")):
+        modes = [("throughput", "Fixed capacity, throughput wear"), ("linear_soh", "Linear SOH")]
+        if "no_wear" in set(table["mode"]):
+            modes.insert(0, ("no_wear", "Fixed capacity, no wear"))
+        width = .8 / len(modes)
+        for index, (mode, label) in enumerate(modes):
+            offset = (index - (len(modes) - 1) / 2) * width
             selected = table[table["mode"] == mode].set_index("farm").reindex(farms)
-            axis.bar(positions + offset, selected[field].to_numpy(), width=.4, label=label)
+            axis.bar(positions + offset, selected[field].to_numpy(), width=width, label=label)
         axis.set_xticks(positions, [str(farm) for farm in farms])
         axis.set_xlabel("Farm")
         axis.set_ylabel(ylabel)
@@ -195,6 +222,28 @@ def write_comparison_figures(batch, rows, health_by_farm):
         axis.axhline(0, color="black", linewidth=.6)
         axis.legend()
         path = output / f"{field}.png"
+        figure.savefig(path, dpi=160)
+        plt.close(figure)
+        figures.append(str(path))
+    if auction_rows:
+        auction_frame = pd.DataFrame(auction_rows)
+        figure, axes = plt.subplots(len(farms), 1, figsize=(10, 3.5 * len(farms)), squeeze=False,
+                                    layout="constrained")
+        labels = ("DA", "IDA1", "IDA2", "IDA3")
+        cases = list(dict.fromkeys(auction_frame["mode"]))
+        width = .8 / len(cases)
+        for index, farm in enumerate(farms):
+            axis = axes[index, 0]
+            for case_index, mode in enumerate(cases):
+                series = auction_frame[(auction_frame.farm == farm) & (auction_frame["mode"] == mode)].set_index("auction")
+                axis.bar(np.arange(4) + (case_index - (len(cases) - 1) / 2) * width,
+                         series.reindex(labels).cashflow_eur.to_numpy(), width=width, label=mode)
+            axis.set_xticks(np.arange(4), labels)
+            axis.set_ylabel("Booked cash (€)")
+            axis.set_title(f"Farm {farm}: signed auction cash")
+            axis.axhline(0, color="black", linewidth=.6)
+            axis.legend()
+        path = output / "auction_cashflows.png"
         figure.savefig(path, dpi=160)
         plt.close(figure)
         figures.append(str(path))
@@ -248,7 +297,7 @@ def common_linear_wear_proxy(frame, battery, settings):
 
 
 def paired_summary(batch, results):
-    """Compare only complete matched intervals and explicitly report exclusions."""
+    """Compare complete matched cases and explicitly report excluded farms."""
     import numpy as np
     import pandas as pd
     from bess_pv_trading.domain import battery_parameters_from_config
@@ -264,33 +313,37 @@ def paired_summary(batch, results):
         roots = {mode: Path(batch) / "runs" / f"farm_{farm}" / mode for mode in CASES}
         provenance = {mode: json.loads((root / "json/input_provenance.json").read_text())
                       for mode, root in roots.items()}
-        left, right = (provenance[mode] for mode in CASES)
-        if set(left["days"]) != set(right["days"]):
-            raise ValueError(f"Farm {farm} has different delivery-day provenance")
-        for day in left["days"]:
-            for key in ("realized_pv_sha256", "auction_price_sha256", "skipped_auctions"):
-                if left["days"][day].get(key) != right["days"][day].get(key):
-                    raise ValueError(f"Farm {farm} differs in {key} on {day}")
-            for auction, source in left["days"][day]["price_provenance"].items():
-                other = right["days"][day]["price_provenance"].get(auction)
-                if other is None:
-                    raise ValueError(f"Farm {farm} lacks matching {auction} provenance on {day}")
-                def snapshot_ids(item):
-                    """Compare immutable imported snapshots and their normalized checksums."""
-                    return sorted((entry.get("storage", {}).get("snapshot_id") or "", entry.get("normalized_sha256") or "")
-                                  for entry in item.get("snapshots", []))
-                if snapshot_ids(source) != snapshot_ids(other):
-                    raise ValueError(f"Farm {farm} has different {auction} snapshots on {day}")
-        if left.get("settlement_values_sha256") != right.get("settlement_values_sha256"):
-            raise ValueError(f"Farm {farm} has different imbalance prices")
-        for key in ("model", "checksums"):
-            if left["forecast_model_artifacts"].get(key) != right["forecast_model_artifacts"].get(key):
-                raise ValueError(f"Farm {farm} has different forecast model {key}")
-        weather_keys = ("cutoff_utc", "forecast_vintage_utc", "aligned_weather_pv_sha256")
-        weather = lambda item: [tuple(record.get(key) for key in weather_keys)
-                                for record in item.get("weather_forecasts", [])]
-        if weather(left) != weather(right):
-            raise ValueError(f"Farm {farm} has different weather forecast vintages or hashes")
+        left = provenance["linear_soh"]
+        for mode in CASES:
+            if mode == "linear_soh":
+                continue
+            right = provenance[mode]
+            if set(left["days"]) != set(right["days"]):
+                raise ValueError(f"Farm {farm} has different delivery-day provenance")
+            for day in left["days"]:
+                for key in ("realized_pv_sha256", "auction_price_sha256", "skipped_auctions"):
+                    if left["days"][day].get(key) != right["days"][day].get(key):
+                        raise ValueError(f"Farm {farm} differs in {key} on {day}")
+                for auction, source in left["days"][day]["price_provenance"].items():
+                    other = right["days"][day]["price_provenance"].get(auction)
+                    if other is None:
+                        raise ValueError(f"Farm {farm} lacks matching {auction} provenance on {day}")
+                    def snapshot_ids(item):
+                        """Compare immutable imported snapshots and their normalized checksums."""
+                        return sorted((entry.get("storage", {}).get("snapshot_id") or "", entry.get("normalized_sha256") or "")
+                                      for entry in item.get("snapshots", []))
+                    if snapshot_ids(source) != snapshot_ids(other):
+                        raise ValueError(f"Farm {farm} has different {auction} snapshots on {day}")
+            if left.get("settlement_values_sha256") != right.get("settlement_values_sha256"):
+                raise ValueError(f"Farm {farm} has different imbalance prices")
+            for key in ("model", "checksums"):
+                if left["forecast_model_artifacts"].get(key) != right["forecast_model_artifacts"].get(key):
+                    raise ValueError(f"Farm {farm} has different forecast model {key}")
+            weather_keys = ("cutoff_utc", "forecast_vintage_utc", "aligned_weather_pv_sha256")
+            weather = lambda item: [tuple(record.get(key) for key in weather_keys)
+                                    for record in item.get("weather_forecasts", [])]
+            if weather(left) != weather(right):
+                raise ValueError(f"Farm {farm} has different weather forecast vintages or hashes")
         saved_configs = {mode: json.loads((root / "json/study_config.json").read_text())
                          for mode, root in roots.items()}
         if any(config.get("state", {}).get("battery_health") is not None for config in saved_configs.values()):
@@ -298,18 +351,19 @@ def paired_summary(batch, results):
         batteries = {mode: battery_parameters_from_config(config["battery"])
                      for mode, config in saved_configs.items()}
         battery = batteries["linear_soh"]
-        baseline_battery = batteries["throughput"]
-        if (battery.capacity_mwh != baseline_battery.capacity_mwh
-                or battery.eta_charge != baseline_battery.eta_charge
-                or battery.eta_discharge != baseline_battery.eta_discharge):
-            raise ValueError(f"Farm {farm} has different battery capacity or efficiencies")
+        for baseline_battery in batteries.values():
+            if (battery.capacity_mwh != baseline_battery.capacity_mwh
+                    or battery.eta_charge != baseline_battery.eta_charge
+                    or battery.eta_discharge != baseline_battery.eta_discharge):
+                raise ValueError(f"Farm {farm} has different battery capacity or efficiencies")
         common_settings = degradation_settings_from_config(saved_configs["linear_soh"])
         frames = {mode: pd.read_csv(root / "strategies/integrated/csv/realized_dispatch.csv")
                   for mode, root in roots.items()}
-        first, second = (frames[mode] for mode in CASES)
-        if (not first.interval_id.equals(second.interval_id)
-                or not np.allclose(first.pv_ac_mw, second.pv_ac_mw, atol=1e-9, rtol=0)):
-            raise ValueError(f"Farm {farm} has different interval or realized PV data")
+        first = frames["linear_soh"]
+        for other in frames.values():
+            if (not first.interval_id.equals(other.interval_id)
+                    or not np.allclose(first.pv_ac_mw, other.pv_ac_mw, atol=1e-9, rtol=0)):
+                raise ValueError(f"Farm {farm} has different interval or realized PV data")
         for mode, frame in frames.items():
             # Attribute only booked trades belonging to the delivered intervals.
             trade_path = roots[mode] / "strategies/integrated/csv/accepted_trades.csv"
@@ -332,6 +386,8 @@ def paired_summary(batch, results):
             rows.append({"farm": farm, "mode": mode, "days": frame.delivery_day.nunique(),
                 "auction_cash_eur": frame.auction_revenue_eur.sum(),
                 "imbalance_cash_eur": frame.imbalance_cashflow_eur.sum(),
+                "absolute_imbalance_mwh": frame.imbalance_mwh.abs().sum(),
+                "curtailment_mwh": (frame.curtailment_mw * frame.duration_hours).sum(),
                 "market_cash_eur": cash, "model_wear_eur": frame.degradation_eur.sum(),
                 "cash_minus_model_wear_eur": cash - frame.degradation_eur.sum(),
                 "throughput_mwh": frame.throughput_mwh.sum(),
@@ -344,20 +400,21 @@ def paired_summary(batch, results):
     pd.DataFrame(rows).to_csv(destination, index=False)
     pd.DataFrame(auction_rows).to_csv(Path(batch) / "auction_comparison.csv", index=False)
     # Persist a machine-readable summary and a compact report for complete pairs.
-    summary = {"status": "complete" if len(rows) == 2 * len(FARMS) else "partial",
+    summary = {"status": "complete" if len(rows) == len(CASES) * len(FARMS) else "partial",
                "completed_farms": sorted({row["farm"] for row in rows}),
                "excluded_farms": sorted(set(FARMS) - {row["farm"] for row in rows}),
                "cases": rows, "auctions": auction_rows}
     (Path(batch) / "summary.json").write_text(json.dumps(summary, indent=2, allow_nan=False) + "\n")
     lines = ["# Matched battery-aging comparison", "",
-             f"Status: {summary['status']}. Completed farm pairs: {len(summary['completed_farms'])} of {len(FARMS)}.", "",
+             f"Status: {summary['status']}. Completed farm comparisons: {len(summary['completed_farms'])} of {len(FARMS)}.", "",
              "Market cash includes auction and imbalance cash, less transaction and import fees. "
              "Wear is a noncash model estimate; the common proxy revalues both executed trajectories.", "",
-             "| Farm | Case | Days | Market cash (€) | Model wear (€) | Common proxy wear (€) | Throughput (MWh) | Final SOH |",
-             "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |"]
+             "| Farm | Case | Days | Auction cash (€) | Imbalance cash (€) | Absolute imbalance (MWh) | Curtailment (MWh) | Market cash (€) | Model wear (€) | Common proxy wear (€) | Throughput (MWh) | Final SOH |",
+             "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |"]
     for row in rows:
         soh = "—" if row["final_soh"] is None else f"{100 * row['final_soh']:.3f}%"
-        lines.append(f"| {row['farm']} | {row['mode']} | {row['days']} | {row['market_cash_eur']:.2f} | "
+        lines.append(f"| {row['farm']} | {row['mode']} | {row['days']} | {row['auction_cash_eur']:.2f} | "
+                     f"{row['imbalance_cash_eur']:.2f} | {row['absolute_imbalance_mwh']:.3f} | {row['curtailment_mwh']:.3f} | {row['market_cash_eur']:.2f} | "
                      f"{row['model_wear_eur']:.2f} | {row['common_proxy_noncash_wear_eur']:.2f} | "
                      f"{row['throughput_mwh']:.3f} | {soh} |")
     lines.extend(["", "## Booked auction cash flows", "",
@@ -372,12 +429,12 @@ def paired_summary(batch, results):
     if summary["excluded_farms"]:
         lines.extend(["", "Excluded incomplete or unmatched farms: " + ", ".join(map(str, summary["excluded_farms"])) + "."])
     (Path(batch) / "comparison.md").write_text("\n".join(lines) + "\n")
-    write_comparison_figures(batch, rows, health_by_farm)
+    write_comparison_figures(batch, rows, health_by_farm, auction_rows)
     return str(destination), len(rows)
 
 
 def write_intraday_analysis(batch, results):
-    """Reuse the standard intraday profiles for complete matched farm pairs."""
+    """Reuse standard intraday profiles for farms with every requested case."""
     from bess_pv_trading.reporting.k25_intraday_profiles import write_intraday_profiles
 
     completed = {(item["farm"], item["mode"]) for item in results if item["status"] == "complete"}
@@ -401,17 +458,34 @@ def main(argv=None):
     """Describe the study, or run its eight jobs in a shared worker queue."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True, help="Fresh batch identifier under outputs/energy_research")
+    parser.add_argument("--include-no-wear", action="store_true", help="Include a fixed-capacity, zero-wear comparator")
     parser.add_argument("--workers", type=int, default=8, choices=range(1, 9),
                         help="Maximum concurrent trajectories (default: 8)")
+    parser.add_argument("--threads-per-solve", type=int, default=None,
+                        help="Use the same Gurobi thread count in every case")
     parser.add_argument("--run", action="store_true", help="Actually launch the requested trajectories")
     parser.add_argument("--resume", action="store_true", help="Resume incomplete cases without rerunning completed cases")
     args = parser.parse_args(argv)
+    if args.threads_per_solve is not None and args.threads_per_solve < 1:
+        parser.error("--threads-per-solve must be positive")
+    CASES.pop("no_wear", None)
+    if args.include_no_wear:
+        CASES["no_wear"] = ROOT / "configs/research/no_wear_all_farms_2026.yaml"
     if args.resume and not args.run:
         parser.error("--resume requires --run")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", args.run_id):
         parser.error("run-id must contain letters, digits, underscores, hyphens or periods")
     batch = ROOT / "outputs/energy_research" / args.run_id
     jobs = resolve_jobs(batch)
+    if args.include_no_wear:
+        validate_three_case_settings(jobs)
+    # Keep compute budgets identical across all three requested variations.
+    threads = args.threads_per_solve
+    if threads is None and args.include_no_wear:
+        threads = next(job["config"]["solver"]["threads"] for job in jobs if job["mode"] == "no_wear")
+    if threads is not None:
+        for job in jobs:
+            job["config"]["solver"]["threads"] = threads
     plan = {"period": ["2026-01-01", "2026-08-29"], "farms": FARMS,
             "cases": list(CASES), "jobs": len(jobs), "workers": args.workers,
             "solver_threads_per_job": {mode: next(job["config"]["solver"]["threads"]
@@ -430,7 +504,7 @@ def main(argv=None):
             "input": "reviewed farm PV with historical replacements plus read-only DuckDB GME/TERNA snapshots",
             "missing_auction_policy": "skip entirely absent products, reject partial gaps",
             "model_training_and_selection": "none in this study; previously selected artifacts are retrospective",
-            "calibration": "Both cases: 2025 $70/kWh pack price and 6000 EFC/17% cycling; SOH case additionally has 1%/year calendar aging and shrinking capacity",
+            "calibration": "SOH and matched-cost cases: 2025 $70/kWh and 6000 EFC/17% cycling; SOH additionally has 1%/year calendar aging and shrinking capacity; no-wear case has no aging penalty",
             "metrics": "realized cash, own-model wear, throughput, SOH, solver status and common linear aging proxy revaluation",
             "output_directory": str(batch)}
     print(json.dumps(plan, indent=2), flush=True)
