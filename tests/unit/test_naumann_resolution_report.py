@@ -55,10 +55,14 @@ def test_failed_run_reports_attempts_without_claiming_health(tmp_path):
     attempt_dir = tmp_path / "strategies/integrated/json"
     attempt_dir.mkdir(parents=True)
     (attempt_dir / "optimization_attempts.json").write_text(json.dumps([
-        {"status": "optimal", "runtime_seconds": 5, "validation": {"valid": False}}
+        {"status": "optimal", "runtime_seconds": 5, "max_violation": 1.5e-6,
+         "binary_variables": 30, "validation": {"valid": False, "violations": ["depth dose"]}}
     ]))
     result = report.summarize_run(tmp_path, .5)
     assert result["validation_failures"] == 1
     assert result["solver_seconds_total"] == 5
+    assert result["largest_solver_violation"] == 1.5e-6
+    assert result["maximum_binary_variables"] == 30
+    assert result["last_validation_failure"] == "depth dose"
     assert "final_soh" not in result
     assert report.summarize_run(tmp_path / "missing", .5)["run_status"] == "not_started_or_missing"

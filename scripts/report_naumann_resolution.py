@@ -70,6 +70,10 @@ def summarize_run(directory, reference_rate):
     attempts = json.loads(attempts_path.read_text()) if attempts_path.exists() else []
     times = [item["runtime_seconds"] for item in attempts if item.get("runtime_seconds") is not None]
     gaps = [item["mip_gap"] for item in attempts if item.get("mip_gap") is not None]
+    violations = [item["max_violation"] for item in attempts if item.get("max_violation") is not None]
+    variables = [item["variables"] for item in attempts if item.get("variables") is not None]
+    binaries = [item["binary_variables"] for item in attempts if item.get("binary_variables") is not None]
+    failed = [item for item in attempts if item.get("validation", {}).get("valid") is False]
     result = {
         "run": str(directory),
         "run_status": manifest.get("status", "unknown"),
@@ -77,7 +81,11 @@ def summarize_run(directory, reference_rate):
         "auction_attempts": len(attempts),
         "optimal_solves": sum(item.get("status") == "optimal" for item in attempts),
         "time_limit_feasible": sum(item.get("status") == "feasible_time_limit" for item in attempts),
-        "validation_failures": sum(item.get("validation", {}).get("valid") is False for item in attempts),
+        "validation_failures": len(failed),
+        "last_validation_failure": "; ".join(failed[-1].get("validation", {}).get("violations", [])) if failed else None,
+        "largest_solver_violation": max(violations) if violations else None,
+        "maximum_variables": max(variables) if variables else None,
+        "maximum_binary_variables": max(binaries) if binaries else None,
         "solver_seconds_total": sum(times),
         "solver_seconds_mean": float(np.mean(times)) if times else None,
         "maximum_reported_gap": max(gaps) if gaps else None,
