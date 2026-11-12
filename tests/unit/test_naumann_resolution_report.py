@@ -1,5 +1,6 @@
 """Check the independent cycle-counting report on known synthetic trajectories."""
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
@@ -45,3 +46,19 @@ def test_local_rate_replay_removes_only_upper_bin_factor():
     })
     expected = float(cycle_rate_factor(.1, settings) ** 2) + second
     assert report.unbinned_local_rate_exposure(frame, settings) == pytest.approx(expected)
+
+
+def test_failed_run_reports_attempts_without_claiming_health(tmp_path):
+    """Keep failed solves visible without treating partial dispatch as complete."""
+    (tmp_path / "json").mkdir()
+    (tmp_path / "json/manifest.json").write_text(json.dumps({"status": "failed", "error": "validation"}))
+    attempt_dir = tmp_path / "strategies/integrated/json"
+    attempt_dir.mkdir(parents=True)
+    (attempt_dir / "optimization_attempts.json").write_text(json.dumps([
+        {"status": "optimal", "runtime_seconds": 5, "validation": {"valid": False}}
+    ]))
+    result = report.summarize_run(tmp_path, .5)
+    assert result["validation_failures"] == 1
+    assert result["solver_seconds_total"] == 5
+    assert "final_soh" not in result
+    assert report.summarize_run(tmp_path / "missing", .5)["run_status"] == "not_started_or_missing"

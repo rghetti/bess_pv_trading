@@ -60,15 +60,34 @@ def unbinned_local_rate_exposure(frame, settings):
 
 
 def summarize_run(directory, reference_rate):
-    """Read completed run evidence; reject partial and discontinuous histories."""
+    """Report solver evidence for every case and aging only for complete runs."""
     directory = Path(directory)
+    if not (directory / "json/manifest.json").exists():
+        return {"run": str(directory), "run_status": "not_started_or_missing"}
     manifest = json.loads((directory / "json/manifest.json").read_text())
+    output = directory / "strategies/integrated"
+    attempts_path = output / "json/optimization_attempts.json"
+    attempts = json.loads(attempts_path.read_text()) if attempts_path.exists() else []
+    times = [item["runtime_seconds"] for item in attempts if item.get("runtime_seconds") is not None]
+    gaps = [item["mip_gap"] for item in attempts if item.get("mip_gap") is not None]
+    result = {
+        "run": str(directory),
+        "run_status": manifest.get("status", "unknown"),
+        "run_error": manifest.get("error"),
+        "auction_attempts": len(attempts),
+        "optimal_solves": sum(item.get("status") == "optimal" for item in attempts),
+        "time_limit_feasible": sum(item.get("status") == "feasible_time_limit" for item in attempts),
+        "validation_failures": sum(item.get("validation", {}).get("valid") is False for item in attempts),
+        "solver_seconds_total": sum(times),
+        "solver_seconds_mean": float(np.mean(times)) if times else None,
+        "maximum_reported_gap": max(gaps) if gaps else None,
+    }
+    # Never interpret a partial trajectory as a completed study's health result.
     if manifest.get("status") != "complete":
-        raise ValueError(f"Run is not complete: {directory}")
+        return result
     config = json.loads((directory / "json/study_config.json").read_text())
     settings = NaumannSettings(**config["degradation"]["naumann"])
     capacity = float(config["battery"]["capacity_mwh"])
-    output = directory / "strategies/integrated"
     frame = pd.read_csv(output / "csv/realized_dispatch.csv")
     if frame.empty:
         raise ValueError(f"Empty dispatch: {directory}")
@@ -83,20 +102,10 @@ def summarize_run(directory, reference_rate):
     if not np.allclose(frame.energy_start_mwh.iloc[1:], frame.energy_end_mwh.iloc[:-1], atol=1e-7, rtol=0):
         raise ValueError(f"Non-contiguous energy states: {directory}")
     energy = np.r_[frame.energy_start_mwh.iloc[0], frame.energy_end_mwh.to_numpy()]
-    result = rainflow_benchmark(energy, capacity, settings, reference_rate)
-    attempts = json.loads((output / "json/optimization_attempts.json").read_text())
-    times = [item["runtime_seconds"] for item in attempts if item.get("runtime_seconds") is not None]
-    gaps = [item["mip_gap"] for item in attempts if item.get("mip_gap") is not None]
+    result.update(rainflow_benchmark(energy, capacity, settings, reference_rate))
     result.update({
-        "run": str(directory),
         "rate_bin_width_c": settings.c_rate_bin_width,
         "intervals": len(frame),
-        "auction_attempts": len(attempts),
-        "optimal_solves": sum(item.get("status") == "optimal" for item in attempts),
-        "time_limit_feasible": sum(item.get("status") == "feasible_time_limit" for item in attempts),
-        "solver_seconds_total": sum(times),
-        "solver_seconds_mean": float(np.mean(times)) if times else None,
-        "maximum_reported_gap": max(gaps) if gaps else None,
         "initial_soh": float(frame.battery_soh_start.iloc[0]),
         "final_soh": float(frame.battery_soh_end.iloc[-1]),
         "recorded_cycle_loss_fraction": float(frame.naumann_cycle_loss_fraction_end.iloc[-1] - frame.naumann_cycle_loss_fraction_start.iloc[0]),
@@ -112,9 +121,9 @@ def summarize_run(directory, reference_rate):
 
 
 def main():
-    """Print one result row per completed run, preserving missing-run errors."""
+    """Print one row per requested run, including failures and missing cases."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("runs", nargs="+", help="Completed continuous experiment output directories")
+    parser.add_argument("runs", nargs="+", help="Continuous experiment output directories")
     parser.add_argument("--reference-rate", type=float, default=0.5, help="Fixed reference C-rate")
     arguments = parser.parse_args()
     rows = [summarize_run(path, arguments.reference_rate) for path in arguments.runs]
