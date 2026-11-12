@@ -1,4 +1,4 @@
-"""Run eight independent 2026 battery-aging trajectories with four workers.
+"""Run eight independent 2026 battery-aging trajectories concurrently.
 
 Without --run this prints the study plan and does not start a simulation.
 """
@@ -376,9 +376,11 @@ def write_intraday_analysis(batch, results):
 
 
 def main(argv=None):
-    """Describe the study, or run its eight jobs in a shared four-worker queue."""
+    """Describe the study, or run its eight jobs in a shared worker queue."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True, help="Fresh batch identifier under outputs/energy_research")
+    parser.add_argument("--workers", type=int, default=8, choices=range(1, 9),
+                        help="Maximum concurrent trajectories (default: 8)")
     parser.add_argument("--run", action="store_true", help="Actually launch the requested trajectories")
     parser.add_argument("--resume", action="store_true", help="Resume incomplete cases without rerunning completed cases")
     args = parser.parse_args(argv)
@@ -389,7 +391,7 @@ def main(argv=None):
     batch = ROOT / "outputs/energy_research" / args.run_id
     jobs = resolve_jobs(batch)
     plan = {"period": ["2026-01-01", "2026-08-29"], "farms": FARMS,
-            "cases": list(CASES), "jobs": len(jobs), "workers": 4, "solver_threads_per_job": 3,
+            "cases": list(CASES), "jobs": len(jobs), "workers": args.workers, "solver_threads_per_job": 3,
             "native_threads_at_worker_start": 1, "pv_inference_threads_per_worker": 3,
             "daily_limit_efc": 2.0,
             "daily_limit_basis": "AC charge plus discharge / (2 * daily committed available MWh); baseline fixed, SOH case fading",
@@ -431,6 +433,9 @@ def main(argv=None):
         manifest.setdefault("previous_results", []).extend(item for item in previous
             if item.get("status") not in {"complete", "stopped_at_battery_end_of_life"})
         manifest["results"] = [item for item in previous if item.get("status") in {"complete", "stopped_at_battery_end_of_life"}] + recovered
+        # Worker count may change on resume without changing study inputs.
+        manifest.setdefault("worker_counts", []).append(manifest.get("plan", {}).get("workers"))
+        manifest["plan"]["workers"] = args.workers
         print(f"Resuming {len(jobs)} unfinished cases; preserving {len(completed)} finished cases.", flush=True)
     else:
         manifest = {"status": "running", "plan": plan, "results": [],
@@ -439,7 +444,7 @@ def main(argv=None):
     results = manifest["results"]
     write_manifest(manifest_path, manifest)
     # Eight independent jobs share a queue; each free slot takes the next job.
-    pool = ProcessPoolExecutor(max_workers=4, mp_context=multiprocessing.get_context("spawn"),
+    pool = ProcessPoolExecutor(max_workers=args.workers, mp_context=multiprocessing.get_context("spawn"),
                                initializer=configure_worker_threads, initargs=(1, True))
     try:
         futures = {pool.submit(run_job, job, batch, args.resume): job for job in jobs}

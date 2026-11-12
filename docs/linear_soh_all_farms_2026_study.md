@@ -17,11 +17,11 @@ denominator shrinks daily. The same two-cycle limit therefore permits different
 MWh budgets once health declines.
 
 Delivery is 1 January–29 August 2026 inclusive, leaving the full 48-hour model
-forecast context inside the available weather data. The independent jobs use up to four workers at once,
+forecast context inside the available weather data. The independent jobs use up to eight workers at once,
 three Gurobi threads per solve and a 60-second per-solve limit. Native thread
 settings start at one per worker; PV inference configures PyTorch to use three
 threads per worker. A free worker takes the next queued trajectory until
-fewer than four remain. Failed cases are recorded and do not cancel the other
+fewer than eight remain. Failed cases are recorded and do not cancel the other
 cases. Gurobi logs are disabled; chronological progress is printed with a farm
 and case prefix and saved in the batch's `logs/` folder.
 

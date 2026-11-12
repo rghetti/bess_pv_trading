@@ -11,6 +11,14 @@ import run_linear_soh_farm_comparison as study
 from bess_pv_trading.optimization.degradation import degradation_settings_from_config
 
 
+def test_plan_defaults_to_eight_concurrent_jobs_and_allows_override(capsys):
+    """The preview reports the actual requested worker count without launching jobs."""
+    assert study.main(["--run-id", "worker_preview"]) == 0
+    assert json.loads(capsys.readouterr().out)["workers"] == 8
+    assert study.main(["--run-id", "worker_preview", "--workers", "4"]) == 0
+    assert json.loads(capsys.readouterr().out)["workers"] == 4
+
+
 def test_intraday_analysis_uses_only_complete_pairs(tmp_path, monkeypatch):
     """Forward both matching cases to the existing intraday reporting workflow."""
     from bess_pv_trading.reporting import k25_intraday_profiles
