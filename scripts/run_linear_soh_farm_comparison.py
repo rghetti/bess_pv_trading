@@ -8,6 +8,7 @@ import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from contextlib import redirect_stderr, redirect_stdout
 import fcntl
+import gc
 import json
 import multiprocessing
 from pathlib import Path
@@ -76,6 +77,10 @@ def run_job(job, batch, resume=False):
             print(result["traceback"], file=stream, flush=True)
             print(f"[farm {farm} / {mode}] {result['status'].upper()}: {error}; see {log}",
                   file=sys.__stdout__, flush=True)
+        finally:
+            # A worker can receive another case; collect unreachable preflight
+            # and replay objects once this run has returned or failed.
+            gc.collect()
     return result
 
 
@@ -349,6 +354,27 @@ def paired_summary(batch, results):
     return str(destination), len(rows)
 
 
+def write_intraday_analysis(batch, results):
+    """Reuse the standard intraday profiles for complete matched farm pairs."""
+    from bess_pv_trading.reporting.k25_intraday_profiles import write_intraday_profiles
+
+    completed = {(item["farm"], item["mode"]) for item in results if item["status"] == "complete"}
+    rows = []
+    for farm in FARMS:
+        if not all((farm, mode) in completed for mode in CASES):
+            continue
+        for mode in CASES:
+            root = Path(batch) / "runs" / f"farm_{farm}" / mode
+            strategy = root / "strategies/integrated"
+            rows.append({"farm": farm, "case": mode, "controller": "track_committed_grid",
+                "label": mode, "config": json.loads((root / "json/study_config.json").read_text()),
+                "summary": json.loads((strategy / "json/kpis.json").read_text()),
+                "csv_dir": strategy / "csv"})
+    if not rows:
+        return None
+    return str(write_intraday_profiles(batch, rows, plots=True))
+
+
 def main(argv=None):
     """Describe the study, or run its eight jobs in a shared four-worker queue."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -444,6 +470,7 @@ def main(argv=None):
         manifest["comparison_markdown"] = str(batch / "comparison.md")
         manifest["auction_comparison"] = str(batch / "auction_comparison.csv")
         manifest["comparison_figures"] = sorted(str(path) for path in (batch / "figures").glob("*.png"))
+        manifest["intraday_analysis"] = write_intraday_analysis(batch, results)
     except Exception as error:
         manifest["status"] = "comparison_failed"
         manifest["comparison_error"] = str(error)

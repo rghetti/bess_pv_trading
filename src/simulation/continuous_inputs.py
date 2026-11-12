@@ -725,6 +725,8 @@ def prepare_continuous_inputs(config: dict[str, Any], progress: Callable[[str], 
             if show_forecast_progress and (request_index % progress_interval == 0 or request_index == forecast_request_count):
                 progress(f"Forecast preflight {request_index}/{forecast_request_count}: {key}")
         forecast_reader_stats = forecast_reader.stats
+    # Issue-context inference is complete; retain only the copied cutoff bundles.
+    issue_cache.clear()
     if show_forecast_progress:
         progress(f"Cutoff forecast cache: {forecast_reader_stats['zarr_store_opens']} Zarr open, "
             f"{forecast_reader_stats['metadata_reads']} metadata read, "

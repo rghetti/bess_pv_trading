@@ -98,3 +98,12 @@ for each completed farm and case. Signed auction cash excludes fees and is
 reconciled to delivered-interval revenue. It describes booked trades rather
 than causally attributing profit; individual trades remain in each run's
 `accepted_trades.csv`.
+
+For complete matched farm pairs, the batch also runs the standard intraday
+analysis and monthly plots under `intraday_analysis/`, including hourly and
+quarter-hour profiles, prices, imbalance and final commitments. SOC in that
+analysis uses nominal capacity, as documented by the intraday report.
+Transient raw-vintage, PV-conversion and issue-context caches are cleared after
+preflight; the pinned forecasts needed for replay remain until the run finishes.
+The worker then collects unreachable objects before taking another job. Python
+and native allocators may retain freed memory for reuse.

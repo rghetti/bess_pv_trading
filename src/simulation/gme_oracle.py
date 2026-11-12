@@ -698,8 +698,16 @@ class _ForecastPreflightSession:
 
     def __exit__(self, exception_type, exception, traceback):
         _ACTIVE_FORECAST_PREFLIGHT.reset(self.token)
-        if self.dataset is not None:
-            self.dataset.close()
+        try:
+            if self.dataset is not None:
+                self.dataset.close()
+        finally:
+            # Raw source vintages and converted PV caches are preflight-only;
+            # the separately prepared forecasts remain available to the replay.
+            self.dataset = None
+            self.metadata = None
+            self.vintage_cache.clear()
+            self.pv_cache.clear()
 
     def load(self, config, calendar, cutoff, starts):
         """Read an eligible vintage while reusing this preflight's open sources."""

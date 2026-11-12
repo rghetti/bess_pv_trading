@@ -11,6 +11,46 @@ import run_linear_soh_farm_comparison as study
 from bess_pv_trading.optimization.degradation import degradation_settings_from_config
 
 
+def test_intraday_analysis_uses_only_complete_pairs(tmp_path, monkeypatch):
+    """Forward both matching cases to the existing intraday reporting workflow."""
+    from bess_pv_trading.reporting import k25_intraday_profiles
+    captured = []
+    def report(batch, rows, *, plots):
+        captured.extend(rows)
+        assert plots is True
+        return batch / "intraday_analysis/report.md"
+    monkeypatch.setattr(k25_intraday_profiles, "write_intraday_profiles", report)
+    for mode in study.CASES:
+        root = tmp_path / "runs/farm_1" / mode
+        (root / "json").mkdir(parents=True)
+        (root / "json/study_config.json").write_text("{}")
+        (root / "strategies/integrated/json").mkdir(parents=True)
+        (root / "strategies/integrated/json/kpis.json").write_text("{}")
+    results = [{"farm": 1, "mode": mode, "status": "complete"} for mode in study.CASES]
+    results.append({"farm": 345, "mode": "linear_soh", "status": "complete"})
+    assert study.write_intraday_analysis(tmp_path, results).endswith("intraday_analysis/report.md")
+    assert {(row["farm"], row["case"]) for row in captured} == {(1, mode) for mode in study.CASES}
+
+
+def test_preflight_session_releases_raw_caches_on_exit():
+    """Closing preflight clears transient references, including on errors."""
+    from bess_pv_trading.simulation.gme_oracle import _ForecastPreflightSession
+    class Dataset:
+        closed = False
+        def close(self):
+            self.closed = True
+    dataset = Dataset()
+    with pytest.raises(RuntimeError):
+        with _ForecastPreflightSession({}, None) as session:
+            session.dataset = dataset
+            session.metadata = object()
+            session.vintage_cache["x"] = object()
+            session.pv_cache["x"] = object()
+            raise RuntimeError("test")
+    assert dataset.closed and session.dataset is None and session.metadata is None
+    assert not session.vintage_cache and not session.pv_cache
+
+
 def test_eight_jobs_have_identical_operational_settings_and_current_pack_price(tmp_path):
     """Both cases use the same cycle-count limit and three Gurobi threads."""
     jobs = study.resolve_jobs(tmp_path)
