@@ -12,14 +12,14 @@ This initial feature-isolation benchmark deliberately does not feed the **curren
 
 The baseline is the most recent eligible same-delivery earlier clearing, and the weekly-naive curve matches the own auction's local product seven days earlier. Source timestamps are checked against the decision gate. The archive's NORD forecast issue times are not verified; archived forecast values are assumed available at the target gate. Pretrained-data overlap is possible. November 2026 remains a separate reserved report period without selection. TimesFM 3 weights are non-commercial.
 
-Prepare immutable inputs and inspect the launch plan:
+Inspect the launch plan (including missing inputs), or prepare missing bundles without inference:
 
 ```bash
-/home/rghetti/miniforge3/envs/bess/bin/python -m scripts.prepare_ida_zero_shot
 /home/rghetti/miniforge3/envs/bess/bin/python -m scripts.run_ida_zero_shot_study
+/home/rghetti/miniforge3/envs/bess/bin/python -m scripts.run_ida_zero_shot_study --prepare-only
 ```
 
-Launch in tmux after preparation:
+Launch in tmux; missing bundles for the configured windows are prepared automatically before inference:
 
 ```bash
 /home/rghetti/miniforge3/envs/bess/bin/python -m scripts.run_ida_zero_shot_study --run --batch-size 8
@@ -38,3 +38,5 @@ python -m scripts.prepare_da_cross_border_covariates \
 ```
 
 This extension retains the earlier retrospective prior-day quantity assumptions and may have substantially lower coverage. It is not part of the 27-study own-gate launcher by default.
+
+Input preparation is native to the launcher. Adding a window such as 56 or 84 in the study YAML requires no separate preparation command. Existing per-window bundles are reused only when their model specifications, pinned source manifest, semantic study settings and file checksums match. Global window/variant lists do not invalidate completed per-window inputs. New bundles are prepared in temporary sibling directories and installed atomically. Incomplete or incompatible existing directories are rejected; choose a new `--root` rather than overwriting pinned experiments. Plan-only mode does not create inputs or run models. `--prepare-only` prepares inputs but launches no inference.
