@@ -1,0 +1,22 @@
+include: ../standard.yaml
+
+zero_shot_da_probe:
+  snapshot: outputs/zero_shot_price_inputs/merged
+  model_config: configs/research/zero_shot_price_study.yaml
+  start: '2025-10-01'
+  end_exclusive: null  # Infer from the latest fully covered native DA day.
+  november_holdout_start: '2026-11-01'
+  context_days: 7
+  timezone: Europe/Rome
+  minutes: 15
+  native_transition: '2025-10-01'
+  decision_time: '11:45'
+  decision_day_offset: -1
+  publication_time: '12:57'
+  publication_day_offset: -1
+  quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+  models: [chronos2, t0_gamma, timesfm3]
+  threads: 1
+  seed: 1729
+  precision: float32
+  missing_context: exclude_day
