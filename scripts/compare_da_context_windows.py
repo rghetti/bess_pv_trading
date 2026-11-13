@@ -15,14 +15,14 @@ from bess_pv_trading.forecasting.studies.zero_shot_price_scoring import score
 def main():
     """Require completed reports and score the same products for all six variants."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', default='outputs/da_zero_shot_context_comparison')
+    parser.add_argument('--output', default='outputs/da_zero_shot_context_windows/comparison')
     args = parser.parse_args()
-    sources = {(7, 'history'): 'outputs/da_zero_shot_run_7d/report',
-               (28, 'history'): 'outputs/da_zero_shot_run/report',
-               (60, 'history'): 'outputs/da_zero_shot_run_60d/report',
-               (7, 'nord'): 'outputs/da_zero_shot_nord_run_7d/report',
-               (28, 'nord'): 'outputs/da_zero_shot_nord_run/report',
-               (60, 'nord'): 'outputs/da_zero_shot_nord_run_60d/report'}
+    sources = {(7, 'history'): 'outputs/da_zero_shot_context_windows/7d/history/run/report',
+               (28, 'history'): 'outputs/da_zero_shot_context_windows/28d/history/run/report',
+               (60, 'history'): 'outputs/da_zero_shot_context_windows/60d/history/run/report',
+               (7, 'nord'): 'outputs/da_zero_shot_context_windows/7d/nord/run/report',
+               (28, 'nord'): 'outputs/da_zero_shot_context_windows/28d/nord/run/report',
+               (60, 'nord'): 'outputs/da_zero_shot_context_windows/60d/nord/run/report'}
     frames = []
     counts = []
     for (window, variant), directory in sources.items():

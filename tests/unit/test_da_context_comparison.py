@@ -12,9 +12,9 @@ from scripts.compare_da_context_windows import main
 def test_six_way_comparison_excludes_unmatched_products(tmp_path, monkeypatch):
     """A price product absent from any variant cannot influence any score."""
     monkeypatch.chdir(tmp_path)
-    paths = ['outputs/da_zero_shot_run_7d/report', 'outputs/da_zero_shot_run/report',
-             'outputs/da_zero_shot_run_60d/report', 'outputs/da_zero_shot_nord_run_7d/report',
-             'outputs/da_zero_shot_nord_run/report', 'outputs/da_zero_shot_nord_run_60d/report']
+    paths = ['outputs/da_zero_shot_context_windows/7d/history/run/report', 'outputs/da_zero_shot_context_windows/28d/history/run/report',
+             'outputs/da_zero_shot_context_windows/60d/history/run/report', 'outputs/da_zero_shot_context_windows/7d/nord/run/report',
+             'outputs/da_zero_shot_context_windows/28d/nord/run/report', 'outputs/da_zero_shot_context_windows/60d/nord/run/report']
     for index, name in enumerate(paths):
         directory = tmp_path / name
         directory.mkdir(parents=True)
@@ -25,7 +25,7 @@ def test_six_way_comparison_excludes_unmatched_products(tmp_path, monkeypatch):
         frame.to_parquet(directory / 'matched_forecasts.parquet')
     monkeypatch.setattr(sys, 'argv', ['compare'])
     main()
-    result = pd.read_csv('outputs/da_zero_shot_context_comparison/scores.csv')
+    result = pd.read_csv('outputs/da_zero_shot_context_windows/comparison/scores.csv')
     assert len(result) == 6
     assert result.products.eq(1).all()
     assert result.mae.eq(1).all()
