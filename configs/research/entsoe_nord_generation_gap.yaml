@@ -1,0 +1,15 @@
+include: ../standard.yaml
+
+api:
+  start: '2025-08-10'
+  end: '2025-08-12'
+  timezone: Europe/Rome
+  storage_backend: duckdb
+  database_path: /home/rghetti/bess_pv_trading_features/data/api/market.duckdb
+  output_directory: outputs/api/entsoe_nord_generation_gap
+  requests:
+    - provider: entsoe
+      dataset: generation_forecast
+      options:
+        zone: NORD
+        zone_eic: 10Y1001A1001A73I
