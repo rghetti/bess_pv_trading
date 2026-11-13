@@ -46,7 +46,8 @@ On this host, Chronos-2 and TimesFM 3 passed this short FP32 probe on the RTX
 486 MiB and 1.34 GiB, respectively. These are not full-study memory estimates.
 The same CUDA build lacks kernels for the Titan V's compute capability 7.0;
 the initial t0 probe on that device failed. The TimeH2O weights returned an
-authentication/access error. Full per-probe records are under
+authentication/access error. A subsequent t0-gamma probe passed on the Titan V
+using PyTorch 2.14.1+cu126, with about 1 GiB peak reserved GPU memory. Full per-probe records are under
 `outputs/zero_shot_preflight/`. Environment package inventories are in
 `requirements/zero_shot/`; inventories record resolved packages, not verified
 portable lockfiles or permission to use restricted weights.
