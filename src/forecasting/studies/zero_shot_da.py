@@ -249,6 +249,20 @@ def report(bundle, run, output):
             baseline = group.drop(columns=[f'q{q:02}' for q in range(10, 100, 10)], errors='ignore')
             baseline_rows.append({'variant': name, 'period': period, **score(baseline.assign(prediction=baseline[name]))})
     pd.DataFrame(baseline_rows).to_csv(output / 'baseline_scores.csv', index=False)
+    # Emit an interpretable Markdown companion automatically for every run.
+    text = ['# DA zero-shot run summary', '',
+            'Scores use products matched across all configured models. November 2026 is reported separately.', '',
+            'Archived covariate issue times can be unverified; consult the pinned input manifest.', '']
+    for _, row in summary.loc[summary.breakdown.eq('period')].iterrows():
+        text.extend([f"## {row['period']} — {row['variant']}", '', '| Metric | Value |', '|---|---:|'])
+        for name, value in row.items():
+            if name in ('breakdown', 'variant', 'period', 'month', 'hour', 'delivery_day') or pd.isna(value):
+                continue
+            text.append(f'| {name} | {value:.4f} |' if isinstance(value, (float, np.floating)) else f'| {name} | {value} |')
+        text.append('')
+    text.extend(['[Complete metrics](scores.csv) · [Baseline metrics](baseline_scores.csv) · '
+                 '[Daily metrics](daily_scores.csv) · [Completion](completion.csv)', ''])
+    (output / 'summary.md').write_text('\n'.join(text))
     daily = []
     for (model, day), group in common.groupby(['variant', 'delivery_day']):
         daily.append({'variant': model, 'delivery_day': day, **score(group)})

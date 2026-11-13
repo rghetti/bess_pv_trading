@@ -1,0 +1,9 @@
+include: ../standard.yaml
+
+zero_shot_da_cross_border:
+  feature_search_config: configs/research/price_feature_selection_full_year.yaml
+  blocks: [gas, france, switzerland]
+  description: previous-day-assumed-available realized gas and regional quantities
+  source_snapshot: outputs/zero_shot_price_inputs/merged
+  nord_bundle: outputs/da_zero_shot_context_windows/60d/nord/inputs
+  output: outputs/da_zero_shot_context_windows/60d/nord_gas_fr_ch/inputs
