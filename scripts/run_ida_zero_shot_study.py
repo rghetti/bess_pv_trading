@@ -129,6 +129,47 @@ def ensure_inputs(config, root, settings, prepare=True, workers=5, on_ready=None
     return actions
 
 
+def _report_task(bundle, forecast_directory, output):
+    """Render one study report in an isolated CPU process."""
+    from bess_pv_trading.forecasting.studies.zero_shot_da import report
+    report(bundle, forecast_directory, output)
+    return str(output)
+
+
+def _report_is_complete(bundle, output):
+    """Skip a complete saved report when resuming only report generation."""
+    try:
+        manifest = json.loads((Path(bundle) / 'manifest.json').read_text())
+        status = json.loads((Path(output) / 'status.json').read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return False
+    expected = manifest['eligible_days'] * len(manifest['models'])
+    return (status.get('complete') is True
+            and status.get('expected_daily_predictions') == expected
+            and status.get('saved_daily_predictions') == expected
+            and all((Path(output) / filename).is_file() for filename in
+                    ('summary.md', 'scores.csv', 'matched_forecasts.parquet', 'daily_scores.csv')))
+
+
+def generate_reports(commands, workers, skip_complete=False):
+    """Render independent reports concurrently, then let the caller compare them."""
+    pending = []
+    for _, command in commands:
+        bundle = command[command.index('--bundle') + 1]
+        output = command[command.index('--output') + 1]
+        forecast_directory = command[command.index('--forecast-directory') + 1]
+        if skip_complete and _report_is_complete(bundle, output):
+            print(f'Reusing completed IDA report: {output}', flush=True)
+            continue
+        pending.append((bundle, forecast_directory, output))
+    if not pending:
+        return
+    with ProcessPoolExecutor(max_workers=min(workers, len(pending))) as executor:
+        futures = [executor.submit(_report_task, *item) for item in pending]
+        for future in as_completed(futures):
+            print(f'Completed IDA report: {future.result()}', flush=True)
+
+
 def main():
     """Plan by default; explicit --run launches the configured historical replay."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -140,15 +181,23 @@ def main():
     parser.add_argument('--threads', type=int, default=1)
     parser.add_argument('--prepare-workers', type=int, default=10,
                         help='Concurrent CPU processes for independent input bundles')
+    parser.add_argument('--report-workers', type=int, default=30,
+                        help='Concurrent CPU processes for independent report generation')
     parser.add_argument('--run', action='store_true')
+    parser.add_argument('--report-only', action='store_true',
+                        help='Resume report/plot generation from saved forecasts without inference')
+    parser.add_argument('--refresh-reports', action='store_true',
+                        help='Regenerate complete reports as well as missing reports')
     parser.add_argument('--allow-download', action='store_true')
     parser.add_argument('--preflight-only', action='store_true')
     parser.add_argument('--prepare-only', action='store_true', help='Prepare missing input bundles, without inference')
     args = parser.parse_args()
     settings = load_config(args.config)['zero_shot_ida']
     root = Path(args.root or settings['output'])
-    if args.prepare_only and args.run:
-        parser.error('--prepare-only and --run are mutually exclusive')
+    if sum((args.prepare_only, args.run, args.report_only)) > 1:
+        parser.error('--prepare-only, --run and --report-only are mutually exclusive')
+    if args.report_workers < 1:
+        parser.error('--report-workers must be positive')
     devices = None
     if args.run:
         from scripts.da_zero_shot_probe import available_devices
@@ -195,11 +244,16 @@ def main():
                     '--bundle', str(directory / 'inputs'), '--forecast-directory', str(directory / 'run'),
                     '--output', str(directory / 'run/report')]
                 commands.append((command, report))
+    if args.report_only:
+        print(f'Resuming IDA reports for {len(commands)} studies with {args.report_workers} workers.', flush=True)
+        generate_reports(commands, args.report_workers, skip_complete=not args.refresh_reports)
+        subprocess.run([sys.executable, '-m', 'scripts.report_ida_zero_shot',
+                        '--config', args.config, '--root', str(root)], check=True)
+        return
     print(json.dumps({'mode': 'run' if args.run else 'plan_only', 'studies': len(commands),
                       'input_preparation': preparation, 'commands': commands}, indent=2), flush=True)
-    if args.run and not args.preflight_only:
-        for _, report in commands:
-            subprocess.run(report, check=True)
+    if args.report_only or (args.run and not args.preflight_only):
+        generate_reports(commands, args.report_workers, skip_complete=args.report_only)
         subprocess.run([sys.executable, '-m', 'scripts.report_ida_zero_shot',
                         '--config', args.config, '--root', str(root)], check=True)
 
