@@ -11,13 +11,14 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.forecasting.studies.zero_shot_ida import IDAInputs, prepare_ida_bundle
 from bess_pv_trading.forecasting.studies.zero_shot_da import digest
 
 
-def ensure_inputs(config, root, settings, prepare=True):
+def ensure_inputs(config, root, settings, prepare=True, workers=5):
     """Prepare absent bundles atomically, and verify existing semantic inputs.
 
     Global windows/variants lists are orchestration choices, so adding a window
@@ -30,6 +31,8 @@ def ensure_inputs(config, root, settings, prepare=True):
     source_hash = digest(Path(settings['snapshot']) / 'manifest.json')
     if settings['minimum_context_days'] < 1:
         raise ValueError('minimum_context_days must be positive')
+    if workers < 1:
+        raise ValueError('Input preparation workers must be positive')
     actions = []
     for market in settings['auctions']:
         if market not in ('IDA1', 'IDA2', 'IDA3'):
@@ -48,8 +51,8 @@ def ensure_inputs(config, root, settings, prepare=True):
         root.mkdir(parents=True, exist_ok=True)
         lock = (root / '.preparation.lock').open('w')
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    inputs = None
     try:
+        pending = []
         for action in actions:
             path = Path(action['path'])
             manifest = path / 'manifest.json'
@@ -74,20 +77,31 @@ def ensure_inputs(config, root, settings, prepare=True):
                 continue
             if not prepare:
                 continue
-            if inputs is None:
-                inputs = IDAInputs(settings['snapshot'], settings, definitions)
             path.parent.mkdir(parents=True, exist_ok=True)
-            temporary = Path(tempfile.mkdtemp(prefix='.inputs-preparing-', dir=path.parent))
-            try:
-                prepared = temporary / 'inputs'
-                print(f"Preparing {action['auction']} {action['window']}d {action['variant']}", flush=True)
-                prepare_ida_bundle(inputs, prepared, action['auction'], action['window'], action['variant'], models)
-                if path.exists():
-                    raise FileExistsError(f'Another writer created {path}')
-                os.rename(prepared, path)
-                action['action'] = 'prepared'
-            finally:
-                shutil.rmtree(temporary)
+            pending.append(action)
+        if pending:
+            # Load and checksum the pinned snapshot once, then share its read-only
+            # indices while workers build independent bundles in separate dirs.
+            inputs = IDAInputs(settings['snapshot'], settings, definitions)
+
+            def prepare_one(action):
+                path = Path(action['path'])
+                temporary = Path(tempfile.mkdtemp(prefix='.inputs-preparing-', dir=path.parent))
+                try:
+                    prepared = temporary / 'inputs'
+                    print(f"Preparing {action['auction']} {action['window']}d {action['variant']}", flush=True)
+                    prepare_ida_bundle(inputs, prepared, action['auction'], action['window'], action['variant'], models)
+                    if path.exists():
+                        raise FileExistsError(f'Another writer created {path}')
+                    os.rename(prepared, path)
+                    action['action'] = 'prepared'
+                finally:
+                    shutil.rmtree(temporary)
+
+            with ThreadPoolExecutor(max_workers=min(workers, len(pending))) as executor:
+                futures = [executor.submit(prepare_one, action) for action in pending]
+                for future in as_completed(futures):
+                    future.result()
     finally:
         if lock is not None:
             lock.close()
@@ -101,8 +115,10 @@ def main():
     parser.add_argument('--root')
     parser.add_argument('--python-root', default='outputs/zero_shot_envs')
     parser.add_argument('--devices', nargs='+', default=['auto'])
-    parser.add_argument('--batch-size', type=int, default=8)
+    parser.add_argument('--batch-size', type=int, default=10)
     parser.add_argument('--threads', type=int, default=1)
+    parser.add_argument('--prepare-workers', type=int, default=5,
+                        help='Concurrent CPU workers for independent input bundles')
     parser.add_argument('--run', action='store_true')
     parser.add_argument('--allow-download', action='store_true')
     parser.add_argument('--preflight-only', action='store_true')
@@ -112,7 +128,8 @@ def main():
     root = Path(args.root or settings['output'])
     if args.prepare_only and args.run:
         parser.error('--prepare-only and --run are mutually exclusive')
-    preparation = ensure_inputs(args.config, root, settings, prepare=args.run or args.prepare_only)
+    preparation = ensure_inputs(args.config, root, settings, prepare=args.run or args.prepare_only,
+                                workers=args.prepare_workers)
     if args.prepare_only:
         print(json.dumps({'mode': 'prepare_only', 'inputs': preparation}, indent=2))
         return

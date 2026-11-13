@@ -2,6 +2,7 @@
 
 import numpy as np
 import pandas as pd
+from threading import RLock
 
 from bess_pv_trading.forecasting.studies.rolling_price_data import PriceIndex
 from bess_pv_trading.forecasting.studies.zero_shot_ida import auction_grid, latest_anchor, complete_suffix
@@ -80,6 +81,7 @@ def test_past_spread_has_only_historical_products_and_cancellation_aware_values(
     inputs.definitions = DEFINITIONS
     inputs.notices = {('ida2_prices', '2026-07-01')}
     inputs.cache = {}
+    inputs._cache_lock = RLock()
     full_grid = pd.date_range('2026-06-20', '2026-07-03', tz='Europe/Rome', freq='15min', inclusive='left').tz_convert('UTC')
     inputs.forecast_grid = full_grid
     inputs.forecast_values = {name: np.ones(len(full_grid)) for name in

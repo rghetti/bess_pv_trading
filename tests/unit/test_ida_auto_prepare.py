@@ -3,6 +3,8 @@
 import json
 import sys
 from pathlib import Path
+import threading
+import time
 
 import pytest
 
@@ -77,10 +79,35 @@ def test_preparation_creates_missing_bundles_once_and_reuses_source_reader(tmp_p
     monkeypatch.setattr(launcher, 'prepare_ida_bundle', prepare)
     actions = launcher.ensure_inputs('study.yaml', settings['output'], settings)
     assert len(readers) == 1
-    assert prepared == [('IDA1', 56, 'history'), ('IDA1', 84, 'history')]
+    assert sorted(prepared) == [('IDA1', 56, 'history'), ('IDA1', 84, 'history')]
     assert [action['action'] for action in actions] == ['prepared', 'prepared']
     assert all((Path(action['path']) / 'manifest.json').is_file() for action in actions)
     assert not list(Path(settings['output']).rglob('.inputs-preparing-*'))
+
+
+def test_input_preparation_uses_at_most_configured_workers(tmp_path, monkeypatch):
+    """Independent pinned bundles are prepared concurrently up to the worker cap."""
+    settings = study_settings(tmp_path)
+    settings['windows'] = [7, 28, 56, 84, 90, 120]
+    mock_configs(monkeypatch, settings)
+    active = 0
+    maximum = 0
+    lock = threading.Lock()
+    monkeypatch.setattr(launcher, 'IDAInputs', lambda *args: object())
+
+    def prepare(inputs, destination, auction, window, variant, models):
+        nonlocal active, maximum
+        with lock:
+            active += 1
+            maximum = max(maximum, active)
+        time.sleep(0.02)
+        saved_bundle(destination, settings, window)
+        with lock:
+            active -= 1
+
+    monkeypatch.setattr(launcher, 'prepare_ida_bundle', prepare)
+    launcher.ensure_inputs('study.yaml', settings['output'], settings, workers=5)
+    assert maximum == 5
 
 
 def test_adding_window_does_not_invalidate_existing_bundle(tmp_path, monkeypatch):

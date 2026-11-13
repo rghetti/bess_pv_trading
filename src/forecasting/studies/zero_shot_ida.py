@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import shutil
+from threading import RLock
 
 import numpy as np
 import pandas as pd
@@ -112,28 +113,30 @@ class IDAInputs:
         self.forecast_values = {name: interval_values(frame, self.forecast_grid,
             pd.to_numeric(frame.value, errors='coerce').to_numpy(float)) for name, frame in self.forecasts.items()}
         self.cache = {}
+        self._cache_lock = RLock()
 
     def day(self, day, market):
         """Return the target day's native grid, target prices, anchors and forecasts."""
         key = (str(pd.Timestamp(day).date()), market)
-        if key not in self.cache:
-            starts = auction_grid(day, market, self.definitions, self.timezone)
-            anchor, trace = latest_anchor(day, market, starts, self.prices, self.definitions,
-                                          self.notices, self.timezone)
-            target = self.prices[market].lookup(starts)
-            cancelled = (self.definitions[market]['dataset'], key[0]) in self.notices
-            if cancelled:
-                target[:] = np.nan
-            positions = self.forecast_grid.get_indexer(starts)
-            present = positions >= 0
-            covariates = {}
-            for name, values in self.forecast_values.items():
-                profile = np.full(len(starts), np.nan)
-                profile[present] = values[positions[present]]
-                covariates[name] = profile
-            self.cache[key] = {'day': key[0], 'starts': starts, 'target': target, 'anchor': anchor,
-                               'anchor_trace': trace, 'covariates': covariates, 'cancelled': cancelled}
-        return self.cache[key]
+        with self._cache_lock:
+            if key not in self.cache:
+                starts = auction_grid(day, market, self.definitions, self.timezone)
+                anchor, trace = latest_anchor(day, market, starts, self.prices, self.definitions,
+                                              self.notices, self.timezone)
+                target = self.prices[market].lookup(starts)
+                cancelled = (self.definitions[market]['dataset'], key[0]) in self.notices
+                if cancelled:
+                    target[:] = np.nan
+                positions = self.forecast_grid.get_indexer(starts)
+                present = positions >= 0
+                covariates = {}
+                for name, values in self.forecast_values.items():
+                    profile = np.full(len(starts), np.nan)
+                    profile[present] = values[positions[present]]
+                    covariates[name] = profile
+                self.cache[key] = {'day': key[0], 'starts': starts, 'target': target, 'anchor': anchor,
+                                   'anchor_trace': trace, 'covariates': covariates, 'cancelled': cancelled}
+            return self.cache[key]
 
     def request(self, day, market, window, variant):
         """Trim only historical full days; require complete delivery-day covariates."""
