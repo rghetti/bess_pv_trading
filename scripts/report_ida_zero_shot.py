@@ -56,7 +56,11 @@ def main():
         if not scores.empty:
             for key, block in scores.groupby(['model', 'period', 'context_days']):
                 variants = block.set_index('input_variant')
-                for before, after in [('history', 'nord'), ('nord', 'nord_spread')]:
+                pairs = [('history', 'nord'), ('nord', 'nord_spread')]
+                if 'holiday' in variants.index:
+                    pairs = [('nord_spread', 'holiday')] + [
+                        ('holiday', name) for name in settings['variants'] if name.startswith('holiday_')]
+                for before, after in pairs:
                     if before not in variants.index or after not in variants.index:
                         continue
                     old, new = variants.loc[before], variants.loc[after]
@@ -89,6 +93,36 @@ def main():
                     continue
                 text.append(f'| {metric} | {row[metric]:.5f} |')
             text.append('')
+        # Select only on development MAE, then draw the extreme daily curves.
+        if 'holiday' in settings['variants']:
+            candidates = scores[scores['period'] == 'retrospective_development']
+            if candidates.empty:
+                raise ValueError(f'No common development products for {market}')
+            winner = candidates.sort_values(['mae', 'wape', 'input_variant'], kind='stable').iloc[0]
+            selected = matched[(matched.period == 'retrospective_development') &
+                               (matched.input_variant == winner['input_variant']) &
+                               (matched.variant == winner['model'])].copy()
+            selected['absolute_error'] = (selected.prediction - selected.actual).abs()
+            daily = selected.groupby('delivery_day').absolute_error.mean().sort_values(kind='stable')
+            daily.to_csv(output / 'winner_daily_mae.csv', header=['mae'])
+            from matplotlib import pyplot as plt
+            chosen = [('best', day) for day in daily.index[:3]] + [('worst', day) for day in daily.index[-3:][::-1]]
+            for rank, (category, day) in enumerate(chosen):
+                frame = selected[selected.delivery_day == day].sort_values('product_start')
+                local = frame.product_start.dt.tz_convert(settings['timezone'])
+                figure, axis = plt.subplots(figsize=(12, 4))
+                axis.plot(local, frame.actual, label='Realized')
+                axis.plot(local, frame.prediction, label='TimesFM median')
+                axis.set(title=f'{market} {day}: {category}, MAE {daily[day]:.2f} EUR/MWh',
+                         ylabel='EUR/MWh', xlabel='Delivery time (local)')
+                axis.legend()
+                figure.autofmt_xdate()
+                figure.tight_layout()
+                figure.savefig(output / f'{category}_{rank % 3 + 1}_{day}.png', dpi=140)
+                plt.close(figure)
+                text.append(f"[{category.title()} {rank % 3 + 1}: {day}]({category}_{rank % 3 + 1}_{day}.png)")
+            text.extend(['', f"Development winner: **{winner['input_variant']}**, MAE {winner['mae']:.3f} EUR/MWh.",
+                         'Best and worst daily plots use matched development products; November is excluded from selection.', ''])
         text.extend(['[Scores](scores.csv) · [Coverage](coverage.csv) · [Matched forecasts](matched_forecasts.parquet)', ''])
         (output / 'summary.md').write_text('\n'.join(text))
         print(f'Prepared {market} comparison: {output}')

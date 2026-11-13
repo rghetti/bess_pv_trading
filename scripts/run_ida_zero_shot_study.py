@@ -34,8 +34,23 @@ def _prepare_input_action(action, models):
     try:
         prepared = temporary / 'inputs'
         print(f"Preparing {action['auction']} {action['window']}d {action['variant']}", flush=True)
-        prepare_ida_bundle(_PREPARATION_INPUTS, prepared, action['auction'], action['window'],
-                           action['variant'], models)
+        variant = action['variant']
+        if variant.startswith('holiday'):
+            from scripts.prepare_da_cross_border_covariates import prepare_bundle
+            from scripts.prepare_ida_feature_extensions import add_holidays
+            base = temporary / 'base'
+            prepare_ida_bundle(_PREPARATION_INPUTS, base, action['auction'], action['window'],
+                               'nord_spread', models)
+            blocks = variant.split('_')[1:]
+            if blocks:
+                prepare_bundle(base, _PREPARATION_INPUTS.root, prepared,
+                               _PREPARATION_INPUTS.settings['auction_config'], blocks)
+            else:
+                os.rename(base, prepared)
+            add_holidays(prepared, variant)
+        else:
+            prepare_ida_bundle(_PREPARATION_INPUTS, prepared, action['auction'], action['window'],
+                               variant, models)
         if path.exists():
             raise FileExistsError(f'Another writer created {path}')
         os.rename(prepared, path)
@@ -67,7 +82,10 @@ def ensure_inputs(config, root, settings, prepare=True, workers=5, on_ready=None
             if not isinstance(window, int) or window < settings['minimum_context_days']:
                 raise ValueError('Every context window must be an integer >= minimum_context_days')
             for variant in settings['variants']:
-                if variant not in ('history', 'nord', 'nord_spread'):
+                valid_extensions = {'holiday', 'holiday_gas', 'holiday_france', 'holiday_switzerland',
+                                    'holiday_gas_france', 'holiday_gas_switzerland',
+                                    'holiday_france_switzerland', 'holiday_gas_france_switzerland'}
+                if variant not in ('history', 'nord', 'nord_spread') and variant not in valid_extensions:
                     raise ValueError(f'Unsupported feature variant: {variant}')
                 path = root / market / f'{window}d' / variant / 'inputs'
                 actions.append({'auction': market, 'window': window, 'variant': variant,
@@ -96,6 +114,8 @@ def ensure_inputs(config, root, settings, prepare=True, workers=5, on_ready=None
                 if settings.get('end_exclusive') is not None:
                     expected['end_exclusive'] = settings['end_exclusive']
                 mismatch = [key for key, value in expected.items() if saved['settings'].get(key) != value]
+                if action['variant'].startswith('holiday') and saved.get('feature_variant') != action['variant']:
+                    mismatch.append('feature_variant')
                 if mismatch or saved.get('models') != models or saved.get('source_manifest_sha256') != source_hash:
                     raise ValueError(f'Existing bundle configuration mismatch ({mismatch}); use a new --root: {path}')
                 for relative, checksum in saved['files'].items():
