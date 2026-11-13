@@ -75,7 +75,7 @@ execution:
 settlement:
   enabled: true
 experiment_outputs:
-  overwrite_existing: false
+  overwrite_existing: true
   plots: true
   save_model_files: false
 gme_oracle_experiment:

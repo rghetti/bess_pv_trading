@@ -33,7 +33,7 @@ state:
   initial_soc_basis: available_capacity
   terminal_soc_basis: available_capacity
 solver:
-  threads: 3
+  threads: 2
   time_limit_seconds: 60.0
   mip_gap: 0.0001
   feasibility_tolerance: 1.0e-05
@@ -75,7 +75,7 @@ execution:
 settlement:
   enabled: true
 experiment_outputs:
-  overwrite_existing: false
+  overwrite_existing: true
   plots: true
   save_model_files: false
 gme_oracle_experiment:
