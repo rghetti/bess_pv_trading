@@ -41,6 +41,16 @@ The three accelerators do not pool memory. GPU kernel support and the precision
 actually used must be verified for each combination. Chronos-2's context limit
 must be respected and any 90-day truncation identified explicitly.
 
+On this host, Chronos-2 and TimesFM 3 passed this short FP32 probe on the RTX
+2080 Super with PyTorch 2.13.0+cu129. Their peak reserved GPU memory was about
+486 MiB and 1.34 GiB, respectively. These are not full-study memory estimates.
+The same CUDA build lacks kernels for the Titan V's compute capability 7.0;
+the initial t0 probe on that device failed. The TimeH2O weights returned an
+authentication/access error. Full per-probe records are under
+`outputs/zero_shot_preflight/`. Environment package inventories are in
+`requirements/zero_shot/`; inventories record resolved packages, not verified
+portable lockfiles or permission to use restricted weights.
+
 The open runtime packages and their model weights have distinct licenses.
 TimeH2O's gated weights have non-commercial terms and its checkpoint does not use
 past-only covariates; it forecasts target series independently. TimesFM 3 weights
