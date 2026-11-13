@@ -486,6 +486,39 @@ discharging priorities preserve cycle-depth memory. The segment vector carries
 between decisions and cannot generally be recovered from SOC alone. This is
 an approximation to cycle wear~\cite{xu}.
 
+
+A current study tries to integrate a relatively simple calendar and cycling
+ aging of the battery, while considering in the optimization problem the 
+ resulting shrinking capacity updating at the end of the delivery day. 
+
+
+
+For replacement value $R$, nominal capacity $E_0$, reference cycle depth $d_0$,
+cycle life $N$, and committed state of health $h_d$ on delivery day $d$, the
+available capacity is $E_d=E_0h_d$. Calendar and cycling capacity losses are
+fractions of nominal capacity and accumulate as
+\begin{equation}
+\Delta q_{\rm cal}=\gamma_{\rm cal}\frac{\Delta t}{T_{\rm yr}},\qquad
+\Delta q_{\rm cyc}=\frac{\Delta E_{\rm int}}
+{2Nd_0E_0},\qquad
+h_{d+1}=1-q_{{\rm cal},d+1}-q_{{\rm cyc},d+1},
+\end{equation}
+where $\gamma_{\rm cal}$ is the calendar-loss fraction per year and
+$T_{\rm yr}=365\times24$ hours,
+$\Delta E_{\rm int}=(\eta_c c+d/\eta_d)\Delta t$ is internal charge-plus-
+discharge energy, and $c$ and $d$ are AC charge and discharge powers. The
+optimizer uses the current committed SOH for that delivery day, forecasts
+losses for future capacity constraints, and commits the updated SOH only at
+the end of each chronological day. Forecast damage is priced once as
+\begin{equation}
+C_{\rm wear}=\frac{R}{1-h_{\rm EOL}}
+\left(\Delta q_{\rm cal}+\Delta q_{\rm cyc}\right),
+\end{equation}
+where $h_{\rm EOL}$ is the end-of-life SOH threshold. This linear cycling
+approximation depends on internal throughput, not cycle depth. For the study
+calibration, $\gamma_{\rm cal}=0.01\,{\rm yr}^{-1}$, $N=6000$, $d_0=1$,
+and $h_{\rm EOL}=0.8$; the factor of two converts charge-plus-discharge
+energy to equivalent full cycles.
 \subsection{Feedback, chronology and profit}
 Commitment tracking uses target $g_t^*=Q_t^{\rm sub}/\Delta_t$ and interval PV.
 Write $\rho_t=(1-\sigma)^{\Delta_t}$ for energy retention.

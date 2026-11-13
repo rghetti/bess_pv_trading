@@ -19,6 +19,6 @@
 \contentsline {section}{\numberline {B}Battery wear, control and realized accounting}{10}{appendix.B}%
 \contentsline {subsection}{\numberline {B.1}Wear models}{10}{subsection.B.1}%
 \contentsline {subsection}{\numberline {B.2}Feedback, chronology and profit}{10}{subsection.B.2}%
-\contentsline {section}{\numberline {C}Forecast construction and information timing}{10}{appendix.C}%
-\contentsline {subsection}{\numberline {C.1}Issue, availability and delivery}{10}{subsection.C.1}%
+\contentsline {section}{\numberline {C}Forecast construction and information timing}{11}{appendix.C}%
+\contentsline {subsection}{\numberline {C.1}Issue, availability and delivery}{11}{subsection.C.1}%
 \contentsline {subsection}{\numberline {C.2}Physical and statistical production mappings}{11}{subsection.C.2}%
