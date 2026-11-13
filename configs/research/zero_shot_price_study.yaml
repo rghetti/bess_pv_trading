@@ -1,0 +1,33 @@
+include: ../standard.yaml
+
+zero_shot_price_study:
+  inputs_config: configs/research/rolling_price_inputs.yaml
+  start: '2025-10-01'
+  end_exclusive: '2026-11-01'
+  reserved_start: '2026-11-01'
+  context_days: [28, 60, 90]
+  quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+  cpu_threads: 1
+  gpu_ids: [0, 1, 2]
+  precision: float32
+  models:
+    chronos2:
+      repository: amazon/chronos-2
+      revision: 29ec3766d36d6f73f0696f85560a422f50e8498c
+      package: chronos-forecasting==2.3.2
+      weight_license: Apache-2.0
+    t0_gamma:
+      repository: theforecastingcompany/t0-gamma
+      revision: fef67abad3eed4f227c7b536a6e8ee4e9ab1080d
+      package: tfc-t0[torch]==0.6.1
+      weight_license: Apache-2.0
+    timeh2o:
+      repository: h2oai/timeh2o-v1
+      revision: 1310be782553943a4c520d2810a98ce8f56b2709
+      package: h2ofm==0.43.1
+      weight_license: non-commercial gated weights
+    timesfm3:
+      repository: google/timesfm-3.0-pytorch
+      revision: 43046b85ec22d584a13f8098c2ed39c889e129c2
+      package: timesfm[torch]==3.0.2
+      weight_license: non-commercial weights
