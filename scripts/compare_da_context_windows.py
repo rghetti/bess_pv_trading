@@ -48,6 +48,17 @@ def main():
     destination = Path(args.output)
     destination.mkdir(parents=True, exist_ok=True)
     matched.to_parquet(destination / 'matched_forecasts.parquet', index=False)
+    # Retain interpretable time breakdowns on exactly the six-way matched sample.
+    matched['month'] = matched.delivery_day.str[:7]
+    matched['hour'] = pd.to_datetime(matched.product_start, utc=True).dt.tz_convert('Europe/Rome').dt.hour
+    matched['abs_error'] = (matched.prediction - matched.actual).abs()
+    for dimension in ('month', 'hour', 'delivery_day'):
+        keys = ['variant', 'window_days', 'input_variant', dimension]
+        groups = matched.groupby(keys).agg(products=('actual', 'size'), mae=('abs_error', 'mean'),
+                                           absolute_actual=('actual', lambda values: values.abs().sum()),
+                                           absolute_error=('abs_error', 'sum')).reset_index()
+        groups['wape'] = groups.absolute_error / groups.absolute_actual.replace(0, np.nan)
+        groups.to_csv(destination / f'{dimension}_scores.csv', index=False)
     rows = []
     for group, block in matched.groupby(['variant', 'period', 'window_days', 'input_variant']):
         rows.append(dict(zip(['model', 'period', 'window_days', 'input_variant'], group)) | score(block))

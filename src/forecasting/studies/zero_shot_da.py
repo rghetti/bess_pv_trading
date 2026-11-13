@@ -254,6 +254,9 @@ def report(bundle, run, output):
         daily.append({'variant': model, 'delivery_day': day, **score(group)})
     pd.DataFrame(daily).to_csv(output / 'daily_scores.csv', index=False)
     for day, group in common.groupby('delivery_day'):
+        # Limit daily figures to the configured first calendar days each month.
+        if int(day[-2:]) > int(manifest['settings'].get('plot_first_days_per_month', 3)):
+            continue
         figure, axis = plt.subplots(figsize=(12, 4))
         actual = group.drop_duplicates('product_start').sort_values('product_start')
         axis.plot(actual.product_start, actual.actual, color='black', label='realized', linewidth=1.8)

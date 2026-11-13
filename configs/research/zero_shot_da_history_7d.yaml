@@ -6,6 +6,7 @@ zero_shot_da_probe:
   start: '2025-10-01'
   end_exclusive: null  # Infer from the latest fully covered native DA day.
   november_holdout_start: '2026-11-01'
+  plot_first_days_per_month: 3
   context_days: 7
   timezone: Europe/Rome
   minutes: 15
