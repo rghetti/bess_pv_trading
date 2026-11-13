@@ -4,7 +4,7 @@ from pathlib import Path
 import threading
 import time
 
-from scripts.ida_gpu_queue import execute_queue
+from scripts.ida_gpu_queue import execute_queue, execute_queue_while_preparing
 
 
 def test_four_gpus_are_used_across_studies(tmp_path, monkeypatch):
@@ -41,3 +41,38 @@ def test_four_gpus_are_used_across_studies(tmp_path, monkeypatch):
     assert state['jobs'] == 9
     assert state['peak'] == 4
     assert state['active'] == 0
+
+
+def test_gpu_jobs_start_before_input_preparation_finishes(tmp_path, monkeypatch):
+    """The first ready bundle starts inference while later bundles are preparing."""
+    for name in ('chronos', 't0', 'timesfm'):
+        python = tmp_path / name / 'bin/python'
+        python.parent.mkdir(parents=True)
+        python.touch()
+    started = threading.Event()
+    completed = []
+    class Child:
+        def __init__(self, command, **kwargs):
+            started.set()
+            self.command = command
+        def wait(self):
+            time.sleep(0.005)
+            completed.append(self.command)
+            return 0
+        def poll(self):
+            return 0
+    monkeypatch.setattr('scripts.ida_gpu_queue.subprocess.Popen', Child)
+    monkeypatch.setattr('scripts.ida_gpu_queue.signal.signal', lambda *args: None)
+    studies = [tmp_path / f'study-{index}' for index in range(2)]
+
+    def prepare(on_ready):
+        on_ready(studies[0])
+        assert started.wait(timeout=3)
+        on_ready(studies[1])
+        return 'prepared'
+
+    result = execute_queue_while_preparing(
+        ['chronos2', 't0_gamma', 'timesfm3'], ['cuda:0', 'cuda:1', 'cuda:2', 'cuda:3'],
+        tmp_path, 10, 1, prepare)
+    assert result == 'prepared'
+    assert len(completed) == 6

@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -38,6 +39,7 @@ def mock_configs(monkeypatch, settings):
             return {'zero_shot_price_study': {'models': MODELS}}
         return {'zero_shot_ida': settings}
     monkeypatch.setattr(launcher, 'load_config', load)
+    monkeypatch.setattr(launcher, 'ProcessPoolExecutor', ThreadPoolExecutor)
 
 
 def saved_bundle(path, settings, window):
@@ -63,8 +65,8 @@ def test_plan_lists_missing_window_without_preparing_or_inference(tmp_path, monk
     assert '56d' in capsys.readouterr().out
 
 
-def test_preparation_creates_missing_bundles_once_and_reuses_source_reader(tmp_path, monkeypatch):
-    """Multiple new windows share one expensive source reader and stay independent."""
+def test_preparation_creates_missing_bundles_with_per_worker_source_readers(tmp_path, monkeypatch):
+    """Independent processes reuse their own loaded source reader across bundles."""
     settings = study_settings(tmp_path)
     settings['windows'] = [56, 84]
     mock_configs(monkeypatch, settings)
@@ -78,7 +80,7 @@ def test_preparation_creates_missing_bundles_once_and_reuses_source_reader(tmp_p
     monkeypatch.setattr(launcher, 'IDAInputs', reader)
     monkeypatch.setattr(launcher, 'prepare_ida_bundle', prepare)
     actions = launcher.ensure_inputs('study.yaml', settings['output'], settings)
-    assert len(readers) == 1
+    assert 1 <= len(readers) <= 2
     assert sorted(prepared) == [('IDA1', 56, 'history'), ('IDA1', 84, 'history')]
     assert [action['action'] for action in actions] == ['prepared', 'prepared']
     assert all((Path(action['path']) / 'manifest.json').is_file() for action in actions)

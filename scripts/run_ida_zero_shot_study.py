@@ -1,24 +1,50 @@
-"""Prepare and launch own-gate IDA studies sequentially, with independent GPU models."""
+"""Prepare IDA bundles concurrently and stream ready studies to GPU workers."""
 
 from __future__ import annotations
 
 import argparse
 import fcntl
-import shutil
-import tempfile
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import shutil
+import tempfile
+from concurrent.futures import ProcessPoolExecutor, as_completed
 
 from bess_pv_trading.config import load_config
 from bess_pv_trading.forecasting.studies.zero_shot_ida import IDAInputs, prepare_ida_bundle
 from bess_pv_trading.forecasting.studies.zero_shot_da import digest
 
 
-def ensure_inputs(config, root, settings, prepare=True, workers=5):
+_PREPARATION_INPUTS = None
+
+
+def _initialize_preparation_worker(snapshot, settings, definitions):
+    """Load the pinned source snapshot once in each CPU worker process."""
+    global _PREPARATION_INPUTS
+    _PREPARATION_INPUTS = IDAInputs(snapshot, settings, definitions)
+
+
+def _prepare_input_action(action, models):
+    """Build one bundle in an isolated temporary directory and install it atomically."""
+    path = Path(action['path'])
+    temporary = Path(tempfile.mkdtemp(prefix='.inputs-preparing-', dir=path.parent))
+    try:
+        prepared = temporary / 'inputs'
+        print(f"Preparing {action['auction']} {action['window']}d {action['variant']}", flush=True)
+        prepare_ida_bundle(_PREPARATION_INPUTS, prepared, action['auction'], action['window'],
+                           action['variant'], models)
+        if path.exists():
+            raise FileExistsError(f'Another writer created {path}')
+        os.rename(prepared, path)
+        return action['path']
+    finally:
+        shutil.rmtree(temporary, ignore_errors=True)
+
+
+def ensure_inputs(config, root, settings, prepare=True, workers=5, on_ready=None):
     """Prepare absent bundles atomically, and verify existing semantic inputs.
 
     Global windows/variants lists are orchestration choices, so adding a window
@@ -51,6 +77,8 @@ def ensure_inputs(config, root, settings, prepare=True, workers=5):
         root.mkdir(parents=True, exist_ok=True)
         lock = (root / '.preparation.lock').open('w')
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        for temporary in root.glob('*/*/*/.inputs-preparing-*'):
+            shutil.rmtree(temporary, ignore_errors=True)
     try:
         pending = []
         for action in actions:
@@ -74,34 +102,27 @@ def ensure_inputs(config, root, settings, prepare=True, workers=5):
                     if digest(path / relative) != checksum:
                         raise ValueError(f'Changed pinned input: {path / relative}')
                 action['action'] = 'reuse'
+                if on_ready is not None:
+                    on_ready(path.parent)
                 continue
             if not prepare:
                 continue
             path.parent.mkdir(parents=True, exist_ok=True)
             pending.append(action)
         if pending:
-            # Load and checksum the pinned snapshot once, then share its read-only
-            # indices while workers build independent bundles in separate dirs.
-            inputs = IDAInputs(settings['snapshot'], settings, definitions)
-
-            def prepare_one(action):
-                path = Path(action['path'])
-                temporary = Path(tempfile.mkdtemp(prefix='.inputs-preparing-', dir=path.parent))
-                try:
-                    prepared = temporary / 'inputs'
-                    print(f"Preparing {action['auction']} {action['window']}d {action['variant']}", flush=True)
-                    prepare_ida_bundle(inputs, prepared, action['auction'], action['window'], action['variant'], models)
-                    if path.exists():
-                        raise FileExistsError(f'Another writer created {path}')
-                    os.rename(prepared, path)
-                    action['action'] = 'prepared'
-                finally:
-                    shutil.rmtree(temporary)
-
-            with ThreadPoolExecutor(max_workers=min(workers, len(pending))) as executor:
-                futures = [executor.submit(prepare_one, action) for action in pending]
+            # Separate processes use independent interpreters, avoiding the GIL
+            # bottleneck from the former thread pool during Python-heavy bundling.
+            action_by_path = {action['path']: action for action in pending}
+            with ProcessPoolExecutor(max_workers=min(workers, len(pending)),
+                    initializer=_initialize_preparation_worker,
+                    initargs=(settings['snapshot'], settings, definitions)) as executor:
+                futures = [executor.submit(_prepare_input_action, action, models) for action in pending]
                 for future in as_completed(futures):
-                    future.result()
+                    prepared_path = future.result()
+                    action = action_by_path[prepared_path]
+                    action['action'] = 'prepared'
+                    if on_ready is not None:
+                        on_ready(Path(prepared_path).parent)
     finally:
         if lock is not None:
             lock.close()
@@ -117,8 +138,8 @@ def main():
     parser.add_argument('--devices', nargs='+', default=['auto'])
     parser.add_argument('--batch-size', type=int, default=10)
     parser.add_argument('--threads', type=int, default=1)
-    parser.add_argument('--prepare-workers', type=int, default=5,
-                        help='Concurrent CPU workers for independent input bundles')
+    parser.add_argument('--prepare-workers', type=int, default=10,
+                        help='Concurrent CPU processes for independent input bundles')
     parser.add_argument('--run', action='store_true')
     parser.add_argument('--allow-download', action='store_true')
     parser.add_argument('--preflight-only', action='store_true')
@@ -128,8 +149,29 @@ def main():
     root = Path(args.root or settings['output'])
     if args.prepare_only and args.run:
         parser.error('--prepare-only and --run are mutually exclusive')
-    preparation = ensure_inputs(args.config, root, settings, prepare=args.run or args.prepare_only,
-                                workers=args.prepare_workers)
+    devices = None
+    if args.run:
+        from scripts.da_zero_shot_probe import available_devices
+        devices = available_devices()[:4] if args.devices == ['auto'] else args.devices
+        if not devices or len(devices) > 4 or len(set(devices)) != len(devices):
+            raise ValueError('Provide one to four distinct GPU devices')
+
+        def prepare_while_running(on_ready):
+            return ensure_inputs(args.config, root, settings, prepare=True,
+                                 workers=args.prepare_workers, on_ready=on_ready)
+
+        from scripts.ida_gpu_queue import execute_queue_while_preparing
+        print(json.dumps({'gpu_workers': len(devices), 'devices': devices,
+                          'preparation_workers': args.prepare_workers,
+                          'batch_size': args.batch_size,
+                          'queued_model_studies': len(settings['auctions']) * len(settings['windows']) *
+                          len(settings['variants']) * len(settings['models'])}), flush=True)
+        preparation = execute_queue_while_preparing(
+            settings['models'], devices, args.python_root, args.batch_size, args.threads,
+            prepare_while_running, args.allow_download, args.preflight_only)
+    else:
+        preparation = ensure_inputs(args.config, root, settings,
+                                    prepare=args.prepare_only, workers=args.prepare_workers)
     if args.prepare_only:
         print(json.dumps({'mode': 'prepare_only', 'inputs': preparation}, indent=2))
         return
@@ -155,22 +197,11 @@ def main():
                 commands.append((command, report))
     print(json.dumps({'mode': 'run' if args.run else 'plan_only', 'studies': len(commands),
                       'input_preparation': preparation, 'commands': commands}, indent=2), flush=True)
-    if args.run:
-        from scripts.da_zero_shot_probe import available_devices
-        from scripts.ida_gpu_queue import execute_queue
-        devices = available_devices()[:4] if args.devices == ['auto'] else args.devices
-        if not devices or len(devices) > 4 or len(set(devices)) != len(devices):
-            raise ValueError('Provide one to four distinct GPU devices')
-        studies = [root / market / f'{window}d' / variant
-                   for market in settings['auctions'] for window in settings['windows'] for variant in settings['variants']]
-        print(json.dumps({'gpu_workers': len(devices), 'devices': devices, 'queued_model_studies': len(studies) * len(settings['models'])}), flush=True)
-        execute_queue(studies, settings['models'], devices, args.python_root, args.batch_size,
-                      args.threads, args.allow_download, args.preflight_only)
-        if not args.preflight_only:
-            for _, report in commands:
-                subprocess.run(report, check=True)
-            subprocess.run([sys.executable, '-m', 'scripts.report_ida_zero_shot',
-                            '--config', args.config, '--root', str(root)], check=True)
+    if args.run and not args.preflight_only:
+        for _, report in commands:
+            subprocess.run(report, check=True)
+        subprocess.run([sys.executable, '-m', 'scripts.report_ida_zero_shot',
+                        '--config', args.config, '--root', str(root)], check=True)
 
 
 if __name__ == '__main__':
