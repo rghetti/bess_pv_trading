@@ -17,10 +17,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--study-root', default='outputs/da_zero_shot_context_windows')
     parser.add_argument('--output')
+    parser.add_argument('--windows', nargs='+', type=int, default=[7, 28, 60])
+    parser.add_argument('--variants', nargs='+', choices=['history', 'nord'], default=['history', 'nord'])
     args = parser.parse_args()
     root = Path(args.study_root)
     sources = {(window, variant): str(root / f'{window}d' / variant / 'run/report')
-               for window in (7, 28, 60) for variant in ('history', 'nord')}
+               for window in args.windows for variant in args.variants}
     frames = []
     counts = []
     for (window, variant), directory in sources.items():

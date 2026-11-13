@@ -1,0 +1,32 @@
+include: ../standard.yaml
+
+zero_shot_da_studies:
+  root: outputs/da_zero_shot_context_windows
+  snapshot: outputs/zero_shot_price_inputs/merged
+  base_config: configs/research/zero_shot_da_history.yaml
+  feature_search_config: configs/research/price_feature_selection_full_year.yaml
+  model_config: configs/research/zero_shot_price_study.yaml
+  windows: [7, 28, 60]
+  baseline_variants: [history, nord]
+  models: [chronos2, t0_gamma, timesfm3]
+  cross_border_window: 60
+  cross_border_base_variant: nord
+  cross_border_variants:
+    gas:
+      directory: nord_gas
+      blocks: [gas]
+    france:
+      directory: nord_france
+      blocks: [france]
+    switzerland:
+      directory: nord_switzerland
+      blocks: [switzerland]
+    france_switzerland:
+      directory: nord_france_switzerland
+      blocks: [france, switzerland]
+    gas_france_switzerland:
+      directory: nord_gas_fr_ch
+      blocks: [gas, france, switzerland]
+  prepare_workers: 10
+  batch_size: 10
+  threads_per_model: 1

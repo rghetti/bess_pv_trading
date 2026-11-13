@@ -80,6 +80,8 @@ def main():
     parser.add_argument('--python-root', default='outputs/zero_shot_envs')
     parser.add_argument('--model-python', action='append', default=[], metavar='MODEL=PYTHON')
     parser.add_argument('--devices', nargs='+', default=['auto'])
+    parser.add_argument('--context-days', type=int,
+                        help='Override context length while preparing a configurable study bundle')
     parser.add_argument('--max-gpu-used-mib', type=int, default=1024)
     parser.add_argument('--max-gpu-utilization', type=int, default=20)
     parser.add_argument('--threads', type=int, default=1)
@@ -91,6 +93,8 @@ def main():
     args = parser.parse_args()
     if args.action == 'prepare':
         settings = load_config(args.config)['zero_shot_da_probe']
+        if args.context_days is not None:
+            settings['context_days'] = args.context_days
         if settings['minutes'] != 15 or settings['context_days'] < 7 or settings['precision'] != 'float32':
             raise ValueError('This adapter requires quarter-hour targets, >=7 context days and FP32')
         specs = load_config(settings['model_config'])['zero_shot_price_study']['models']

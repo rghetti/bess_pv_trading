@@ -19,6 +19,7 @@ def main():
     parser.add_argument('--output', default='outputs/da_zero_shot_nord_comparison')
     parser.add_argument('--history-label', default='history_only')
     parser.add_argument('--nord-label', default='nord_forecasts')
+    parser.add_argument('--availability-note', default='Archived covariate vintages may have unverified availability.')
     args = parser.parse_args()
     history = pd.read_parquet(Path(args.history_report) / 'matched_forecasts.parquet')
     nord = pd.read_parquet(Path(args.nord_report) / 'matched_forecasts.parquet')
@@ -37,7 +38,8 @@ def main():
             rows.append({'model': model, 'period': period, 'input': label, **score(data)})
     results = pd.DataFrame(rows)
     results.to_csv(destination / 'scores.csv', index=False)
-    lines = ['# Matched DA forecast comparison', '', 'Values use identical delivery products. Historical covariate vintages may be unverified.', '']
+    lines = ['# Matched DA forecast comparison', '',
+             'Values use identical delivery products.', args.availability_note, '']
     for (model, period), block in results.groupby(['model', 'period']):
         variants = block.set_index('input')
         old, new = variants.loc[args.history_label], variants.loc[args.nord_label]

@@ -35,7 +35,7 @@ def build_report(scores, coverage):
         'Development is retrospective. November 2026 is reported separately and is not used for selection. '
         'Forecast issue times are not verified; archived values are assumed available at the DA gate. '
         'Pretrained-data overlap is possible. TimesFM 3 has non-commercial weight terms.', '',
-        'All six variants are evaluated on their common products. Input coverage and exclusions '
+        'All configured context-window and input variants are evaluated on their common products. Input coverage and exclusions '
         'depend on the pinned bundle and its missing-context policy; consult coverage.csv and input manifests.', '',
         '## Matched coverage', '', '| Window | Input | Available rows across models | Matched rows across models |',
         '|---:|---|---:|---:|']

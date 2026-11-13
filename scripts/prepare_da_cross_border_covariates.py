@@ -23,19 +23,32 @@ def main():
     parser.add_argument('--nord-bundle')
     parser.add_argument('--snapshot')
     parser.add_argument('--output')
+    parser.add_argument('--blocks', nargs='+', choices=['gas', 'france', 'switzerland'])
     args = parser.parse_args()
     options = load_config(args.config)['zero_shot_da_cross_border']
     source_root = Path(args.snapshot or options['source_snapshot'])
     nord = Path(args.nord_bundle or options['nord_bundle'])
     output = Path(args.output or options['output'])
+    result = prepare_bundle(nord, source_root, output, options['feature_search_config'],
+                            args.blocks or options['blocks'])
+    print(json.dumps({'eligible_days': result['eligible_days'],
+                      'requested_days': result['requested_days'], 'features': result['features']}, indent=2))
+
+
+def prepare_bundle(nord, source_root, output, feature_search_config, blocks):
+    """Build a pinned DA bundle for the requested retrospective external blocks."""
+    source_root, nord, output = Path(source_root), Path(nord), Path(output)
     if output.exists():
         raise FileExistsError(f'Use a new output path: {output}')
     base = json.loads((nord / 'manifest.json').read_text())
     snapshot = json.loads((source_root / 'manifest.json').read_text())
     if digest(source_root / 'manifest.json') != base['source_manifest_sha256']:
         raise ValueError('All input blocks must come from the same pinned snapshot')
-    settings = load_config(options['feature_search_config'])['price_feature_search']
-    settings['feature_blocks'] = {name: settings['feature_blocks'][name] for name in options['blocks']}
+    settings = load_config(feature_search_config)['price_feature_search']
+    unknown = sorted(set(blocks) - set(settings['feature_blocks']))
+    if unknown:
+        raise ValueError(f'Unknown cross-border feature blocks: {unknown}')
+    settings['feature_blocks'] = {name: settings['feature_blocks'][name] for name in blocks}
     required = {item['source'] for block in settings['feature_blocks'].values() for item in block['features']}
     frames, hashes = {}, {}
     for name in sorted(required):
@@ -89,12 +102,13 @@ def main():
     files['coverage.csv'] = digest(output / 'coverage.csv')
     result = dict(base)
     result.update(files=files, features=[*base['features'], *names], source_extra_sha256=hashes,
+        nord_bundle_manifest_sha256=digest(nord / 'manifest.json'),
         eligible_days=sum(row['eligible'] for row in coverage), requested_days=len(coverage),
         extra_feature_assumption='Realized prior-day quantities and previous gas prices assumed available; actual publication clocks and revisions are not verified. Prior-day same-clock quantities may occur after the DA gate.',
         extra_missing_policy='Configured adaptive or complete-case history; horizon must be complete; no imputation.',
         extra_feature_definitions=settings['feature_blocks'])
     write_json(output / 'manifest.json', result)
-    print(json.dumps({'eligible_days': result['eligible_days'], 'requested_days': len(coverage), 'features': names}, indent=2))
+    return result
 
 
 if __name__ == '__main__':
