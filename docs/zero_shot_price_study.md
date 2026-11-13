@@ -1,6 +1,6 @@
 # Zero-shot auction-price study: preparation status
 
-This work is **not ready for historical inference**. The configuration pins four
+The broader DA/IDA covariate study is **not ready for historical inference**. The separate DA history-only comparison is documented in `docs/zero_shot_da_history.md`. The configuration pins four
 checkpoint revisions and the requested development period. A synthetic GPU probe,
 a pinned-snapshot coverage audit and a matched-product scoring library are
 available. The gate-aware zero-shot replay, DA-conditioned IDA inputs, full

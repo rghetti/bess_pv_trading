@@ -63,4 +63,14 @@ def score(frame):
             result[f"{column}_pinball"] = float(np.maximum(quantile * residual, (quantile - 1) * residual).mean())
             result[f"{column}_coverage"] = float(np.mean(actual[present] <= forecast[present]))
             result[f"{column}_products"] = int(present.sum())
+    if 'q10' in frame and 'q90' in frame:
+        lower = frame.loc[valid, 'q10'].to_numpy(float)
+        upper = frame.loc[valid, 'q90'].to_numpy(float)
+        present = np.isfinite(lower) & np.isfinite(upper)
+        if present.any():
+            result['interval80_coverage'] = float(np.mean((actual[present] >= lower[present]) & (actual[present] <= upper[present])))
+            result['interval80_mean_width'] = float(np.mean(upper[present] - lower[present]))
+    losses = [value for key, value in result.items() if key.endswith('_pinball')]
+    if losses:
+        result['mean_pinball'] = float(np.mean(losses))
     return result
