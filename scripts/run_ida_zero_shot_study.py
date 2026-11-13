@@ -230,6 +230,22 @@ def main():
                                  workers=args.prepare_workers, on_ready=on_ready)
 
         from scripts.ida_gpu_queue import execute_queue_while_preparing
+        total_experiments = (len(settings['auctions']) * len(settings['windows']) *
+                             len(settings['variants']) * len(settings['models']))
+        completed_experiments = 0
+        for market in settings['auctions']:
+            for window in settings['windows']:
+                for variant in settings['variants']:
+                    for model in settings['models']:
+                        shards = list((root / market / f'{window}d' / variant / 'run' / model)
+                                      .glob('shard-*/predictions/*.json'))
+                        bundle_manifest = root / market / f'{window}d' / variant / 'inputs/manifest.json'
+                        try:
+                            expected_predictions = json.loads(bundle_manifest.read_text())['eligible_days']
+                        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+                            expected_predictions = -1
+                        if expected_predictions >= 0 and len(shards) == expected_predictions:
+                            completed_experiments += 1
         print(json.dumps({'gpu_workers': len(devices), 'devices': devices,
                           'preparation_workers': args.prepare_workers,
                           'batch_size': args.batch_size,
@@ -237,7 +253,8 @@ def main():
                           len(settings['variants']) * len(settings['models'])}), flush=True)
         preparation = execute_queue_while_preparing(
             settings['models'], devices, args.python_root, args.batch_size, args.threads,
-            prepare_while_running, args.allow_download, args.preflight_only)
+            prepare_while_running, args.allow_download, args.preflight_only,
+            total_experiments, completed_experiments)
     else:
         preparation = ensure_inputs(args.config, root, settings,
                                     prepare=args.prepare_only, workers=args.prepare_workers)

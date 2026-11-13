@@ -57,11 +57,30 @@ class _StudyJobQueue:
 
 
 def _execute_job_queue(queue, devices, python_root, batch_size, threads,
-                       allow_download=False, preflight_only=False, prepare=None):
+                       allow_download=False, preflight_only=False, prepare=None,
+                       total_experiments=None, completed_experiments=0):
     """Run the live job queue and optionally produce input studies alongside it."""
     mutex = threading.Lock()
     children = []
     stop = threading.Event()
+    progress_lock = threading.Lock()
+    completed = completed_experiments
+
+    def show_progress(label):
+        """Print model-job completion and remaining count on one terminal line."""
+        nonlocal completed
+        if total_experiments is None:
+            return
+        with progress_lock:
+            completed += 1
+            width = 30
+            filled = min(width, int(width * completed / max(total_experiments, 1)))
+            bar = '#' * filled + '-' * (width - filled)
+            remaining = max(total_experiments - completed, 0)
+            print(f'\r[{bar}] {completed}/{total_experiments} experiments complete; '
+                  f'{remaining} left ({label})', flush=True)
+            if completed >= total_experiments:
+                print(flush=True)
     def interrupt(signum, frame):
         stop.set()
         queue.close()
@@ -98,6 +117,7 @@ def _execute_job_queue(queue, devices, python_root, batch_size, threads,
             if code:
                 raise RuntimeError(f'Model worker failed ({code}): {directory} / {model}; see its log')
             print(f'{device}: completed {directory} / {model}', flush=True)
+            show_progress(f'{directory.name}/{model}')
     with ThreadPoolExecutor(max_workers=len(devices)) as executor:
         futures = [executor.submit(consume, device) for device in devices]
         preparation_error = None
@@ -136,8 +156,11 @@ def execute_queue(studies, models, devices, python_root, batch_size, threads, al
 
 
 def execute_queue_while_preparing(models, devices, python_root, batch_size, threads, prepare,
-                                  allow_download=False, preflight_only=False):
+                                  allow_download=False, preflight_only=False,
+                                  total_experiments=None, completed_experiments=0):
     """Start each study's GPU jobs as soon as its inputs are ready."""
     queue = _StudyJobQueue(models, devices)
     return _execute_job_queue(queue, devices, python_root, batch_size, threads,
-                              allow_download, preflight_only, prepare=prepare)
+                              allow_download, preflight_only, prepare=prepare,
+                              total_experiments=total_experiments,
+                              completed_experiments=completed_experiments)
