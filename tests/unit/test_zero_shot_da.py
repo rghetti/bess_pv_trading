@@ -152,6 +152,8 @@ def test_report_common_products_and_incomplete_status(tmp_path):
     matched = pd.read_parquet(tmp_path / 'report/matched_forecasts.parquet')
     assert len(matched) == 192
     assert matched.delivery_day.nunique() == 1
+    baseline = pd.read_csv(tmp_path / 'report/baseline_scores.csv')
+    assert not any(name.endswith('_pinball') for name in baseline.columns)
     assert json.loads((tmp_path / 'report/status.json').read_text())['complete'] is False
 
 

@@ -246,7 +246,8 @@ def report(bundle, run, output):
     products = common.drop_duplicates(['delivery_day', 'product_start'])
     for name in ('weekly_reference', 'latest_reference'):
         for period, group in products.groupby('period'):
-            baseline_rows.append({'variant': name, 'period': period, **score(group.assign(prediction=group[name]))})
+            baseline = group.drop(columns=[f'q{q:02}' for q in range(10, 100, 10)], errors='ignore')
+            baseline_rows.append({'variant': name, 'period': period, **score(baseline.assign(prediction=baseline[name]))})
     pd.DataFrame(baseline_rows).to_csv(output / 'baseline_scores.csv', index=False)
     daily = []
     for (model, day), group in common.groupby(['variant', 'delivery_day']):
