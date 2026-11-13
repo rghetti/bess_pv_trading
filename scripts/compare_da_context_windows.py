@@ -58,14 +58,19 @@ def main():
                                            absolute_actual=('actual', lambda values: values.abs().sum()),
                                            absolute_error=('abs_error', 'sum')).reset_index()
         groups['wape'] = groups.absolute_error / groups.absolute_actual.replace(0, np.nan)
-        groups.to_csv(destination / f'{dimension}_scores.csv', index=False)
+        filename = {'month': 'monthly_scores.csv', 'hour': 'hourly_scores.csv', 'delivery_day': 'daily_scores.csv'}[dimension]
+        groups.to_csv(destination / filename, index=False)
     rows = []
     for group, block in matched.groupby(['variant', 'period', 'window_days', 'input_variant']):
         rows.append(dict(zip(['model', 'period', 'window_days', 'input_variant'], group)) | score(block))
-    pd.DataFrame(rows).to_csv(destination / 'scores.csv', index=False)
+    scores = pd.DataFrame(rows)
+    scores.to_csv(destination / 'scores.csv', index=False)
     for item in counts:
         item['matched_rows'] = len(matched) // len(sources)
-    pd.DataFrame(counts).to_csv(destination / 'coverage.csv', index=False)
+    coverage = pd.DataFrame(counts)
+    coverage.to_csv(destination / 'coverage.csv', index=False)
+    from scripts.summarize_da_context_windows import build_report
+    (destination / 'summary.md').write_text(build_report(scores, coverage))
     print(f'Matched products per model: {len(common)}; outputs: {destination}')
 
 
