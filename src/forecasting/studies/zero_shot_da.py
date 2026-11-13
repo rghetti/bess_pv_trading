@@ -11,6 +11,7 @@ import tempfile
 import numpy as np
 import pandas as pd
 
+from .adaptive_price_context import adapt_request
 from .price_feature_data import _price_sources
 from .rolling_price_data import PriceIndex, delivery_grid, pad_curve, slot_numbers
 from .zero_shot_price_scoring import matched_predictions, score
@@ -81,13 +82,16 @@ def prepare_day(index, source, day, settings, cancelled=False):
     if active.any() and (published[positions[active]] > cutoff.value).any():
         raise AssertionError('Unpublished prices escaped the history mask')
     request = None
-    if coverage['eligible']:
+    if not cancelled and np.isfinite(actual).any():
         request = {'delivery_day': str(day.date()), 'decision_at': cutoff.isoformat(),
                    'context_start': history[0].isoformat(), 'context_end_exclusive': starts[0].isoformat(),
-                   'context': context.tolist(), 'context_native_minutes': native_minutes.astype(int).tolist(),
+                   'context': context.tolist(), 'context_native_minutes': np.where(np.isfinite(native_minutes), native_minutes, 0).astype(int).tolist(),
                    'product_starts_utc': [stamp.isoformat() for stamp in starts],
                    'horizon': len(starts), 'feature_names': ['past_NORD_DA_price'],
-                   'max_context_publication_at': pd.Timestamp(int(published[positions[active]].max()), tz='UTC').isoformat()}
+                   'max_context_publication_at': (pd.Timestamp(int(published[positions[active]].max()), tz='UTC').isoformat() if active.any() else None)}
+        request, adjustment = adapt_request(request, settings.get('minimum_context_days', 7), timezone, settings.get('missing_context', 'exclude_day'))
+        coverage.update(adjustment)
+        coverage['eligible'] = request is not None
     labels = pd.DataFrame({'delivery_day': str(day.date()), 'product_start': starts,
                            'actual': actual, 'latest_reference': reference_curve(index, day, starts, 1, cutoff, timezone),
                            'weekly_reference': reference_curve(index, day, starts, 7, cutoff, timezone),
@@ -173,6 +177,7 @@ def report(bundle, run, output):
     for relative, expected in manifest['files'].items():
         if digest(bundle / relative) != expected:
             raise ValueError(f'Bundle checksum mismatch: {relative}')
+    market_name = manifest['settings'].get('market', 'DA')
     labels = pd.read_parquet(bundle / 'labels.parquet')
     labels['product_start'] = pd.to_datetime(labels.product_start, utc=True)
     rows, status, runtimes = [], [], []
@@ -202,13 +207,15 @@ def report(bundle, run, output):
             starts = pd.to_datetime(result['product_starts_utc'], utc=True)
             if prediction.shape != (len(starts), 9) or not np.isfinite(prediction).all():
                 raise ValueError(f'Invalid saved forecast: {path}')
-            data = pd.DataFrame({'delivery_day': day, 'product_start': starts, 'auction': 'DA', 'gate': 'DA',
+            data = pd.DataFrame({'delivery_day': day, 'product_start': starts, 'auction': manifest['settings'].get('market', 'DA'), 'gate': manifest['settings'].get('gate', manifest['settings'].get('market', 'DA')),
                                  'variant': model, 'prediction': prediction[:, 4]})
             for column, values in zip([f'q{q:02}' for q in range(10, 100, 10)], prediction.T):
                 data[column] = values
             rows.append(data)
             runtimes.append({'model': model, 'day': day, 'inference_seconds': result.get('elapsed_seconds'),
-                             'quantile_crossing_products': result.get('quantile_crossing_products')})
+                             'quantile_crossing_products': result.get('quantile_crossing_products'),
+                             'requested_context_days': result.get('requested_context_days'),
+                             'effective_context_days': result.get('effective_context_days'), 'context_start': result.get('context_start')})
             status.append({'model': model, 'day': day, 'status': 'complete'})
     output.mkdir(parents=True, exist_ok=True)
     pd.DataFrame(runtimes).to_csv(output / 'runtime.csv', index=False)
@@ -234,7 +241,7 @@ def report(bundle, run, output):
         for model, group in selected.groupby('variant'):
             group = group.sort_values(column)
             axis.plot(group[column].astype(str), group.mae, marker='o', label=model)
-        axis.set(title=f'NORD DA mean absolute error by {column}', ylabel='EUR/MWh', xlabel=column)
+        axis.set(title=f'NORD {market_name} mean absolute error by {column}', ylabel='EUR/MWh', xlabel=column)
         if not selected.empty:
             axis.legend()
         axis.tick_params(axis='x', rotation=45)
@@ -250,7 +257,7 @@ def report(bundle, run, output):
             baseline_rows.append({'variant': name, 'period': period, **score(baseline.assign(prediction=baseline[name]))})
     pd.DataFrame(baseline_rows).to_csv(output / 'baseline_scores.csv', index=False)
     # Emit an interpretable Markdown companion automatically for every run.
-    text = ['# DA zero-shot run summary', '',
+    text = [f'# {market_name} zero-shot run summary', '',
             'Scores use products matched across all configured models. November 2026 is reported separately.', '',
             'Archived covariate issue times can be unverified; consult the pinned input manifest.', '']
     for _, row in summary.loc[summary.breakdown.eq('period')].iterrows():
@@ -262,6 +269,14 @@ def report(bundle, run, output):
         text.append('')
     text.extend(['[Complete metrics](scores.csv) · [Baseline metrics](baseline_scores.csv) · '
                  '[Daily metrics](daily_scores.csv) · [Completion](completion.csv)', ''])
+    context_rows = pd.DataFrame(runtimes)
+    if 'effective_context_days' in context_rows and context_rows.effective_context_days.notna().any():
+        counts = context_rows.groupby(['model', 'requested_context_days', 'effective_context_days']).size().reset_index(name='delivery_days')
+        counts.to_csv(output / 'effective_context_counts.csv', index=False)
+        text.extend(['## Effective context windows', '', '| Model | Requested days | Effective days | Forecast days |', '|---|---:|---:|---:|'])
+        for row in counts.itertuples(index=False):
+            text.append(f'| {row.model} | {row.requested_context_days:g} | {row.effective_context_days:g} | {row.delivery_days} |')
+        text.append('')
     (output / 'summary.md').write_text('\n'.join(text))
     daily = []
     for (model, day), group in common.groupby(['variant', 'delivery_day']):
@@ -278,7 +293,7 @@ def report(bundle, run, output):
         for model, values in group.groupby('variant'):
             values = values.sort_values('product_start')
             axis.plot(values.product_start, values.prediction, label=model, linewidth=1)
-        axis.set(title=f'NORD DA {day} — timestamps UTC', ylabel='EUR/MWh')
+        axis.set(title=f'NORD {market_name} {day} — timestamps UTC', ylabel='EUR/MWh')
         axis.legend(ncol=3)
         figure.autofmt_xdate()
         figure.tight_layout()

@@ -20,4 +20,5 @@ zero_shot_da_probe:
   threads: 1
   seed: 1729
   precision: float32
-  missing_context: exclude_day
+  missing_context: adaptive
+  minimum_context_days: 7

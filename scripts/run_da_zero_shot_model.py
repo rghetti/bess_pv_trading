@@ -70,7 +70,7 @@ def request_batches(requests, batch_size):
     signature = None
     for item in requests:
         request = item[2]
-        key = (len(request['context']), request['horizon'])
+        key = (len(request['context']), request['horizon'], tuple(sorted(request.get('forecast_covariates', {}))), tuple(sorted(request.get('past_covariates', {}))))
         if pending and (key != signature or len(pending) == batch_size):
             yield pending
             pending = []
@@ -88,7 +88,7 @@ def load_model(name, checkpoint, device, torch, batch_size=1):
         from chronos import Chronos2Pipeline
 
         model = Chronos2Pipeline.from_pretrained(checkpoint, device_map=device, torch_dtype=torch.float32)
-        def predict(contexts, horizon, levels, covariates=None):
+        def predict(contexts, horizon, levels, covariates=None, past_covariates=None):
             contexts = np.atleast_2d(contexts)
             if contexts.shape[1] > model.model.chronos_config.context_length:
                 raise ValueError('Chronos context would be truncated')
@@ -98,6 +98,8 @@ def load_model(name, checkpoint, device, torch, batch_size=1):
                 if covariates is not None:
                     item['past_covariates'] = {key: value[index, :len(row)] for key, value in covariates.items()}
                     item['future_covariates'] = {key: value[index, len(row):] for key, value in covariates.items()}
+                if past_covariates is not None:
+                    item.setdefault('past_covariates', {}).update({key: value[index] for key, value in past_covariates.items()})
                 inputs.append(item)
             values, _ = model.predict_quantiles(inputs, prediction_length=horizon,
                 quantile_levels=levels, context_length=contexts.shape[1], batch_size=batch_size, cross_learning=False)
@@ -106,18 +108,22 @@ def load_model(name, checkpoint, device, torch, batch_size=1):
         from t0 import T0Forecaster
 
         model = T0Forecaster.from_pretrained(checkpoint).to(device=device, dtype=torch.float32).eval()
-        def predict(contexts, horizon, levels, covariates=None):
+        def predict(contexts, horizon, levels, covariates=None, past_covariates=None):
             contexts = np.atleast_2d(contexts)
             future = None if covariates is None else torch.as_tensor(np.stack(list(covariates.values()), axis=1), device=device)
-            forecast = model.predict(torch.as_tensor(contexts, device=device), horizon=horizon,
+            target_input = contexts if past_covariates is None else np.stack([contexts, *past_covariates.values()], axis=1)
+            forecast = model.predict(torch.as_tensor(target_input, device=device), horizon=horizon,
                 future_covariates=future, context_length=contexts.shape[1], quantile_levels=levels, symmetric_averaging=False,
                 clip_nonnegative=False, snap_integers=False)
-            return forecast.quantiles.detach().cpu().numpy().reshape(len(contexts), horizon, len(levels))
+            values = forecast.quantiles.detach().cpu().numpy()
+            if past_covariates is not None:
+                values = values[:, 0]
+            return values.reshape(len(contexts), horizon, len(levels))
     elif name == 'timesfm3':
         from timesfm3 import ModelConfig, TimesFM3Evaluator
 
         model = TimesFM3Evaluator(ModelConfig(checkpoint_path=checkpoint, per_core_batch_size=batch_size, device=device))
-        def predict(contexts, horizon, levels, covariates=None):
+        def predict(contexts, horizon, levels, covariates=None, past_covariates=None):
             contexts = np.atleast_2d(contexts)
             if contexts.shape[1] > model.global_context:
                 raise ValueError('TimesFM context would be truncated')
@@ -126,6 +132,7 @@ def load_model(name, checkpoint, device, torch, batch_size=1):
             future = None if covariates is None else [np.stack([value[index] for value in covariates.values()]) for index in range(len(contexts))]
             forecasts = list(model.predict_batch(list(contexts), horizon=horizon, return_quantiles=True,
                 past_future_covariates=future,
+                past_only_covariates=None if past_covariates is None else [np.stack([value[index] for value in past_covariates.values()]) for index in range(len(contexts))],
                 use_symmetric_averaging=False, make_positive=False, sort_quantiles=False))
             return np.stack([np.asarray(item.quantiles).reshape(horizon, len(levels)) for item in forecasts])
     else:
@@ -224,6 +231,9 @@ def main():
             forecasts = request.get('forecast_covariates', {})
             if list(forecasts) != sorted(manifest['features'][1:]) or any(len(value) != len(request['context']) + request['horizon'] or not np.isfinite(value).all() for value in forecasts.values()):
                 raise ValueError('Invalid forecast covariate values or dimensions')
+            past = request.get('past_covariates', {})
+            if list(past) != sorted(manifest.get('past_features', [])) or any(len(value) != len(request['context']) or not np.isfinite(value).all() for value in past.values()):
+                raise ValueError('Invalid past-only covariate dimensions or values')
             parsed.append((name, checksum, request))
         predict = load_model(args.model, str(checkpoint), str(device), torch, args.batch_size)
         # Check every requested horizon on the longest synthetic context before any replay.
@@ -235,7 +245,8 @@ def main():
         with torch.inference_mode():
             for horizon in sorted({item[2]['horizon'] for item in parsed}):
                 synthetic_cov = {key: np.tile(np.sin(np.arange(maximum + horizon, dtype=np.float32) / 50) + index, (args.batch_size, 1)) for index, key in enumerate(sorted(manifest['features'][1:]))}
-                values = np.asarray(predict(np.tile(synthetic, (args.batch_size, 1)), horizon, settings['quantiles'], synthetic_cov or None))
+                synthetic_past = {key: np.tile(synthetic, (args.batch_size, 1)) for key in manifest.get('past_features', [])}
+                values = np.asarray(predict(np.tile(synthetic, (args.batch_size, 1)), horizon, settings['quantiles'], synthetic_cov or None, synthetic_past or None))
                 if values.shape != (args.batch_size, horizon, 9) or not np.isfinite(values).all():
                     raise ValueError('Synthetic preflight failed shape/finiteness check')
         preflight = {'status': 'passed', 'context_steps': maximum, 'horizons': sorted({item[2]['horizon'] for item in parsed}),
@@ -270,7 +281,8 @@ def main():
             horizon = batch[0][2]['horizon']
             with torch.inference_mode():
                 covariates = {key: np.asarray([item[2]['forecast_covariates'][key] for item in batch], dtype=np.float32) for key in sorted(manifest['features'][1:])}
-                values = np.asarray(predict(contexts, horizon, settings['quantiles'], covariates or None))
+                past_covariates = {key: np.asarray([item[2]['past_covariates'][key] for item in batch], dtype=np.float32) for key in sorted(manifest.get('past_features', []))}
+                values = np.asarray(predict(contexts, horizon, settings['quantiles'], covariates or None, past_covariates or None))
             if device.type == 'cuda':
                 torch.cuda.synchronize(device)
             elapsed = time.monotonic() - begin
@@ -283,6 +295,11 @@ def main():
                 quantiles = values[position]
                 saved = {'delivery_day': request['delivery_day'], 'product_starts_utc': request['product_starts_utc'],
                     'quantile_levels': settings['quantiles'], 'quantiles': quantiles.tolist(),
+                    'requested_context_days': request.get('requested_context_days', settings['context_days']),
+                    'effective_context_days': request.get('effective_context_days', settings['context_days']),
+                    'context_adjustment': request.get('context_adjustment'),
+                    'context_start': request['context_start'], 'context_steps': len(request['context']),
+                    'past_features': manifest.get('past_features', []),
                     'elapsed_seconds': elapsed / len(batch), 'batch_elapsed_seconds': elapsed,
                     'batch_size': len(batch), 'runtime_convention': 'batch runtime divided by days in batch',
                     'run_identity': identity, 'request_sha256': checksum,

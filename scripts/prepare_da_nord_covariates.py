@@ -12,6 +12,7 @@ import pandas as pd
 
 from bess_pv_trading.forecasting.studies.price_feature_data import interval_values
 from bess_pv_trading.forecasting.studies.zero_shot_da import digest, write_json
+from bess_pv_trading.forecasting.studies.adaptive_price_context import adapt_request
 
 
 FEATURES = ('load_forecast', 'generation_forecast', 'solar_forecast', 'wind_onshore_forecast')
@@ -65,12 +66,12 @@ def main():
             values = interval_values(part, grid, pd.to_numeric(part.value, errors='coerce').to_numpy(float))
             missing[feature] = int((~np.isfinite(values)).sum())
             forecasts[feature] = values.tolist()
-        eligible = not any(missing.values())
-        coverage.append({'delivery_day': request['delivery_day'], 'eligible': eligible, **missing})
-        if not eligible:
-            continue
         request['forecast_covariates'] = forecasts
         request['feature_names'] = ['past_NORD_DA_price', *FEATURES]
+        request, adjustment = adapt_request(request, base['settings'].get('minimum_context_days', 7), base['settings']['timezone'], base['settings'].get('missing_context', 'exclude_day'))
+        coverage.append({'delivery_day': Path(relative).stem, 'eligible': request is not None, **missing, **adjustment})
+        if request is None:
+            continue
         path = output / relative
         write_json(path, request)
         files[relative] = digest(path)
@@ -81,7 +82,7 @@ def main():
         requested_days=len(coverage), features=['past_NORD_DA_price', *FEATURES],
         source_forecasts_sha256=entry['sha256'], history_bundle_manifest_sha256=digest(history / 'manifest.json'),
         forecast_availability_assumption='Archived ENTSO-E forecasts assumed available by previous-day DA gate; historical issue vintages are not verified.',
-        forecast_missing_policy='Exclude any day with a missing forecast value in history or delivery horizon; no imputation.')
+        forecast_missing_policy='Configured complete-case or adaptive full-day historical suffix; delivery covariates must be complete; no imputation.')
     write_json(output / 'manifest.json', result)
     print(json.dumps({'eligible_days': result['eligible_days'], 'requested_days': result['requested_days'],
                       'features': result['features']}, indent=2))

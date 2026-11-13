@@ -15,14 +15,12 @@ from bess_pv_trading.forecasting.studies.zero_shot_price_scoring import score
 def main():
     """Require completed reports and score the same products for all six variants."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--output', default='outputs/da_zero_shot_context_windows/comparison')
+    parser.add_argument('--study-root', default='outputs/da_zero_shot_context_windows')
+    parser.add_argument('--output')
     args = parser.parse_args()
-    sources = {(7, 'history'): 'outputs/da_zero_shot_context_windows/7d/history/run/report',
-               (28, 'history'): 'outputs/da_zero_shot_context_windows/28d/history/run/report',
-               (60, 'history'): 'outputs/da_zero_shot_context_windows/60d/history/run/report',
-               (7, 'nord'): 'outputs/da_zero_shot_context_windows/7d/nord/run/report',
-               (28, 'nord'): 'outputs/da_zero_shot_context_windows/28d/nord/run/report',
-               (60, 'nord'): 'outputs/da_zero_shot_context_windows/60d/nord/run/report'}
+    root = Path(args.study_root)
+    sources = {(window, variant): str(root / f'{window}d' / variant / 'run/report')
+               for window in (7, 28, 60) for variant in ('history', 'nord')}
     frames = []
     counts = []
     for (window, variant), directory in sources.items():
@@ -45,7 +43,7 @@ def main():
     checks = matched.groupby(keys).actual.agg(['min', 'max'])
     if not np.allclose(checks['min'], checks['max']):
         raise ValueError('Conflicting observed prices across variants')
-    destination = Path(args.output)
+    destination = Path(args.output) if args.output else root / 'comparison'
     destination.mkdir(parents=True, exist_ok=True)
     matched.to_parquet(destination / 'matched_forecasts.parquet', index=False)
     # Retain interpretable time breakdowns on exactly the six-way matched sample.

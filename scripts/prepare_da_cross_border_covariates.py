@@ -13,6 +13,7 @@ import pandas as pd
 from bess_pv_trading.config import load_config
 from bess_pv_trading.forecasting.studies.price_feature_data import _external_grid
 from bess_pv_trading.forecasting.studies.zero_shot_da import digest, write_json
+from bess_pv_trading.forecasting.studies.adaptive_price_context import adapt_request
 
 
 def main():
@@ -55,8 +56,9 @@ def main():
     (output / 'requests').mkdir()
     files, coverage = {}, []
     for name in ('labels.parquet', 'source_da.parquet', 'source_manifest.json'):
-        shutil.copy2(nord / name, output / name)
-        files[name] = digest(output / name)
+        if (nord / name).is_file():
+            shutil.copy2(nord / name, output / name)
+            files[name] = digest(output / name)
     for relative, expected in base['files'].items():
         if not relative.startswith('requests/'):
             continue
@@ -65,20 +67,21 @@ def main():
             raise ValueError(f'Changed source request: {relative}')
         request = json.loads(original.read_text())
         starts = pd.DatetimeIndex(pd.to_datetime(request['product_starts_utc'], utc=True))
-        wanted = pd.date_range(pd.Timestamp(request['context_start']), starts[-1] + pd.Timedelta(minutes=15),
-                               freq='15min', inclusive='left')
+        if 'context_product_starts_utc' in request:
+            wanted = pd.DatetimeIndex(pd.to_datetime(request['context_product_starts_utc'], utc=True)).append(starts)
+        else:
+            wanted = pd.date_range(pd.Timestamp(request['context_start']), starts[-1] + pd.Timedelta(minutes=15), freq='15min', inclusive='left')
         locations = grid.get_indexer(wanted)
         matrix = np.full((len(wanted), len(names)), np.nan)
         valid = locations >= 0
         matrix[valid] = features[locations[valid]]
         missing = (~np.isfinite(matrix)).sum(axis=0)
-        eligible = not missing.any()
-        coverage.append({'delivery_day': request['delivery_day'], 'eligible': eligible,
-                         **dict(zip(names, missing.astype(int)))})
-        if not eligible:
-            continue
         request['forecast_covariates'].update({name: matrix[:, index].tolist() for index, name in enumerate(names)})
         request['feature_names'] = [*base['features'], *names]
+        request, adjustment = adapt_request(request, base['settings'].get('minimum_context_days', 7), timezone, base['settings'].get('missing_context', 'exclude_day'))
+        coverage.append({'delivery_day': Path(relative).stem, 'eligible': request is not None, **dict(zip(names, missing.astype(int))), **adjustment})
+        if request is None:
+            continue
         destination = output / relative
         write_json(destination, request)
         files[relative] = digest(destination)
@@ -88,7 +91,7 @@ def main():
     result.update(files=files, features=[*base['features'], *names], source_extra_sha256=hashes,
         eligible_days=sum(row['eligible'] for row in coverage), requested_days=len(coverage),
         extra_feature_assumption='Realized prior-day quantities and previous gas prices assumed available; actual publication clocks and revisions are not verified. Prior-day same-clock quantities may occur after the DA gate.',
-        extra_missing_policy='Complete case over history and horizon; no imputation.',
+        extra_missing_policy='Configured adaptive or complete-case history; horizon must be complete; no imputation.',
         extra_feature_definitions=settings['feature_blocks'])
     write_json(output / 'manifest.json', result)
     print(json.dumps({'eligible_days': result['eligible_days'], 'requested_days': len(coverage), 'features': names}, indent=2))
