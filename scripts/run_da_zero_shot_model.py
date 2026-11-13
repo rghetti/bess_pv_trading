@@ -88,34 +88,44 @@ def load_model(name, checkpoint, device, torch, batch_size=1):
         from chronos import Chronos2Pipeline
 
         model = Chronos2Pipeline.from_pretrained(checkpoint, device_map=device, torch_dtype=torch.float32)
-        def predict(contexts, horizon, levels):
+        def predict(contexts, horizon, levels, covariates=None):
             contexts = np.atleast_2d(contexts)
             if contexts.shape[1] > model.model.chronos_config.context_length:
                 raise ValueError('Chronos context would be truncated')
-            values, _ = model.predict_quantiles([{'target': row} for row in contexts], prediction_length=horizon,
+            inputs = []
+            for index, row in enumerate(contexts):
+                item = {'target': row}
+                if covariates is not None:
+                    item['past_covariates'] = {key: value[index, :len(row)] for key, value in covariates.items()}
+                    item['future_covariates'] = {key: value[index, len(row):] for key, value in covariates.items()}
+                inputs.append(item)
+            values, _ = model.predict_quantiles(inputs, prediction_length=horizon,
                 quantile_levels=levels, context_length=contexts.shape[1], batch_size=batch_size, cross_learning=False)
             return np.stack([item.detach().cpu().numpy().reshape(horizon, len(levels)) for item in values])
     elif name == 't0_gamma':
         from t0 import T0Forecaster
 
         model = T0Forecaster.from_pretrained(checkpoint).to(device=device, dtype=torch.float32).eval()
-        def predict(contexts, horizon, levels):
+        def predict(contexts, horizon, levels, covariates=None):
             contexts = np.atleast_2d(contexts)
+            future = None if covariates is None else torch.as_tensor(np.stack(list(covariates.values()), axis=1), device=device)
             forecast = model.predict(torch.as_tensor(contexts, device=device), horizon=horizon,
-                context_length=contexts.shape[1], quantile_levels=levels, symmetric_averaging=False,
+                future_covariates=future, context_length=contexts.shape[1], quantile_levels=levels, symmetric_averaging=False,
                 clip_nonnegative=False, snap_integers=False)
             return forecast.quantiles.detach().cpu().numpy().reshape(len(contexts), horizon, len(levels))
     elif name == 'timesfm3':
         from timesfm3 import ModelConfig, TimesFM3Evaluator
 
         model = TimesFM3Evaluator(ModelConfig(checkpoint_path=checkpoint, per_core_batch_size=batch_size, device=device))
-        def predict(contexts, horizon, levels):
+        def predict(contexts, horizon, levels, covariates=None):
             contexts = np.atleast_2d(contexts)
             if contexts.shape[1] > model.global_context:
                 raise ValueError('TimesFM context would be truncated')
             if not np.allclose(levels, np.arange(1, 10) / 10):
                 raise ValueError('This TimesFM adapter uses the nine native deciles')
+            future = None if covariates is None else [np.stack([value[index] for value in covariates.values()]) for index in range(len(contexts))]
             forecasts = list(model.predict_batch(list(contexts), horizon=horizon, return_quantiles=True,
+                past_future_covariates=future,
                 use_symmetric_averaging=False, make_positive=False, sort_quantiles=False))
             return np.stack([np.asarray(item.quantiles).reshape(horizon, len(levels)) for item in forecasts])
     else:
@@ -209,8 +219,11 @@ def main():
             if digest(bundle / name) != checksum:
                 raise ValueError(f'Request checksum mismatch: {name}')
             request = json.loads((bundle / name).read_text())
-            if request['feature_names'] != ['past_NORD_DA_price'] or not np.isfinite(request['context']).all():
+            if request['feature_names'] != manifest['features'] or not np.isfinite(request['context']).all():
                 raise ValueError('Unexpected feature contract or missing context')
+            forecasts = request.get('forecast_covariates', {})
+            if list(forecasts) != sorted(manifest['features'][1:]) or any(len(value) != len(request['context']) + request['horizon'] or not np.isfinite(value).all() for value in forecasts.values()):
+                raise ValueError('Invalid forecast covariate values or dimensions')
             parsed.append((name, checksum, request))
         predict = load_model(args.model, str(checkpoint), str(device), torch, args.batch_size)
         # Check every requested horizon on the longest synthetic context before any replay.
@@ -221,7 +234,8 @@ def main():
         probe_start = time.monotonic()
         with torch.inference_mode():
             for horizon in sorted({item[2]['horizon'] for item in parsed}):
-                values = np.asarray(predict(np.tile(synthetic, (args.batch_size, 1)), horizon, settings['quantiles']))
+                synthetic_cov = {key: np.tile(np.sin(np.arange(maximum + horizon, dtype=np.float32) / 50) + index, (args.batch_size, 1)) for index, key in enumerate(sorted(manifest['features'][1:]))}
+                values = np.asarray(predict(np.tile(synthetic, (args.batch_size, 1)), horizon, settings['quantiles'], synthetic_cov or None))
                 if values.shape != (args.batch_size, horizon, 9) or not np.isfinite(values).all():
                     raise ValueError('Synthetic preflight failed shape/finiteness check')
         preflight = {'status': 'passed', 'context_steps': maximum, 'horizons': sorted({item[2]['horizon'] for item in parsed}),
@@ -255,7 +269,8 @@ def main():
             contexts = np.asarray([item[2]['context'] for item in batch], dtype=np.float32)
             horizon = batch[0][2]['horizon']
             with torch.inference_mode():
-                values = np.asarray(predict(contexts, horizon, settings['quantiles']))
+                covariates = {key: np.asarray([item[2]['forecast_covariates'][key] for item in batch], dtype=np.float32) for key in sorted(manifest['features'][1:])}
+                values = np.asarray(predict(contexts, horizon, settings['quantiles'], covariates or None))
             if device.type == 'cuda':
                 torch.cuda.synchronize(device)
             elapsed = time.monotonic() - begin
