@@ -139,11 +139,19 @@ def main():
     print(json.dumps({'mode': 'run' if args.run else 'plan_only', 'studies': len(commands),
                       'input_preparation': preparation, 'commands': commands}, indent=2), flush=True)
     if args.run:
-        for command, report in commands:
-            subprocess.run(command, check=True)
-            if not args.preflight_only:
-                subprocess.run(report, check=True)
+        from scripts.da_zero_shot_probe import available_devices
+        from scripts.ida_gpu_queue import execute_queue
+        devices = available_devices()[:4] if args.devices == ['auto'] else args.devices
+        if not devices or len(devices) > 4 or len(set(devices)) != len(devices):
+            raise ValueError('Provide one to four distinct GPU devices')
+        studies = [root / market / f'{window}d' / variant
+                   for market in settings['auctions'] for window in settings['windows'] for variant in settings['variants']]
+        print(json.dumps({'gpu_workers': len(devices), 'devices': devices, 'queued_model_studies': len(studies) * len(settings['models'])}), flush=True)
+        execute_queue(studies, settings['models'], devices, args.python_root, args.batch_size,
+                      args.threads, args.allow_download, args.preflight_only)
         if not args.preflight_only:
+            for _, report in commands:
+                subprocess.run(report, check=True)
             subprocess.run([sys.executable, '-m', 'scripts.report_ida_zero_shot',
                             '--config', args.config, '--root', str(root)], check=True)
 
