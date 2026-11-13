@@ -20,7 +20,9 @@ def add_holidays(bundle, variant):
             continue
         path = root / relative
         request = json.loads(path.read_text())
-        history = request['context_product_starts_utc']
+        history = request.get('context_product_starts_utc') or request.get('context_starts_utc')
+        if history is None:
+            history = pd.date_range(pd.Timestamp(request['context_start']), periods=len(request['context']), freq='15min').astype(str).tolist()
         horizon = request['product_starts_utc']
         starts = pd.DatetimeIndex(pd.to_datetime(history + horizon, utc=True))
         flags = italian_national_holiday(starts, timezone).astype(float).tolist()

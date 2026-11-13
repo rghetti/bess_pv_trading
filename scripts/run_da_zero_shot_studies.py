@@ -26,7 +26,17 @@ def _prepare_cross_border_action(action, snapshot, nord_bundle, feature_config):
     temporary = Path(tempfile.mkdtemp(prefix='.bundle-preparing-', dir=output.parent))
     try:
         prepared = temporary / 'inputs'
-        result = prepare_bundle(nord_bundle, snapshot, prepared, feature_config, action['blocks'])
+        if action['blocks']:
+            result = prepare_bundle(nord_bundle, snapshot, prepared, feature_config, action['blocks'])
+        else:
+            shutil.copytree(nord_bundle, prepared)
+            result = json.loads((prepared / 'manifest.json').read_text())
+            result['extra_feature_definitions'] = {}
+            result['nord_bundle_manifest_sha256'] = digest(Path(nord_bundle) / 'manifest.json')
+            (prepared / 'manifest.json').write_text(json.dumps(result, indent=2))
+        if action.get('holiday'):
+            from scripts.prepare_ida_feature_extensions import add_holidays
+            add_holidays(prepared, action['variant'])
         if output.exists():
             raise FileExistsError(f'Another writer created {output}')
         os.rename(prepared, output)
@@ -62,12 +72,14 @@ def _prepare_core_action(action, snapshot, base_config):
         shutil.rmtree(temporary, ignore_errors=True)
 
 
-def _validate_external_bundle(bundle, nord_bundle, snapshot, blocks):
+def _validate_external_bundle(bundle, nord_bundle, snapshot, blocks, holiday=False):
     """Check content hashes, source lineage and the requested block identity."""
     manifest = verify_bundle(bundle)
     nord_manifest = json.loads((nord_bundle / 'manifest.json').read_text())
     expected_blocks = set(blocks)
     saved_blocks = set(manifest.get('extra_feature_definitions', {}))
+    if holiday != ('italian_national_holiday' in manifest.get('features', [])):
+        raise ValueError(f'Holiday feature mismatch at {bundle}')
     if saved_blocks != expected_blocks:
         raise ValueError(f'External bundle block mismatch at {bundle}: {sorted(saved_blocks)}')
     nord_manifest_hash = digest(nord_bundle / 'manifest.json')
@@ -151,8 +163,6 @@ def prepare_study_inputs(settings, root, workers, prepare=True, on_ready=None):
                        settings['cross_border_base_variant'] / 'inputs')
         # Existing NORD-at-cross-border-window input is required as the parent
         # for retrospective blocks; configured windows can still add other sizes.
-        if not nord_bundle.is_dir() and not prepare:
-            raise FileNotFoundError(f'Missing external-feature NORD base bundle: {nord_bundle}')
         if nord_bundle.is_dir():
             base_manifest = verify_bundle(nord_bundle)
             if (base_manifest['settings'].get('market', 'DA') != 'DA'
@@ -164,11 +174,12 @@ def prepare_study_inputs(settings, root, workers, prepare=True, on_ready=None):
             bundle = study / 'inputs'
             action = {'path': str(bundle), 'study': str(study), 'variant': name,
                       'window_days': settings['cross_border_window'], 'blocks': definition['blocks'],
+                      'holiday': definition.get('holiday', False),
                       'action': 'reuse' if bundle.exists() else 'prepare'}
             if bundle.exists():
                 if not nord_bundle.is_dir():
                     raise FileNotFoundError(f'Missing NORD parent for external bundle: {nord_bundle}')
-                manifest = _validate_external_bundle(bundle, nord_bundle, snapshot, definition['blocks'])
+                manifest = _validate_external_bundle(bundle, nord_bundle, snapshot, definition['blocks'], definition.get('holiday', False))
                 action['eligible_days'] = manifest['eligible_days']
                 if on_ready is not None:
                     on_ready(study)
@@ -221,7 +232,7 @@ def prepare_study_inputs(settings, root, workers, prepare=True, on_ready=None):
                         action['action'] = 'prepared'
                         action['eligible_days'] = result['eligible_days']
                         output = Path(result['output'])
-                        _validate_external_bundle(output, nord_bundle, snapshot, action['blocks'])
+                        _validate_external_bundle(output, nord_bundle, snapshot, action['blocks'], action['holiday'])
                         if on_ready is not None:
                             on_ready(Path(action['study']))
                         continue
@@ -244,13 +255,23 @@ def prepare_study_inputs(settings, root, workers, prepare=True, on_ready=None):
     return actions
 
 
-def report_studies(settings, root, actions, python):
+def report_studies(settings, root, actions, python, workers=1):
     """Write per-study reports and matched baseline/external-feature summaries."""
+    commands = []
     for action in actions:
         study = Path(action['study'])
-        subprocess.run([python, '-m', 'scripts.da_zero_shot_probe', 'report',
-                        '--bundle', str(study / 'inputs'), '--forecast-directory', str(study / 'run'),
-                        '--output', str(study / 'run/report')], check=True)
+        commands.append([python, '-m', 'scripts.da_zero_shot_probe', 'report',
+                         '--bundle', str(study / 'inputs'), '--forecast-directory', str(study / 'run'),
+                         '--output', str(study / 'run/report')])
+    with ProcessPoolExecutor(max_workers=workers) as executor:
+        futures = [executor.submit(subprocess.run, command, check=True) for command in commands]
+        for index, future in enumerate(as_completed(futures), 1):
+            future.result()
+            print(f'Reports completed: {index}/{len(commands)}', flush=True)
+    if settings.get('holiday_ablation'):
+        from scripts.report_da_holiday_ablation import report_ablation
+        report_ablation(settings, root, actions)
+        return
     subprocess.run([python, '-m', 'scripts.compare_da_context_windows', '--study-root', str(root),
                     '--windows', *map(str, settings['windows']),
                     '--variants', *settings['baseline_variants']], check=True)
@@ -274,6 +295,8 @@ def main():
     parser.add_argument('--python-root', default='outputs/zero_shot_envs')
     parser.add_argument('--devices', nargs='+', default=['auto'])
     parser.add_argument('--prepare-workers', type=int)
+    parser.add_argument('--report-workers', type=int, default=30)
+    parser.add_argument('--report-only', action='store_true')
     parser.add_argument('--batch-size', type=int)
     parser.add_argument('--threads', type=int)
     parser.add_argument('--prepare-only', action='store_true')
@@ -281,7 +304,7 @@ def main():
     parser.add_argument('--allow-download', action='store_true')
     parser.add_argument('--preflight-only', action='store_true')
     args = parser.parse_args()
-    if args.prepare_only and args.run:
+    if sum((args.prepare_only, args.run, args.report_only)) > 1:
         parser.error('--prepare-only and --run are mutually exclusive')
     settings = load_config(args.config)['zero_shot_da_studies']
     if set(settings['baseline_variants']) != {'history', 'nord'}:
@@ -306,10 +329,13 @@ def main():
             settings['models'], devices, args.python_root, batch_size, threads,
             prepare_while_running, args.allow_download, args.preflight_only)
         if not args.preflight_only:
-            report_studies(settings, root, actions, sys.executable)
+            report_studies(settings, root, actions, sys.executable, args.report_workers)
         return
 
     actions = prepare_study_inputs(settings, root, workers, prepare=args.prepare_only)
+    if args.report_only:
+        report_studies(settings, root, actions, sys.executable, args.report_workers)
+        return
     print(json.dumps({'mode': 'prepare_only' if args.prepare_only else 'plan_only',
                       'preparation_workers': workers, 'batch_size': batch_size,
                       'studies': actions}, indent=2), flush=True)
