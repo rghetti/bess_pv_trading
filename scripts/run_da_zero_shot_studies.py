@@ -126,7 +126,7 @@ def prepare_study_inputs(settings, root, workers, prepare=True, on_ready=None):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         for temporary in root.glob('*/*/.inputs-preparing-*'):
             shutil.rmtree(temporary, ignore_errors=True)
-        for temporary in root.glob('60d/*/.bundle-preparing-*'):
+        for temporary in root.glob('*/*/.bundle-preparing-*'):
             shutil.rmtree(temporary, ignore_errors=True)
     try:
         # Keep the cross-border NORD parent even if it is not a scored window.

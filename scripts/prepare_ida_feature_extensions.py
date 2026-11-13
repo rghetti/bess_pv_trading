@@ -24,7 +24,8 @@ def add_holidays(bundle, variant):
         if history is None:
             history = pd.date_range(pd.Timestamp(request['context_start']), periods=len(request['context']), freq='15min').astype(str).tolist()
         horizon = request['product_starts_utc']
-        starts = pd.DatetimeIndex(pd.to_datetime(history + horizon, utc=True))
+        # History and horizon can use different ISO separators and precision.
+        starts = pd.DatetimeIndex(pd.to_datetime(history + horizon, format='ISO8601', utc=True))
         flags = italian_national_holiday(starts, timezone).astype(float).tolist()
         request['forecast_covariates']['italian_national_holiday'] = flags
         request['feature_names'].append('italian_national_holiday')
