@@ -1,0 +1,14 @@
+include: ../standard.yaml
+
+rolling_price_inputs:
+  base_inputs_config: configs/research/price_search_inputs_full_year.yaml
+  base_search_config: configs/research/price_feature_selection_full_year.yaml
+  start: '2025-04-01'
+  end_exclusive: '2026-12-01'
+  example_start: '2025-06-01'
+  timezone: Europe/Rome
+  weather_release_lag_hours: 6
+  max_cancellation_fallback_days: 14
+  weather_cycle_hours_utc: [0, 6, 12]
+  weather_locations: [milan, turin, genoa, bologna, verona, venice, bolzano, trieste, aosta]
+  weather_variables: [temperature_2m, shortwave_radiation, cloud_cover, wind_speed_10m, wind_speed_100m]

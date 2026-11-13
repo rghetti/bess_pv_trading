@@ -152,6 +152,18 @@ class ContinuousReplay:
         self.config_fingerprint = config_fingerprint or _configuration_fingerprint(config)
         self.identity = {"policy_version": CONTINUOUS_POLICY_VERSION + ("-mpc-v1" if self.realtime else ""), "strategy": strategy,
             "config_fingerprint": self.config_fingerprint, "input_fingerprint": prepared["input_fingerprint"]}
+        price_provider = prepared.get("rolling_price_provider")
+        if price_provider is not None and not self.perfect:
+            from .rolling_price_provider import validate_replay_price_schedule
+            study = config["gme_oracle_experiment"]
+            expected = study.get("participating_auctions")
+            if expected is None:
+                expected = list(study["auction_datasets"])
+            validate_replay_price_schedule(self.daily, expected)
+            # Price models and their pinned data belong to replay identity, so a
+            # resumed financial ledger cannot silently change forecast sources.
+            self.identity["rolling_price_provider"] = {"snapshot_id": price_provider.snapshot_id,
+                "model_identity": price_provider.model_identity}
         # Enforce the input contract: Continuous strategy output exists: `self.destination`.
         if self.destination.exists() and not resume:
             raise FileExistsError(f"Continuous strategy output exists: {self.destination}")
@@ -475,7 +487,21 @@ class ContinuousReplay:
                                else "forecast_projected_continuous_boundary")
         grid = DeliveryGrid(day_grid.interval_ids[first:], day_grid.starts[first:], day_grid.ends[first:])
         schedule = tuple(daily["schedule"])
-        prices = daily["prices"]
+        price_provenance = None
+        price_provider = self.prepared.get("rolling_price_provider")
+        if price_provider is not None and not self.perfect:
+            from .rolling_price_provider import forecast_auction_book
+            examples = self.prepared.get("rolling_price_examples")
+            if examples is None:
+                raise ValueError("Rolling price provider requires gate-specific prepared examples")
+            # Only the publication handler can add an auction to self.known.
+            # Unpublished realized auction curves are never sent to the provider.
+            published_prices = {name: daily["prices"][name] for name in self.known[day]}
+            prices, price_provenance = forecast_auction_book(price_provider, day, event.auction,
+                cutoff, day_grid.starts, schedule, published_prices, examples,
+                targets=(event.auction,) if self.current_only else None)
+        else:
+            prices = daily["prices"]
         # When `self.current_only`, set `selected` using `tuple((item for item in schedule if item.auction == event.auction))`.
         if self.current_only:
             selected = tuple(item for item in schedule if item.auction == event.auction)
@@ -574,6 +600,8 @@ class ContinuousReplay:
             "locked_prefix_intervals": len(projection), "modeled_auctions": list(masks),
             "known_auctions": list(self.known[day]), "fixed_commitment_auctions": list(self.submitted[day]),
             "pending_position_abs_mwh": sum(abs(value) for value in pending_positions), **provenance}
+        if price_provenance is not None:
+            diagnostic["rolling_price_forecasts"] = price_provenance
         self.projections.append({"delivery_day": day, "auction": event.auction,
             "cutoff_utc": cutoff.isoformat(), "planning_start_utc": str(grid.starts[0]),
             "boundary_kind": "ida3_noon" if first else "delivery_midnight",

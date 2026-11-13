@@ -1,0 +1,27 @@
+include: ../standard.yaml
+
+rolling_price_study:
+  inputs_config: configs/research/rolling_price_inputs.yaml
+  output_directory: outputs/rolling_price_study
+  start: '2025-10-01'
+  end_exclusive: '2026-11-01'
+  timezone: Europe/Rome
+  workers: 5
+  validation_days: 14
+  minimum_fit_days: 14
+  minimum_native_da_days: 30
+  windows: [60, 90]
+  families: [ridge, elastic_net, reduced_rank]
+  ida_targets: [price, spread]
+  parameters:
+    ridge: [100.0, 10000.0]
+    elastic_net: [0.01, 0.1]
+    reduced_rank: [2, 4]
+  feature_blocks:
+    core: [core]
+    core_nord: [core, nord_forecasts]
+    core_gas: [core, gas]
+    core_france: [core, france]
+    core_switzerland: [core, switzerland]
+    core_all: [core, nord_forecasts, gas, france, switzerland]
+    core_all_weather: [core, nord_forecasts, gas, france, switzerland, weather]
