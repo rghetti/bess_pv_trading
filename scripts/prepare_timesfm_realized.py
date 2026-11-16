@@ -13,6 +13,26 @@ from bess_pv_trading.forecasting.studies.price_feature_data import interval_valu
 from bess_pv_trading.forecasting.studies.zero_shot_da import digest, write_json
 
 
+def fill_history(actual, historical_forecast=None):
+    """Fill actual gaps from matching forecasts, then interpolate historical values only."""
+    result = np.asarray(actual, dtype=float).copy()
+    missing = ~np.isfinite(result)
+    used_forecast = np.zeros(len(result), dtype=bool)
+    if historical_forecast is not None:
+        forecast = np.asarray(historical_forecast, dtype=float)
+        if forecast.shape != result.shape:
+            raise ValueError('Historical forecast and actual lengths differ')
+        used_forecast = missing & np.isfinite(forecast)
+        result[used_forecast] = forecast[used_forecast]
+    remaining = ~np.isfinite(result)
+    interpolated = np.zeros(len(result), dtype=bool)
+    if remaining.any() and (~remaining).any():
+        indices = np.arange(len(result))
+        result[remaining] = np.interp(indices[remaining], indices[~remaining], result[~remaining])
+        interpolated = remaining
+    return result, int(used_forecast.sum()), int(interpolated.sum())
+
+
 def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
     """Create one immutable, complete-case bundle from pinned price and actuals snapshots."""
     base_dir, snapshot_dir, output_dir = map(Path, (base_dir, snapshot_dir, output_dir))
@@ -76,14 +96,22 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
             values = interval_values(subset, grid, pd.to_numeric(subset.value, errors='coerce').to_numpy(float))
             values_by_dataset[dataset] = values
             missing[dataset] = int((~np.isfinite(values)).sum())
+        fill_counts = {}
         for name, dataset in replacements.items():
             if name not in request['forecast_covariates']:
                 raise ValueError(f'Forecast feature missing in base bundle: {name}')
             old = request['forecast_covariates'][name]
-            request['forecast_covariates'][name] = values_by_dataset[dataset].tolist() + old[len(grid):]
-        request.setdefault('past_covariates', {}).update({name: values_by_dataset[dataset].tolist() for name, dataset in past.items()})
+            filled, forecast_count, interpolated_count = fill_history(values_by_dataset[dataset], old[:len(grid)])
+            fill_counts[f'{dataset}_forecast_filled'] = forecast_count
+            fill_counts[f'{dataset}_interpolated'] = interpolated_count
+            request['forecast_covariates'][name] = filled.tolist() + old[len(grid):]
+        for name, dataset in past.items():
+            filled, _, interpolated_count = fill_history(values_by_dataset[dataset])
+            fill_counts[f'{dataset}_interpolated'] = interpolated_count
+            request.setdefault('past_covariates', {})[name] = filled.tolist()
+        request['realized_fill_counts'] = fill_counts
         request, info = adapt_request(request, settings['minimum_context_days'], base['settings']['timezone'], 'adaptive')
-        records.append({'delivery_day': Path(relative).stem, 'eligible': request is not None, **missing, **info})
+        records.append({'delivery_day': Path(relative).stem, 'eligible': request is not None, **missing, **fill_counts, **info})
         if request is not None:
             path = output_dir / relative
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -97,8 +125,9 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
                     eligible_days=sum(row['eligible'] for row in records), requested_days=len(records),
                     source_actuals_sha256=entry['sha256'], actuals_manifest_sha256=digest(snapshot_dir / 'manifest.json'),
                     base_manifest_sha256=digest(base_dir / 'manifest.json'), realized_variant=variant,
+                    realized_builder_sha256=digest(Path(__file__)),
                     realized_feature_definitions=definitions,
                     realized_availability='Past delivery dates assumed available at each gate; historical publication times and revisions unverified.',
-                    realized_policy='No delivery-day actuals; no imputation; missing historical values trim the entire recent suffix.')
+                    realized_policy='No delivery-day actuals; historical gaps use matching historical forecasts first, then linear interpolation within history; entirely missing series are excluded.')
     write_json(output_dir / 'manifest.json', manifest)
     return manifest
