@@ -157,3 +157,40 @@ def test_invalid_policy_is_rejected_before_opening_cache(setup_download):
     setup_download["api"]["terna_http_403_policy"] = setup_download["test_case"]["invalid_policy"]
     with pytest.raises(api.DataAPIError, match="terna_http_403_policy"):
         api.download_from_config(setup_download, transport=FakeTransport())
+
+
+def test_transport_retries_http_599_and_stops_at_budget():
+    """A gateway failure is retried but never converted into a no-data result."""
+    class Response:
+        headers = {}
+        content = b'gateway failure'
+
+        def __init__(self, status):
+            self.status_code = status
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    class Session:
+        def __init__(self, statuses):
+            self.responses = [Response(status) for status in statuses]
+            self.calls = 0
+
+        def request(self, *args, **kwargs):
+            response = self.responses[self.calls]
+            self.calls += 1
+            return response
+
+    request = api.ApiRequest('https://web-api.tp.entsoe.eu/api')
+    session = Session([599, 200])
+    transport = api.SecureTransport(session=session, attempts=3, retry_delay_seconds=0,
+                                    minimum_request_interval_seconds=0)
+    assert transport.get(request) == b'gateway failure'
+    assert session.calls == 2 and all(response.closed for response in session.responses)
+    session = Session([599, 599, 599])
+    transport = api.SecureTransport(session=session, attempts=3, retry_delay_seconds=0,
+                                    minimum_request_interval_seconds=0)
+    with pytest.raises(api.DataAPIHTTPError, match='HTTP 599 after 3 attempts'):
+        transport.get(request)
+    assert session.calls == 3 and all(response.closed for response in session.responses)

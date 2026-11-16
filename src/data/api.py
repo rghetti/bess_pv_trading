@@ -176,7 +176,9 @@ class SecureTransport:
                         absent=False
                     if absent:
                         return bytes(response.content)
-                retryable = status in {429,500,502,503,504}
+                # Some gateways return the nonstandard 599 for connection errors.
+                # Retry it within the same bounded budget as other server failures.
+                retryable = status in {429,500,502,503,504,599}
                 if retryable and attempt+1 < self.attempts:
                     retry_after = response.headers.get("Retry-After", "")
                     delay = float(retry_after) if re.fullmatch(r"\d+(\.\d+)?", retry_after) else self.retry_delay*2**attempt
