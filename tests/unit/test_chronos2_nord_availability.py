@@ -127,7 +127,12 @@ def test_builder_binds_chronos_and_a75_actuals(tmp_path):
     result = json.loads((tmp_path / 'result/requests/2026-01-08.json').read_text())
     assert manifest['models'] == {'chronos2': {'revision': 'pinned'}}
     assert result['forecast_covariates']['load_forecast'][0] == 3.0
+    last_available = history.get_loc(pd.Timestamp('2026-01-07T10:30Z'))
+    first_unavailable = history.get_loc(pd.Timestamp('2026-01-07T10:45Z'))
+    assert result['forecast_covariates']['load_forecast'][last_available] == 3.0
+    assert result['forecast_covariates']['load_forecast'][first_unavailable] == 4.0
     assert result['forecast_covariates']['load_forecast'][len(history) - 1] == 4.0
+    assert result['forecast_covariates']['load_forecast'][len(history)] == 4.0
     assert result['past_covariates']['solar_forecast'][0] == 3.0
     assert 'solar_forecast' not in result['forecast_covariates']
     assert result['realized_fill_counts']['actual_load_unavailable_at_gate'] > 0

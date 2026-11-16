@@ -56,7 +56,9 @@ ENTSO-E describes its [load data](https://transparencyplatform.zendesk.com/hc/en
 and [renewable forecast revisions](https://transparencyplatform.zendesk.com/hc/en-us/articles/16648445340180-Generation-Forecasts-for-Wind-and-Solar-14-1-D).
 For example, at 11:45 D-1, a quarter-hour actual ending at 10:45 may be used
 under the one-hour assumption; one ending at 11:00 is masked. The tail is
-filled according to the policy above. A forecast known to have been published
+filled first from the available D-1 forecast, then by the remaining gap policy
+above. The D forecast is appended as the future segment only when eligible at
+the decision cutoff; otherwise that variable is past-only. A forecast known to have been published
 before 18:00 can be used sooner when its verified publication timestamp is in
 the pinned data; 18:00 is a deadline, not a claim that nothing is released
 earlier.
