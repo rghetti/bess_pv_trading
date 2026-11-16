@@ -7,7 +7,7 @@ zero_shot_ida:
   model_config: configs/research/zero_shot_price_study.yaml
   start: '2025-10-01'
   end_exclusive: null
-  windows: [7, 28, 60]
+  windows: [7, 28, 56, 84]
   minimum_context_days: 7
   variants: [history, nord, nord_spread]
   auctions: [IDA1, IDA2, IDA3]

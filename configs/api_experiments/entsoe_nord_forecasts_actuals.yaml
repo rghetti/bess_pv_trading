@@ -33,10 +33,3 @@ api:
     # Realized values remain separate from forecasts and retain source direction.
     - {provider: entsoe, dataset: actual_generation_by_type, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
     - {provider: entsoe, dataset: actual_load, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
-    - {provider: entsoe, dataset: actual_solar_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
-    - {provider: entsoe, dataset: actual_wind_onshore_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
-    - {provider: entsoe, dataset: actual_wind_offshore_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
-    - {provider: entsoe, dataset: actual_hydro_pumped_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
-    - {provider: entsoe, dataset: actual_hydro_run_of_river_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
-    - {provider: entsoe, dataset: actual_hydro_reservoir_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
-    - {provider: entsoe, dataset: actual_gas_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}

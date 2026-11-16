@@ -112,8 +112,8 @@ def load_model(name, checkpoint, device, torch, batch_size=1):
             for index, row in enumerate(contexts):
                 item = {'target': row}
                 if covariates is not None:
-                    item['past_covariates'] = {key: value[index, :len(row)] for key, value in covariates.items()}
-                    item['future_covariates'] = {key: value[index, len(row):] for key, value in covariates.items()}
+                    item['past_covariates'] = {key: value[index, :len(row)] for key, value in covariates.items()} #past covariates of each feature are the one with lenght up to target
+                    item['future_covariates'] = {key: value[index, len(row):] for key, value in covariates.items()} #future covariates is the slice exceeding target
                 if past_covariates is not None:
                     item.setdefault('past_covariates', {}).update({key: value[index] for key, value in past_covariates.items()})
                 inputs.append(item)
