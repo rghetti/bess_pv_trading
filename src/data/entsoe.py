@@ -33,7 +33,22 @@ DATASETS = {
                               "unit": "MW", "article": "14.1.D", "domain_parameters": ("in_Domain",)},
     "wind_offshore_forecast": {"document_type": "A69", "process_type": "A01", "psr_type": "B18",
                                "unit": "MW", "article": "14.1.D", "domain_parameters": ("in_Domain",)},
+    "actual_load": {"document_type": "A65", "process_type": "A16", "unit": "MW",
+                    "article": "6.1.A", "domain_parameters": ("outBiddingZone_Domain",)},
 }
+
+# Separate request identities prevent different technologies sharing a cache key.
+for _name, _psr in {
+    "actual_solar_generation": "B16",
+    "actual_wind_onshore_generation": "B19",
+    "actual_wind_offshore_generation": "B18",
+    "actual_hydro_pumped_generation": "B10",
+    "actual_hydro_run_of_river_generation": "B11",
+    "actual_hydro_reservoir_generation": "B12",
+    "actual_gas_generation": "B04",
+}.items():
+    DATASETS[_name] = {"document_type": "A75", "process_type": "A16", "psr_type": _psr,
+                       "unit": "MW", "article": "16.1.B&C", "domain_parameters": ("in_Domain",)}
 
 
 class EntsoeAPIError(MarketDataError):
@@ -219,14 +234,15 @@ def parse_entsoe_xml(payload: bytes | str, *, dataset: str, zone: str = "NORD",
                 raise EntsoeAPIError("ENTSO-E price response requires explicit EUR/MWH units")
             value_field = "price.amount"
         else:
-            domain = "outBiddingZone_Domain.mRID" if dataset == "load_forecast" else "inBiddingZone_Domain.mRID"
+            load_series = dataset in ("load_forecast", "actual_load")
+            domain = "outBiddingZone_Domain.mRID" if load_series else "inBiddingZone_Domain.mRID"
             if _text(series, domain, required=False) != zone_eic:
                 # A71 can report consumption as out-domain; keep it distinct.
-                if dataset != "generation_forecast" or _text(series, "outBiddingZone_Domain.mRID", required=False) != zone_eic:
+                if (dataset != "generation_forecast" and specification['document_type'] != 'A75') or _text(series, "outBiddingZone_Domain.mRID", required=False) != zone_eic:
                     raise EntsoeAPIError("ENTSO-E fundamental response EIC does not match the requested zone")
                 direction = "consumption"
             else:
-                direction = "production" if dataset != "load_forecast" else "load"
+                direction = "load" if load_series else "production"
             if _text(series, "quantity_Measure_Unit.name") != "MAW":
                 raise EntsoeAPIError("ENTSO-E forecast response requires explicit MAW (MW) units")
             if "psr_type" in specification and _text(series, "MktPSRType/psrType") != specification["psr_type"]:
@@ -258,11 +274,11 @@ def parse_entsoe_xml(payload: bytes | str, *, dataset: str, zone: str = "NORD",
         raise EntsoeNoDataError("ENTSO-E returned no time-series records")
     frame = pd.DataFrame(rows)
     identity = ["product_start", "product_end", "revision"]
-    if dataset == "generation_forecast":
+    if dataset == "generation_forecast" or specification['document_type'] == 'A75':
         identity.append("direction")
     if frame.duplicated(identity).any():
         raise EntsoeAPIError("ENTSO-E response has duplicate products; no series was silently selected")
-    grouping = ["direction"] if dataset == "generation_forecast" else ["dataset"]
+    grouping = ["direction"] if dataset == "generation_forecast" or specification['document_type'] == 'A75' else ["dataset"]
     for _, group in frame.groupby(grouping):
         ordered = group.sort_values("product_start")
         if (ordered.product_start.iloc[1:].reset_index(drop=True) <
