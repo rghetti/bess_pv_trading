@@ -27,12 +27,20 @@ def prepare_one(base, snapshot, directory, variant, settings):
     output = directory / 'inputs'
     if output.exists():
         manifest = verify_bundle(output)
+        model_specs = (load_config(settings['model_config'])['zero_shot_price_study']['models']
+                       if settings.get('model_config') else None)
         if (manifest.get('base_manifest_sha256') != digest(Path(base) / 'manifest.json') or
             manifest.get('actuals_manifest_sha256') != digest(Path(snapshot) / 'manifest.json') or
             manifest.get('forecast_snapshot_sha256') != digest(Path(settings['forecast_snapshot']) / 'manifest.json') or
             manifest.get('realized_builder_sha256') != digest(Path(__file__).with_name('prepare_timesfm_realized.py')) or
             manifest.get('realized_variant') != variant or
             manifest.get('realized_feature_definitions') != settings['variants'][variant] or
+            manifest.get('availability_policy') != settings.get('availability_policy') or
+            manifest.get('actual_dataset_selectors', {}) != settings.get('actual_dataset_selectors', {}) or
+            manifest.get('calendar', {}) != settings.get('calendar', {}) or
+            manifest.get('use_actual_snapshot_forecasts', False) != settings.get('use_actual_snapshot_forecasts', False) or
+            set(manifest['models']) != set(settings['models']) or
+            (model_specs is not None and any(manifest['models'][name] != model_specs[name] for name in settings['models'])) or
             manifest['settings'].get('minimum_context_days', 7) != settings['minimum_context_days']):
             raise ValueError(f'Existing bundle differs from requested study: {output}')
         return str(directory)
@@ -85,8 +93,8 @@ def compare(root, market, variants):
     for item in counts:
         item['matched_rows'] = len(common)
     pd.DataFrame(counts).to_csv(output / 'coverage.csv', index=False)
-    text = [f'# {market}: TimesFM realized-covariate comparison', '',
-            'All variants use matched products; November is reserved. Prior-day actuals are assumed available retrospectively.', '',
+    text = [f'# {market}: realized-covariate comparison', '',
+            'All variants use matched products; November is reserved. See the input manifests for publication assumptions and revision limitations.', '',
             '| Period | Variant | Products | MAE | WAPE | RMSE | Bias |', '|---|---|---:|---:|---:|---:|---:|']
     for _, row in scores.sort_values(['period', 'mae', 'input_variant']).iterrows():
         text.append(f"| {row['period']} | {row['input_variant']} | {int(row['products'])} | {row['mae']:.3f} | {100*row['wape']:.2f}% | {row['rmse']:.3f} | {row['bias']:.3f} |")
@@ -111,7 +119,10 @@ def main():
         parser.error('Choose exactly one of --prepare-only, --run or --report-only')
     if min(args.prepare_workers, args.report_workers, args.batch_size, args.threads) < 1 or len(args.devices) != len(set(args.devices)):
         parser.error('Worker counts must be positive and devices distinct')
-    settings = load_config(args.config)['realized_timesfm_study']
+    config = load_config(args.config)
+    settings = config.get('realized_price_study', config.get('realized_timesfm_study'))
+    if settings is None:
+        raise ValueError('Configure realized_price_study or realized_timesfm_study')
     root = Path(settings['output'])
     tasks = [(base, settings['actuals_snapshot'], root / market / variant, variant, settings)
              for market, base in settings['base_bundles'].items() for variant in settings['variants']]

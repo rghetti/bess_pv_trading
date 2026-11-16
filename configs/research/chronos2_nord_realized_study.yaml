@@ -1,0 +1,52 @@
+include: ../standard.yaml
+
+# Paths refer to pinned snapshots, not the live database being downloaded.
+realized_price_study:
+  actuals_snapshot: outputs/price_realized_snapshot/chronos2/merged
+  forecast_snapshot: outputs/zero_shot_price_inputs/merged
+  use_actual_snapshot_forecasts: true
+  output: outputs/chronos2_nord_realized
+  model_config: configs/research/zero_shot_price_study.yaml
+  auction_config: configs/research/price_feature_selection_full_year.yaml
+  minimum_context_days: 7
+  models: [chronos2]
+  calendar: {weekday_one_hot: true, italian_holiday: true}
+  base_bundles:
+    DA: outputs/da_timesfm_holiday_external/28d/history/inputs
+    IDA1: outputs/ida_zero_shot_context_windows/IDA1/28d/history/inputs
+    IDA2: outputs/ida_zero_shot_context_windows/IDA2/28d/history/inputs
+    IDA3: outputs/ida_zero_shot_context_windows/IDA3/28d/history/inputs
+  # Deadlines are conservative assumptions, not evidence of historical publication.
+  availability_policy:
+    mode: deadline_assumption
+    revision_policy: latest_retrospective
+    timezone: Europe/Rome
+    actual_lag_minutes: 60
+    forecast_days_before: 1
+    forecast_deadline_local:
+      load_forecast: '10:00'
+      generation_forecast: '18:00'
+      solar_forecast: '18:00'
+      wind_onshore_forecast: '18:00'
+      wind_offshore_forecast: '18:00'
+  # A75 carries all generation types; separate per-type downloads are not required.
+  actual_dataset_selectors:
+    actual_solar_generation: {dataset: actual_generation_by_type, psr_type: B16}
+    actual_wind_onshore_generation: {dataset: actual_generation_by_type, psr_type: B19}
+    actual_wind_offshore_generation: {dataset: actual_generation_by_type, psr_type: B18}
+    actual_hydro_pumped_generation: {dataset: actual_generation_by_type, psr_type: B10}
+    actual_hydro_run_of_river_generation: {dataset: actual_generation_by_type, psr_type: B11}
+    actual_hydro_reservoir_generation: {dataset: actual_generation_by_type, psr_type: B12}
+    actual_gas_generation: {dataset: actual_generation_by_type, psr_type: B04}
+  variants:
+    realized_forecast_hydro_gas:
+      replace_forecast_history:
+        load_forecast: actual_load
+        solar_forecast: actual_solar_generation
+        wind_onshore_forecast: actual_wind_onshore_generation
+        wind_offshore_forecast: actual_wind_offshore_generation
+      past_only:
+        hydro_pumped: actual_hydro_pumped_generation
+        hydro_river: actual_hydro_run_of_river_generation
+        hydro_reservoir: actual_hydro_reservoir_generation
+        gas_generation: actual_gas_generation

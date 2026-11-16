@@ -9,10 +9,55 @@ import numpy as np
 import pandas as pd
 
 from bess_pv_trading.forecasting.studies.adaptive_price_context import adapt_request
+from bess_pv_trading.forecasting.data.pv_calendar import italian_national_holiday
 from bess_pv_trading.forecasting.studies.price_feature_data import interval_values
 from bess_pv_trading.forecasting.studies.zero_shot_da import digest, write_json
 from bess_pv_trading.forecasting.studies.zero_shot_ida import IDAInputs, NORD_FEATURES
 from bess_pv_trading.config import load_config
+
+
+def available_at_gate(frame, cutoff, kind, policy):
+    """Mask source rows using recorded timestamps or explicit publication assumptions.
+
+    A document creation time is only a necessary condition, never proof of
+    publication. Deadline-based filtering remains an explicitly retrospective
+    assumption when the historical publication timestamp is unavailable.
+    """
+    if frame.empty:
+        return frame
+    cutoff = pd.Timestamp(cutoff)
+    if cutoff.tzinfo is None:
+        raise ValueError('Decision timestamp must have a timezone')
+    cutoff = cutoff.tz_convert('UTC')
+    known = pd.to_datetime(frame.get('historical_available_at', pd.Series(pd.NaT, index=frame.index)), utc=True)
+    created = pd.to_datetime(frame.get('source_document_time', pd.Series(pd.NaT, index=frame.index)), utc=True)
+    if policy.get('revision_policy') == 'latest_retrospective':
+        created_ok = pd.Series(True, index=frame.index)
+    elif policy.get('require_document_time', True):
+        created_ok = created.notna() & (created <= cutoff)
+    else:
+        created_ok = created.isna() | (created <= cutoff)
+    if kind == 'actual':
+        assumed = pd.to_datetime(frame.product_end, utc=True) + pd.Timedelta(minutes=policy['actual_lag_minutes'])
+    else:
+        dataset = str(frame.dataset.iloc[0])
+        if dataset not in policy['forecast_deadline_local']:
+            raise ValueError(f'No forecast publication assumption for {dataset}')
+        local_day = pd.to_datetime(frame.product_start, utc=True).dt.tz_convert(policy['timezone']).dt.tz_localize(None).dt.normalize()
+        days_before = int(policy.get('forecast_days_before', 1))
+        hour, minute = map(int, policy['forecast_deadline_local'][dataset].split(':'))
+        local_deadline = local_day - pd.Timedelta(days=days_before) + pd.Timedelta(hours=hour, minutes=minute)
+        assumed = local_deadline.dt.tz_localize(policy['timezone']).dt.tz_convert('UTC')
+    if policy['mode'] == 'recorded_only':
+        effective = known
+    elif policy['mode'] == 'deadline_assumption':
+        effective = known.fillna(assumed)
+    else:
+        raise ValueError('Unknown publication availability mode')
+    # Even erroneous metadata cannot make actuals eligible before their interval ends.
+    if kind == 'actual':
+        effective = effective.where(effective >= pd.to_datetime(frame.product_end, utc=True))
+    return frame.loc[created_ok & effective.notna() & (effective <= cutoff)].copy()
 
 
 def fill_history(actual, historical_forecast=None, timestamps=None, max_gap_minutes=120):
@@ -74,14 +119,16 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
     forecast_manifest = json.loads((forecast_root / 'manifest.json').read_text())
     if digest(forecast_root / 'manifest.json') != base['source_manifest_sha256']:
         raise ValueError('Historical price and forecast snapshots must match')
-    forecast_entry = forecast_manifest['tables']['nord_forecasts']
-    forecast_path = forecast_root / forecast_entry['path']
+    forecast_source_root = snapshot_dir if settings.get('use_actual_snapshot_forecasts') else forecast_root
+    forecast_source_manifest = snapshot if settings.get('use_actual_snapshot_forecasts') else forecast_manifest
+    forecast_entry = forecast_source_manifest['tables']['nord_forecasts']
+    forecast_path = forecast_source_root / forecast_entry['path']
     if digest(forecast_path) != forecast_entry['sha256']:
         raise ValueError('Forecast snapshot checksum mismatch')
     forecast_frame = pd.read_parquet(forecast_path)
     excluded = set(definitions.get('exclude_forecast', []))
     forecast_profiles = {name: forecast_frame[(forecast_frame.dataset == name) & (forecast_frame.zone == 'NORD')].sort_values('product_start') for name in NORD_FEATURES if name not in excluded}
-    extra_forecasts = set(replacements) - set(NORD_FEATURES)
+    extra_forecasts = set(replacements) - set(NORD_FEATURES) - set(forecast_profiles)
     if extra_forecasts:
         extra_entry = snapshot['tables']['nord_forecasts']
         extra_path = snapshot_dir / extra_entry['path']
@@ -91,6 +138,11 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
         for name in sorted(extra_forecasts):
             forecast_profiles[name] = extra_frame[(extra_frame.dataset == name) & (extra_frame.zone == 'NORD')].sort_values('product_start')
     features = [base['features'][0], *forecast_profiles]
+    calendar = settings.get('calendar', {})
+    if calendar.get('weekday_one_hot'):
+        features.extend(f'weekday_{day}' for day in range(7))
+    if calendar.get('italian_holiday'):
+        features.append('italian_national_holiday')
     past_features = [*base.get('past_features', [])]
     market = base['settings'].get('market', 'DA')
     ida_inputs = None
@@ -101,7 +153,10 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
             past_features.append('own_minus_latest_cleared')
     profiles = {}
     for dataset in set(replacements.values()) | set(past.values()):
-        subset = frame[(frame.dataset == dataset) & (frame.zone == 'NORD')].copy()
+        selector = settings.get('actual_dataset_selectors', {}).get(dataset, {'dataset': dataset})
+        subset = frame[(frame.dataset == selector['dataset']) & (frame.zone == 'NORD')].copy()
+        if 'psr_type' in selector:
+            subset = subset[subset.psr_type == selector['psr_type']]
         if dataset == 'actual_load':
             subset = subset[subset.direction == 'load']
         else:
@@ -140,8 +195,19 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
         if any(day >= delivery_day for day in local_days):
             raise ValueError('A realized covariate would include delivery-day observations')
         horizon_grid = pd.DatetimeIndex(pd.to_datetime(request['product_starts_utc'], format='ISO8601', utc=True))
+        policy = settings.get('availability_policy')
+        cutoff = request.get('decision_at')
+        if policy and cutoff is None:
+            raise ValueError('Publication-aware input requires decision_at in the base request')
         forecast_values = {}
+        availability_counts = {}
         for name, subset in forecast_profiles.items():
+            if policy:
+                eligible_subset = available_at_gate(subset, cutoff, 'forecast', policy)
+                before = interval_values(subset, grid.append(horizon_grid), pd.to_numeric(subset.value, errors='coerce').to_numpy(float))
+                after = interval_values(eligible_subset, grid.append(horizon_grid), pd.to_numeric(eligible_subset.value, errors='coerce').to_numpy(float))
+                availability_counts[f'{name}_unavailable_at_gate'] = int((np.isfinite(before) & ~np.isfinite(after)).sum())
+                subset = eligible_subset
             forecast_values[name] = interval_values(subset, grid.append(horizon_grid), pd.to_numeric(subset.value, errors='coerce').to_numpy(float))
         spread_counts = {}
         if ida_inputs is not None:
@@ -160,10 +226,16 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
         missing = {}
         values_by_dataset = {}
         for dataset, subset in profiles.items():
+            if policy:
+                eligible_subset = available_at_gate(subset, cutoff, 'actual', policy)
+                before = interval_values(subset, grid, pd.to_numeric(subset.value, errors='coerce').to_numpy(float))
+                after = interval_values(eligible_subset, grid, pd.to_numeric(eligible_subset.value, errors='coerce').to_numpy(float))
+                availability_counts[f'{dataset}_unavailable_at_gate'] = int((np.isfinite(before) & ~np.isfinite(after)).sum())
+                subset = eligible_subset
             values = interval_values(subset, grid, pd.to_numeric(subset.value, errors='coerce').to_numpy(float))
             values_by_dataset[dataset] = values
             missing[dataset] = int((~np.isfinite(values)).sum())
-        fill_counts = dict(spread_counts)
+        fill_counts = {**spread_counts, **availability_counts}
         for name, values in forecast_values.items():
             dataset = replacements.get(name)
             historical = values_by_dataset[dataset] if dataset else values[:len(grid)]
@@ -184,6 +256,14 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
             fill_counts[f'{dataset}_interpolated'] = interpolated_count
             fill_counts[f'{dataset}_zero_filled'] = zero_count
             request.setdefault('past_covariates', {})[name] = filled.tolist()
+        # Calendar values are known for the entire history and prediction horizon.
+        calendar_grid = grid.append(horizon_grid)
+        if calendar.get('weekday_one_hot'):
+            weekdays = calendar_grid.tz_convert(base['settings']['timezone']).dayofweek
+            for day in range(7):
+                request['forecast_covariates'][f'weekday_{day}'] = (weekdays == day).astype(float).tolist()
+        if calendar.get('italian_holiday'):
+            request['forecast_covariates']['italian_national_holiday'] = italian_national_holiday(calendar_grid, base['settings']['timezone']).astype(float).tolist()
         request['feature_names'] = [features[0], *sorted(request['forecast_covariates'])]
         request['realized_fill_counts'] = fill_counts
         request, info = adapt_request(request, settings['minimum_context_days'], base['settings']['timezone'], 'adaptive')
@@ -196,7 +276,13 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
     pd.DataFrame(records).to_csv(output_dir / 'coverage.csv', index=False)
     files['coverage.csv'] = digest(output_dir / 'coverage.csv')
     manifest = dict(base)
-    manifest.update(files=files, models={'timesfm3': base['models']['timesfm3']},
+    models = base['models']
+    if settings.get('model_config'):
+        specs = load_config(settings['model_config'])['zero_shot_price_study']['models']
+        models = {name: specs[name] for name in settings['models']}
+    else:
+        models = {'timesfm3': base['models']['timesfm3']}
+    manifest.update(files=files, models=models,
                     features=features, past_features=past_features,
                     eligible_days=sum(row['eligible'] for row in records), requested_days=len(records),
                     source_actuals_sha256=entry['sha256'], actuals_manifest_sha256=digest(snapshot_dir / 'manifest.json'),
@@ -204,7 +290,11 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
                     realized_builder_sha256=digest(Path(__file__)),
                     realized_feature_definitions=definitions, dynamic_covariates=True,
                     forecast_snapshot_sha256=digest(forecast_root / 'manifest.json'),
-                    realized_availability='Past delivery dates assumed available at each gate; historical publication times and revisions unverified.',
+                    availability_policy=settings.get('availability_policy'),
+                    actual_dataset_selectors=settings.get('actual_dataset_selectors', {}),
+                    calendar=settings.get('calendar', {}),
+                    use_actual_snapshot_forecasts=settings.get('use_actual_snapshot_forecasts', False),
+                    realized_availability=('Gate-filtered using recorded publication where present, otherwise configured deadline assumptions; latest retrospective revisions are used when configured and document creation is not publication.' if settings.get('availability_policy') else 'Past delivery dates assumed available at each gate; historical publication times and revisions unverified.'),
                     realized_policy='No delivery-day actuals; forecast first, then historical interpolation for gaps up to two hours, otherwise zero.')
     write_json(output_dir / 'manifest.json', manifest)
     return manifest
