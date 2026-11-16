@@ -14,3 +14,13 @@ PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python -u -m src download-
 ```
 
 The example requests eight datasets from 2025-09-01 through 2026-11-15; there is one request per dataset and local delivery day. The database path in the YAML is `data/api/market.duckdb` in this checkout. Ensure it is the catalog intended for the next study and do not run two writers on the same file. A token is prompted invisibly when missing.
+
+## Combined forecasts and actuals
+
+`configs/api_experiments/entsoe_nord_forecasts_actuals.yaml` requests the actuals above together with day-ahead load, total generation, solar, onshore wind and offshore wind forecasts. The configured date range and database are independent of the user's other configuration. Both workflows use the same exact-request cache when pointed at the same database. This configuration only downloads records: it does not alter pinned snapshots or the features used by prior TimesFM runs.
+
+Realized hydro can be evaluated as past-only TimesFM covariates, with separate B10, B11 and B12 production series or a documented complete aggregate. Supply only observations considered published at the simulated gate; use an explicit historical availability assumption if actual timestamps are unavailable. Record exclusions and match comparison products. The current past-covariate interface requires alignment with every retained historical target step, so a delayed latest hydro observation needs an explicit alignment/missing-data policy; it must not be silently replaced with later values or zero. No hydro forecast for the delivery horizon is implied by this proposal.
+
+```bash
+PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python -u -m src download-data --config configs/api_experiments/entsoe_nord_forecasts_actuals.yaml --provider entsoe --interactive
+```

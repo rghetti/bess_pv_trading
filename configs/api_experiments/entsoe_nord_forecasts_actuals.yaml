@@ -1,0 +1,41 @@
+include: ../standard.yaml
+
+# End is exclusive. Change dates before a backfill; credentials stay in the environment.
+api:
+  start: '2025-09-01'
+  end: '2026-11-16'
+  timezone: Europe/Rome
+  download_order: month_first
+  cache_directory: data/api
+  storage_backend: duckdb
+  database_path: data/api/market.duckdb
+  database_threads: 4
+  output_directory: outputs/api_nord_forecasts_actuals
+  no_data_cache_hours: 24
+  progress_every: 25
+  plots: false
+  credentials:
+    entsoe_token_env: ENTSOE_API_TOKEN
+  http:
+    attempts: 3
+    connect_timeout: 10
+    read_timeout: 60
+    retry_delay_seconds: 1
+    minimum_request_interval_seconds: 0.25
+    max_retry_delay_seconds: 10
+  requests:
+    # ENTSO-E day-ahead forecasts by delivery interval.
+    - {provider: entsoe, dataset: load_forecast, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
+    - {provider: entsoe, dataset: generation_forecast, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
+    - {provider: entsoe, dataset: solar_forecast, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
+    - {provider: entsoe, dataset: wind_onshore_forecast, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
+    - {provider: entsoe, dataset: wind_offshore_forecast, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
+    # Realized values remain separate from forecasts and retain source direction.
+    - {provider: entsoe, dataset: actual_load, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
+    - {provider: entsoe, dataset: actual_solar_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
+    - {provider: entsoe, dataset: actual_wind_onshore_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
+    - {provider: entsoe, dataset: actual_wind_offshore_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
+    - {provider: entsoe, dataset: actual_hydro_pumped_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
+    - {provider: entsoe, dataset: actual_hydro_run_of_river_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
+    - {provider: entsoe, dataset: actual_hydro_reservoir_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
+    - {provider: entsoe, dataset: actual_gas_generation, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
