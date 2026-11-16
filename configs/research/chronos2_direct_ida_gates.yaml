@@ -20,13 +20,13 @@ direct_ida_gate_study:
   forecast_snapshot: outputs/zero_shot_price_inputs/merged
   actuals_snapshot: outputs/price_realized_snapshot/chronos2/merged
   use_actual_snapshot_forecasts: true
-  output: outputs/chronos2_direct_ida_gates_pilot
+  output: outputs/chronos2_direct_ida_gates_pilot_no_calendar
   model_config: configs/research/zero_shot_price_study.yaml
   auction_config: configs/research/price_feature_selection_full_year.yaml
   models: [chronos2]
   include_historical_spread: false
   past_only_unavailable_policy: zero
-  calendar: {weekday_one_hot: true, italian_holiday: true}
+  calendar: {weekday_one_hot: false, italian_holiday: false}
   availability_policy:
     mode: deadline_assumption
     revision_policy: latest_retrospective

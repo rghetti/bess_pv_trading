@@ -7,9 +7,8 @@ study configuration is `configs/research/chronos2_nord_realized_study.yaml`.
 It uses the existing 28-day price-history bundles and their publication-aware
 price and cancellation handling. IDAs also receive the historical spread to
 the latest available non-cancelled earlier auction; the contemporaneous anchor
-remains a scoring reference, not a new model input. Seven day-of-week
-indicators and the Italian national holiday flag are known calendar covariates
-for both history and horizon.
+remains a scoring reference, not a new model input. Explicit weekday and
+Italian national holiday covariates are disabled in the current configuration.
 
 ## Inputs and missing values
 

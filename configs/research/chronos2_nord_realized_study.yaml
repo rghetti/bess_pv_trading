@@ -10,7 +10,7 @@ realized_price_study:
   auction_config: configs/research/price_feature_selection_full_year.yaml
   minimum_context_days: 7
   models: [chronos2]
-  calendar: {weekday_one_hot: true, italian_holiday: true}
+  calendar: {weekday_one_hot: false, italian_holiday: false}
   base_bundles:
     DA: outputs/da_timesfm_holiday_external/28d/history/inputs
     IDA1: outputs/ida_zero_shot_context_windows/IDA1/28d/history/inputs

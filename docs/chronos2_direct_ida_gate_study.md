@@ -25,8 +25,8 @@ overnight gaps. Input bundles are conditioned on the presence of target-day
 labels for scoring, so cancellation days without a target price are excluded
 from this research evaluation; this is not yet a live prediction provider.
 
-Italian holiday and weekday indicators and the D load forecast are known-future
-covariates at every gate. Actual NORD load, solar and onshore wind generation
+No explicit weekday or Italian holiday indicators are provided. The D load
+forecast is a known-future covariate at every gate. Actual NORD load, solar and onshore wind generation
 are used in their historical context up to the assumed availability cutoff;
 missing or unavailable historical intervals use the eligible forecast first,
 then the configured short-gap interpolation/zero fallback. Forecasts for D−1
@@ -74,3 +74,7 @@ After reviewing coverage and approving the pilot, replace `--prepare-only` with
 for each gate/auction pair. Source checksums, settings, gate definitions,
 builder code and pinned model identity are checked before resuming. No inference
 was run during implementation.
+
+The no-calendar pilot writes to `outputs/chronos2_direct_ida_gates_pilot_no_calendar`.
+The previous calendar-enabled pilot has its own output directory; its checkpoints
+cannot be reused for these inputs.
