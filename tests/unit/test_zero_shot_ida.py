@@ -108,6 +108,25 @@ def test_past_spread_has_only_historical_products_and_cancellation_aware_values(
     assert all(len(values) == len(spread) + 48 for values in request['forecast_covariates'].values())
     assert pd.Timestamp(request['max_context_publication_at']) < pd.Timestamp(request['decision_at'])
 
+    # The same target at DA must not see a clearing that arrives later that day.
+    early, early_coverage = inputs.request('2026-07-02', 'IDA3', 7, 'history', 'DA')
+    assert early_coverage['eligible']
+    assert early['gate'] == 'DA' and early['market'] == 'IDA3'
+    assert early['latest_cleared_anchor']['auction'] is None
+    assert 'past_covariates' not in early
+    assert early['decision_at'] == '2026-07-01T09:45:00+00:00'
+    later, _ = inputs.request('2026-07-02', 'IDA3', 7, 'history', 'IDA2')
+    assert later['latest_cleared_anchor']['auction'] == 'IDA1'
+    assert len(later['context']) == 7 * 48
+    assert np.isnan(inputs.labels('2026-07-02', 'IDA3', 'DA').latest_reference).all()
+    assert np.all(inputs.labels('2026-07-02', 'IDA3', 'IDA2').latest_reference == 110.)
+    inputs.notices.remove(('ida2_prices', '2026-07-01'))
+    inputs.notices.add(('ida1_prices', '2026-07-02'))
+    after_cancellation, coverage = inputs.request('2026-07-02', 'IDA2', 7, 'history', 'IDA2')
+    assert coverage['eligible']
+    assert after_cancellation['latest_cleared_anchor']['auction'] == 'DA'
+    assert 'past_covariates' not in after_cancellation
+
 
 def test_ida_comparison_writes_markdown_and_spread_feature_differences(tmp_path, monkeypatch):
     """All IDA settings compare identical products and automatic reports include deltas."""

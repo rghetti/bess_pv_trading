@@ -88,7 +88,9 @@ def test_builder_binds_chronos_and_a75_actuals(tmp_path):
     for name in ('load_forecast', 'generation_forecast', 'solar_forecast', 'wind_onshore_forecast'):
         for stamp in history.append(horizon):
             forecasts.append({'dataset': name, 'zone': 'NORD', 'product_start': stamp,
-                              'product_end': stamp + pd.Timedelta(minutes=15), 'value': 4.0})
+                              'product_end': stamp + pd.Timedelta(minutes=15), 'value': 4.0,
+                              'historical_available_at': (pd.Timestamp('2026-01-07T09:00Z')
+                                  if name == 'solar_forecast' and stamp >= horizon[0] else pd.NaT)})
     # This test needs only load and solar; exclude unused forecast streams.
     pd.DataFrame(forecasts).to_parquet(source / 'forecasts.parquet')
     source_entry = {'path': 'forecasts.parquet', 'sha256': digest(source / 'forecasts.parquet')}
@@ -118,6 +120,7 @@ def test_builder_binds_chronos_and_a75_actuals(tmp_path):
     settings = {'forecast_snapshot': str(source), 'minimum_context_days': 7,
                 'availability_policy': policy, 'model_config': str(model_config), 'models': ['chronos2'],
                 'calendar': {'weekday_one_hot': True, 'italian_holiday': True},
+                'future_forecast_earliest_gate': {'solar_forecast': 'IDA2'},
                 'actual_dataset_selectors': {'actual_solar_generation': {
                     'dataset': 'actual_generation_by_type', 'psr_type': 'B16'}},
                 'variants': {'actual': {'exclude_forecast': ['generation_forecast', 'wind_onshore_forecast'],

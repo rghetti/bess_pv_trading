@@ -35,9 +35,9 @@ def auction_grid(day, market, definitions, timezone):
     return delivery_grid(day, 15, timezone, definitions[market]['delivery_start_hour'])
 
 
-def latest_anchor(day, market, starts, prices, definitions, notices, timezone):
-    """Choose one complete earlier same-delivery curve published by the own gate."""
-    cutoff = clock(day, definitions[market], 'decision', timezone)
+def latest_anchor(day, market, starts, prices, definitions, notices, timezone, decision_gate=None):
+    """Choose a complete earlier same-delivery curve published by the decision gate."""
+    cutoff = clock(day, definitions[decision_gate or market], 'decision', timezone)
     attempts = []
     for earlier in reversed(MARKETS[:MARKETS.index(market)]):
         definition = definitions[earlier]
@@ -138,10 +138,17 @@ class IDAInputs:
                                    'anchor_trace': trace, 'covariates': covariates, 'cancelled': cancelled}
             return self.cache[key]
 
-    def request(self, day, market, window, variant):
+    def request(self, day, market, window, variant, decision_gate=None):
         """Trim only historical full days; require complete delivery-day covariates."""
+        gate = decision_gate or market
+        if gate not in MARKETS or market not in MARKETS or MARKETS.index(gate) > MARKETS.index(market):
+            raise ValueError('Decision gate must not follow the target auction')
+        if gate != market and variant != 'history':
+            raise ValueError('Earlier-gate requests require direct price history; covariates are added at the gate separately')
         current = self.day(day, market)
-        cutoff = clock(day, self.definitions[market], 'decision', self.timezone)
+        cutoff = clock(day, self.definitions[gate], 'decision', self.timezone)
+        _, anchor_trace = latest_anchor(day, market, current['starts'], self.prices,
+                                        self.definitions, self.notices, self.timezone, gate)
         include_nord = variant in ('nord', 'nord_spread')
         include_spread = variant == 'nord_spread'
         chunks = []
@@ -181,7 +188,7 @@ class IDAInputs:
         maximum_publication = pd.Timestamp(int(price_index.published[positions].max()), tz='UTC')
         if maximum_publication > cutoff:
             raise AssertionError('Historical own-auction publication exceeds current own gate')
-        request = {'max_context_publication_at': maximum_publication.isoformat(), 'delivery_day': current['day'], 'decision_at': cutoff.isoformat(), 'market': market, 'gate': market,
+        request = {'max_context_publication_at': maximum_publication.isoformat(), 'delivery_day': current['day'], 'decision_at': cutoff.isoformat(), 'market': market, 'gate': gate,
                    'context': context.tolist(), 'context_start': history_grid[0].isoformat(),
                    'context_end_exclusive': current['starts'][0].isoformat(),
                    'context_product_starts_utc': [stamp.isoformat() for stamp in history_grid],
@@ -190,30 +197,36 @@ class IDAInputs:
                    'horizon': len(current['starts']), 'feature_names': [f'past_NORD_{market}_price', *future],
                    'forecast_covariates': future, 'requested_context_days': window,
                    'effective_context_days': len(retained), 'context_policy_reason': reason,
-                   'latest_cleared_anchor': current['anchor_trace']}
+                   'latest_cleared_anchor': anchor_trace}
         if include_spread:
             request['past_covariates'] = {'own_minus_latest_cleared': np.concatenate([
                 item['values'] - item['anchor'] for item in retained]).tolist()}
             request['historical_anchor_trace'] = [item['anchor_trace'] for item in retained]
         return request, coverage
 
-    def labels(self, day, market):
+    def labels(self, day, market, decision_gate=None):
         """Keep actual labels and baseline prices separate from input request files."""
+        gate = decision_gate or market
         item = self.day(day, market)
-        cutoff = clock(day, self.definitions[market], 'decision', self.timezone)
+        cutoff = clock(day, self.definitions[gate], 'decision', self.timezone)
+        anchor, _ = latest_anchor(day, market, item['starts'], self.prices, self.definitions,
+                                  self.notices, self.timezone, gate)
         return pd.DataFrame({'delivery_day': item['day'], 'product_start': item['starts'],
-            'actual': item['target'], 'latest_reference': item['anchor'],
+            'actual': item['target'], 'latest_reference': anchor,
             'weekly_reference': local_reference(day, market, item['starts'], 7, cutoff, self.prices,
                                                 self.definitions, self.notices, self.timezone),
             'target_cancelled': item['cancelled']})
 
 
-def prepare_ida_bundle(inputs, output, market, window, variant, models):
+def prepare_ida_bundle(inputs, output, market, window, variant, models, decision_gate=None):
     """Write a standalone own-gate input bundle compatible with the shared worker."""
     output = Path(output)
     if output.exists():
         raise FileExistsError(f'Choose a fresh immutable bundle directory: {output}')
-    definition = inputs.definitions[market]
+    gate = decision_gate or market
+    if gate not in MARKETS or market not in MARKETS or MARKETS.index(gate) > MARKETS.index(market):
+        raise ValueError('Decision gate must not follow the target auction')
+    definition = inputs.definitions[gate]
     complete_days = []
     native = inputs.sources[market]
     source_days = pd.to_datetime(native.product_start, utc=True).dt.tz_convert(inputs.timezone).dt.strftime('%Y-%m-%d')
@@ -229,9 +242,9 @@ def prepare_ida_bundle(inputs, output, market, window, variant, models):
     files, records, labels = {}, [], []
     features = [f'past_NORD_{market}_price', *(NORD_FEATURES if variant != 'history' else ())]
     for day in days:
-        request, coverage = inputs.request(day, market, window, variant)
+        request, coverage = inputs.request(day, market, window, variant, gate)
         records.append(coverage)
-        labels.append(inputs.labels(day, market))
+        labels.append(inputs.labels(day, market, gate))
         if request is not None:
             path = output / 'requests' / f'{day.date()}.json'
             write_json(path, request)
@@ -244,7 +257,7 @@ def prepare_ida_bundle(inputs, output, market, window, variant, models):
     for name in ('labels.parquet', 'coverage.csv', 'source_manifest.json'):
         files[name] = digest(output / name)
     settings = {**inputs.settings, 'context_days': window, 'end_exclusive': end,
-                'market': market, 'gate': market, 'auction': market,
+                'market': market, 'gate': gate, 'auction': market,
                 'decision_time': definition['decision_time'], 'decision_day_offset': definition['decision_day_offset']}
     result = {'schema': 1, 'settings': settings, 'models': models, 'files': files,
         'features': features, 'past_features': ['own_minus_latest_cleared'] if variant == 'nord_spread' else [],
@@ -252,7 +265,7 @@ def prepare_ida_bundle(inputs, output, market, window, variant, models):
         'source_manifest_sha256': digest(inputs.root / 'manifest.json'),
         'context_policy': 'Longest recent complete whole-calendar-day suffix, minimum configured days; no zero fill.',
         'sequence_semantics': 'Native delivery products concatenated; IDA3 only 12:00–24:00, 48 products/day.',
-        'scope': 'Own-gate feature-isolation benchmark only. DA-gate forecasts of future IDAs are not generated by this bundle.',
+        'scope': f'Direct {market} forecast at {gate} gate; price labels are separate from inputs.',
         'current_anchor_usage': 'Current same-delivery earlier clearing is a baseline only, not a model input; nord_spread adds historical spread curves only.',
         'spread_semantics': 'Past own price minus newest complete earlier same-delivery non-cancelled clearing published at that historical own gate. Future spread is never supplied.',
         'forecast_availability_assumption': 'Archived NORD forecasts assumed available at each gate; issue vintages unverified.',

@@ -146,7 +146,8 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
     past_features = [*base.get('past_features', [])]
     market = base['settings'].get('market', 'DA')
     ida_inputs = None
-    if market != 'DA':
+    include_spread = settings.get('include_historical_spread', True)
+    if market != 'DA' and include_spread:
         ida_settings = dict(base['settings'])
         ida_inputs = IDAInputs(forecast_root, ida_settings, load_config(settings['auction_config'])['price_feature_search'])
         if 'own_minus_latest_cleared' not in past_features:
@@ -209,7 +210,17 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
                 availability_counts[f'{name}_unavailable_at_gate'] = int((np.isfinite(before) & ~np.isfinite(after)).sum())
                 subset = eligible_subset
             forecast_values[name] = interval_values(subset, grid.append(horizon_grid), pd.to_numeric(subset.value, errors='coerce').to_numpy(float))
+            earliest = settings.get('future_forecast_earliest_gate', {}).get(name)
+            if earliest is not None:
+                gate_order = ('DA', 'IDA1', 'IDA2', 'IDA3')
+                gate = base['settings'].get('gate', market)
+                if gate not in gate_order or earliest not in gate_order:
+                    raise ValueError('Unknown decision gate in future forecast policy')
+                if gate_order.index(gate) < gate_order.index(earliest):
+                    forecast_values[name][len(grid):] = np.nan
         spread_counts = {}
+        if not include_spread:
+            request.get('past_covariates', {}).pop('own_minus_latest_cleared', None)
         if ida_inputs is not None:
             anchor = np.full(len(grid), np.nan)
             for day in sorted(set(local_days)):
@@ -293,6 +304,8 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
                     availability_policy=settings.get('availability_policy'),
                     actual_dataset_selectors=settings.get('actual_dataset_selectors', {}),
                     calendar=settings.get('calendar', {}),
+                    include_historical_spread=include_spread,
+                    future_forecast_earliest_gate=settings.get('future_forecast_earliest_gate', {}),
                     use_actual_snapshot_forecasts=settings.get('use_actual_snapshot_forecasts', False),
                     realized_availability=('Gate-filtered using recorded publication where present, otherwise configured deadline assumptions; latest retrospective revisions are used when configured and document creation is not publication.' if settings.get('availability_policy') else 'Past delivery dates assumed available at each gate; historical publication times and revisions unverified.'),
                     realized_policy='No delivery-day actuals; forecast first, then historical interpolation for gaps up to two hours, otherwise zero.')
