@@ -12,7 +12,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--config', default='configs/research/price_search_inputs_nord_realized.yaml')
     parser.add_argument('--database', default='data/api/market.duckdb')
-    parser.add_argument('--output', default='outputs/price_realized_snapshot/merged')
+    parser.add_argument('--output', default='outputs/price_realized_snapshot/fallback_v2')
     args = parser.parse_args()
     output = Path(args.output)
     if output.exists():
@@ -21,8 +21,9 @@ def main():
     settings = config['price_search_inputs']
     settings['database_path'] = args.database
     settings['output_directory'] = str(output)
-    settings['sources'] = [item for item in settings['sources'] if item['name'] == 'nord_actuals']
-    settings['sources'][0]['required'] = True
+    settings['sources'] = [item for item in settings['sources'] if item['name'] in ('nord_actuals', 'nord_forecasts')]
+    for item in settings['sources']:
+        item['required'] = item['name'] == 'nord_actuals'
     manifest = build_price_search_inputs(config)
     print(f"Pinned {manifest['tables']['nord_actuals']['rows']} rows to {output}", flush=True)
 

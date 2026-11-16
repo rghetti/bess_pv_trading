@@ -29,6 +29,7 @@ def prepare_one(base, snapshot, directory, variant, settings):
         manifest = verify_bundle(output)
         if (manifest.get('base_manifest_sha256') != digest(Path(base) / 'manifest.json') or
             manifest.get('actuals_manifest_sha256') != digest(Path(snapshot) / 'manifest.json') or
+            manifest.get('forecast_snapshot_sha256') != digest(Path(settings['forecast_snapshot']) / 'manifest.json') or
             manifest.get('realized_builder_sha256') != digest(Path(__file__).with_name('prepare_timesfm_realized.py')) or
             manifest.get('realized_variant') != variant or
             manifest.get('realized_feature_definitions') != settings['variants'][variant] or

@@ -1,19 +1,21 @@
 include: ../standard.yaml
 
 realized_timesfm_study:
-  actuals_snapshot: outputs/price_realized_snapshot/merged
-  output: outputs/timesfm_realized_nord
+  actuals_snapshot: outputs/price_realized_snapshot/fallback_v2
+  output: outputs/timesfm_realized_nord_fallback_v2
+  forecast_snapshot: outputs/zero_shot_price_inputs/merged
+  auction_config: configs/research/price_feature_selection_full_year.yaml
   minimum_context_days: 7
   models: [timesfm3]
   base_bundles:
-    DA: outputs/da_timesfm_holiday_external/28d/nord/inputs
-    IDA1: outputs/ida_zero_shot_context_windows/IDA1/28d/nord_spread/inputs
-    IDA2: outputs/ida_zero_shot_context_windows/IDA2/28d/nord_spread/inputs
-    IDA3: outputs/ida_zero_shot_context_windows/IDA3/28d/nord_spread/inputs
+    DA: outputs/da_timesfm_holiday_external/28d/history/inputs
+    IDA1: outputs/ida_zero_shot_context_windows/IDA1/28d/history/inputs
+    IDA2: outputs/ida_zero_shot_context_windows/IDA2/28d/history/inputs
+    IDA3: outputs/ida_zero_shot_context_windows/IDA3/28d/history/inputs
   variants:
     baseline: {}
     realized_forecast:
-      replace_forecast_history: {load_forecast: actual_load, solar_forecast: actual_solar_generation, wind_onshore_forecast: actual_wind_onshore_generation}
+      replace_forecast_history: {load_forecast: actual_load, solar_forecast: actual_solar_generation, wind_onshore_forecast: actual_wind_onshore_generation, wind_offshore_forecast: actual_wind_offshore_generation}
     realized_forecast_hydro_gas:
-      replace_forecast_history: {load_forecast: actual_load, solar_forecast: actual_solar_generation, wind_onshore_forecast: actual_wind_onshore_generation}
+      replace_forecast_history: {load_forecast: actual_load, solar_forecast: actual_solar_generation, wind_onshore_forecast: actual_wind_onshore_generation, wind_offshore_forecast: actual_wind_offshore_generation}
       past_only: {hydro_pumped: actual_hydro_pumped_generation, hydro_river: actual_hydro_run_of_river_generation, hydro_reservoir: actual_hydro_reservoir_generation, gas_generation: actual_gas_generation}

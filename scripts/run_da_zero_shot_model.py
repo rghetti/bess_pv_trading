@@ -226,13 +226,26 @@ def main():
             if digest(bundle / name) != checksum:
                 raise ValueError(f'Request checksum mismatch: {name}')
             request = json.loads((bundle / name).read_text())
-            if request['feature_names'] != manifest['features'] or not np.isfinite(request['context']).all():
+            dynamic = manifest.get('dynamic_covariates', False)
+            expected_forecasts = set(manifest['features'][1:])
+            expected_past = set(manifest.get('past_features', []))
+            if not np.isfinite(request['context']).all():
                 raise ValueError('Unexpected feature contract or missing context')
             forecasts = request.get('forecast_covariates', {})
-            if list(forecasts) != sorted(manifest['features'][1:]) or any(len(value) != len(request['context']) + request['horizon'] or not np.isfinite(value).all() for value in forecasts.values()):
-                raise ValueError('Invalid forecast covariate values or dimensions')
             past = request.get('past_covariates', {})
-            if list(past) != sorted(manifest.get('past_features', [])) or any(len(value) != len(request['context']) or not np.isfinite(value).all() for value in past.values()):
+            if dynamic:
+                valid_names = (set(forecasts).isdisjoint(past) and
+                               set(forecasts) | set(past) == expected_forecasts | expected_past and
+                               set(forecasts) <= expected_forecasts and
+                               request['feature_names'] == [manifest['features'][0], *sorted(forecasts)])
+            else:
+                valid_names = (request['feature_names'] == manifest['features'] and
+                               set(forecasts) == expected_forecasts and set(past) == expected_past)
+            if not valid_names:
+                raise ValueError('Unexpected feature contract')
+            if any(len(value) != len(request['context']) + request['horizon'] or not np.isfinite(value).all() for value in forecasts.values()):
+                raise ValueError('Invalid forecast covariate values or dimensions')
+            if any(len(value) != len(request['context']) or not np.isfinite(value).all() for value in past.values()):
                 raise ValueError('Invalid past-only covariate dimensions or values')
             parsed.append((name, checksum, request))
         predict = load_model(args.model, str(checkpoint), str(device), torch, args.batch_size)
@@ -280,8 +293,8 @@ def main():
             contexts = np.asarray([item[2]['context'] for item in batch], dtype=np.float32)
             horizon = batch[0][2]['horizon']
             with torch.inference_mode():
-                covariates = {key: np.asarray([item[2]['forecast_covariates'][key] for item in batch], dtype=np.float32) for key in sorted(manifest['features'][1:])}
-                past_covariates = {key: np.asarray([item[2]['past_covariates'][key] for item in batch], dtype=np.float32) for key in sorted(manifest.get('past_features', []))}
+                covariates = {key: np.asarray([item[2]['forecast_covariates'][key] for item in batch], dtype=np.float32) for key in sorted(batch[0][2].get('forecast_covariates', {}))}
+                past_covariates = {key: np.asarray([item[2]['past_covariates'][key] for item in batch], dtype=np.float32) for key in sorted(batch[0][2].get('past_covariates', {}))}
                 values = np.asarray(predict(contexts, horizon, settings['quantiles'], covariates or None, past_covariates or None))
             if device.type == 'cuda':
                 torch.cuda.synchronize(device)

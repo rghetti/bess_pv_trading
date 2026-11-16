@@ -11,21 +11,13 @@ import pandas as pd
 from bess_pv_trading.forecasting.studies.adaptive_price_context import adapt_request
 from bess_pv_trading.forecasting.studies.price_feature_data import interval_values
 from bess_pv_trading.forecasting.studies.zero_shot_da import digest, write_json
+from bess_pv_trading.forecasting.studies.zero_shot_ida import IDAInputs, NORD_FEATURES
+from bess_pv_trading.config import load_config
 
 
-def fill_history(actual, historical_forecast=None, local_days=None):
-    """Fill completely missing local days with zero, then remaining historical gaps."""
+def fill_history(actual, historical_forecast=None, timestamps=None, max_gap_minutes=120):
+    """Prefer forecast for gaps; interpolate runs of <= two hours, otherwise zero."""
     result = np.asarray(actual, dtype=float).copy()
-    zero_filled = np.zeros(len(result), dtype=bool)
-    if local_days is not None:
-        days = np.asarray(local_days)
-        if days.shape != result.shape:
-            raise ValueError('Historical days and actual lengths differ')
-        for day in np.unique(days):
-            positions = days == day
-            if not np.isfinite(result[positions]).any():
-                result[positions] = 0.0
-                zero_filled[positions] = True
     missing = ~np.isfinite(result)
     used_forecast = np.zeros(len(result), dtype=bool)
     if historical_forecast is not None:
@@ -34,13 +26,33 @@ def fill_history(actual, historical_forecast=None, local_days=None):
             raise ValueError('Historical forecast and actual lengths differ')
         used_forecast = missing & np.isfinite(forecast)
         result[used_forecast] = forecast[used_forecast]
-    remaining = ~np.isfinite(result)
-    interpolated = np.zeros(len(result), dtype=bool)
-    if remaining.any() and (~remaining).any():
-        indices = np.arange(len(result))
-        result[remaining] = np.interp(indices[remaining], indices[~remaining], result[~remaining])
-        interpolated = remaining
-    return result, int(used_forecast.sum()), int(interpolated.sum()), int(zero_filled.sum())
+    clock = pd.DatetimeIndex(timestamps) if timestamps is not None else None
+    interpolated = 0
+    zero_filled = 0
+    i = 0
+    while i < len(result):
+        if np.isfinite(result[i]):
+            i += 1
+            continue
+        start = i
+        i += 1
+        while i < len(result) and not np.isfinite(result[i]) and (clock is None or clock[i] - clock[i - 1] == pd.Timedelta(minutes=15)):
+            i += 1
+        count = i - start
+        left = start - 1 if start > 0 and np.isfinite(result[start - 1]) and (clock is None or clock[start] - clock[start - 1] == pd.Timedelta(minutes=15)) else None
+        right = i if i < len(result) and np.isfinite(result[i]) and (clock is None or clock[i] - clock[i - 1] == pd.Timedelta(minutes=15)) else None
+        if count * 15 <= max_gap_minutes and (left is not None or right is not None):
+            if left is None:
+                result[start:i] = result[right]
+            elif right is None:
+                result[start:i] = result[left]
+            else:
+                result[start:i] = np.linspace(result[left], result[right], count + 2)[1:-1]
+            interpolated += count
+        else:
+            result[start:i] = 0.0
+            zero_filled += count
+    return result, int(used_forecast.sum()), interpolated, zero_filled
 
 
 def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
@@ -58,8 +70,34 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
     definitions = settings['variants'][variant]
     replacements = definitions.get('replace_forecast_history', {})
     past = definitions.get('past_only', {})
-    features = [*base['features']]
+    forecast_root = Path(settings['forecast_snapshot'])
+    forecast_manifest = json.loads((forecast_root / 'manifest.json').read_text())
+    if digest(forecast_root / 'manifest.json') != base['source_manifest_sha256']:
+        raise ValueError('Historical price and forecast snapshots must match')
+    forecast_entry = forecast_manifest['tables']['nord_forecasts']
+    forecast_path = forecast_root / forecast_entry['path']
+    if digest(forecast_path) != forecast_entry['sha256']:
+        raise ValueError('Forecast snapshot checksum mismatch')
+    forecast_frame = pd.read_parquet(forecast_path)
+    forecast_profiles = {name: forecast_frame[(forecast_frame.dataset == name) & (forecast_frame.zone == 'NORD')].sort_values('product_start') for name in NORD_FEATURES}
+    extra_forecasts = set(replacements) - set(NORD_FEATURES)
+    if extra_forecasts:
+        extra_entry = snapshot['tables']['nord_forecasts']
+        extra_path = snapshot_dir / extra_entry['path']
+        if digest(extra_path) != extra_entry['sha256']:
+            raise ValueError('Additional forecast snapshot checksum mismatch')
+        extra_frame = pd.read_parquet(extra_path)
+        for name in sorted(extra_forecasts):
+            forecast_profiles[name] = extra_frame[(extra_frame.dataset == name) & (extra_frame.zone == 'NORD')].sort_values('product_start')
+    features = [base['features'][0], *NORD_FEATURES, *sorted(extra_forecasts)]
     past_features = [*base.get('past_features', [])]
+    market = base['settings'].get('market', 'DA')
+    ida_inputs = None
+    if market != 'DA':
+        ida_settings = dict(base['settings'])
+        ida_inputs = IDAInputs(forecast_root, ida_settings, load_config(settings['auction_config'])['price_feature_search'])
+        if 'own_minus_latest_cleared' not in past_features:
+            past_features.append('own_minus_latest_cleared')
     profiles = {}
     for dataset in set(replacements.values()) | set(past.values()):
         subset = frame[(frame.dataset == dataset) & (frame.zone == 'NORD')].copy()
@@ -100,27 +138,52 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
         delivery_day = pd.Timestamp(request['delivery_day']).date()
         if any(day >= delivery_day for day in local_days):
             raise ValueError('A realized covariate would include delivery-day observations')
+        horizon_grid = pd.DatetimeIndex(pd.to_datetime(request['product_starts_utc'], format='ISO8601', utc=True))
+        forecast_values = {}
+        for name, subset in forecast_profiles.items():
+            forecast_values[name] = interval_values(subset, grid.append(horizon_grid), pd.to_numeric(subset.value, errors='coerce').to_numpy(float))
+        spread_counts = {}
+        if ida_inputs is not None:
+            anchor = np.full(len(grid), np.nan)
+            for day in sorted(set(local_days)):
+                positions = np.flatnonzero(local_days == day)
+                item = ida_inputs.day(day, market)
+                indexes = item['starts'].get_indexer(grid[positions])
+                valid = indexes >= 0
+                anchor[positions[valid]] = item['anchor'][indexes[valid]]
+            spread = np.asarray(request['context'], dtype=float) - anchor
+            spread, _, spread_interpolated, spread_zero = fill_history(spread, timestamps=grid)
+            spread_counts = {'spread_interpolated': spread_interpolated, 'spread_zero_filled': spread_zero}
+            request.setdefault('past_covariates', {})['own_minus_latest_cleared'] = spread.tolist()
+        request['forecast_covariates'] = {}
         missing = {}
         values_by_dataset = {}
         for dataset, subset in profiles.items():
             values = interval_values(subset, grid, pd.to_numeric(subset.value, errors='coerce').to_numpy(float))
             values_by_dataset[dataset] = values
             missing[dataset] = int((~np.isfinite(values)).sum())
-        fill_counts = {}
-        for name, dataset in replacements.items():
-            if name not in request['forecast_covariates']:
-                raise ValueError(f'Forecast feature missing in base bundle: {name}')
-            old = request['forecast_covariates'][name]
-            filled, forecast_count, interpolated_count, zero_count = fill_history(values_by_dataset[dataset], old[:len(grid)], local_days)
-            fill_counts[f'{dataset}_forecast_filled'] = forecast_count
-            fill_counts[f'{dataset}_interpolated'] = interpolated_count
-            fill_counts[f'{dataset}_missing_day_zero_values'] = zero_count
-            request['forecast_covariates'][name] = filled.tolist() + old[len(grid):]
+        fill_counts = dict(spread_counts)
+        for name, values in forecast_values.items():
+            dataset = replacements.get(name)
+            historical = values_by_dataset[dataset] if dataset else values[:len(grid)]
+            filled, forecast_count, interpolated_count, zero_count = fill_history(historical, values[:len(grid)] if dataset else None, grid)
+            label = dataset or name
+            fill_counts[f'{label}_forecast_filled'] = forecast_count
+            fill_counts[f'{label}_interpolated'] = interpolated_count
+            fill_counts[f'{label}_zero_filled'] = zero_count
+            future = values[len(grid):]
+            if np.isfinite(future).all():
+                request['forecast_covariates'][name] = filled.tolist() + future.tolist()
+                fill_counts[f'{name}_past_only'] = False
+            else:
+                request.setdefault('past_covariates', {})[name] = filled.tolist()
+                fill_counts[f'{name}_past_only'] = True
         for name, dataset in past.items():
-            filled, _, interpolated_count, zero_count = fill_history(values_by_dataset[dataset], local_days=local_days)
+            filled, _, interpolated_count, zero_count = fill_history(values_by_dataset[dataset], timestamps=grid)
             fill_counts[f'{dataset}_interpolated'] = interpolated_count
-            fill_counts[f'{dataset}_missing_day_zero_values'] = zero_count
+            fill_counts[f'{dataset}_zero_filled'] = zero_count
             request.setdefault('past_covariates', {})[name] = filled.tolist()
+        request['feature_names'] = [features[0], *sorted(request['forecast_covariates'])]
         request['realized_fill_counts'] = fill_counts
         request, info = adapt_request(request, settings['minimum_context_days'], base['settings']['timezone'], 'adaptive')
         records.append({'delivery_day': Path(relative).stem, 'eligible': request is not None, **missing, **fill_counts, **info})
@@ -138,8 +201,9 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
                     source_actuals_sha256=entry['sha256'], actuals_manifest_sha256=digest(snapshot_dir / 'manifest.json'),
                     base_manifest_sha256=digest(base_dir / 'manifest.json'), realized_variant=variant,
                     realized_builder_sha256=digest(Path(__file__)),
-                    realized_feature_definitions=definitions,
+                    realized_feature_definitions=definitions, dynamic_covariates=True,
+                    forecast_snapshot_sha256=digest(forecast_root / 'manifest.json'),
                     realized_availability='Past delivery dates assumed available at each gate; historical publication times and revisions unverified.',
-                    realized_policy='No delivery-day actuals; entirely missing historical local days use zero; other gaps use matching historical forecasts, then linear interpolation within history.')
+                    realized_policy='No delivery-day actuals; forecast first, then historical interpolation for gaps up to two hours, otherwise zero.')
     write_json(output_dir / 'manifest.json', manifest)
     return manifest
