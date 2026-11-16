@@ -13,9 +13,19 @@ from bess_pv_trading.forecasting.studies.price_feature_data import interval_valu
 from bess_pv_trading.forecasting.studies.zero_shot_da import digest, write_json
 
 
-def fill_history(actual, historical_forecast=None):
-    """Fill actual gaps from matching forecasts, then interpolate historical values only."""
+def fill_history(actual, historical_forecast=None, local_days=None):
+    """Fill completely missing local days with zero, then remaining historical gaps."""
     result = np.asarray(actual, dtype=float).copy()
+    zero_filled = np.zeros(len(result), dtype=bool)
+    if local_days is not None:
+        days = np.asarray(local_days)
+        if days.shape != result.shape:
+            raise ValueError('Historical days and actual lengths differ')
+        for day in np.unique(days):
+            positions = days == day
+            if not np.isfinite(result[positions]).any():
+                result[positions] = 0.0
+                zero_filled[positions] = True
     missing = ~np.isfinite(result)
     used_forecast = np.zeros(len(result), dtype=bool)
     if historical_forecast is not None:
@@ -30,7 +40,7 @@ def fill_history(actual, historical_forecast=None):
         indices = np.arange(len(result))
         result[remaining] = np.interp(indices[remaining], indices[~remaining], result[~remaining])
         interpolated = remaining
-    return result, int(used_forecast.sum()), int(interpolated.sum())
+    return result, int(used_forecast.sum()), int(interpolated.sum()), int(zero_filled.sum())
 
 
 def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
@@ -101,13 +111,15 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
             if name not in request['forecast_covariates']:
                 raise ValueError(f'Forecast feature missing in base bundle: {name}')
             old = request['forecast_covariates'][name]
-            filled, forecast_count, interpolated_count = fill_history(values_by_dataset[dataset], old[:len(grid)])
+            filled, forecast_count, interpolated_count, zero_count = fill_history(values_by_dataset[dataset], old[:len(grid)], local_days)
             fill_counts[f'{dataset}_forecast_filled'] = forecast_count
             fill_counts[f'{dataset}_interpolated'] = interpolated_count
+            fill_counts[f'{dataset}_missing_day_zero_values'] = zero_count
             request['forecast_covariates'][name] = filled.tolist() + old[len(grid):]
         for name, dataset in past.items():
-            filled, _, interpolated_count = fill_history(values_by_dataset[dataset])
+            filled, _, interpolated_count, zero_count = fill_history(values_by_dataset[dataset], local_days=local_days)
             fill_counts[f'{dataset}_interpolated'] = interpolated_count
+            fill_counts[f'{dataset}_missing_day_zero_values'] = zero_count
             request.setdefault('past_covariates', {})[name] = filled.tolist()
         request['realized_fill_counts'] = fill_counts
         request, info = adapt_request(request, settings['minimum_context_days'], base['settings']['timezone'], 'adaptive')
@@ -128,6 +140,6 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
                     realized_builder_sha256=digest(Path(__file__)),
                     realized_feature_definitions=definitions,
                     realized_availability='Past delivery dates assumed available at each gate; historical publication times and revisions unverified.',
-                    realized_policy='No delivery-day actuals; historical gaps use matching historical forecasts first, then linear interpolation within history; entirely missing series are excluded.')
+                    realized_policy='No delivery-day actuals; entirely missing historical local days use zero; other gaps use matching historical forecasts, then linear interpolation within history.')
     write_json(output_dir / 'manifest.json', manifest)
     return manifest
