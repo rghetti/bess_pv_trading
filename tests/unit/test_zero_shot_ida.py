@@ -72,6 +72,32 @@ def test_complete_suffix_retains_calendar_days_and_minimum_history():
     assert retained == []
 
 
+def test_cancelled_dst_day_keeps_all_native_quarter_hour_positions():
+    """A cancelled autumn clock-change day contributes 100 masked positions."""
+    from bess_pv_trading.forecasting.studies.zero_shot_ida import IDAInputs
+
+    inputs = object.__new__(IDAInputs)
+    inputs.timezone = 'Europe/Rome'
+    inputs.settings = {'minimum_context_days': 1, 'price_history_missing_policy': 'mask'}
+    inputs.definitions = DEFINITIONS
+    inputs.notices = {('ida1_prices', '2025-10-26')}
+    inputs.cache = {}
+    inputs._cache_lock = RLock()
+    grid = pd.date_range('2025-10-25', '2025-10-28', tz='Europe/Rome',
+                         freq='15min', inclusive='left').tz_convert('UTC')
+    inputs.forecast_grid = grid
+    inputs.forecast_values = {name: np.ones(len(grid)) for name in
+                              ('load_forecast', 'generation_forecast', 'solar_forecast', 'wind_onshore_forecast')}
+    inputs.prices = {market: price_index(grid, value, '2025-10-24T00:00Z')
+                     for market, value in [('DA', 100.), ('IDA1', 110.)]}
+    request, coverage = inputs.request('2025-10-27', 'IDA1', 2, 'history', 'IDA1')
+    assert coverage['eligible']
+    assert len(request['context']) == 196
+    assert request['context_observed_mask'] == [1] * 96 + [0] * 100
+    assert len(set(request['context_product_starts_utc'])) == 196
+    assert request['cancelled_context_days'] == ['2025-10-26']
+
+
 def test_past_spread_has_only_historical_products_and_cancellation_aware_values():
     """A cancelled historical IDA2 changes its same-day IDA3 spread anchor to IDA1."""
     from bess_pv_trading.forecasting.studies.zero_shot_ida import IDAInputs
@@ -120,7 +146,22 @@ def test_past_spread_has_only_historical_products_and_cancellation_aware_values(
     assert len(later['context']) == 7 * 48
     assert np.isnan(inputs.labels('2026-07-02', 'IDA3', 'DA').latest_reference).all()
     assert np.all(inputs.labels('2026-07-02', 'IDA3', 'IDA2').latest_reference == 110.)
+
+    # A cancelled historical auction occupies its native positions as masked zeros.
+    inputs.settings['price_history_missing_policy'] = 'mask'
+    masked, masked_coverage = inputs.request('2026-07-02', 'IDA2', 7, 'history', 'IDA2')
+    assert masked_coverage['eligible']
+    assert masked_coverage['effective_context_days'] == 7
+    assert masked['context_observed_mask'][-96:] == [0] * 96
+    assert masked['context'][-96:] == [0.0] * 96
+    assert masked['context_observed_mask'][:-96] == [1] * (6 * 96)
+    assert masked['cancelled_context_days'] == ['2026-07-01']
+    assert masked['masked_context_products'] == 96
+    assert len(masked['context_product_starts_utc']) == len(masked['context'])
+    assert pd.Timestamp(masked['max_context_publication_at']) < pd.Timestamp(masked['decision_at'])
+    inputs.settings.pop('price_history_missing_policy')
     inputs.notices.remove(('ida2_prices', '2026-07-01'))
+    inputs.cache.pop(('2026-07-01', 'IDA2'), None)
     inputs.notices.add(('ida1_prices', '2026-07-02'))
     after_cancellation, coverage = inputs.request('2026-07-02', 'IDA2', 7, 'history', 'IDA2')
     assert coverage['eligible']

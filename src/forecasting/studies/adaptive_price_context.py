@@ -27,6 +27,12 @@ def adapt_request(request, minimum_days=7, timezone='Europe/Rome', policy='adapt
             pd.Timestamp(request['context_end_exclusive']).tz_convert('UTC'), freq='15min', inclusive='left')
     if len(starts) != len(context) or not len(starts) or not starts.is_monotonic_increasing or not starts.is_unique:
         raise ValueError('Context timestamps must match a nonempty ordered history')
+    observed_mask = request.get('context_observed_mask')
+    if observed_mask is not None:
+        observed_mask = np.asarray(observed_mask)
+        if (observed_mask.shape != context.shape or not np.isin(observed_mask, [0, 1]).all() or
+            ((observed_mask == 0) & (context != 0)).any() or not (observed_mask == 1).any()):
+            raise ValueError('Invalid observed-price mask or zero placeholders')
     bad = ~np.isfinite(context)
     horizon_missing = 0
     for name, values in request.get('forecast_covariates', {}).items():
@@ -66,9 +72,18 @@ def adapt_request(request, minimum_days=7, timezone='Europe/Rome', policy='adapt
     result = deepcopy(request)
     result['context'] = result['context'][offset:]
     result['context_start'] = starts[offset].isoformat()
-    for field in ('context_native_minutes', 'context_starts_utc', 'context_product_starts_utc'):
+    for field in ('context_native_minutes', 'context_starts_utc', 'context_product_starts_utc', 'context_observed_mask'):
         if field in result:
             result[field] = result[field][offset:]
+    if 'context_observed_mask' in result:
+        result['masked_context_products'] = sum(value == 0 for value in result['context_observed_mask'])
+        remaining_days = set(local[offset:].strftime('%Y-%m-%d'))
+        result['cancelled_context_days'] = [day for day in result.get('cancelled_context_days', []) if day in remaining_days]
+        info['masked_context_products'] = result['masked_context_products']
+        info['cancelled_context_days'] = len(result['cancelled_context_days'])
+        if not any(result['context_observed_mask']):
+            info['exclusion_reason'] = 'no_observed_price_history'
+            return None, info
     for values in ('forecast_covariates', 'past_covariates'):
         if values in result:
             result[values] = {name: value[offset:] for name, value in result[values].items()}

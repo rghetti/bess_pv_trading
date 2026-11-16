@@ -25,7 +25,8 @@ def comparable_contract(manifest):
               'direct_contract_sha256')
     settings = manifest['settings']
     shared_settings = ('start', 'end_exclusive', 'context_days', 'minimum_context_days',
-                       'seed', 'precision', 'quantiles', 'timezone', 'november_holdout_start')
+                       'seed', 'precision', 'quantiles', 'timezone', 'november_holdout_start',
+                       'price_history_missing_policy')
     return {'manifest': {name: manifest.get(name) for name in fields},
             'settings': {name: settings.get(name) for name in shared_settings}}
 
@@ -197,7 +198,7 @@ def compare_target(root, target, gates, timezone, first_days=3, require_complete
 def main():
     """Regenerate gate comparisons from complete saved per-gate reports."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', default='configs/research/chronos2_direct_ida_gates.yaml')
+    parser.add_argument('--config', default='configs/research/chronos2_direct_ida_gates_masked.yaml')
     parser.add_argument('--output', help='Study output directory; defaults to the config')
     parser.add_argument('--target', choices=MARKETS, action='append')
     args = parser.parse_args()

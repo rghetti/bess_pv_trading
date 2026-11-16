@@ -68,6 +68,37 @@ def test_missing_price_and_past_only_feature_share_the_same_trim():
     assert len(adjusted['forecast_covariates']['load']) == len(adjusted['context']) + 96
 
 
+def test_masked_cancelled_prices_keep_calendar_and_covariates_aligned():
+    """Zero placeholders with mask zero must not shorten the historical context."""
+    request = example('2025-10-01', '2025-11-01')
+    times = pd.date_range(pd.Timestamp(request['context_start']), pd.Timestamp(request['context_end_exclusive']),
+                          freq='15min', inclusive='left')
+    missing = np.flatnonzero(times.tz_convert('Europe/Rome').strftime('%Y-%m-%d') == '2025-10-15')
+    request['context_observed_mask'] = [1] * len(times)
+    request['cancelled_context_days'] = ['2025-10-15']
+    for index in missing:
+        request['context'][index] = 0.0
+        request['context_observed_mask'][index] = 0
+    adjusted, info = adapt_request(request, minimum_days=1)
+    assert info['effective_context_days'] == 31
+    assert info['masked_context_products'] == 96
+    assert adjusted['context_observed_mask'] == request['context_observed_mask']
+    assert adjusted['forecast_covariates']['load'][missing[0]] == 2.0
+    assert adjusted['past_covariates']['spread'][missing[0]] == 3.0
+    assert adjusted['cancelled_context_days'] == ['2025-10-15']
+
+
+def test_covariate_trimming_cannot_leave_an_all_missing_price_history():
+    """After trimming, at least one observed price must remain in the context."""
+    request = example('2025-09-28', '2025-10-01')
+    request['context_observed_mask'] = [1] * 96 + [0] * 192
+    request['context'][96:] = [0.0] * 192
+    request['forecast_covariates']['load'][0] = float('nan')
+    adjusted, info = adapt_request(request, minimum_days=1)
+    assert adjusted is None
+    assert info['exclusion_reason'] == 'no_observed_price_history'
+
+
 def test_ida3_half_day_sequence_uses_explicit_timestamps():
     """A missing afternoon does not create fake overnight prices during trimming."""
     days = pd.date_range('2025-10-01', '2025-10-20', inclusive='left')

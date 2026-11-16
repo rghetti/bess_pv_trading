@@ -139,7 +139,7 @@ class IDAInputs:
             return self.cache[key]
 
     def request(self, day, market, window, variant, decision_gate=None):
-        """Trim only historical full days; require complete delivery-day covariates."""
+        """Build a gate-aligned history with the configured missing-price policy."""
         gate = decision_gate or market
         if gate not in MARKETS or market not in MARKETS or MARKETS.index(gate) > MARKETS.index(market):
             raise ValueError('Decision gate must not follow the target auction')
@@ -151,6 +151,11 @@ class IDAInputs:
                                         self.definitions, self.notices, self.timezone, gate)
         include_nord = variant in ('nord', 'nord_spread')
         include_spread = variant == 'nord_spread'
+        missing_policy = self.settings.get('price_history_missing_policy', 'trim')
+        if missing_policy not in ('trim', 'mask'):
+            raise ValueError('Unknown historical price missing policy')
+        if missing_policy == 'mask' and variant != 'history':
+            raise ValueError('Masked price history is supported for direct price requests only')
         chunks = []
         for prior in pd.date_range(pd.Timestamp(day) - pd.Timedelta(days=window), pd.Timestamp(day), inclusive='left'):
             item = self.day(prior, market)
@@ -165,19 +170,29 @@ class IDAInputs:
             if include_spread:
                 complete &= np.isfinite(item['anchor']).all()
             chunks.append({**item, 'values': values, 'complete': bool(complete)})
-        retained, reason = complete_suffix(chunks, self.settings['minimum_context_days'])
+        if missing_policy == 'mask':
+            # Retain every product position, masking only unavailable prices.
+            retained = chunks if any(np.isfinite(item['values']).any() for item in chunks) else []
+            if not retained:
+                reason = 'no_observed_price_history'
+            else:
+                reason = ('full_requested_window' if all(item['complete'] for item in chunks)
+                          else 'masked_missing_price_history')
+        else:
+            retained, reason = complete_suffix(chunks, self.settings['minimum_context_days'])
         future_complete = (not include_nord or all(np.isfinite(array).all() for array in current['covariates'].values()))
         target_complete = np.isfinite(current['target']).any() and not current['cancelled']
         eligible = bool(retained and future_complete and target_complete)
         coverage = {'delivery_day': str(pd.Timestamp(day).date()), 'requested_context_days': window,
                     'effective_context_days': len(retained), 'trimmed_days': window - len(retained),
-                    'reason': reason if retained else 'fewer_than_minimum_complete_recent_days',
+                    'reason': reason,
                     'future_covariates_complete': future_complete, 'target_cancelled': current['cancelled'],
                     'target_observed_products': int(np.isfinite(current['target']).sum()), 'eligible': eligible}
         if not eligible:
             return None, coverage
         history_grid = pd.DatetimeIndex(np.concatenate([item['starts'].to_numpy() for item in retained]))
         context = np.concatenate([item['values'] for item in retained])
+        observed = np.isfinite(context)
         future = {}
         if include_nord:
             future = {name: np.concatenate([*[item['covariates'][name] for item in retained], current['covariates'][name]]).tolist()
@@ -185,11 +200,11 @@ class IDAInputs:
         query = history_grid.as_unit('ns').asi8
         price_index = self.prices[market]
         positions = np.searchsorted(price_index.starts, query, side='right') - 1
-        maximum_publication = pd.Timestamp(int(price_index.published[positions].max()), tz='UTC')
+        maximum_publication = pd.Timestamp(int(price_index.published[positions[observed]].max()), tz='UTC')
         if maximum_publication > cutoff:
             raise AssertionError('Historical own-auction publication exceeds current own gate')
         request = {'max_context_publication_at': maximum_publication.isoformat(), 'delivery_day': current['day'], 'decision_at': cutoff.isoformat(), 'market': market, 'gate': gate,
-                   'context': context.tolist(), 'context_start': history_grid[0].isoformat(),
+                   'context': np.where(observed, context, 0.0).tolist(), 'context_start': history_grid[0].isoformat(),
                    'context_end_exclusive': current['starts'][0].isoformat(),
                    'context_product_starts_utc': [stamp.isoformat() for stamp in history_grid],
                    'context_delivery_days': [item['day'] for item in retained],
@@ -198,6 +213,12 @@ class IDAInputs:
                    'forecast_covariates': future, 'requested_context_days': window,
                    'effective_context_days': len(retained), 'context_policy_reason': reason,
                    'latest_cleared_anchor': anchor_trace}
+        if missing_policy == 'mask':
+            request['context_observed_mask'] = observed.astype(int).tolist()
+            request['masked_context_products'] = int((~observed).sum())
+            request['cancelled_context_days'] = [item['day'] for item in retained if item['cancelled']]
+            coverage['masked_context_products'] = request['masked_context_products']
+            coverage['cancelled_context_days'] = len(request['cancelled_context_days'])
         if include_spread:
             request['past_covariates'] = {'own_minus_latest_cleared': np.concatenate([
                 item['values'] - item['anchor'] for item in retained]).tolist()}
@@ -263,7 +284,9 @@ def prepare_ida_bundle(inputs, output, market, window, variant, models, decision
         'features': features, 'past_features': ['own_minus_latest_cleared'] if variant == 'nord_spread' else [],
         'requested_days': len(records), 'eligible_days': sum(item['eligible'] for item in records),
         'source_manifest_sha256': digest(inputs.root / 'manifest.json'),
-        'context_policy': 'Longest recent complete whole-calendar-day suffix, minimum configured days; no zero fill.',
+        'context_policy': ('Full requested calendar window; unavailable target prices have zero placeholders and an observed-value mask.'
+                           if inputs.settings.get('price_history_missing_policy') == 'mask'
+                           else 'Longest recent complete whole-calendar-day suffix, minimum configured days; no zero fill.'),
         'sequence_semantics': 'Native delivery products concatenated; IDA3 only 12:00–24:00, 48 products/day.',
         'scope': f'Direct {market} forecast at {gate} gate; price labels are separate from inputs.',
         'current_anchor_usage': 'Current same-delivery earlier clearing is a baseline only, not a model input; nord_spread adds historical spread curves only.',

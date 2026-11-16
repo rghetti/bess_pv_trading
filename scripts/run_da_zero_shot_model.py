@@ -80,6 +80,22 @@ def request_batches(requests, batch_size):
         yield pending
 
 
+def apply_price_history_mask(contexts, masks):
+    """Convert zero placeholders to NaN for Chronos-2's native missing mask."""
+    import numpy as np
+
+    values = np.asarray(contexts, dtype=np.float32)
+    observed = np.asarray(masks)
+    if values.shape != observed.shape or values.ndim != 2:
+        raise ValueError('Price context and observed mask dimensions differ')
+    if not np.isfinite(values).all() or not np.isin(observed, [0, 1]).all():
+        raise ValueError('Price contexts must be finite and observed masks must be binary')
+    if ((observed == 0) & (values != 0)).any() or not (observed == 1).any(axis=1).all():
+        raise ValueError('Missing prices require zero placeholders and each history needs an observation')
+    # A real observed price of zero remains zero; only mask-zero positions become NaN.
+    return np.where(observed == 1, values, np.nan)
+
+
 def load_model(name, checkpoint, device, torch, batch_size=1):
     """Build a frozen FP32 forecaster; each batch row is an independent day."""
     import numpy as np
@@ -231,6 +247,10 @@ def main():
             expected_past = set(manifest.get('past_features', []))
             if not np.isfinite(request['context']).all():
                 raise ValueError('Unexpected feature contract or missing context')
+            if 'context_observed_mask' in request:
+                if args.model != 'chronos2':
+                    raise ValueError('Masked price history currently requires Chronos-2')
+                apply_price_history_mask([request['context']], [request['context_observed_mask']])
             forecasts = request.get('forecast_covariates', {})
             past = request.get('past_covariates', {})
             if dynamic:
@@ -252,17 +272,21 @@ def main():
         # Check every requested horizon on the longest synthetic context before any replay.
         maximum = max(len(item[2]['context']) for item in parsed)
         synthetic = np.sin(np.arange(maximum, dtype=np.float32) / 30) * 20 - 5
+        masked_context = any(0 in item[2].get('context_observed_mask', []) for item in parsed)
+        if masked_context:
+            synthetic[-1] = np.nan
         if device.type == 'cuda':
             torch.cuda.reset_peak_memory_stats(device)
         probe_start = time.monotonic()
         with torch.inference_mode():
             for horizon in sorted({item[2]['horizon'] for item in parsed}):
                 synthetic_cov = {key: np.tile(np.sin(np.arange(maximum + horizon, dtype=np.float32) / 50) + index, (args.batch_size, 1)) for index, key in enumerate(sorted(manifest['features'][1:]))}
-                synthetic_past = {key: np.tile(synthetic, (args.batch_size, 1)) for key in manifest.get('past_features', [])}
+                synthetic_past = {key: np.tile(np.nan_to_num(synthetic, nan=0.0), (args.batch_size, 1)) for key in manifest.get('past_features', [])}
                 values = np.asarray(predict(np.tile(synthetic, (args.batch_size, 1)), horizon, settings['quantiles'], synthetic_cov or None, synthetic_past or None))
                 if values.shape != (args.batch_size, horizon, 9) or not np.isfinite(values).all():
                     raise ValueError('Synthetic preflight failed shape/finiteness check')
         preflight = {'status': 'passed', 'context_steps': maximum, 'horizons': sorted({item[2]['horizon'] for item in parsed}),
+                     'masked_price_context_tested': masked_context,
                      'elapsed_seconds': time.monotonic() - probe_start, 'run_identity': identity, 'batch_size': args.batch_size}
         if device.type == 'cuda':
             torch.cuda.synchronize(device)
@@ -291,6 +315,9 @@ def main():
             torch.manual_seed(seed)
             begin = time.monotonic()
             contexts = np.asarray([item[2]['context'] for item in batch], dtype=np.float32)
+            if any('context_observed_mask' in item[2] for item in batch):
+                masks = [item[2].get('context_observed_mask', [1] * len(item[2]['context'])) for item in batch]
+                contexts = apply_price_history_mask(contexts, masks)
             horizon = batch[0][2]['horizon']
             with torch.inference_mode():
                 covariates = {key: np.asarray([item[2]['forecast_covariates'][key] for item in batch], dtype=np.float32) for key in sorted(batch[0][2].get('forecast_covariates', {}))}

@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 
 from scripts.prepare_timesfm_realized import fill_history
-from scripts.run_da_zero_shot_model import request_batches
+from scripts.run_da_zero_shot_model import apply_price_history_mask, request_batches
 
 
 def test_forecast_precedes_short_interpolation_and_long_gap_zero():
@@ -37,6 +37,18 @@ def test_batching_separates_future_and_past_only_covariates():
     request = {'context': [1], 'horizon': 1, 'forecast_covariates': {'wind': [1, 2]}, 'past_covariates': {}}
     fallback = {'context': [1], 'horizon': 1, 'forecast_covariates': {}, 'past_covariates': {'wind': [1]}}
     assert len(list(request_batches([('a', 'a', request), ('b', 'b', fallback)], 10))) == 2
+
+
+def test_price_mask_distinguishes_missing_from_observed_zero():
+    """Chronos receives NaN only where the explicit price mask says unavailable."""
+    result = apply_price_history_mask([[4.0, 0.0, 0.0]], [[1, 1, 0]])
+    assert result[0, :2].tolist() == [4.0, 0.0]
+    assert np.isnan(result[0, 2])
+    import pytest
+    with pytest.raises(ValueError, match='zero placeholders'):
+        apply_price_history_mask([[4.0, 8.0]], [[1, 0]])
+    with pytest.raises(ValueError, match='each history needs an observation'):
+        apply_price_history_mask([[0.0]], [[0]])
 
 
 def test_actual_history_with_future_forecast_and_past_only_fallback(tmp_path):

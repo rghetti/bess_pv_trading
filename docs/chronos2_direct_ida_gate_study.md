@@ -17,8 +17,14 @@ decision/target combinations has its own request bundle and report:
 | IDA2 | IDA2, IDA3 |
 | IDA3 | IDA3 |
 
-Input price history uses the target auction's products for 28 days,
-shortened to a complete recent suffix of at least seven days if required.
+Input price history uses the target auction's products over 28 calendar days.
+Cancelled or otherwise unavailable historical IDA prices remain in position
+as zero placeholders with `context_observed_mask=0`; observed prices have mask
+1, including genuine zero prices. The Chronos worker converts masked positions
+to NaN for Chronos-2's native missing-value mask. Load and generation covariates
+retain their own values aligned to these timestamps. There is no seven-day
+waiting period after cancellation; at least one observed historical price
+product is required. The DA price-history adapter retains its original policy.
 Pre-October 2025 hourly DA prices are repeated across four quarter-hours;
 DA targets from October onward retain their native quarter-hour products.
 Every historical price must be published at the **decision** gate. IDA3
@@ -42,7 +48,7 @@ Gas, reservoir hydro and run-of-river hydro are past-only actual series. The
 unpublished tail after the availability boundary is filled with zeros, including
 when it is shorter than two hours. Other missing runs follow the agreed
 interpolation/zero fallback; zero is not a measured value. Native missing-value
-masking is not yet integrated. Pumped hydro is excluded because production and
+masking is not applied to these gas or hydro inputs. Pumped hydro is excluded because production and
 consumption directions need a separate interpretation. Offshore wind is
 excluded because the pinned snapshot has no records. IDA3's delivery-day
 morning actuals are not included in this aligned afternoon-only study.
@@ -56,7 +62,7 @@ explains the one-hour actual lag and forecast deadlines. Forecast overlap with
 pretraining cannot be ruled out for all past data.
 
 The price snapshot and NORD actuals snapshot are specified in
-`configs/research/chronos2_direct_ida_gates.yaml`. If the latter is absent, pin
+`configs/research/chronos2_direct_ida_gates_masked.yaml`. If the latter is absent, pin
 it only after the downloader has stopped:
 
 ```bash
@@ -77,9 +83,9 @@ for each gate/auction pair. Source checksums, settings, gate definitions,
 builder code and pinned model identity are checked before resuming. No inference
 was run during implementation.
 
-The no-calendar pilot writes to `outputs/chronos2_direct_ida_gates_pilot_no_calendar`.
-The previous calendar-enabled pilot has its own output directory; its checkpoints
-cannot be reused for these inputs.
+The masked no-calendar pilot writes to `outputs/chronos2_direct_ida_gates_masked`.
+The earlier no-calendar and calendar-enabled pilots retain their own outputs;
+their checkpoints cannot be reused for these changed inputs and worker code.
 
 Use `--gate DA --target DA` to prepare or run only the DA-price forecast. The
 DA-only filter does not modify the configured list of other gate/target jobs.

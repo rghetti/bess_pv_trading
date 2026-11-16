@@ -80,7 +80,7 @@ def build_one(gate, market, settings):
 def main():
     """Prepare immutable bundles or run an explicitly requested inference study."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--config', default='configs/research/chronos2_direct_ida_gates.yaml')
+    parser.add_argument('--config', default='configs/research/chronos2_direct_ida_gates_masked.yaml')
     parser.add_argument('--gate', choices=MARKETS, help='Run only one decision gate')
     parser.add_argument('--target', choices=MARKETS, help='Run only one target auction')
     parser.add_argument('--prepare-only', action='store_true')

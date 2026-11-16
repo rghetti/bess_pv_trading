@@ -1,0 +1,66 @@
+include: ../standard.yaml
+
+# Change the dates to expand the pilot after checking pinned snapshot coverage.
+direct_ida_gate_study:
+  start: '2025-10-01'
+  end_exclusive: '2026-01-31'
+  context_days: 28
+  minimum_context_days: 1
+  price_history_missing_policy: mask
+  timezone: Europe/Rome
+  seed: 1729
+  precision: float32
+  november_holdout_start: '2026-11-01'
+  plot_first_days_per_month: 1
+  quantiles: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+  gates:
+    DA: [DA, IDA1, IDA2, IDA3]
+    IDA1: [IDA1, IDA2, IDA3]
+    IDA2: [IDA2, IDA3]
+    IDA3: [IDA3]
+  forecast_snapshot: outputs/zero_shot_price_inputs/merged
+  actuals_snapshot: outputs/price_realized_snapshot/chronos2/merged
+  use_actual_snapshot_forecasts: true
+  output: outputs/chronos2_direct_ida_gates_masked
+  model_config: configs/research/zero_shot_price_study.yaml
+  auction_config: configs/research/price_feature_selection_full_year.yaml
+  models: [chronos2]
+  include_historical_spread: false
+  past_only_unavailable_policy: zero
+  calendar: {weekday_one_hot: false, italian_holiday: false}
+  availability_policy:
+    mode: deadline_assumption
+    revision_policy: latest_retrospective
+    timezone: Europe/Rome
+    actual_lag_minutes: 60
+    forecast_days_before: 1
+    forecast_deadline_local:
+      load_forecast: '10:00'
+      generation_forecast: '18:00'
+      solar_forecast: '18:00'
+      wind_onshore_forecast: '18:00'
+      wind_offshore_forecast: '18:00'
+  # D-day generation forecasts do not enter requests before the IDA2 gate.
+  future_forecast_earliest_gate:
+    generation_forecast: IDA2
+    solar_forecast: IDA2
+    wind_onshore_forecast: IDA2
+    wind_offshore_forecast: IDA2
+  actual_dataset_selectors:
+    actual_solar_generation: {dataset: actual_generation_by_type, psr_type: B16}
+    actual_wind_onshore_generation: {dataset: actual_generation_by_type, psr_type: B19}
+    actual_hydro_run_of_river_generation: {dataset: actual_generation_by_type, psr_type: B11}
+    actual_hydro_reservoir_generation: {dataset: actual_generation_by_type, psr_type: B12}
+    actual_gas_generation: {dataset: actual_generation_by_type, psr_type: B04}
+  variants:
+    direct:
+      # Offshore records are absent from the pinned data; avoid an all-zero series.
+      exclude_forecast: [wind_offshore_forecast]
+      replace_forecast_history:
+        load_forecast: actual_load
+        solar_forecast: actual_solar_generation
+        wind_onshore_forecast: actual_wind_onshore_generation
+      past_only:
+        hydro_river: actual_hydro_run_of_river_generation
+        hydro_reservoir: actual_hydro_reservoir_generation
+        gas_generation: actual_gas_generation
