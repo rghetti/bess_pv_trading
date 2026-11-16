@@ -79,7 +79,8 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
     if digest(forecast_path) != forecast_entry['sha256']:
         raise ValueError('Forecast snapshot checksum mismatch')
     forecast_frame = pd.read_parquet(forecast_path)
-    forecast_profiles = {name: forecast_frame[(forecast_frame.dataset == name) & (forecast_frame.zone == 'NORD')].sort_values('product_start') for name in NORD_FEATURES}
+    excluded = set(definitions.get('exclude_forecast', []))
+    forecast_profiles = {name: forecast_frame[(forecast_frame.dataset == name) & (forecast_frame.zone == 'NORD')].sort_values('product_start') for name in NORD_FEATURES if name not in excluded}
     extra_forecasts = set(replacements) - set(NORD_FEATURES)
     if extra_forecasts:
         extra_entry = snapshot['tables']['nord_forecasts']
@@ -89,7 +90,7 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
         extra_frame = pd.read_parquet(extra_path)
         for name in sorted(extra_forecasts):
             forecast_profiles[name] = extra_frame[(extra_frame.dataset == name) & (extra_frame.zone == 'NORD')].sort_values('product_start')
-    features = [base['features'][0], *NORD_FEATURES, *sorted(extra_forecasts)]
+    features = [base['features'][0], *forecast_profiles]
     past_features = [*base.get('past_features', [])]
     market = base['settings'].get('market', 'DA')
     ida_inputs = None

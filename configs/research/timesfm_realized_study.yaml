@@ -15,7 +15,9 @@ realized_timesfm_study:
   variants:
     baseline: {}
     realized_forecast:
+      exclude_forecast: [generation_forecast]
       replace_forecast_history: {load_forecast: actual_load, solar_forecast: actual_solar_generation, wind_onshore_forecast: actual_wind_onshore_generation, wind_offshore_forecast: actual_wind_offshore_generation}
     realized_forecast_hydro_gas:
+      exclude_forecast: [generation_forecast]
       replace_forecast_history: {load_forecast: actual_load, solar_forecast: actual_solar_generation, wind_onshore_forecast: actual_wind_onshore_generation, wind_offshore_forecast: actual_wind_offshore_generation}
       past_only: {hydro_pumped: actual_hydro_pumped_generation, hydro_river: actual_hydro_run_of_river_generation, hydro_reservoir: actual_hydro_reservoir_generation, gas_generation: actual_gas_generation}
