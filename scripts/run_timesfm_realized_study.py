@@ -59,8 +59,29 @@ def prepare_one(base, snapshot, directory, variant, settings):
 
 def render(directory):
     """Produce one independent forecast report in a CPU process."""
+    import fcntl
+
     directory = Path(directory)
-    report(directory / 'inputs', directory / 'run', directory / 'run/report')
+    manifest = json.loads((directory / 'inputs/manifest.json').read_text())
+    if 'direct_contract_sha256' in manifest:
+        # Serialize reports for a target so cross-gate comparisons never read a
+        # partially rewritten report from another reporting worker.
+        from scripts.report_chronos_gate_comparison import compare_target
+
+        settings = manifest['settings']
+        target = settings['market']
+        root = directory.parent.parent
+        comparison = root / 'gate_comparison' / target
+        comparison.mkdir(parents=True, exist_ok=True)
+        with (comparison / '.lock').open('a') as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            report(directory / 'inputs', directory / 'run', directory / 'run/report')
+        gates = [gate for gate in ('DA', 'IDA1', 'IDA2', 'IDA3')
+                 if target in settings['gates'].get(gate, [])]
+        compare_target(root, target, gates, settings['timezone'],
+                       settings.get('plot_first_days_per_month', 3), require_complete=True)
+    else:
+        report(directory / 'inputs', directory / 'run', directory / 'run/report')
     return str(directory)
 
 

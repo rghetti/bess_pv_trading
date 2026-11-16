@@ -7,7 +7,7 @@ clearings may appear only as separately labelled scoring references, and only
 if published at that decision gate. Target observations are retained solely
 for retrospective scoring.
 
-The configured pilot covers delivery dates 1–7 October 2025. Each of these ten
+The pilot covers the delivery dates in the study configuration. Each of these ten
 decision/target combinations has its own request bundle and report:
 
 | Decision gate | Direct target auctions |
@@ -83,3 +83,19 @@ cannot be reused for these inputs.
 
 Use `--gate DA --target DA` to prepare or run only the DA-price forecast. The
 DA-only filter does not modify the configured list of other gate/target jobs.
+
+Once all configured gates for an IDA target have complete reports, reporting
+automatically creates `gate_comparison/<auction>/` with matched-product scores,
+overall gate MAE, daily MAE, hourly MAE, and signed-error curves for the first
+configured days of each month. Only identical delivery products are compared;
+`coverage.csv` records per-gate exclusions. Development and reserved periods
+are separate. Target labels, model settings, feature configuration and input
+snapshot identities must agree across gates. If gates are missing, automatic
+reporting waits; the standalone command can also generate a clearly marked
+partial comparison from at least two completed gates.
+
+To regenerate plots from an existing completed study without running inference:
+
+```bash
+PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python -m scripts.report_chronos_gate_comparison --output outputs/chronos2_direct_ida_gates_pilot
+```
