@@ -24,3 +24,15 @@ Realized hydro can be evaluated as past-only TimesFM covariates, with separate B
 ```bash
 PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python -u -m src download-data --config configs/api_experiments/entsoe_nord_forecasts_actuals.yaml --provider entsoe --interactive
 ```
+
+## All available production types
+
+The unified config also requests `actual_generation_by_type`: the A75/A16 query without a production-type filter. Each response remains disaggregated by ENTSO-E production type and production/consumption direction. This does not itself provide a verified total generation series. After collection, inspect the returned types, missing intervals and consistency against other sources before deriving a total. Pumping and other consumption must not be added to production. The forecast's aggregate definition may differ from the sum of reported realized types.
+
+To request only this dataset, after other writers finish:
+
+```bash
+PYTHONPATH=src /home/rghetti/miniforge3/envs/bess/bin/python -u -m src download-data --config configs/api_experiments/entsoe_nord_generation_all_types.yaml --provider entsoe --interactive
+```
+
+The completed acquisition can be included in the separate actuals snapshot by `scripts.pin_nord_realized_inputs`; it is not automatically aggregated or passed to TimesFM. Existing snapshots remain immutable.

@@ -50,3 +50,16 @@ def test_realized_load_request_and_parser():
     frame = parse_entsoe_xml(document(series('load', 'outBiddingZone_Domain.mRID'), 'A65'),
                              dataset='actual_load', retrieved_at='2025-10-04T00:00Z')
     assert list(frame.direction) == ['load', 'load']
+
+
+def test_unfiltered_actual_generation_keeps_distinct_types_and_directions():
+    """An unfiltered response must keep hydro production, pumping and gas separate."""
+    _, params = build_request('actual_generation_by_type', EIC,
+                              '2025-10-01T00:00Z', '2025-10-02T00:00Z')
+    assert params['documentType'] == 'A75' and 'psrType' not in params
+    xml = document(series('hydro', 'inBiddingZone_Domain.mRID') +
+                   series('pumping', 'outBiddingZone_Domain.mRID') +
+                   series('gas', 'inBiddingZone_Domain.mRID', 'B04'))
+    frame = parse_entsoe_xml(xml, dataset='actual_generation_by_type', retrieved_at='2025-10-04T00:00Z')
+    assert len(frame) == 6
+    assert set(zip(frame.psr_type, frame.direction)) == {('B10', 'production'), ('B10', 'consumption'), ('B04', 'production')}

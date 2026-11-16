@@ -35,6 +35,8 @@ DATASETS = {
                                "unit": "MW", "article": "14.1.D", "domain_parameters": ("in_Domain",)},
     "actual_load": {"document_type": "A65", "process_type": "A16", "unit": "MW",
                     "article": "6.1.A", "domain_parameters": ("outBiddingZone_Domain",)},
+    "actual_generation_by_type": {"document_type": "A75", "process_type": "A16", "unit": "MW",
+                                  "article": "16.1.B&C", "domain_parameters": ("in_Domain",)},
 }
 
 # Separate request identities prevent different technologies sharing a cache key.
@@ -217,6 +219,7 @@ def parse_entsoe_xml(payload: bytes | str, *, dataset: str, zone: str = "NORD",
     rows, missing_positions = [], 0
     for series in document.findall("TimeSeries"):
         series_id = _text(series, "mRID")
+        series_psr = _text(series, "MktPSRType/psrType", required=specification['document_type'] == 'A75')
         curve = _text(series, "curveType", required=False) or "A01"
         if curve not in ("A01", "A03"):
             raise EntsoeAPIError("Only verified ENTSO-E A01/A03 block curves are supported")
@@ -245,7 +248,7 @@ def parse_entsoe_xml(payload: bytes | str, *, dataset: str, zone: str = "NORD",
                 direction = "load" if load_series else "production"
             if _text(series, "quantity_Measure_Unit.name") != "MAW":
                 raise EntsoeAPIError("ENTSO-E forecast response requires explicit MAW (MW) units")
-            if "psr_type" in specification and _text(series, "MktPSRType/psrType") != specification["psr_type"]:
+            if "psr_type" in specification and series_psr != specification["psr_type"]:
                 raise EntsoeAPIError("ENTSO-E response production type does not match the requested forecast")
             value_field = "quantity"
         cancelled = _text(series, "cancelledTS", required=False) == "A01"
@@ -262,7 +265,7 @@ def parse_entsoe_xml(payload: bytes | str, *, dataset: str, zone: str = "NORD",
                             "source_document_time": created, "historical_available_at": pd.NaT,
                             "availability_provenance": "not_verified; document creation is not historical publication",
                             "historical_feature_eligible": False, "curve_type": curve,
-                            "process_type": process_type, "psr_type": specification.get("psr_type"),
+                            "process_type": process_type, "psr_type": series_psr,
                             "business_type": _text(series, "businessType", required=False)})
                 if dataset == "day_ahead_prices":
                     row.update({"auction": "DA", "price_eur_mwh": row["value"], "published_at": pd.NaT,
@@ -276,9 +279,12 @@ def parse_entsoe_xml(payload: bytes | str, *, dataset: str, zone: str = "NORD",
     identity = ["product_start", "product_end", "revision"]
     if dataset == "generation_forecast" or specification['document_type'] == 'A75':
         identity.append("direction")
+    if specification['document_type'] == 'A75':
+        identity.append("psr_type")
     if frame.duplicated(identity).any():
         raise EntsoeAPIError("ENTSO-E response has duplicate products; no series was silently selected")
-    grouping = ["direction"] if dataset == "generation_forecast" or specification['document_type'] == 'A75' else ["dataset"]
+    grouping = (["direction", "psr_type"] if specification['document_type'] == 'A75' else
+                ["direction"] if dataset == "generation_forecast" else ["dataset"])
     for _, group in frame.groupby(grouping):
         ordered = group.sort_values("product_start")
         if (ordered.product_start.iloc[1:].reset_index(drop=True) <

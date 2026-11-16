@@ -32,7 +32,7 @@ price_search_inputs:
       provider: entsoe
       zone: NORD
       required: false
-      datasets: [actual_load, actual_solar_generation, actual_wind_onshore_generation, actual_wind_offshore_generation, actual_hydro_pumped_generation, actual_hydro_run_of_river_generation, actual_hydro_reservoir_generation, actual_gas_generation]
+      datasets: [actual_generation_by_type, actual_load, actual_solar_generation, actual_wind_onshore_generation, actual_wind_offshore_generation, actual_hydro_pumped_generation, actual_hydro_run_of_river_generation, actual_hydro_reservoir_generation, actual_gas_generation]
       columns: [provider, dataset, zone, product_start, product_end, value, unit, direction, psr_type, resolution, record_status, source_document_time, historical_available_at, availability_provenance]
       availability: previous_delivery_day_assumed_available_unverified
     - name: psv_gas

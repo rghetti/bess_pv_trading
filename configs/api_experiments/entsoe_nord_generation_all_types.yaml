@@ -1,0 +1,28 @@
+include: ../standard.yaml
+
+# End is exclusive. Change dates before a backfill; credentials stay in the environment.
+api:
+  start: '2025-09-01'
+  end: '2026-11-16'
+  timezone: Europe/Rome
+  download_order: month_first
+  cache_directory: data/api
+  storage_backend: duckdb
+  database_path: data/api/market.duckdb
+  database_threads: 4
+  output_directory: outputs/api_nord_generation_all_types
+  no_data_cache_hours: 24
+  progress_every: 25
+  plots: false
+  credentials:
+    entsoe_token_env: ENTSOE_API_TOKEN
+  http:
+    attempts: 3
+    connect_timeout: 10
+    read_timeout: 60
+    retry_delay_seconds: 1
+    minimum_request_interval_seconds: 0.25
+    max_retry_delay_seconds: 10
+  requests:
+    # Unfiltered A75 returns available production types and preserves direction.
+    - {provider: entsoe, dataset: actual_generation_by_type, options: {zone: NORD, zone_eic: 10Y1001A1001A73I}}
