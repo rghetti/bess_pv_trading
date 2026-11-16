@@ -24,6 +24,14 @@ def test_missing_ida3_overnight_is_not_interpolated_across():
     assert values.tolist() == [9, 7, 7]
 
 
+def test_unpublished_boundary_zeros_do_not_become_interpolation_anchors():
+    """Fill short historical gaps but zero unpublished tails, even under two hours."""
+    values, _, interpolated, zeros = fill_history(
+        [4, np.nan, 6, np.nan, np.nan], force_zero=[False, False, False, True, True])
+    assert values.tolist() == [4, 5, 6, 0, 0]
+    assert (interpolated, zeros) == (1, 2)
+
+
 def test_batching_separates_future_and_past_only_covariates():
     """A missing future forecast creates a different, valid worker batch."""
     request = {'context': [1], 'horizon': 1, 'forecast_covariates': {'wind': [1, 2]}, 'past_covariates': {}}

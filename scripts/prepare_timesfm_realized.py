@@ -60,32 +60,36 @@ def available_at_gate(frame, cutoff, kind, policy):
     return frame.loc[created_ok & effective.notna() & (effective <= cutoff)].copy()
 
 
-def fill_history(actual, historical_forecast=None, timestamps=None, max_gap_minutes=120):
+def fill_history(actual, historical_forecast=None, timestamps=None, max_gap_minutes=120, force_zero=None):
     """Prefer forecast for gaps; interpolate runs of <= two hours, otherwise zero."""
     result = np.asarray(actual, dtype=float).copy()
     missing = ~np.isfinite(result)
+    forced = np.zeros(len(result), dtype=bool) if force_zero is None else np.asarray(force_zero, dtype=bool)
+    if forced.shape != result.shape:
+        raise ValueError('Forced-zero mask and actual lengths differ')
+    forced = forced & missing
     used_forecast = np.zeros(len(result), dtype=bool)
     if historical_forecast is not None:
         forecast = np.asarray(historical_forecast, dtype=float)
         if forecast.shape != result.shape:
             raise ValueError('Historical forecast and actual lengths differ')
-        used_forecast = missing & np.isfinite(forecast)
+        used_forecast = missing & ~forced & np.isfinite(forecast)
         result[used_forecast] = forecast[used_forecast]
     clock = pd.DatetimeIndex(timestamps) if timestamps is not None else None
     interpolated = 0
     zero_filled = 0
     i = 0
     while i < len(result):
-        if np.isfinite(result[i]):
+        if forced[i] or np.isfinite(result[i]):
             i += 1
             continue
         start = i
         i += 1
-        while i < len(result) and not np.isfinite(result[i]) and (clock is None or clock[i] - clock[i - 1] == pd.Timedelta(minutes=15)):
+        while i < len(result) and not forced[i] and not np.isfinite(result[i]) and (clock is None or clock[i] - clock[i - 1] == pd.Timedelta(minutes=15)):
             i += 1
         count = i - start
-        left = start - 1 if start > 0 and np.isfinite(result[start - 1]) and (clock is None or clock[start] - clock[start - 1] == pd.Timedelta(minutes=15)) else None
-        right = i if i < len(result) and np.isfinite(result[i]) and (clock is None or clock[i] - clock[i - 1] == pd.Timedelta(minutes=15)) else None
+        left = start - 1 if start > 0 and not forced[start - 1] and np.isfinite(result[start - 1]) and (clock is None or clock[start] - clock[start - 1] == pd.Timedelta(minutes=15)) else None
+        right = i if i < len(result) and not forced[i] and np.isfinite(result[i]) and (clock is None or clock[i] - clock[i - 1] == pd.Timedelta(minutes=15)) else None
         if count * 15 <= max_gap_minutes and (left is not None or right is not None):
             if left is None:
                 result[start:i] = result[right]
@@ -97,6 +101,8 @@ def fill_history(actual, historical_forecast=None, timestamps=None, max_gap_minu
         else:
             result[start:i] = 0.0
             zero_filled += count
+    result[forced] = 0.0
+    zero_filled += int(forced.sum())
     return result, int(used_forecast.sum()), interpolated, zero_filled
 
 
@@ -236,12 +242,14 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
         request['forecast_covariates'] = {}
         missing = {}
         values_by_dataset = {}
+        unavailable_by_dataset = {}
         for dataset, subset in profiles.items():
             if policy:
                 eligible_subset = available_at_gate(subset, cutoff, 'actual', policy)
                 before = interval_values(subset, grid, pd.to_numeric(subset.value, errors='coerce').to_numpy(float))
                 after = interval_values(eligible_subset, grid, pd.to_numeric(eligible_subset.value, errors='coerce').to_numpy(float))
-                availability_counts[f'{dataset}_unavailable_at_gate'] = int((np.isfinite(before) & ~np.isfinite(after)).sum())
+                unavailable_by_dataset[dataset] = np.isfinite(before) & ~np.isfinite(after)
+                availability_counts[f'{dataset}_unavailable_at_gate'] = int(unavailable_by_dataset[dataset].sum())
                 subset = eligible_subset
             values = interval_values(subset, grid, pd.to_numeric(subset.value, errors='coerce').to_numpy(float))
             values_by_dataset[dataset] = values
@@ -263,7 +271,14 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
                 request.setdefault('past_covariates', {})[name] = filled.tolist()
                 fill_counts[f'{name}_past_only'] = True
         for name, dataset in past.items():
-            filled, _, interpolated_count, zero_count = fill_history(values_by_dataset[dataset], timestamps=grid)
+            forced = None
+            if settings.get('past_only_unavailable_policy') == 'zero':
+                if not policy:
+                    raise ValueError('Boundary zero-fill requires an availability policy')
+                latest_assumed = grid + pd.Timedelta(minutes=15 + policy['actual_lag_minutes'])
+                forced = ((latest_assumed > pd.Timestamp(cutoff)) | unavailable_by_dataset[dataset]) & ~np.isfinite(values_by_dataset[dataset])
+                fill_counts[f'{dataset}_boundary_zero_filled'] = int(forced.sum())
+            filled, _, interpolated_count, zero_count = fill_history(values_by_dataset[dataset], timestamps=grid, force_zero=forced)
             fill_counts[f'{dataset}_interpolated'] = interpolated_count
             fill_counts[f'{dataset}_zero_filled'] = zero_count
             request.setdefault('past_covariates', {})[name] = filled.tolist()
@@ -305,6 +320,7 @@ def prepare(base_dir, snapshot_dir, output_dir, variant, settings):
                     actual_dataset_selectors=settings.get('actual_dataset_selectors', {}),
                     calendar=settings.get('calendar', {}),
                     include_historical_spread=include_spread,
+                    past_only_unavailable_policy=settings.get('past_only_unavailable_policy'),
                     future_forecast_earliest_gate=settings.get('future_forecast_earliest_gate', {}),
                     use_actual_snapshot_forecasts=settings.get('use_actual_snapshot_forecasts', False),
                     realized_availability=('Gate-filtered using recorded publication where present, otherwise configured deadline assumptions; latest retrospective revisions are used when configured and document creation is not publication.' if settings.get('availability_policy') else 'Past delivery dates assumed available at each gate; historical publication times and revisions unverified.'),

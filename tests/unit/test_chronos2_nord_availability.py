@@ -97,7 +97,8 @@ def test_builder_binds_chronos_and_a75_actuals(tmp_path):
     write_json(source / 'manifest.json', {'tables': {'nord_forecasts': source_entry}})
     measurements = []
     for stamp in history:
-        for dataset, direction, psr in [('actual_load', 'load', None), ('actual_generation_by_type', 'production', 'B16')]:
+        for dataset, direction, psr in [('actual_load', 'load', None), ('actual_generation_by_type', 'production', 'B16'),
+                                        ('actual_generation_by_type', 'production', 'B04')]:
             measurements.append({'dataset': dataset, 'zone': 'NORD', 'direction': direction,
                                  'psr_type': psr, 'product_start': stamp,
                                  'product_end': stamp + pd.Timedelta(minutes=15),
@@ -141,3 +142,20 @@ def test_builder_binds_chronos_and_a75_actuals(tmp_path):
     assert result['realized_fill_counts']['actual_load_unavailable_at_gate'] > 0
     assert len(result['forecast_covariates']['italian_national_holiday']) == len(history) + len(horizon)
     assert sum(result['forecast_covariates'][f'weekday_{day}'][-1] for day in range(7)) == 1
+
+    # An unavailable tail shorter than two hours must still be zero, not extrapolated.
+    request['decision_at'] = '2026-01-07T23:00Z'
+    write_json(base / 'requests/2026-01-08.json', request)
+    original = json.loads((base / 'manifest.json').read_text())
+    original['files']['requests/2026-01-08.json'] = digest(base / 'requests/2026-01-08.json')
+    write_json(base / 'manifest.json', original)
+    settings['past_only_unavailable_policy'] = 'zero'
+    settings['actual_dataset_selectors']['actual_gas_generation'] = {
+        'dataset': 'actual_generation_by_type', 'psr_type': 'B04'}
+    settings['variants']['actual']['past_only'] = {'gas_generation': 'actual_gas_generation'}
+    prepare(base, actuals, tmp_path / 'short-tail', 'actual', settings)
+    result = json.loads((tmp_path / 'short-tail/requests/2026-01-08.json').read_text())
+    assert result['past_covariates']['gas_generation'][-9] == 3.0
+    assert result['past_covariates']['gas_generation'][-8:] == [0.0] * 8
+    assert result['realized_fill_counts']['actual_gas_generation_boundary_zero_filled'] == 8
+    assert result['realized_fill_counts']['actual_gas_generation_interpolated'] == 0

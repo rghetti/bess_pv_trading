@@ -37,8 +37,9 @@ provided their publication eligibility and coverage checks pass. Their
 earlier-gate exclusion also applies if an earlier timestamp exists in the source.
 
 Gas, reservoir hydro and run-of-river hydro are past-only actual series. The
-current agreed fallback fills missing runs longer than two hours with zeros,
-including unpublished tails; zero is not a measured value. Native missing-value
+unpublished tail after the availability boundary is filled with zeros, including
+when it is shorter than two hours. Other missing runs follow the agreed
+interpolation/zero fallback; zero is not a measured value. Native missing-value
 masking is not yet integrated. Pumped hydro is excluded because production and
 consumption directions need a separate interpretation. Offshore wind is
 excluded because the pinned snapshot has no records. IDA3's delivery-day

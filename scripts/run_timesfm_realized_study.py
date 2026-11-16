@@ -39,6 +39,7 @@ def prepare_one(base, snapshot, directory, variant, settings):
             manifest.get('actual_dataset_selectors', {}) != settings.get('actual_dataset_selectors', {}) or
             manifest.get('calendar', {}) != settings.get('calendar', {}) or
             manifest.get('include_historical_spread', True) != settings.get('include_historical_spread', True) or
+            manifest.get('past_only_unavailable_policy') != settings.get('past_only_unavailable_policy') or
             manifest.get('future_forecast_earliest_gate', {}) != settings.get('future_forecast_earliest_gate', {}) or
             manifest.get('use_actual_snapshot_forecasts', False) != settings.get('use_actual_snapshot_forecasts', False) or
             set(manifest['models']) != set(settings['models']) or
