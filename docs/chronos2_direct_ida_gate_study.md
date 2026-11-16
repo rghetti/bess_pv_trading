@@ -1,24 +1,26 @@
-# Direct Chronos-2 IDA forecasts at multiple decision gates
+# Direct Chronos-2 auction forecasts at multiple decision gates
 
-This prepared study predicts each IDA's **price directly**, using the frozen
+This prepared study predicts DA and IDA **prices directly**, using the frozen
 Chronos-2 checkpoint. No spread target, historical spread covariate, same-day
 cleared auction price or predicted DA price is an inference input. Earlier
 clearings may appear only as separately labelled scoring references, and only
 if published at that decision gate. Target observations are retained solely
 for retrospective scoring.
 
-The configured pilot covers delivery dates 1–7 October 2025. Each of these nine
+The configured pilot covers delivery dates 1–7 October 2025. Each of these ten
 decision/target combinations has its own request bundle and report:
 
 | Decision gate | Direct target auctions |
 | --- | --- |
-| DA | IDA1, IDA2, IDA3 |
+| DA | DA, IDA1, IDA2, IDA3 |
 | IDA1 | IDA1, IDA2, IDA3 |
 | IDA2 | IDA2, IDA3 |
 | IDA3 | IDA3 |
 
-Input price history uses the target auction's native products for 28 days,
+Input price history uses the target auction's products for 28 days,
 shortened to a complete recent suffix of at least seven days if required.
+Pre-October 2025 hourly DA prices are repeated across four quarter-hours;
+DA targets from October onward retain their native quarter-hour products.
 Every historical price must be published at the **decision** gate. IDA3
 preserves the existing afternoon-only concatenation and associated compressed
 overnight gaps. Input bundles are conditioned on the presence of target-day
@@ -78,3 +80,6 @@ was run during implementation.
 The no-calendar pilot writes to `outputs/chronos2_direct_ida_gates_pilot_no_calendar`.
 The previous calendar-enabled pilot has its own output directory; its checkpoints
 cannot be reused for these inputs.
+
+Use `--gate DA --target DA` to prepare or run only the DA-price forecast. The
+DA-only filter does not modify the configured list of other gate/target jobs.

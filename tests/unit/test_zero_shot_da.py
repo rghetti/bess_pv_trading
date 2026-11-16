@@ -13,6 +13,18 @@ from scripts.da_zero_shot_probe import verify_bundle
 from scripts.run_da_zero_shot_model import object_digest, verify_prediction, load_model
 
 
+def test_direct_pilot_includes_da_only_at_its_own_gate():
+    """The ten-auction pilot contains DA at DA and rejects forecasting past auctions."""
+    from bess_pv_trading.config import load_config
+    from scripts.run_chronos2_direct_ida_gates import build_one
+
+    pilot = load_config('configs/research/chronos2_direct_ida_gates.yaml')['direct_ida_gate_study']
+    assert pilot['gates']['DA'] == ['DA', 'IDA1', 'IDA2', 'IDA3']
+    assert sum(len(targets) for targets in pilot['gates'].values()) == 10
+    with pytest.raises(ValueError, match='Invalid decision-gate'):
+        build_one('IDA1', 'DA', {})
+
+
 def settings():
     """Use a short synthetic history to exercise the same calendar alignment."""
     return {'timezone': 'Europe/Rome', 'context_days': 28, 'decision_time': '11:45',
